@@ -93,6 +93,19 @@ function retainText(raw: string, before: string, after: string): string {
   )
 }
 
+function retainBoundaryWhitespace(raw: string, canonical: string): string {
+  // A middle-of-line space becomes indentation or trimmed text at a block edge.
+  const start = /^[ \t]+/.exec(raw)?.[0]
+  const encodedStart = /^(?:&#(?:x20|x9|32|9);|[ \t])+/i.exec(canonical)?.[0]
+  if (start && encodedStart?.includes('&#'))
+    raw = encodedStart + raw.slice(start.length)
+  const end = /[ \t]+$/.exec(raw)?.[0]
+  const encodedEnd = /(?:&#(?:x20|x9|32|9);|[ \t])+$/i.exec(canonical)?.[0]
+  if (end && encodedEnd?.includes('&#'))
+    raw = raw.slice(0, -end.length) + encodedEnd
+  return raw
+}
+
 // Patch changed leaves so an adjacent edit retains authored delimiters and labels.
 function retainSource(
   before: SourceNode,
@@ -125,13 +138,16 @@ function retainSource(
         destination[3]
       )
   }
+  if (before.type === 'text' && after.type === 'text')
+    return retainBoundaryWhitespace(
+      retainText(raw, before.value!, after.value!),
+      canonical.slice(newStart, newEnd),
+    )
   if (
     signature(before) === signature(after) &&
     ownShape(before) === ownShape(after)
   )
     return raw
-  if (before.type === 'text' && after.type === 'text')
-    return retainText(raw, before.value!, after.value!)
   if (
     before.type === after.type &&
     ownShape(before) === ownShape(after) &&
@@ -193,10 +209,11 @@ function retainSource(
       ? after.children[after.children.length - suffix]!.position?.start.offset
       : newEnd
     if (from != null && to != null && newFrom != null && newTo != null)
-      return (
+      return retainBoundaryWhitespace(
         source.slice(start, from) +
-        canonical.slice(newFrom, newTo).replaceAll('\n', lineEnding) +
-        source.slice(to, end)
+          canonical.slice(newFrom, newTo).replaceAll('\n', lineEnding) +
+          source.slice(to, end),
+        canonical.slice(newStart, newEnd),
       )
   }
   return canonical.slice(newStart, newEnd).replaceAll('\n', lineEnding)

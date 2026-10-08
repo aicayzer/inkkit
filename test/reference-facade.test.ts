@@ -415,3 +415,38 @@ test('changing implicit reference text casing keeps its collapsed form and share
       )?.attrs.href,
     ).toBe('/target')
   }))
+
+test('explicit Markdown replacing a reference selection retains independent incoming and surrounding targets', () =>
+  run(async (editor, ctx) => {
+    const source =
+      '[Destination][Original] and [Retained][Original]\n\n[Original]: https://example.com/destination\n'
+    editor.loadDocument({ ...input, text: source })
+    const view = ctx.get(editorViewCtx)
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 12)),
+    )
+    await editor.paste({
+      text: 'https://example.com/plaintext-ignored',
+      markdown:
+        '[Revised][Original]\n\n[Original]: https://example.com/original\n',
+    })
+    const saved = editor.snapshot().text
+    expect(saved).toContain('[Revised][original-2]')
+    expect(saved).toContain('&#x20;and [Retained][Original]')
+    expect(
+      referenceDefinitions(view.state.doc).get('original')!.node.attrs.url,
+    ).toBe('https://example.com/destination')
+    expect(
+      referenceDefinitions(view.state.doc).get('original-2')!.node.attrs.url,
+    ).toBe('https://example.com/original')
+    undo(view.state, view.dispatch)
+    expect(editor.snapshot().text).toBe(source)
+    editor.loadDocument({ ...input, generation: 2, text: saved })
+    const links: Record<string, string> = {}
+    view.state.doc.descendants((node) => {
+      for (const mark of node.marks)
+        if (mark.type.name === 'link') links[node.textContent] = mark.attrs.href
+    })
+    expect(links.Revised).toBe('https://example.com/original')
+    expect(links.Retained).toBe('https://example.com/destination')
+  }))
