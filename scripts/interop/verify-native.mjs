@@ -477,29 +477,29 @@ if (version === '0.0.3')
     'comments-and-folds-print': {
       mode: 'print',
       source:
-        '> [!NOTE]- Print title\n> PRINT_VISIBLE_BODY.\n>\n' +
+        '> [!NOTE]- Print title\n> PRINTVISIBLEBODY.\n>\n' +
         Array.from(
           { length: 45 },
           (_, index) =>
             `> Printed continuation ${index + 1} across the complete folded body.`,
         ).join('\n>\n') +
-        '\n>\n> PRINT_FINAL_SENTINEL.\n\nPublic PRINT_VISIBLE_TEXT <!--PRINT_HTML_SECRET--> %%PRINT_OBSIDIAN_SECRET%%.\n',
+        '\n>\n> PRINTFINALSENTINEL.\n\nPublic PRINTVISIBLETEXT <!--PRINTHTMLSECRET--> %%PRINTOBSIDIANSECRET%%.\n',
       operations: [
         { op: 'setCommentsVisible', visible: true },
         { op: 'export', name: 'ordinary' },
-        contains('text', 'PRINT_VISIBLE_BODY', 'ordinary'),
+        contains('text', 'PRINTVISIBLEBODY', 'ordinary'),
         excludes('text', 'SECRET', 'ordinary'),
       ],
       printIncludes: [
-        'PRINT_VISIBLE_BODY',
-        'PRINT_VISIBLE_TEXT',
+        'PRINTVISIBLEBODY',
+        'PRINTVISIBLETEXT',
         'Print title',
-        'PRINT_FINAL_SENTINEL',
+        'PRINTFINALSENTINEL',
       ],
       printMinPages: 2,
       printExcludes: [
-        'PRINT_HTML_SECRET',
-        'PRINT_OBSIDIAN_SECRET',
+        'PRINTHTMLSECRET',
+        'PRINTOBSIDIANSECRET',
         'Expand',
         'Collapse',
       ],
