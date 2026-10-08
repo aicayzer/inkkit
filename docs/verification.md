@@ -21,7 +21,11 @@ The maintainer published `@aicayzer/inkkit@0.0.1` from the native-tested archive
 
 Tag `v0.0.1` points to release commit `6ee767a56ed4c8b41fb20c347f5d2f0fa2ad5052`. Its release workflow passed validation and skipped automatic publication, preserving the manual first release. App rollout and later package features remain separate phases.
 
-The supplied npm settings show the expected GitHub repository and `release.yml` trusted publisher, with direct publishing permitted. OIDC publication remains unexercised. The initial connection is pending validation; see the expiry guidance in [the release procedure](releasing.md).
+At the 0.0.1 handover, the supplied npm settings showed the expected GitHub repository and `release.yml` trusted publisher, with direct publishing permitted. OIDC publication had not yet been exercised.
+
+## 0.0.2 publication
+
+On 8 October 2026, [release.yml](https://github.com/aicayzer/inkkit/actions/runs/37852337446) published `v0.0.2` at commit `8fb5d77ad334dd2d926eb946d0faea302ab5c886` through OIDC. Independent cryptographic provenance verification confirmed the GitHub issuer, workflow/tag identity, source commit and published package digest. Registry compressed bytes matched the workflow archive; decompressed tar contents matched the native-tested candidate despite compression-only differences. Fresh exact-version installation, declarations/CSS, offline bundling and public-facade runtime checks passed. The complete artefact and native evidence is recorded in [release gate #18](https://github.com/aicayzer/inkkit/issues/18).
 
 ## Native app integrations
 

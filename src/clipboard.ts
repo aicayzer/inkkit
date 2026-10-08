@@ -6,6 +6,7 @@ import {
 } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
+import { shareableFragment } from './comments'
 import type {
   ClipboardImage,
   ClipboardOutput,
@@ -24,6 +25,7 @@ export function clipboardText(
   content: Fragment,
   missingImages: ReadonlySet<string> = new Set(),
 ): string {
+  content = shareableFragment(content)
   const blocks: string[] = []
   content.forEach((node) => {
     if (node.type.name !== 'reference_definition')
@@ -34,6 +36,13 @@ export function clipboardText(
 }
 
 function nodeText(node: Node, missingImages: ReadonlySet<string>): string {
+  if (node.type.name === 'inkkit_callout')
+    return `${
+      node.attrs.title ||
+      String(node.attrs.kind)
+        .toLowerCase()
+        .replace(/^./, (letter) => letter.toUpperCase())
+    }\n${clipboardText(node.content, missingImages)}`
   if (node.type.name === 'reference_definition') return ''
   if (node.type.name === 'footnote_reference') return `[${node.attrs.label}]`
   if (node.type.name === 'footnote_definition')
@@ -97,6 +106,7 @@ export function clipboardContent(
   content: Fragment,
   schema: Schema,
 ): ClipboardContent {
+  content = shareableFragment(content)
   const container = document.createElement('div')
   const serializer = DOMSerializer.fromSchema(schema)
   // Construct image elements without a source so detached clipboard DOM never
@@ -153,6 +163,7 @@ export async function portableClipboard(
   adapter: ImageAdapter | undefined,
   context: DocumentContext,
 ): Promise<ClipboardOutput> {
+  content = shareableFragment(content)
   const base = clipboardContent(content, schema)
   const container = document.createElement('div')
   container.innerHTML = base.html

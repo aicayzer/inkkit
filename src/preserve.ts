@@ -35,7 +35,12 @@ function ownShape(node: SourceNode): string {
   )
 }
 
-function retainText(raw: string, before: string, after: string): string {
+function retainText(
+  raw: string,
+  before: string,
+  after: string,
+  quoteIndent = false,
+): string {
   before = before.replace(/\r\n?/g, '\n')
   after = after.replace(/\r\n?/g, '\n')
   let prefix = 0
@@ -55,6 +60,16 @@ function retainText(raw: string, before: string, after: string): string {
   const offsets = [0]
   let decoded = ''
   for (let index = 0; index < raw.length;) {
+    if (index > 0 && raw[index - 1] === '\n') {
+      const gutter = (
+        quoteIndent ? /^(?:[ \t]*>[ \t]*)+/ : /^(?:[ \t]*>[ \t]?)+/
+      ).exec(raw.slice(index))
+      if (gutter) {
+        index += gutter[0].length
+        offsets[offsets.length - 1] = index
+        continue
+      }
+    }
     const escaped = /^\\([!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~])/.exec(
       raw.slice(index),
     )
@@ -82,10 +97,23 @@ function retainText(raw: string, before: string, after: string): string {
     index += length
     for (let part = 0; part < value.length; part++) offsets.push(index)
   }
-  if (decoded !== before) return after
+  if (decoded !== before) {
+    // Continuation indentation is excluded from a quoted paragraph's text.
+    return quoteIndent ? after : retainText(raw, before, after, true)
+  }
   const inserted = after
     .slice(prefix, after.length - suffix)
-    .replace(/[\\`*_[\]<>]/g, '\\$&')
+    .split('')
+    .map((character, index) => {
+      const at = prefix + index
+      const delimiter =
+        (character === '%' || character === '=') &&
+        (after[at - 1] === character || after[at + 1] === character)
+      return delimiter || /[\\`*_[\]<>]/.test(character)
+        ? `\\${character}`
+        : character
+    })
+    .join('')
   return (
     raw.slice(0, offsets[prefix]) +
     inserted +

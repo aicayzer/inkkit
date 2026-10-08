@@ -22,6 +22,14 @@
 
 These operations retain the existing document, generation and composition checks. Footnote and definition editing are disabled in TXT mode. Hosts continue to import only the public facade.
 
+## Highlights, callouts and comments
+
+`format('highlight')` toggles the highlight mark; `CaretState.marks` reports `highlight`. Hosts can bind the `highlight` keymap name through `setKeymap`. Formatting is disabled in TXT mode.
+
+Supported callouts render editable bodies, plain titles and optional fold buttons. Enter and Space toggle the focused fold button. Folding retains authored source and does not dirty the document. See the [syntax matrix](supported-syntax.md) for the bounded types and variants.
+
+`setCommentsVisible(boolean)` reveals or hides author comments. Comments start hidden. This changes presentation without changing revision, history or dirty state. Snapshots and `ClipboardOutput.markdown` retain comments; ordinary text, HTML, inert clipboard metadata and printing exclude them even when revealed. A selection inside a comment copies its selected body with comment delimiters only in explicit Markdown.
+
 ## Images
 
 The optional `ImageAdapter` provides:
