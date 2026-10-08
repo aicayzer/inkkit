@@ -1,0 +1,6 @@
+InkKit includes editor behavior and source from PadPad and Memos.
+Copyright (c) 2026 August Cayzer. Licensed under the MIT License.
+Sources: https://github.com/aicayzer/padpad and https://github.com/aicayzer/memos
+
+Milkdown and other runtime dependencies retain their own licenses. They are
+installed as dependencies rather than embedded in this package.
