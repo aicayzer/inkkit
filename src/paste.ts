@@ -4,9 +4,14 @@ import {
   DOMParser as ProseParser,
   Fragment,
   Slice,
+  type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
+import {
+  avoidReferenceCollisions,
+  markdownFromHTML,
+} from './reference-clipboard'
 import {
   InkKitError,
   type ClipboardInput,
@@ -159,6 +164,10 @@ export class PasteController {
         input.plainText ||
         this.options.literalText?.() ||
         view.state.selection.$from.parent.type.spec.code
+      const markdown = plainText
+        ? undefined
+        : (input.markdown ??
+          (input.html ? markdownFromHTML(input.html) : undefined))
       if (plainText) {
         if (view.state.selection.$from.parent.type.spec.code) {
           const anchor = operation
@@ -248,6 +257,7 @@ export class PasteController {
           'TD',
           'IMG',
           'SPAN',
+          'SUP',
           'DIV',
           'FONT',
           'SECTION',
@@ -357,9 +367,44 @@ export class PasteController {
             )
           }
         }
-        slice = ProseParser.fromSchema(schema).parseSlice(container, {
-          preserveWhitespace: true,
-        })
+        if (markdown != null) {
+          const parsed = ctx.get(parserCtx)(markdown)
+          let imageIndex = 0
+          const hydrate = (node: ProseNode): ProseNode => {
+            if (node.type.name === 'image') {
+              const slot = /^inkkit-clipboard-image:(\d+)$/.exec(
+                String(node.attrs.src),
+              )
+              const position = slot ? Number(slot[1]) : imageIndex++
+              const element = elements.some((element) =>
+                element.hasAttribute('data-inkkit-image-slot'),
+              )
+                ? elements.find(
+                    (element) =>
+                      Number(element.getAttribute('data-inkkit-image-slot')) ===
+                      position,
+                  )
+                : elements[position]
+              if (!element || !container.contains(element))
+                return schema.text(
+                  `[${node.attrs.alt || 'Image'}: image unavailable]`,
+                )
+              return node.type.create(
+                { ...node.attrs, src: element.getAttribute('src') },
+                null,
+                node.marks,
+              )
+            }
+            if (node.isText) return node
+            const children: ProseNode[] = []
+            node.forEach((child) => children.push(hydrate(child)))
+            return node.copy(Fragment.fromArray(children))
+          }
+          slice = new Slice(hydrate(parsed).content, 0, 0)
+        } else
+          slice = ProseParser.fromSchema(schema).parseSlice(container, {
+            preserveWhitespace: true,
+          })
       } else if (images.length) {
         const nodes = []
         if (input.text)
@@ -429,12 +474,28 @@ export class PasteController {
           )
           return
         }
-        const doc = ctx.get(parserCtx)(input.text)
+        const doc = ctx.get(parserCtx)(markdown ?? input.text)
         slice = new Slice(doc.content, 0, 0)
       }
       this.assertContext(context, operation)
       if (!view.editable || this.options.editable?.() === false) return
       const anchor = operation
+      if (!plainText) {
+        const valid = slice.content.firstChild?.isInline
+          ? Fragment.from(schema.nodes.paragraph!.create(null, slice.content))
+          : slice.content
+        const remapped = avoidReferenceCollisions(
+          schema.topNodeType.create(null, valid),
+          view.state.doc,
+        )
+        slice = new Slice(
+          slice.content.firstChild?.isInline
+            ? remapped.firstChild!.content
+            : remapped.content,
+          slice.openStart,
+          slice.openEnd,
+        )
+      }
       const insertion = view.state.doc.resolve(anchor.from)
       // An isolated block such as a table cannot fit inside an empty paragraph.
       // Replace that empty block rather than retaining a spurious spacer.

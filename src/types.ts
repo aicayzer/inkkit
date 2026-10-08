@@ -55,6 +55,7 @@ export interface ImageAdapter {
 }
 export interface ClipboardInput {
   text: string
+  markdown?: string
   html?: string
   images?: CapturedImage[]
   plainText?: boolean

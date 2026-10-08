@@ -6,11 +6,21 @@
 
 `snapshot(expectedGeneration?)` returns the complete current text, format, document ID, generation, revision and dirty state. It throws for a missing document, composition, pending image operations, stale generations or a destroyed editor. A snapshot failure is not an unchanged document. Save, close, switching and Copy as Markdown must capture a fresh snapshot before changing native state.
 
-`clipboardSnapshot(all = true)` returns a frozen whole-document or current-selection export with readable text, semantic HTML, Markdown source and portable image results. Resolve it before touching the native clipboard, check document identity, and retain the existing clipboard on failure. `paste({ text, html?, images?, plainText? })` captures one operation; do not reread the global clipboard after awaiting it. `pasteAsPlainText(text)` inserts literal text.
+`clipboardSnapshot(all = true)` returns a frozen whole-document or current-selection export with readable text, semantic HTML, Markdown source and portable image results. Resolve it before touching the native clipboard, check document identity, and retain the existing clipboard on failure. `paste({ text, markdown?, html?, images?, plainText? })` captures one operation; do not reread the global clipboard after awaiting it. Optional `markdown` explicitly supplies source, taking precedence over text and HTML semantics; HTML remains available for portable image bytes. `pasteAsPlainText(text)` inserts literal text.
 
 `format(command, argument?)`, `table(command, dimensions?)`, `find(text)`, `focus()` and `setKeymap(bindings)` implement host controls. Table commands include insert, row/column addition and deletion, alignment and exit. Default inserted tables have three rows and two columns. `insertText` and `keyDown` accept a generation for buffered native input; composition leaves buffered input unhandled.
 
 `insertPaths(paths, x, y)` places literal paths at a drop location. `insertImages([{ path, alt, title? }], x?, y?)` inserts already-stored references when an image adapter is configured. `destroy()` cancels pending work and releases the editor.
+
+## Footnotes and reference links
+
+`insertFootnote(label?)` inserts a reference after the current selection without removing selected text. An omitted label uses the lowest available positive integer. A new definition is appended and focused for editing; an existing label inserts another reference to its definition. Reference insertion and definition creation form one undo step.
+
+`navigateFootnote('definition' | 'reference')` moves between the current footnote reference and its definition, returning whether a destination was found. **Alt+Enter** visits the definition; **Alt+Shift+Enter** returns to its first reference.
+
+`editReferenceDefinition(label, destination, title?)` updates the shared link definition and returns whether it exists. Omitted title retains the current title. `format('link', destination)` edits that shared definition when the selection is in a reference link.
+
+These operations retain the existing document, generation and composition checks. Footnote and definition editing are disabled in TXT mode. Hosts continue to import only the public facade.
 
 ## Images
 

@@ -39,6 +39,7 @@ import {
 import { $remark } from '@milkdown/kit/utils'
 import { autolinkInputRule } from './autolink'
 import { literalBlock, createLiteralPreservation } from './literals'
+import { references, remarkReferencesPlugin } from './references'
 import { gfmTableFromMarkdown, gfmTableToMarkdown } from 'mdast-util-gfm-table'
 import { gfmTable } from 'micromark-extension-gfm-table'
 import type { Link, Parents, PhrasingContent } from 'mdast'
@@ -125,7 +126,6 @@ link.peek = (node, parent, state) =>
     ? node.url[0]!
     : defaultHandlers.link.peek(node, parent, state)
 
-// Footnotes remain literal until the editor supports editing their definitions.
 function remarkDialect(this: Processor) {
   const data = this.data() as Record<string, unknown[] | undefined>
   const add = (key: string, value: unknown) => {
@@ -149,7 +149,7 @@ function remarkDialect(this: Processor) {
 
 export const remarkDialectPlugin = $remark('remarkDialect', () => remarkDialect)
 
-// Keep authored spacer paragraphs; references remain literal instead of becoming inline links.
+// Reference links retain their authored form instead of expanding to inline links.
 const commonmarkWithLiteralReferences = commonmark.filter(
   (plugin) => !remarkInlineLinkPlugin.includes(plugin),
 )
@@ -330,9 +330,11 @@ export const tables: MilkdownPlugin[] = [
 
 export function createDialect(images: boolean): MilkdownPlugin[] {
   return [
+    remarkReferencesPlugin,
     // Protect unsupported inline HTML before the empty-line plugin consumes break nodes.
     createLiteralPreservation(images),
     commonmarkWithLiteralReferences,
+    references,
     preserveSpacerParagraphs,
     visibleSoftbreaks,
     normalizedImages,
