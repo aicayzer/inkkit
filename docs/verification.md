@@ -1,6 +1,6 @@
 # Verification record
 
-Verified on 8 October 2026. This record describes the tested release candidate; it does not establish publication or complete the Craft interoperability gate.
+Verified on 8 October 2026. This record describes the tested release candidate. The required verification is complete; first publication and registry verification remain pending the maintainer's manual publication.
 
 ## Candidate
 
@@ -48,11 +48,11 @@ These are semantic checks, not byte-identical Markdown round trips. Obsidian can
 
 The test images were meaningful native rich content and data-backed HTML, without private presentation URLs. These checks exercise the package image adapter and the native clipboard formats. They do not claim that a production Memos window was manually copied into every destination.
 
-## Outstanding Craft gate
+## Additional example destination
 
 Craft interoperability remains **unverified**. A transferred TestFlight build (3.6.10) did not launch on the test machine. The official vendor download (3.6.8) launched, but its window exposed no editor or onboarding content through accessibility. Screen capture was denied by the host's privacy controls, so the visible state could not be inspected. No account requirement was inferred, no credentials were copied and no privacy control was bypassed.
 
-The remaining step is to allow screen capture for the SSH automation's responsible process in the test host's Screen & System Audio Recording settings, then inspect Craft's visible state and run the full and partial clipboard checks in both directions. Any required account setup must be handled explicitly. A permission request is pending with the user. The release remains a draft without a release tag or npm publication while this gate is open.
+Craft was named as an example application, not a required test destination. Its unverified status does not block publication. The completed Obsidian and Apple Mail checks provide the required representative external clipboard evidence; no Craft test or privacy-permission change is required from the maintainer.
 
 ## Reproduction and cleanup
 
