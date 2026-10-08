@@ -39,9 +39,13 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         }
     }
 
-    @objc func printDidRun(_ operation: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
-        printContinuation?.resume(returning: success)
-        printContinuation = nil
+    @objc nonisolated func printDidRun(_ operation: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let continuation = self.printContinuation
+            self.printContinuation = nil
+            continuation?.resume(returning: success)
+        }
     }
 
     func execute() async {
