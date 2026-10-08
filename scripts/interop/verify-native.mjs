@@ -128,6 +128,35 @@ const scenarios = {
       contains('html', 'https://example.com/original', 'full'),
     ],
   },
+  'markdown-precedence': {
+    source:
+      '[Destination][Original] and [Retained][Original]\n\n[Original]: https://example.com/destination\n',
+    operations: [
+      { op: 'select', text: 'Destination' },
+      {
+        op: 'paste',
+        input: {
+          text: 'https://example.com/plaintext-ignored',
+          markdown:
+            '[Revised][Original]\n\n[Original]: https://example.com/original\n',
+        },
+      },
+      contains('snapshot.text', 'Revised'),
+      contains('snapshot.text', '[Retained][Original]'),
+      contains('snapshot.text', 'https://example.com/destination'),
+      contains('snapshot.text', 'https://example.com/original'),
+      {
+        op: 'assert',
+        path: 'snapshot.text',
+        excludes: 'https://example.com/plaintext-ignored',
+      },
+      { op: 'save' },
+      { op: 'reopen' },
+      { op: 'export', name: 'full' },
+      contains('html', 'https://example.com/destination', 'full'),
+      contains('html', 'https://example.com/original', 'full'),
+    ],
+  },
   'literal-txt': {
     source: 'Literal [reference][Label]\r\n[^note]: unchanged\r\n',
     format: 'txt',

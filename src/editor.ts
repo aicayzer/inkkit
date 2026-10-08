@@ -827,8 +827,9 @@ export class InkKitEditor {
       if (instance.formatType === 'txt') return
       const view = instance.editor.ctx.get(editorViewCtx)
       const fragment = view.state.selection.content().content
+      const expanded = selectionContent(view.state.doc, fragment)
       let hasImages = false
-      fragment.descendants((node) => {
+      expanded.descendants((node) => {
         if (node.type.name === 'image') hasImages = true
       })
       if (!hasImages) {
@@ -837,7 +838,7 @@ export class InkKitEditor {
         event.stopPropagation()
         try {
           instance.snapshot()
-          const content = selectionContent(view.state.doc, fragment)
+          const content = expanded
           const valid = fragment.firstChild?.isInline
             ? Fragment.from(
                 view.state.schema.nodes.paragraph!.create(null, fragment),
@@ -908,7 +909,7 @@ export class InkKitEditor {
           )
       } else {
         const container = document.createElement('div')
-        container.textContent = clipboardText(fragment)
+        container.textContent = clipboardText(expanded)
         event.clipboardData?.setData('text/plain', container.textContent ?? '')
         event.clipboardData?.setData('text/html', container.outerHTML)
         events.error?.(

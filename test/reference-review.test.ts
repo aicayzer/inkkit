@@ -30,6 +30,23 @@ const input = {
   format: 'md' as const,
 }
 
+test('explicit Markdown takes precedence over a URL in plain text with a selection', () =>
+  run(async (editor) => {
+    editor.loadDocument({ ...input, text: 'Replace this\n' })
+    editor.find('this')
+    await editor.paste({
+      text: 'https://example.com',
+      markdown: '[Copied][Ref]\n\n[Ref]: /source\n',
+    })
+    const saved = editor.snapshot().text
+    expect(saved).toContain('[Copied][Ref]')
+    expect(saved).toContain('[Ref]: /source')
+    expect(saved).not.toContain('https://example.com')
+    expect(saved).not.toContain('this')
+    editor.loadDocument({ ...input, generation: 2, text: saved })
+    expect(editor.snapshot().text).toBe(saved)
+  }))
+
 test('selection ending inside a required footnote retains its complete definition', () =>
   run(async (editor, ctx) => {
     editor.loadDocument({

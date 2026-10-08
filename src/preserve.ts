@@ -261,9 +261,15 @@ function semanticSignature(doc: ProseNode): string {
   }
   const json = JSON.parse(
     JSON.stringify(doc.toJSON(), (key, value) =>
-      ['referenceContent', 'referenceType', 'marker', 'id', 'label'].includes(
-        key,
-      )
+      // Fresh list items default to loose even when their Markdown reopens tight.
+      [
+        'referenceContent',
+        'referenceType',
+        'marker',
+        'id',
+        'label',
+        'spread',
+      ].includes(key)
         ? undefined
         : value,
     ),

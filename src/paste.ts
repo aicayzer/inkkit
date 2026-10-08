@@ -461,6 +461,7 @@ export class PasteController {
         const selection = view.state.selection
         const text = input.text.trim()
         if (
+          markdown == null &&
           !selection.empty &&
           /^https?:\/\/\S+$/.test(text) &&
           schema.marks.link

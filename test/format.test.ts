@@ -1,6 +1,6 @@
 import { getMatchHighlights } from 'prosemirror-search'
 import { expect, test } from 'vitest'
-import { editorViewCtx } from '@milkdown/kit/core'
+import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { Slice } from '@milkdown/kit/prose/model'
@@ -62,6 +62,31 @@ test('a document ending in a rule still opens with a caret', async () =>
 test('a loaded document is not yet changed', async () =>
   withInkKitEditor('# Heading\n\nA line.\n', (editor) => {
     expect(editor.snapshot().dirty).toBe(false)
+  }))
+
+test('sequential block formatting toggles remain snapshot-safe without a final newline', async () =>
+  withInkKitEditor('Selected words', (editor) => {
+    for (const level of [1, 2, 3]) {
+      editor.format('heading', level)
+      expect(editor.snapshot().text).toBe(`${'#'.repeat(level)} Selected words`)
+      editor.format('heading', level)
+      expect(editor.snapshot().text).toBe('Selected words')
+    }
+    for (const [command, prefix] of [
+      ['bulletList', '- '],
+      ['orderedList', '1. '],
+      ['quote', '> '],
+    ] as const) {
+      editor.format(command)
+      const ctx = ctxOf(editor)
+      const snapshot = editor.snapshot()
+      expect(snapshot.text).toBe(prefix + 'Selected words')
+      expect(ctx.get(parserCtx)(snapshot.text).firstChild!.type.name).toBe(
+        ctx.get(editorViewCtx).state.doc.firstChild!.type.name,
+      )
+      editor.format(command)
+      expect(editor.snapshot().text).toBe('Selected words')
+    }
   }))
 
 test('quote toggles rather than nesting', async () => {
