@@ -192,7 +192,7 @@ const same = (path, resultName, resultPath, name) => ({
   equalsFrom: { name: resultName, path: resultPath },
 })
 const calloutSource =
-  '> [!NOTE]\n> Native note body.\n>  Indented &amp; native source.\n\n> [!TIP]+ Native custom title\n> Native tip body.\n\n> [!IMPORTANT]\n> Native important body.\n\n> [!WARNING]- Native folded title\n> Native folded body.\n\n> [!CAUTION]\n> Native caution body.\n\n> [!TODO]\n> Unsupported native callout.\n\n> [!NOTE] + Spaced fold stays literal\n> Unsupported native fold.\n'
+  '> [!NOTE] Native &#13; title\n> Native note body.\n>  Indented &amp; native source.\n\n> [!TIP]+ Native &#10; title\n> Native tip body.\n\n> [!IMPORTANT]\n> Native important body.\n\n> [!WARNING]- Native folded title\n> Native folded body.\n\n- > [!CAUTION] Native nested title\n  > Native caution body.\n\n> [!TODO]\n> Unsupported native callout.\n\n> [!NOTE] + Spaced fold stays literal\n> Unsupported native fold.\n'
 const commentSource =
   'Public [link][Shared] <!--INLINE_SECRET <script>window.commentExecuted=true</script>--> beside %%OBSIDIAN_SECRET%% text.\n\n<!--\nBLOCK_SECRET\n-->\n\n%%\nOBSIDIAN_BLOCK_SECRET\n%%\n\n[Shared]: https://example.com/shared\n'
 if (version === '0.0.3')
@@ -241,11 +241,34 @@ if (version === '0.0.3')
           selector: '[data-inkkit-callout="NOTE"] .inkkit-callout-body',
         },
         { op: 'insertText', text: 'Edited native note body.' },
-        contains('snapshot.text', '> [!NOTE]\n> Edited native note body.'),
+        contains(
+          'snapshot.text',
+          '> [!NOTE] Native &#13; title\n> Edited native note body.',
+        ),
         contains('snapshot.text', '> [!WARNING]- Native folded title'),
         contains('snapshot.text', '>  Indented &amp; native source.'),
         contains('snapshot.text', '> [!TODO]\n> Unsupported native callout.'),
         contains('snapshot.text', '> [!NOTE] + Spaced fold stays literal'),
+        {
+          op: 'select',
+          text: 'Native caution body.',
+          selector: '[data-inkkit-callout="CAUTION"] .inkkit-callout-body',
+        },
+        { op: 'insertText', text: 'Edited native caution body.' },
+        contains(
+          'snapshot.text',
+          '- > [!CAUTION] Native nested title\n  > Edited native caution body.',
+        ),
+        {
+          op: 'select',
+          text: 'Native tip body.',
+          selector: '[data-inkkit-callout="TIP"] .inkkit-callout-body',
+        },
+        { op: 'insertText', text: 'Edited native tip body.' },
+        contains(
+          'snapshot.text',
+          '> [!TIP]+ Native &#10; title\n> Edited native tip body.',
+        ),
         { op: 'save' },
         { op: 'reopen' },
         assert('snapshot.dirty', false),
@@ -256,6 +279,12 @@ if (version === '0.0.3')
         },
         { op: 'export', all: false, name: 'calloutSelection' },
         contains('text', 'Edited native note body.', 'calloutSelection'),
+        { op: 'export', name: 'authoredCalloutTitles' },
+        { op: 'load', source: '' },
+        { op: 'pasteExport', sourceName: 'authoredCalloutTitles' },
+        contains('snapshot.text', '> [!NOTE] Native &#13; title'),
+        contains('snapshot.text', '> [!TIP]+ Native &#10; title'),
+        contains('snapshot.text', '- > [!CAUTION] Native nested title'),
         { op: 'load', source: 'Replacement document' },
         assert('snapshot.text', 'Replacement document'),
       ],
@@ -417,7 +446,7 @@ if (version === '0.0.3')
         contains('markdown', 'LABEL_SECRET', 'referenceCopy'),
         contains('html', 'https://example.com/shared', 'referenceCopy'),
         contains('html', 'https://example.com/collapsed', 'referenceCopy'),
-        { op: 'select', text: 'Publicnote' },
+        { op: 'selectContents', selector: 'p', text: 'Public' },
         { op: 'export', all: false, name: 'requiredDefinitionCopy' },
         excludes('text', 'SECRET', 'requiredDefinitionCopy'),
         excludes('html', 'SECRET', 'requiredDefinitionCopy'),
@@ -448,7 +477,13 @@ if (version === '0.0.3')
     'comments-and-folds-print': {
       mode: 'print',
       source:
-        '> [!NOTE]- Print title\n> PRINT_VISIBLE_BODY.\n\nPublic PRINT_VISIBLE_TEXT <!--PRINT_HTML_SECRET--> %%PRINT_OBSIDIAN_SECRET%%.\n',
+        '> [!NOTE]- Print title\n> PRINT_VISIBLE_BODY.\n>\n' +
+        Array.from(
+          { length: 45 },
+          (_, index) =>
+            `> Printed continuation ${index + 1} across the complete folded body.`,
+        ).join('\n>\n') +
+        '\n>\n> PRINT_FINAL_SENTINEL.\n\nPublic PRINT_VISIBLE_TEXT <!--PRINT_HTML_SECRET--> %%PRINT_OBSIDIAN_SECRET%%.\n',
       operations: [
         { op: 'setCommentsVisible', visible: true },
         { op: 'export', name: 'ordinary' },
@@ -459,7 +494,9 @@ if (version === '0.0.3')
         'PRINT_VISIBLE_BODY',
         'PRINT_VISIBLE_TEXT',
         'Print title',
+        'PRINT_FINAL_SENTINEL',
       ],
+      printMinPages: 2,
       printExcludes: [
         'PRINT_HTML_SECRET',
         'PRINT_OBSIDIAN_SECRET',
@@ -489,7 +526,7 @@ for (const [name, fixture] of Object.entries(scenarios)) {
     host,
     [bundle, fixture.mode ?? 'scenario', input, output],
     {
-      timeout: 120_000,
+      timeout: fixture.mode === 'print' ? 20_000 : 120_000,
       encoding: 'utf8',
     },
   )
@@ -500,6 +537,11 @@ for (const [name, fixture] of Object.entries(scenarios)) {
   const printFailures =
     fixture.mode === 'print'
       ? [
+          ...(result?.print?.pages >= (fixture.printMinPages ?? 1)
+            ? []
+            : [
+                `Printed PDF has fewer than ${fixture.printMinPages ?? 1} pages`,
+              ]),
           ...(fixture.printIncludes ?? [])
             .filter((value) => !result?.print?.text?.includes(value))
             .map((value) => `Printed PDF omitted ${value}`),

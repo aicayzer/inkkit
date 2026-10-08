@@ -204,6 +204,28 @@ window.interop = {
           case 'select':
             result = await selectText(operation)
             break
+          case 'selectContents': {
+            editor.focus()
+            const candidates = [
+              ...view().querySelectorAll(operation.selector),
+            ].filter(
+              (node) =>
+                operation.text === undefined ||
+                node.textContent.includes(operation.text),
+            )
+            const target = candidates[operation.occurrence ?? 0]
+            if (!target)
+              throw Error(`Selection root not found: ${operation.selector}`)
+            const range = document.createRange()
+            range.selectNodeContents(target)
+            const selection = getSelection()
+            selection.removeAllRanges()
+            selection.addRange(range)
+            document.dispatchEvent(new Event('selectionchange'))
+            await settle()
+            result = selection.toString()
+            break
+          }
           case 'dom':
             result = inspectDOM(operation.selector)
             break
