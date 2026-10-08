@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import PDFKit
 import WebKit
 
 @MainActor
@@ -10,7 +11,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     func applicationDidFinishLaunching(_ note: Notification) {
         guard args.count == 5 else {
-            fputs("Usage: webkit-host BUNDLE export|partial|paste|scenario INPUT OUTPUT\n", stderr)
+            fputs("Usage: webkit-host BUNDLE export|partial|paste|scenario|print INPUT OUTPUT\n", stderr)
             exit(1)
         }
         web = WKWebView(frame: NSRect(x: 0, y: 0, width: 720, height: 640))
@@ -48,8 +49,25 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             let input = try JSONSerialization.jsonObject(
                 with: Data(contentsOf: URL(fileURLWithPath: args[3]))) as! [String: Any]
             let result: Any
-            if args[2] == "scenario" {
-                result = try await js("return await window.interop.run(input)", ["input": input])
+            if args[2] == "scenario" || args[2] == "print" {
+                let scenario = try await js("return await window.interop.run(input)", ["input": input])
+                if args[2] == "print" {
+                    let pdfURL = URL(fileURLWithPath: args[4]).appendingPathExtension("pdf")
+                    let info = NSPrintInfo()
+                    info.dictionary()[NSPrintInfo.AttributeKey.jobDisposition] = NSPrintInfo.JobDisposition.save
+                    info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = pdfURL
+                    let operation = web.printOperation(with: info)
+                    operation.showsPrintPanel = false
+                    operation.showsProgressPanel = false
+                    guard operation.run(), let pdf = PDFDocument(url: pdfURL) else {
+                        throw NSError(domain: "Interop", code: 2, userInfo: [NSLocalizedDescriptionKey: "WKWebView print did not produce a PDF"])
+                    }
+                    var output = scenario as? [String: Any] ?? [:]
+                    output["print"] = ["pdf": pdfURL.path, "pages": pdf.pageCount, "text": pdf.string ?? ""]
+                    result = output
+                } else {
+                    result = scenario
+                }
             } else {
                 _ = try await js("return window.interop.load(source, format)", [
                     "source": input["source"] as? String ?? "",

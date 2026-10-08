@@ -7,11 +7,14 @@ const importedImages = new Map<
   string,
   { bytes: Uint8Array; mimeType: string }
 >()
+let currentCaretState
 const editor = await InkKitEditor.mount(
   document.querySelector('#editor'),
   {
     changed() {},
-    stateChanged() {},
+    stateChanged(state) {
+      currentCaretState = state
+    },
     copy() {},
     openLink() {},
     error(error) {
@@ -51,6 +54,7 @@ const capture = () => ({
   snapshot: editor.snapshot(),
   html: view().innerHTML,
   selection: getSelection()?.toString() ?? '',
+  caretState: currentCaretState ?? null,
   error: window.lastError ?? null,
 })
 const load = (source, format = 'md', identity = 'interop') => {
@@ -135,6 +139,22 @@ const findOccurrence = (source, text, occurrence) => {
   }
   return index
 }
+const inspectDOM = (selector) => {
+  const nodes = [...view().querySelectorAll(selector)]
+  return {
+    count: nodes.length,
+    nodes: nodes.map((node) => ({
+      text: node.textContent,
+      html: node.innerHTML,
+      attributes: Object.fromEntries(
+        [...node.attributes].map(({ name, value }) => [name, value]),
+      ),
+      hidden: node.hidden,
+      display: getComputedStyle(node).display,
+      visibility: getComputedStyle(node).visibility,
+    })),
+  }
+}
 const valueAt = (result, path) =>
   path ? path.split('.').reduce((value, key) => value?.[key], result) : result
 
@@ -184,6 +204,44 @@ window.interop = {
           case 'select':
             result = await selectText(operation)
             break
+          case 'dom':
+            result = inspectDOM(operation.selector)
+            break
+          case 'domKeyDown': {
+            const target = view().querySelector(operation.selector)
+            if (!target)
+              throw Error(`Keyboard target not found: ${operation.selector}`)
+            target.focus()
+            target.dispatchEvent(
+              new KeyboardEvent('keydown', {
+                key: operation.key,
+                code: operation.code ?? '',
+                bubbles: true,
+                cancelable: true,
+              }),
+            )
+            result = inspectDOM(operation.selector)
+            break
+          }
+          case 'click': {
+            const target = view().querySelector(operation.selector)
+            if (!target)
+              throw Error(`Click target not found: ${operation.selector}`)
+            target.click()
+            result = inspectDOM(operation.selector)
+            break
+          }
+          case 'setCommentsVisible':
+            editor.setCommentsVisible(operation.visible)
+            result = capture()
+            break
+          case 'setKeymap':
+            editor.setKeymap(operation.bindings)
+            result = true
+            break
+          case 'capture':
+            result = capture()
+            break
           case 'find':
             editor.find(operation.text)
             await settle()
@@ -209,6 +267,20 @@ window.interop = {
               operation.generation ?? generation,
             )
             break
+          case 'pasteExport': {
+            const exported = results[operation.sourceName]
+            if (!exported)
+              throw Error(`Clipboard result not found: ${operation.sourceName}`)
+            if (exported.images?.length)
+              throw Error('pasteExport requires an image-free fixture')
+            await editor.paste({
+              text: exported.text,
+              html: exported.html,
+              ...(operation.markdown ? { markdown: exported.markdown } : {}),
+            })
+            result = capture()
+            break
+          }
           case 'paste':
             await editor.paste(operation.input)
             result = capture()
@@ -267,12 +339,18 @@ window.interop = {
               operation.name ? results[operation.name] : capture(),
               operation.path,
             )
+            const expected = operation.equalsFrom
+              ? valueAt(
+                  results[operation.equalsFrom.name],
+                  operation.equalsFrom.path,
+                )
+              : operation.equals
             if (
-              'equals' in operation &&
-              JSON.stringify(actual) !== JSON.stringify(operation.equals)
+              ('equals' in operation || operation.equalsFrom) &&
+              JSON.stringify(actual) !== JSON.stringify(expected)
             )
               throw Error(
-                `Expected ${operation.path} to equal ${JSON.stringify(operation.equals)}, got ${JSON.stringify(actual)}`,
+                `Expected ${operation.path} to equal ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
               )
             if (
               'includes' in operation &&
