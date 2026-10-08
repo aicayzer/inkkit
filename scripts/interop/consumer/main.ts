@@ -108,8 +108,8 @@ const selectText = async ({ text, occurrence = 0, from = 0, to, selector }) => {
       if (
         position < offset + length ||
         (position === offset + length &&
-          index === 1 &&
-          positions[0] !== positions[1]) ||
+          ((index === 1 && positions[0] !== positions[1]) ||
+            (positions[0] === positions[1] && from === text.length))) ||
         (entry === nodes.at(-1) && position === offset + length)
       )
         return [entry, position - offset]
