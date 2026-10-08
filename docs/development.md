@@ -9,7 +9,7 @@ pnpm format:check
 pnpm build:playground
 ```
 
-`pnpm dev` opens the development server; it does not start a browser automatically. `pnpm test:package` packs the built package, installs it in a fresh consumer, checks declarations and CSS, and builds an offline single-file Vite page. The tested tarball and hash are written to ignored `_local/release/`.
+`pnpm dev` opens the development server; it does not start a browser automatically. `pnpm test:package` packs the built package, installs it in a fresh consumer with an isolated npm cache, checks declarations and CSS, and builds an offline single-file Vite page. The archive and `package-evidence.json` are written to ignored `_local/release/<version>/`, preserving evidence from earlier releases. Evidence records the commit, working-tree state, compressed SHA-256, npm integrity, decompressed tar SHA-256 and offline bundle SHA-256. Commit the candidate before recording final evidence; release verification rejects evidence from a dirty working tree.
 
 The public API is `src/index.ts`. App hosts own persistence, native menus and file access. Regression tests cover formatting, source preservation, clipboard import/export, tables, snapshots and asynchronous image operations. CI uses hosted runners.
 
@@ -19,7 +19,7 @@ App integrations and app releases follow package publication as a separate deliv
 
 ## GitHub workflow
 
-The [InkKit Project](https://github.com/users/aicayzer/projects/3) is the working roadmap. Issues describe outcomes and acceptance criteria; milestones group releases. Later targets are provisional and can be split into further `0.0.x` releases. Keep implementation decisions with their issue rather than duplicating the backlog in documents.
+The [InkKit Project](https://github.com/users/aicayzer/projects/3) is the working roadmap. Issues describe outcomes and acceptance criteria; milestones group releases. Delivery of 0.0.2 and 0.0.3 is authorised, in that order. Targets from 0.0.4 onward are provisional and can be split into further `0.0.x` releases. Keep implementation decisions with their issue rather than duplicating the backlog in documents.
 
 - **Backlog:** scoped work awaiting readiness or dependencies.
 - **Ready:** agreed and sufficiently scoped. This does not start an agent session.
