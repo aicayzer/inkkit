@@ -22,4 +22,6 @@ The optional `ImageAdapter` provides:
 
 The operation context contains document ID, generation and operation ID. Validate it in native callbacks. Alt text, title and the existing `alt|width` convention remain editor metadata. The adapter owns storage, access control and networking. InkKit contains no Marfa types or storage-path assumptions.
 
+Keep imported bytes available while the captured operation is pending and after insertion, including before the host saves its document. Retention and orphan cleanup belong to the host; a sweep based only on saved Markdown can miss an in-flight import or an unsaved edit. Reject stale callbacks without inserting their references into a replacement document.
+
 The `events.error` callback reports asynchronous failures. Hosts with native clipboards use `events.clipboard` to receive ordinary image selections as portable clipboard output. Return a promise that resolves only after the native clipboard write succeeds; reject it on failure. Image Cut awaits this acknowledgement before removing source content. Encode byte arrays explicitly when crossing a WebKit JSON bridge.
