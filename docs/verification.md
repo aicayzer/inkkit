@@ -1,6 +1,6 @@
 # Verification record
 
-Verified on 8 October 2026. This record describes the tested release candidate. The required verification is complete; first publication and registry verification remain pending the maintainer's manual publication.
+Verified on 8 October 2026. Version 0.0.1 is published on npm, and post-publication registry verification is complete.
 
 ## Candidate
 
@@ -14,6 +14,14 @@ Verified on 8 October 2026. This record describes the tested release candidate. 
 The earlier archive, SHA-256 `07943c224e4c1fb47d5b1a49806e1424233f7e323bdd475dbe2b652ae021af07`, was replaced after an actual Obsidian reverse-copy check exposed a heading import defect. The replacement filters the copied encoding metadata and narrowly identified reading-view controls. A reduced native clipboard fixture and regression tests retain arbitrary authored SVG and similarly named content.
 
 Hosted CI passed at documentation commit `15dbd2d`. Its compressed archive has SHA-256 `598398bdd8088319fe7d42ad949cfe49dd91b5aa84e71b8e0757a9f817ec95be`; its decompressed tar is byte-identical to the native-tested archive (tar SHA-256 `705e20c51eaf967c692553b554f0e4c7757bee74dc0a56355f8aad25fa7ebd2f`). Only the compressed representation differs. The manual first publication must use the native-tested archive identified above, and registry verification must compare its npm integrity.
+
+## Registry publication
+
+The maintainer published `@aicayzer/inkkit@0.0.1` from the native-tested archive. The registry metadata and downloaded archive match both hashes above exactly. Installing version `0.0.1` directly from npm in a fresh consumer passed public declaration checks, stylesheet resolution, runtime dependency bundling and a single-file offline build.
+
+Tag `v0.0.1` points to release commit `6ee767a56ed4c8b41fb20c347f5d2f0fa2ad5052`. Its release workflow passed validation and skipped automatic publication, preserving the manual first release. App rollout and later package features remain separate phases.
+
+The supplied npm settings show the expected GitHub repository and `release.yml` trusted publisher, with direct publishing permitted. OIDC publication remains unexercised. The initial connection is pending validation; see the expiry guidance in [the release procedure](releasing.md).
 
 ## Native app integrations
 
