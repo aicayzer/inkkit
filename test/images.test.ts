@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   Editor,
   rootCtx,
@@ -519,4 +520,35 @@ test('unsupported SVG/math/object and authored HTML comments survive clipboard i
     expect(
       editor.ctx.get(editorViewCtx).dom.querySelector('svg,math,object'),
     ).toBe(null)
+  }))
+test('native Obsidian clipboard preserves headings without importing reading-view controls', async () =>
+  run('', async (editor, paste) => {
+    const html = readFileSync(
+      'test/fixtures/obsidian-native-clipboard.txt',
+      'utf8',
+    )
+    await paste.paste({ text: 'Clipboard heading', html })
+    const markdown = serialize(editor.ctx)
+    expect(markdown).toMatch(/^# Clipboard heading\n/)
+    expect(markdown).toContain('**bold**')
+    expect(markdown).toContain('*italic*')
+    expect(markdown).toContain('- first item')
+    expect(markdown).toContain('1. ordered one')
+    expect(markdown).toContain('let answer = 42')
+    expect(markdown).toContain('| Alpha | 42')
+    expect(markdown).not.toMatch(/meta charset|<svg|Disposable note title/)
+    expect(
+      editor.ctx.get(editorViewCtx).dom.querySelector('h1')?.textContent,
+    ).toBe('Clipboard heading')
+  }))
+test('clipboard control filtering preserves authored SVG and similarly named content', async () =>
+  run('', async (editor, paste) => {
+    await paste.paste({
+      text: 'Authored content',
+      html: '<div class="mod-header mod-ui"><p>Authored content</p></div><svg class="svg-icon right-triangle"><path d="M1 1"></path></svg><h1>Plain heading</h1>',
+    })
+    const markdown = serialize(editor.ctx)
+    expect(markdown).toContain('Authored content')
+    expect(markdown).toContain('<svg class="svg-icon right-triangle">')
+    expect(markdown).toContain('# Plain heading')
   }))

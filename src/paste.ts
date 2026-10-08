@@ -183,6 +183,38 @@ export class PasteController {
         const template = document.createElement('template')
         template.innerHTML = input.html
         const container = template.content
+        // Native HTML clipboards add encoding metadata. Obsidian's reading
+        // view also copies its title and collapse controls with document HTML.
+        for (const metadata of container.querySelectorAll('meta[charset]'))
+          metadata.remove()
+        for (const control of container.querySelectorAll(
+          'div.mod-header.mod-ui,div.mod-footer.mod-ui',
+        )) {
+          if (
+            control.querySelector(
+              '.inline-title[contenteditable],.embedded-backlinks',
+            )
+          )
+            control.remove()
+        }
+        for (const heading of container.querySelectorAll(
+          'h1[data-heading],h2[data-heading],h3[data-heading],h4[data-heading],h5[data-heading],h6[data-heading]',
+        )) {
+          for (const control of heading.querySelectorAll(
+            ':scope > span.heading-collapse-indicator.collapse-indicator.collapse-icon',
+          )) {
+            if (
+              control.querySelector(':scope > svg.svg-icon.right-triangle') &&
+              !control.textContent?.trim()
+            )
+              control.remove()
+          }
+        }
+        for (const control of container.querySelectorAll(
+          'pre > button.copy-code-button',
+        )) {
+          if (control.querySelector('svg.svg-icon')) control.remove()
+        }
         const supported = new Set([
           'P',
           'H1',
