@@ -24,4 +24,6 @@ The workflow uses GitHub-hosted runners, Node.js 26 and npm's OIDC authenticatio
 
 Subsequent matching version tags validate and publish the tested tarball. OIDC publication is only proven after such a release succeeds. Do not create a new version merely to test OIDC.
 
+A new trusted-publisher configuration must complete its first successful workflow publication within two days. Otherwise it expires; recreate it when the next actual release is ready. A prior manual publication does not establish that the OIDC workflow works. See [npm's configuration-expiry guidance](https://docs.npmjs.com/trusted-publishers/#trusted-publisher-configuration-expiry).
+
 Stop after first-publication verification. App migrations/releases and the 0.0.2 feature plan require their own delivery phase.
