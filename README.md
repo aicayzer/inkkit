@@ -37,4 +37,6 @@ Markdown includes CommonMark, task lists, strikethrough, autolinks and GFM table
 
 See [the host API](docs/api.md), [preservation and clipboard behavior](docs/preservation.md), [development](docs/development.md), and [releases](docs/releasing.md).
 
+Planned work and release scope are tracked in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [milestones](https://github.com/aicayzer/inkkit/milestones). Later release targets are provisional.
+
 MIT licensed. InkKit builds on the public PadPad and Memos editors; see [NOTICE](NOTICE).

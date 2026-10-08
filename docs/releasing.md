@@ -1,12 +1,16 @@
 # Releases
 
-The first release is `0.0.1`. It is published manually by the maintainer from the exact verified tarball. Do not publish it through CI or tag it before the native interoperability gates pass.
+Release `0.0.1` was published manually from the verified tarball. The workflow retains its `v0.0.1` publication exception. The [verification record](verification.md) contains the first-release evidence.
 
-1. Run the checks in `development.md`, including isolated native integrations and external clipboard checks.
-2. Record the release commit, tarball SHA-256, npm integrity and verification results. Review the packed file allowlist.
-3. Tag the reviewed commit `v0.0.1`. The release workflow validates and packages this tag, but explicitly skips its publish job.
-4. From the repository directory, the maintainer runs `npm login && npm publish ./_local/release/aicayzer-inkkit-0.0.1.tgz --access public`.
-5. Verify `npm view @aicayzer/inkkit@0.0.1 version dist.integrity` and install the registry package in a clean consumer. Compare its integrity with the verified tarball.
+## Release gate
+
+Pushing a later matching version tag starts npm publication. Complete the gate **before pushing the tag**, within an explicitly authorised release session.
+
+1. Confirm the milestone's acceptance criteria and review compatibility changes. Additive work can use the planned pre-1.0 `0.0.x` series; document public API changes and migration requirements rather than treating every increment as a bug fix.
+2. Run the checks in [development](development.md), including relevant isolated native integrations and clipboard checks. Update API and supported-syntax documentation to match the implemented behaviour.
+3. Record the release commit, tested tarball SHA-256, npm integrity and verification results in the release issue. Review the packed file allowlist and confirm version/tag agreement.
+4. Check the npm trusted-publisher configuration, then tag the reviewed commit `v<version>` and push that tag. Inspect the hosted workflow's validation and publication results.
+5. Verify npm version and integrity, and install the published package in a clean consumer. Compare registry and workflow artefact integrity with the tested tarball recorded in the release issue. Resolve any mismatch before closing the release issue and milestone.
 
 Do not repeat a publish after an unknown outcome without checking the registry. A published name/version cannot be replaced.
 
@@ -26,4 +30,4 @@ Subsequent matching version tags validate and publish the tested tarball. OIDC p
 
 A new trusted-publisher configuration must complete its first successful workflow publication within two days. Otherwise it expires; recreate it when the next actual release is ready. A prior manual publication does not establish that the OIDC workflow works. See [npm's configuration-expiry guidance](https://docs.npmjs.com/trusted-publishers/#trusted-publisher-configuration-expiry).
 
-Stop after first-publication verification. App migrations/releases and the 0.0.2 feature plan require their own delivery phase.
+Complete the authorised release's verification and handover. App adoption, app releases and the next feature milestone remain separate delivery work.
