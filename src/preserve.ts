@@ -95,14 +95,35 @@ function retainText(raw: string, before: string, after: string): string {
 
 function retainBoundaryWhitespace(raw: string, canonical: string): string {
   // A middle-of-line space becomes indentation or trimmed text at a block edge.
+  const token = '(?:[ \\t]|&#(?:[xX]0*(?:20|9)|0*(?:32|9));|&Tab;)'
+  const decoded = (value: string): string =>
+    (value.match(new RegExp(token, 'g')) ?? [])
+      .map((value) =>
+        value === '\t' || /(?:9;|Tab;)$/.test(value) ? '\t' : ' ',
+      )
+      .join('')
+  const encode = (value: string): string =>
+    value.replace(/[ \t]/g, (value) => (value === '\t' ? '&#x9;' : '&#x20;'))
   const start = /^[ \t]+/.exec(raw)?.[0]
-  const encodedStart = /^(?:&#(?:x20|x9|32|9);|[ \t])+/i.exec(canonical)?.[0]
-  if (start && encodedStart?.includes('&#'))
-    raw = encodedStart + raw.slice(start.length)
+  const rawStart = new RegExp(`^${token}+`).exec(raw)?.[0]
+  const encodedStart = new RegExp(`^${token}+`).exec(canonical)?.[0]
+  if (
+    start &&
+    rawStart &&
+    encodedStart?.includes('&') &&
+    decoded(rawStart) === decoded(encodedStart)
+  )
+    raw = encode(start) + raw.slice(start.length)
   const end = /[ \t]+$/.exec(raw)?.[0]
-  const encodedEnd = /(?:&#(?:x20|x9|32|9);|[ \t])+$/i.exec(canonical)?.[0]
-  if (end && encodedEnd?.includes('&#'))
-    raw = raw.slice(0, -end.length) + encodedEnd
+  const rawEnd = new RegExp(`${token}+$`).exec(raw)?.[0]
+  const encodedEnd = new RegExp(`${token}+$`).exec(canonical)?.[0]
+  if (
+    end &&
+    rawEnd &&
+    encodedEnd?.includes('&') &&
+    decoded(rawEnd) === decoded(encodedEnd)
+  )
+    raw = raw.slice(0, -end.length) + encode(end)
   return raw
 }
 
