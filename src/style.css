@@ -624,6 +624,20 @@ body {
 }
 
 @media print {
+  html,
+  body,
+  #editor,
+  .ProseMirror {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .milkdown-table-block .table-wrapper,
+  .ProseMirror pre {
+    overflow: visible;
+  }
+
   .inkkit-comment,
   [data-inkkit-comments-visible='true'] .inkkit-comment,
   [data-inkkit-callout-toggle],

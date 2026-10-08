@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { undo } from '@milkdown/kit/prose/history'
+import { TextSelection } from '@milkdown/kit/prose/state'
 import { InkKitEditor } from '../src/editor'
 
 async function run(
@@ -177,3 +178,104 @@ test('delimiter-looking footnote identifiers stay literal while body comments ar
       expect(after.markdown).toContain('%%Hidden%%')
     },
   ))
+
+test.each(['&#10;', '&#13;'])(
+  'entity %s in a one-line title remains title content through editing and ordinary self-paste',
+  (entity) => {
+    const source = `> [!NOTE] A ${entity} B\n> Body\n`
+    return run(source, async (editor, ctx, root) => {
+      const character = entity === '&#10;' ? '\n' : '\r'
+      expect(root.querySelector('.inkkit-callout-title')!.textContent).toBe(
+        `A ${character} B`,
+      )
+      expect(ctx.get(editorViewCtx).state.doc.firstChild!.textContent).toBe(
+        'Body',
+      )
+      editor.find('Body')
+      editor.insertText('Edited', 1)
+      expect(editor.snapshot().text).toBe(source.replace('Body', 'Edited'))
+      const copied = await editor.clipboardSnapshot()
+      expect(copied.text).toContain(`A ${character} B`)
+      const view = ctx.get(editorViewCtx)
+      undo(view.state, view.dispatch)
+      expect(editor.snapshot().text).toBe(source)
+      editor.loadDocument({
+        documentId: 'selfpaste',
+        generation: 2,
+        format: 'md',
+        text: '',
+      })
+      await editor.paste({ text: copied.text, html: copied.html })
+      expect(editor.snapshot().text).toBe(source.replace('Body', 'Edited'))
+      editor.loadDocument({
+        documentId: 'reopened',
+        generation: 3,
+        format: 'md',
+        text: editor.snapshot().text,
+      })
+      expect(root.querySelector('.inkkit-callout-title')!.textContent).toBe(
+        `A ${character} B`,
+      )
+      expect(editor.snapshot().dirty).toBe(false)
+    })
+  },
+)
+
+test.each([
+  '- > [!NOTE] Title\n  > Body\n',
+  '- <br />\n\n  > [!NOTE] Title\n  > Body\n',
+])(
+  'editing a first-child list callout retains authored leading spacers: %s',
+  (source) =>
+    run(source, async (editor, ctx) => {
+      editor.find('Body')
+      editor.insertText('Edited', 1)
+      const saved = editor.snapshot().text
+      expect(saved).toBe(source.replace('Body', 'Edited'))
+      const copied = await editor.clipboardSnapshot()
+      expect(copied.text).toContain('Title')
+      expect(copied.text).toContain('Edited')
+      const view = ctx.get(editorViewCtx)
+      undo(view.state, view.dispatch)
+      expect(editor.snapshot().text).toBe(source)
+      editor.loadDocument({
+        documentId: 'reopened',
+        generation: 2,
+        format: 'md',
+        text: saved,
+      })
+      expect(editor.snapshot().text).toBe(saved)
+      expect(editor.snapshot().dirty).toBe(false)
+      editor.find('Edited')
+      editor.insertText('Again', 2)
+      expect(editor.snapshot().text).toBe(source.replace('Body', 'Again'))
+      editor.loadDocument({
+        documentId: 'selfpaste',
+        generation: 3,
+        format: 'md',
+        text: '',
+      })
+      await editor.paste({ text: copied.text, html: copied.html })
+      expect(editor.snapshot().text).toBe(saved)
+    }),
+)
+
+test('typing into the required list paragraph turns it into authored content without blocking save', () =>
+  run('- > [!NOTE] Title\n  > Body\n', (editor, ctx) => {
+    const view = ctx.get(editorViewCtx)
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)),
+    )
+    editor.insertText('Lead', 1)
+    const saved = editor.snapshot().text
+    expect(saved).toContain('- Lead')
+    expect(saved).toContain('> [!NOTE] Title')
+    editor.loadDocument({
+      documentId: 'reopened',
+      generation: 2,
+      format: 'md',
+      text: saved,
+    })
+    expect(editor.snapshot().text).toBe(saved)
+    expect(view.state.doc.textContent).toBe('LeadBody')
+  }))

@@ -1,4 +1,5 @@
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
+import { remarkCtx } from '@milkdown/kit/core'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { Nodes, Parent, Root, RootContent } from 'mdast'
 import type { Processor } from 'unified'
@@ -11,6 +12,7 @@ interface Callout extends Parent {
   fold: string
   title: string
   titleSource: string
+  listPlaceholder: boolean
   children: RootContent[]
 }
 declare module 'mdast' {
@@ -23,6 +25,18 @@ declare module 'mdast' {
 }
 
 const kinds = new Set(['NOTE', 'TIP', 'IMPORTANT', 'WARNING', 'CAUTION'])
+
+function plainHeader(
+  processor: Pick<Processor, 'parse'>,
+  source: string,
+): string | undefined {
+  const node = (processor.parse(source) as Root).children[0]
+  return node?.type === 'paragraph' &&
+    node.children.length === 1 &&
+    node.children[0]?.type === 'text'
+    ? node.children[0].value
+    : undefined
+}
 
 const calloutHandler: Handle = (untyped, parent, state, info) => {
   const node = untyped as Callout
@@ -37,13 +51,14 @@ const calloutHandler: Handle = (untyped, parent, state, info) => {
 }
 
 function remarkCallouts(this: Processor) {
+  const processor = this
   const data = this.data() as Record<string, unknown[] | undefined>
   ;(data.toMarkdownExtensions ??= []).push({
     handlers: { inkkitCallout: calloutHandler },
   })
   return (tree: Root, file: { value: unknown }) => {
     const source = String(file.value).replace(/^\uFEFF/, '')
-    const visit = (node: Nodes): Nodes => {
+    const visit = (node: Nodes, parent?: Nodes, index?: number): Nodes => {
       if (node.type === 'blockquote') {
         const start = node.position?.start.offset,
           end = node.position?.end.offset
@@ -54,9 +69,11 @@ function remarkCallouts(this: Processor) {
             header,
           )
           const first = node.children[0]
+          const decodedHeader = plainHeader(processor, header)
           // A bounded header occupies one unformatted line; other variants stay source.
           if (
             !match ||
+            decodedHeader == null ||
             !kinds.has(match[2]!.toUpperCase()) ||
             /^[+-](?:[ \t]|[+-])/.test(match[4] ?? '') ||
             first?.type !== 'paragraph' ||
@@ -68,7 +85,9 @@ function remarkCallouts(this: Processor) {
               position: node.position,
             }
           const text = first.children[0]
-          const lineEnd = text.value.indexOf('\n')
+          // Entities can decode to newlines without ending the authored header line.
+          const ending = /^\r?\n/.exec(text.value.slice(decodedHeader.length))
+          const lineEnd = ending ? decodedHeader.length : -1
           if (lineEnd < 0 && first.children.length > 1)
             return {
               type: 'inkkitLiteral',
@@ -77,7 +96,7 @@ function remarkCallouts(this: Processor) {
             }
           const children = [...node.children]
           if (lineEnd >= 0) {
-            const remaining = text.value.slice(lineEnd + 1)
+            const remaining = text.value.slice(lineEnd + ending![0].length)
             const firstStart = text.position?.start.offset
             const token =
               firstStart == null
@@ -122,20 +141,23 @@ function remarkCallouts(this: Processor) {
             kind: match[2]!.toUpperCase(),
             marker: match[1]!,
             fold: match[3]!,
-            title: text.value
-              .split(/\r?\n/)[0]!
-              .replace(/^\[![A-Za-z]+\][+-]?[ \t]*/, '')
+            title: decodedHeader
+              .slice(header.length - (match[4]?.length ?? 0))
               .trimEnd(),
             titleSource: match[4]?.trimEnd() ?? '',
-            children: children.map(visit) as RootContent[],
+            listPlaceholder: parent?.type === 'listItem' && index === 0,
+            children: children.map((child) => visit(child)) as RootContent[],
             position: node.position,
           }
         }
       }
-      if ('children' in node) node.children = node.children.map(visit) as never
+      if ('children' in node)
+        node.children = node.children.map((child, index) =>
+          visit(child, node, index),
+        ) as never
       return node
     }
-    tree.children = tree.children.map(visit) as RootContent[]
+    tree.children = tree.children.map((node) => visit(node)) as RootContent[]
   }
 }
 
@@ -144,7 +166,7 @@ export const remarkCalloutsPlugin = $remark(
   () => remarkCallouts,
 )
 
-export const calloutSchema = $node('inkkit_callout', () => ({
+export const calloutSchema = $node('inkkit_callout', (ctx) => ({
   group: 'block',
   content: 'block+',
   defining: true,
@@ -154,6 +176,7 @@ export const calloutSchema = $node('inkkit_callout', () => ({
     fold: { default: '' },
     title: { default: '' },
     titleSource: { default: null },
+    listPlaceholder: { default: false },
   },
   parseDOM: [
     {
@@ -166,11 +189,20 @@ export const calloutSchema = $node('inkkit_callout', () => ({
         ).toUpperCase()
         const marker = dom.getAttribute('data-inkkit-marker') ?? `[!${kind}]`
         const fold = dom.getAttribute('data-inkkit-fold') ?? ''
+        const titleSource = dom.getAttribute('data-inkkit-title')
+        const placeholder = dom.getAttribute('data-inkkit-list-placeholder')
+        const previous = dom.previousElementSibling
+        const titleHeader =
+          titleSource == null
+            ? undefined
+            : plainHeader(ctx.get(remarkCtx), `${marker} ${titleSource}`)
         if (
           !kinds.has(kind) ||
           !/^\[![A-Za-z]+\]$/.test(marker) ||
           marker.slice(2, -1).toUpperCase() !== kind ||
-          !['', '+', '-'].includes(fold)
+          !['', '+', '-'].includes(fold) ||
+          (titleSource != null &&
+            (/[\r\n]/.test(titleSource) || titleHeader == null))
         )
           return false
         return {
@@ -178,10 +210,18 @@ export const calloutSchema = $node('inkkit_callout', () => ({
           marker,
           fold,
           title:
-            dom.getAttribute('data-inkkit-title') === ''
-              ? ''
-              : (dom.querySelector('.inkkit-callout-title')?.textContent ?? ''),
-          titleSource: dom.getAttribute('data-inkkit-title'),
+            titleHeader == null
+              ? (dom.querySelector('.inkkit-callout-title')?.textContent ?? '')
+              : titleHeader.slice(marker.length + 1).trimEnd(),
+          titleSource,
+          listPlaceholder:
+            placeholder == null
+              ? dom.parentElement?.tagName === 'LI' &&
+                (!previous ||
+                  (previous.tagName === 'P' &&
+                    !previous.textContent &&
+                    !previous.childElementCount))
+              : placeholder === 'true',
         }
       },
     },
@@ -194,6 +234,7 @@ export const calloutSchema = $node('inkkit_callout', () => ({
       'data-inkkit-marker': node.attrs.marker,
       'data-inkkit-fold': node.attrs.fold,
       'data-inkkit-title': node.attrs.titleSource ?? node.attrs.title,
+      'data-inkkit-list-placeholder': String(node.attrs.listPlaceholder),
     },
     [
       'strong',
@@ -214,6 +255,7 @@ export const calloutSchema = $node('inkkit_callout', () => ({
         fold: node.fold,
         title: node.title,
         titleSource: node.titleSource,
+        listPlaceholder: node.listPlaceholder,
       })
       state.next(node.children)
       state.closeNode()
@@ -222,6 +264,19 @@ export const calloutSchema = $node('inkkit_callout', () => ({
   toMarkdown: {
     match: (node) => node.type.name === 'inkkit_callout',
     runner(state, node) {
+      const parent = state.top()
+      const first = parent?.children?.[0]
+      // Lists require a leading paragraph even when their authored first block is a callout.
+      if (
+        node.attrs.listPlaceholder &&
+        parent?.type === 'listItem' &&
+        parent.children?.length === 1 &&
+        first?.type === 'paragraph' &&
+        first.children?.length === 1 &&
+        first.children[0]?.type === 'html' &&
+        first.children[0].value === '<br />'
+      )
+        parent.children = []
       state.openNode('inkkitCallout', undefined, { ...node.attrs })
       state.next(node.content)
       state.closeNode()

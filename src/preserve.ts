@@ -331,6 +331,7 @@ function semanticSignature(doc: ProseNode): string {
       [
         'referenceContent',
         'referenceType',
+        'listPlaceholder',
         'marker',
         'id',
         'label',
