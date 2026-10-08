@@ -192,6 +192,23 @@ export class PasteController {
         const template = document.createElement('template')
         template.innerHTML = input.html
         const container = template.content
+        if (markdown == null) {
+          // Native destinations can keep node metadata after dropping the
+          // Markdown wrapper and its definitions. Import their visible HTML.
+          for (const element of container.querySelectorAll(
+            '[data-inkkit-reference],[data-inkkit-footnote-reference],[data-inkkit-footnote-definition]',
+          )) {
+            for (const name of [
+              'data-inkkit-reference',
+              'data-inkkit-footnote-reference',
+              'data-inkkit-footnote-definition',
+              'data-inkkit-label',
+              'data-inkkit-reference-type',
+              'data-inkkit-reference-content',
+            ])
+              element.removeAttribute(name)
+          }
+        }
         // Native HTML clipboards add encoding metadata. Obsidian's reading
         // view also copies its title and collapse controls with document HTML.
         for (const metadata of container.querySelectorAll('meta[charset]'))
