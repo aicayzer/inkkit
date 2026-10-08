@@ -1,0 +1,46 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      - run: npm install --global pnpm@11.0.9
+      - run: pnpm install --frozen-lockfile
+      - name: Validate release tag
+        run: node -e "const p=require('./package.json');if(process.env.GITHUB_REF_NAME!=='v'+p.version)process.exit(1)"
+      - run: pnpm format:check
+      - run: pnpm check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: _local/release/
+  publish:
+    needs: validate
+    # The first release is deliberately published by the maintainer from the
+    # tested tarball. Later tags use npm's configured trusted publisher.
+    if: github.ref_name != 'v0.0.1'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-package
+          path: release
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      - name: Publish through npm trusted publishing
+        run: npm publish ./release/*.tgz --access public --provenance

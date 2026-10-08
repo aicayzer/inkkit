@@ -11,12 +11,25 @@ import { InkKitEditor } from '@aicayzer/inkkit'
 import '@aicayzer/inkkit/style.css'
 
 const editor = await InkKitEditor.mount(document.getElementById('editor')!, {
-  changed(text, generation) { /* Notify the host. */ },
-  stateChanged(state) { /* Update formatting controls. */ },
-  openLink(href) { /* Open through the host. */ },
-  copy(text) { /* Write code-block text to the clipboard. */ },
+  changed(text, generation) {
+    /* Notify the host. */
+  },
+  stateChanged(state) {
+    /* Update formatting controls. */
+  },
+  openLink(href) {
+    /* Open through the host. */
+  },
+  copy(text) {
+    /* Write code-block text to the clipboard. */
+  },
 })
-editor.loadDocument({ documentId: 'note', generation: 1, format: 'md', text: '# Hello\n' })
+editor.loadDocument({
+  documentId: 'note',
+  generation: 1,
+  format: 'md',
+  text: '# Hello\n',
+})
 const snapshot = editor.snapshot(1)
 ```
 
