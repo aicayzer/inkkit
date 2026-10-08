@@ -562,3 +562,93 @@ body {
   font-size: 0.8em;
   opacity: 0.7;
 }
+
+.ProseMirror mark {
+  background: color-mix(in srgb, #e5c041 38%, transparent);
+  color: inherit;
+}
+
+.ProseMirror .inkkit-callout {
+  --callout-color: var(--accent);
+  border-inline-start: 3px solid var(--callout-color);
+  padding: 0.65rem 1rem;
+  background: color-mix(in srgb, var(--callout-color) 7%, transparent);
+}
+
+.ProseMirror [data-inkkit-callout='TIP'] {
+  --callout-color: #30a46c;
+}
+.ProseMirror [data-inkkit-callout='IMPORTANT'] {
+  --callout-color: #8e4ec6;
+}
+.ProseMirror [data-inkkit-callout='WARNING'] {
+  --callout-color: #d28b00;
+}
+.ProseMirror [data-inkkit-callout='CAUTION'] {
+  --callout-color: #e5484d;
+}
+
+.inkkit-callout-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+[data-inkkit-callout-toggle] {
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  padding: 0.25rem;
+  cursor: pointer;
+}
+
+.inkkit-callout[data-inkkit-folded='true'] > .inkkit-callout-body {
+  display: none;
+}
+
+.inkkit-comment {
+  display: none;
+}
+
+[data-inkkit-comments-visible='true'] .inkkit-comment {
+  display: inline;
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  color: var(--muted);
+  background: var(--code-bg);
+}
+
+[data-inkkit-comments-visible='true'] .inkkit-comment-block {
+  display: block;
+  padding: 0.5rem;
+}
+
+@media print {
+  html,
+  body,
+  #editor,
+  .ProseMirror {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .milkdown-table-block .table-wrapper,
+  .ProseMirror pre {
+    overflow: visible;
+  }
+
+  .inkkit-comment,
+  [data-inkkit-comments-visible='true'] .inkkit-comment,
+  [data-inkkit-callout-toggle],
+  .ProseMirror pre .copy,
+  .milkdown-table-block .handle,
+  .milkdown-table-block .button-group,
+  .milkdown-table-block .line-handle {
+    display: none !important;
+  }
+
+  .inkkit-callout[data-inkkit-folded='true'] > .inkkit-callout-body {
+    display: block !important;
+  }
+}

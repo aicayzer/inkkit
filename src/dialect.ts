@@ -40,6 +40,9 @@ import { $remark } from '@milkdown/kit/utils'
 import { autolinkInputRule } from './autolink'
 import { literalBlock, createLiteralPreservation } from './literals'
 import { references, remarkReferencesPlugin } from './references'
+import { callouts, remarkCalloutsPlugin } from './callouts'
+import { inlineHighlight } from './inline-highlight'
+import { comments, remarkCommentsPlugin } from './comments'
 import { gfmTableFromMarkdown, gfmTableToMarkdown } from 'mdast-util-gfm-table'
 import { gfmTable } from 'micromark-extension-gfm-table'
 import type { Link, Parents, PhrasingContent } from 'mdast'
@@ -331,10 +334,15 @@ export const tables: MilkdownPlugin[] = [
 export function createDialect(images: boolean): MilkdownPlugin[] {
   return [
     remarkReferencesPlugin,
+    remarkCalloutsPlugin,
+    remarkCommentsPlugin,
     // Protect unsupported inline HTML before the empty-line plugin consumes break nodes.
     createLiteralPreservation(images),
     commonmarkWithLiteralReferences,
     references,
+    callouts,
+    comments,
+    inlineHighlight,
     preserveSpacerParagraphs,
     visibleSoftbreaks,
     normalizedImages,

@@ -250,6 +250,7 @@ export class PasteController {
           'H5',
           'H6',
           'STRONG',
+          'MARK',
           'B',
           'EM',
           'I',

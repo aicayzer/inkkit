@@ -2,6 +2,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { Fragment, type Node } from '@milkdown/kit/prose/model'
 import { serialize } from './dialect'
 import { normaliseLabel } from './references'
+import { shareableFragment } from './comments'
 
 function key(node: Node): string | undefined {
   if (node.type.name === 'reference_definition')
@@ -78,6 +79,8 @@ export function referenceMetadata(
   doc: Node,
   content: Fragment,
 ): string | undefined {
+  doc = doc.copy(shareableFragment(doc.content))
+  content = shareableFragment(content)
   let references = false,
     index = 0
   const rewrite = (node: Node): Node => {
@@ -143,6 +146,7 @@ function allLabels(doc: Node): Map<string, Set<string>> {
 const rawReferences = /(?<![\\!])\[([^\]]+)\](?:\[([^\]]*)\])?(?!\()/g
 function isCode(node: Node): boolean {
   return (
+    node.type.name.startsWith('comment_') ||
     node.type.name === 'code_block' ||
     node.marks.some((mark) => mark.type.name === 'inlineCode')
   )

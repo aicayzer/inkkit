@@ -3,11 +3,14 @@ import { spawnSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 
+const version = process.argv[5] ?? '0.0.2'
+if (!['0.0.2', '0.0.3'].includes(version))
+  throw Error('Native fixture version must be 0.0.2 or 0.0.3')
 const bundle = resolve(
   process.argv[2] ?? '_local/interop/consumer/dist/index.html',
 )
 const destination = resolve(
-  process.argv[3] ?? '_local/interop/regression-0.0.2',
+  process.argv[3] ?? `_local/interop/regression-${version}`,
 )
 const host = resolve(process.argv[4] ?? '_local/interop/webkit-host')
 await mkdir(destination, { recursive: true })
@@ -176,7 +179,334 @@ const scenarios = {
     ],
   },
 }
+const excludes = (path, value, name) => ({
+  op: 'assert',
+  path,
+  excludes: value,
+  name,
+})
+const same = (path, resultName, resultPath, name) => ({
+  op: 'assert',
+  path,
+  name,
+  equalsFrom: { name: resultName, path: resultPath },
+})
+const calloutSource =
+  '> [!NOTE] Native &#13; title\n> Native note body.\n>  Indented &amp; native source.\n\n> [!TIP]+ Native &#10; title\n> Native tip body.\n\n> [!IMPORTANT]\n> Native important body.\n\n> [!WARNING]- Native folded title\n> Native folded body.\n\n- > [!CAUTION] Native nested title\n  > Native caution body.\n\n> [!TODO]\n> Unsupported native callout.\n\n> [!NOTE] + Spaced fold stays literal\n> Unsupported native fold.\n'
+const commentSource =
+  'Public [link][Shared] <!--INLINE_SECRET <script>window.commentExecuted=true</script>--> beside %%OBSIDIAN_SECRET%% text.\n\n<!--\nBLOCK_SECRET\n-->\n\n%%\nOBSIDIAN_BLOCK_SECRET\n%%\n\n[Shared]: https://example.com/shared\n'
+if (version === '0.0.3')
+  Object.assign(scenarios, {
+    'callout-lifecycle': {
+      source: calloutSource,
+      operations: [
+        assert('snapshot.text', calloutSource),
+        { op: 'dom', selector: '[data-inkkit-callout]', name: 'callouts' },
+        assert('count', 5, 'callouts'),
+        {
+          op: 'dom',
+          selector:
+            '[data-inkkit-callout="WARNING"] [data-inkkit-callout-toggle]',
+          name: 'fold',
+        },
+        assert('nodes.0.attributes.aria-expanded', 'false', 'fold'),
+        { op: 'snapshot', name: 'beforeFold' },
+        {
+          op: 'domKeyDown',
+          selector:
+            '[data-inkkit-callout="WARNING"] [data-inkkit-callout-toggle]',
+          key: 'Enter',
+          name: 'expanded',
+        },
+        assert('nodes.0.attributes.aria-expanded', 'true', 'expanded'),
+        same('snapshot.text', 'beforeFold', 'text'),
+        same('snapshot.revision', 'beforeFold', 'revision'),
+        same('snapshot.dirty', 'beforeFold', 'dirty'),
+        {
+          op: 'domKeyDown',
+          selector:
+            '[data-inkkit-callout="WARNING"] [data-inkkit-callout-toggle]',
+          key: ' ',
+          name: 'collapsed',
+        },
+        assert('nodes.0.attributes.aria-expanded', 'false', 'collapsed'),
+        { op: 'export', name: 'foldedExport' },
+        contains('text', 'Native folded body.', 'foldedExport'),
+        contains('html', 'Native folded body.', 'foldedExport'),
+        excludes('html', 'data-inkkit-callout-toggle', 'foldedExport'),
+        excludes('html', '<button', 'foldedExport'),
+        {
+          op: 'select',
+          text: 'Native note body.',
+          selector: '[data-inkkit-callout="NOTE"] .inkkit-callout-body',
+        },
+        { op: 'insertText', text: 'Edited native note body.' },
+        contains(
+          'snapshot.text',
+          '> [!NOTE] Native &#13; title\n> Edited native note body.',
+        ),
+        contains('snapshot.text', '> [!WARNING]- Native folded title'),
+        contains('snapshot.text', '>  Indented &amp; native source.'),
+        contains('snapshot.text', '> [!TODO]\n> Unsupported native callout.'),
+        contains('snapshot.text', '> [!NOTE] + Spaced fold stays literal'),
+        {
+          op: 'select',
+          text: 'Native caution body.',
+          selector: '[data-inkkit-callout="CAUTION"] .inkkit-callout-body',
+        },
+        { op: 'insertText', text: 'Edited native caution body.' },
+        contains(
+          'snapshot.text',
+          '- > [!CAUTION] Native nested title\n  > Edited native caution body.',
+        ),
+        {
+          op: 'select',
+          text: 'Native tip body.',
+          selector: '[data-inkkit-callout="TIP"] .inkkit-callout-body',
+        },
+        { op: 'insertText', text: 'Edited native tip body.' },
+        contains(
+          'snapshot.text',
+          '> [!TIP]+ Native &#10; title\n> Edited native tip body.',
+        ),
+        { op: 'save' },
+        { op: 'reopen' },
+        assert('snapshot.dirty', false),
+        {
+          op: 'select',
+          text: 'Edited native note body.',
+          selector: '[data-inkkit-callout="NOTE"] .inkkit-callout-body',
+        },
+        { op: 'export', all: false, name: 'calloutSelection' },
+        contains('text', 'Edited native note body.', 'calloutSelection'),
+        { op: 'export', name: 'authoredCalloutTitles' },
+        { op: 'load', source: '' },
+        { op: 'pasteExport', sourceName: 'authoredCalloutTitles' },
+        contains('snapshot.text', '> [!NOTE] Native &#13; title'),
+        contains('snapshot.text', '> [!TIP]+ Native &#10; title'),
+        contains('snapshot.text', '- > [!CAUTION] Native nested title'),
+        { op: 'load', source: 'Replacement document' },
+        assert('snapshot.text', 'Replacement document'),
+      ],
+    },
+    'highlight-lifecycle': {
+      source:
+        'Before ==marked== **bold**==adjacent== and \\==escaped\\== plus `==code==`.\n',
+      operations: [
+        assert(
+          'snapshot.text',
+          'Before ==marked== **bold**==adjacent== and \\==escaped\\== plus `==code==`.\n',
+        ),
+        { op: 'dom', selector: 'mark', name: 'marks' },
+        assert('count', 2, 'marks'),
+        { op: 'select', text: 'marked' },
+        { op: 'capture', name: 'highlightCaret' },
+        contains('caretState.marks', 'highlight', 'highlightCaret'),
+        { op: 'insertText', text: 'edited' },
+        contains('snapshot.text', '==edited=='),
+        contains('snapshot.text', '**bold**==adjacent=='),
+        contains('snapshot.text', '\\==escaped\\=='),
+        contains('snapshot.text', '`==code==`'),
+        { op: 'select', text: 'Before' },
+        { op: 'format', command: 'highlight' },
+        contains('snapshot.text', '==Before=='),
+        { op: 'keyDown', key: 'z', code: 'KeyZ', metaKey: true },
+        excludes('snapshot.text', '==Before=='),
+        { op: 'setKeymap', bindings: { highlight: ['Mod-Shift-h'] } },
+        { op: 'select', text: 'Before' },
+        {
+          op: 'keyDown',
+          key: 'h',
+          code: 'KeyH',
+          metaKey: true,
+          shiftKey: true,
+          name: 'shortcut',
+        },
+        assert('', true, 'shortcut'),
+        contains('snapshot.text', '==Before=='),
+        { op: 'export', name: 'highlightExport' },
+        contains('html', '<mark>', 'highlightExport'),
+        { op: 'save' },
+        { op: 'reopen' },
+        contains('snapshot.text', '==Before=='),
+        assert('snapshot.dirty', false),
+        { op: 'select', text: 'edited' },
+        { op: 'export', all: false, name: 'highlightSelection' },
+        contains('markdown', '==edited==', 'highlightSelection'),
+        contains('html', '<mark>', 'highlightSelection'),
+        {
+          op: 'paste',
+          input: { text: 'incoming', html: '<mark>incoming</mark>' },
+        },
+        contains('snapshot.text', '==incoming=='),
+      ],
+    },
+    'comments-lifecycle': {
+      source: commentSource,
+      operations: [
+        assert('snapshot.text', commentSource),
+        { op: 'dom', selector: '.inkkit-comment', name: 'hiddenComments' },
+        assert('count', 4, 'hiddenComments'),
+        assert('nodes.0.display', 'none', 'hiddenComments'),
+        { op: 'snapshot', name: 'beforeVisibility' },
+        { op: 'setCommentsVisible', visible: true },
+        same('snapshot.text', 'beforeVisibility', 'text'),
+        same('snapshot.revision', 'beforeVisibility', 'revision'),
+        same('snapshot.dirty', 'beforeVisibility', 'dirty'),
+        { op: 'dom', selector: '.inkkit-comment', name: 'visibleComments' },
+        assert('count', 4, 'visibleComments'),
+        assert('nodes.0.display', 'inline', 'visibleComments'),
+        assert('nodes.2.display', 'block', 'visibleComments'),
+        {
+          op: 'select',
+          text: 'INLINE_SECRET',
+          selector: '[data-inkkit-comment="html"]',
+        },
+        { op: 'insertText', text: 'EDITED_SECRET' },
+        contains('snapshot.text', '<!--EDITED_SECRET'),
+        {
+          op: 'select',
+          text: 'OBSIDIAN_SECRET',
+          selector: '[data-inkkit-comment="obsidian"]',
+        },
+        { op: 'export', all: false, name: 'commentSelection' },
+        assert('text', '', 'commentSelection'),
+        excludes('html', 'OBSIDIAN_SECRET', 'commentSelection'),
+        contains('markdown', 'OBSIDIAN_SECRET', 'commentSelection'),
+        { op: 'insertText', text: 'EDITED_OBSIDIAN_SECRET' },
+        contains('snapshot.text', '%%EDITED_OBSIDIAN_SECRET%%'),
+        {
+          op: 'select',
+          text: 'BLOCK_SECRET',
+          selector: '.inkkit-comment-block[data-inkkit-comment="html"]',
+        },
+        { op: 'insertText', text: 'EDITED_BLOCK_SECRET' },
+        contains('snapshot.text', '<!--\nEDITED_BLOCK_SECRET\n-->'),
+        { op: 'export', name: 'revealedExport' },
+        contains('markdown', 'EDITED_SECRET', 'revealedExport'),
+        contains('markdown', 'BLOCK_SECRET', 'revealedExport'),
+        excludes('text', 'SECRET', 'revealedExport'),
+        excludes('html', 'SECRET', 'revealedExport'),
+        excludes('html', 'commentExecuted', 'revealedExport'),
+        { op: 'dom', selector: 'script', name: 'scripts' },
+        assert('count', 0, 'scripts'),
+        { op: 'snapshot', name: 'beforeHide' },
+        { op: 'setCommentsVisible', visible: false },
+        same('snapshot.text', 'beforeHide', 'text'),
+        same('snapshot.revision', 'beforeHide', 'revision'),
+        same('snapshot.dirty', 'beforeHide', 'dirty'),
+        { op: 'save' },
+        { op: 'reopen' },
+        contains('snapshot.text', 'EDITED_SECRET'),
+        assert('snapshot.dirty', false),
+        { op: 'export', name: 'hiddenExport' },
+        excludes('text', 'SECRET', 'hiddenExport'),
+        excludes('html', 'SECRET', 'hiddenExport'),
+        { op: 'save', name: 'beforeCommentPaste' },
+        { op: 'select', text: 'Public' },
+        {
+          op: 'paste',
+          input: {
+            text: 'Incoming',
+            markdown:
+              'Incoming <!--PASTED_SECRET--> %%PASTED_OBSIDIAN_SECRET%%',
+          },
+        },
+        contains('snapshot.text', 'PASTED_SECRET'),
+        { op: 'export', name: 'pastedComments' },
+        excludes('html', 'PASTED_SECRET', 'pastedComments'),
+        excludes('text', 'PASTED_SECRET', 'pastedComments'),
+        { op: 'keyDown', key: 'z', code: 'KeyZ', metaKey: true },
+        same('snapshot.text', 'beforeCommentPaste', 'text'),
+        { op: 'load', source: '' },
+        { op: 'pasteExport', sourceName: 'hiddenExport' },
+        excludes('snapshot.text', 'SECRET'),
+        contains('snapshot.text', 'Public'),
+        contains('snapshot.text', 'https://example.com/shared'),
+        { op: 'load', source: '' },
+        { op: 'pasteExport', sourceName: 'hiddenExport', markdown: true },
+        contains('snapshot.text', 'EDITED_SECRET'),
+        contains('snapshot.text', '%%EDITED_OBSIDIAN_SECRET%%'),
+        { op: 'load', source: 'Incomplete <!-- open and %% unfinished' },
+        assert('snapshot.text', 'Incomplete <!-- open and %% unfinished'),
+        { op: 'export', name: 'incomplete' },
+        contains('text', 'open', 'incomplete'),
+        contains('text', 'unfinished', 'incomplete'),
+      ],
+    },
+    'comment-reference-provenance': {
+      source:
+        '[Visible <!--REFERENCE_SECRET-->][Shared] and [Collapsed %%LABEL_SECRET%%][].\n\nPublic[^note]\n\n[^note]: Required [destination <!--DEFINITION_SECRET-->][Shared].\n\n[Shared]: https://example.com/shared\n\n[Collapsed %%LABEL_SECRET%%]: https://example.com/collapsed\n',
+      operations: [
+        { op: 'export', name: 'referenceCopy' },
+        excludes('text', 'SECRET', 'referenceCopy'),
+        excludes('html', 'SECRET', 'referenceCopy'),
+        excludes('html', 'secret', 'referenceCopy'),
+        contains('markdown', 'REFERENCE_SECRET', 'referenceCopy'),
+        contains('markdown', 'LABEL_SECRET', 'referenceCopy'),
+        contains('html', 'https://example.com/shared', 'referenceCopy'),
+        contains('html', 'https://example.com/collapsed', 'referenceCopy'),
+        { op: 'selectContents', selector: 'p', text: 'Public' },
+        { op: 'export', all: false, name: 'requiredDefinitionCopy' },
+        excludes('text', 'SECRET', 'requiredDefinitionCopy'),
+        excludes('html', 'SECRET', 'requiredDefinitionCopy'),
+        excludes('html', 'secret', 'requiredDefinitionCopy'),
+        contains('markdown', 'DEFINITION_SECRET', 'requiredDefinitionCopy'),
+        contains(
+          'html',
+          'https://example.com/shared',
+          'requiredDefinitionCopy',
+        ),
+        { op: 'load', source: '' },
+        { op: 'pasteExport', sourceName: 'referenceCopy' },
+        excludes('snapshot.text', 'SECRET'),
+        excludes('snapshot.text', 'secret'),
+        contains('snapshot.text', 'https://example.com/shared'),
+        contains('snapshot.text', 'https://example.com/collapsed'),
+        {
+          op: 'load',
+          source: '[A&amp;B][]\n\n[A&amp;B]: https://example.com/safe-label\n',
+        },
+        { op: 'export', name: 'safeProvenance' },
+        { op: 'load', source: '' },
+        { op: 'pasteExport', sourceName: 'safeProvenance' },
+        contains('snapshot.text', '[A&amp;B][]'),
+        contains('snapshot.text', '[A&amp;B]: https://example.com/safe-label'),
+      ],
+    },
+    'comments-and-folds-print': {
+      mode: 'print',
+      source:
+        '> [!NOTE]- Print title\n> PRINTVISIBLEBODY.\n>\n' +
+        Array.from(
+          { length: 45 },
+          (_, index) =>
+            `> Printed continuation ${index + 1} across the complete folded body.`,
+        ).join('\n>\n') +
+        '\n>\n> PRINTFINALSENTINEL.\n\nPublic PRINTVISIBLETEXT <!--PRINTHTMLSECRET--> %%PRINTOBSIDIANSECRET%%.\n',
+      operations: [
+        { op: 'setCommentsVisible', visible: true },
+        { op: 'export', name: 'ordinary' },
+        contains('text', 'PRINTVISIBLEBODY', 'ordinary'),
+        excludes('text', 'SECRET', 'ordinary'),
+      ],
+      printIncludes: [
+        'PRINTVISIBLEBODY',
+        'PRINTVISIBLETEXT',
+        'Print title',
+        'PRINTFINALSENTINEL',
+      ],
+      printMinPages: 2,
+      printExcludes: [
+        'PRINTHTMLSECRET',
+        'PRINTOBSIDIANSECRET',
+        'Expand',
+        'Collapse',
+      ],
+    },
+  })
 const evidence = {
+  version,
   bundle,
   bundleSha256: createHash('sha256')
     .update(await readFile(bundle))
@@ -192,22 +522,46 @@ for (const [name, fixture] of Object.entries(scenarios)) {
   const input = join(destination, `${name}.input.json`)
   const output = join(destination, `${name}.result.json`)
   await writeFile(input, `${JSON.stringify(fixture, null, 2)}\n`)
-  const run = spawnSync(host, [bundle, 'scenario', input, output], {
-    timeout: 120_000,
-    encoding: 'utf8',
-  })
+  const run = spawnSync(
+    host,
+    [bundle, fixture.mode ?? 'scenario', input, output],
+    {
+      timeout: fixture.mode === 'print' ? 20_000 : 120_000,
+      encoding: 'utf8',
+    },
+  )
   let result
   try {
     result = JSON.parse(await readFile(output, 'utf8'))
   } catch {}
+  const printFailures =
+    fixture.mode === 'print'
+      ? [
+          ...(result?.print?.pages >= (fixture.printMinPages ?? 1)
+            ? []
+            : [
+                `Printed PDF has fewer than ${fixture.printMinPages ?? 1} pages`,
+              ]),
+          ...(fixture.printIncludes ?? [])
+            .filter((value) => !result?.print?.text?.includes(value))
+            .map((value) => `Printed PDF omitted ${value}`),
+          ...(fixture.printExcludes ?? [])
+            .filter((value) => result?.print?.text?.includes(value))
+            .map((value) => `Printed PDF included ${value}`),
+        ]
+      : []
   evidence.scenarios.push({
     name,
-    passed: run.status === 0 && result?.passed === true,
+    passed:
+      run.status === 0 && result?.passed === true && printFailures.length === 0,
     status: run.status,
     error: run.error?.message ?? run.stderr.trim(),
     input,
     output,
     steps: result?.steps.length ?? 0,
+    ...(fixture.mode === 'print'
+      ? { print: result?.print, printFailures }
+      : {}),
   })
 }
 evidence.passed = evidence.scenarios.every((scenario) => scenario.passed)

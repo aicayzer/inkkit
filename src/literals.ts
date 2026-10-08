@@ -1,8 +1,14 @@
 import { $node, $remark } from '@milkdown/kit/utils'
 import type { Root, RootContent, Literal, Nodes } from 'mdast'
+import {
+  commentSource,
+  literalCommentSpans,
+  type CommentSpan,
+} from './comments'
 
 interface InkKitLiteral extends Literal {
   type: 'inkkitLiteral'
+  comments?: CommentSpan[]
 }
 declare module 'mdast' {
   interface BlockContentMap {
@@ -118,7 +124,12 @@ export function createLiteralPreservation(images: boolean) {
         // Definition indentation is restored by the footnote serializer.
         for (let index = 0; index < depth; index++)
           raw = raw.replace(/\r?\n(?: {4}|\t)/g, '\n')
-        return { type: 'inkkitLiteral', value: raw, position: node.position }
+        return {
+          type: 'inkkitLiteral',
+          value: raw,
+          comments: literalCommentSpans(raw),
+          position: node.position,
+        }
       }
       const blocks: RootContent[] = []
       if (frontmatter)
@@ -155,6 +166,8 @@ export function createLiteralPreservation(images: boolean) {
             })
           continue
         }
+        if (node.type === 'inkkitLiteral')
+          node.comments = literalCommentSpans(node.value)
         blocks.push(preserveBlock(node))
       }
       tree.children = blocks
@@ -166,7 +179,7 @@ export const preserveLiterals = createLiteralPreservation(false)
 
 export const literalBlock = $node('literal_markdown', () => ({
   group: 'block',
-  content: 'text*',
+  content: '(text | comment_inline)*',
   marks: '',
   code: true,
   defining: true,
@@ -182,14 +195,30 @@ export const literalBlock = $node('literal_markdown', () => ({
     match: (node) => node.type === 'inkkitLiteral',
     runner: (state, node, type) => {
       state.openNode(type)
-      state.addText(String(node.value ?? ''))
+      const value = String(node.value ?? '')
+      let cursor = 0
+      for (const span of (node.comments as CommentSpan[] | undefined) ?? []) {
+        if (span.start > cursor) state.addText(value.slice(cursor, span.start))
+        state.openNode(state.schema.nodes.comment_inline!, {
+          syntax: span.syntax,
+          block: Boolean(span.block),
+        })
+        if (span.value) state.addText(span.value)
+        state.closeNode()
+        cursor = span.end
+      }
+      if (cursor < value.length) state.addText(value.slice(cursor))
       state.closeNode()
     },
   },
   toMarkdown: {
     match: (node) => node.type.name === 'literal_markdown',
     runner: (state, node) => {
-      state.addNode('html', undefined, node.textContent)
+      let source = ''
+      node.forEach((child) => {
+        source += child.isText ? child.text : commentSource(child)
+      })
+      state.addNode('html', undefined, source)
     },
   },
 }))

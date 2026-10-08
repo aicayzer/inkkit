@@ -98,6 +98,8 @@ import {
   type ClipboardOutput,
 } from './types'
 import { highlightPlugin } from './highlight'
+import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
+import { commentSelectionContent, setCommentVisibility } from './comments'
 import { PasteController } from './paste'
 import { selectionPlugin } from './selection'
 import {
@@ -108,7 +110,8 @@ import {
 } from 'prosemirror-search'
 import { taskListPlugin, toggleTaskList } from './tasks'
 
-export type Mark = 'bold' | 'italic' | 'strikethrough' | 'code' | 'link'
+export type Mark =
+  'bold' | 'italic' | 'strikethrough' | 'highlight' | 'code' | 'link'
 
 export type Block =
   | { type: 'paragraph' }
@@ -131,6 +134,7 @@ export type FormatCommand =
   | 'bold'
   | 'italic'
   | 'strikethrough'
+  | 'highlight'
   | 'code'
   | 'codeBlock'
   | 'quote'
@@ -150,6 +154,7 @@ const shortcutCommands: Record<string, [FormatCommand, number?]> = {
   bold: ['bold'],
   italic: ['italic'],
   strikethrough: ['strikethrough'],
+  highlight: ['highlight'],
   code: ['code'],
   codeBlock: ['codeBlock'],
   quote: ['quote'],
@@ -171,6 +176,7 @@ const markNames: Record<string, Mark> = {
   strong: 'bold',
   emphasis: 'italic',
   strike_through: 'strikethrough',
+  highlight: 'highlight',
   inlineCode: 'code',
   link: 'link',
 }
@@ -536,7 +542,14 @@ export class InkKitEditor {
       return { text, html: pre.outerHTML, markdown: text, images: [] }
     }
     const { doc, schema, selection } = this.editor.ctx.get(editorViewCtx).state
-    const content = all ? doc.content : selection.content().content
+    const content = all
+      ? doc.content
+      : commentSelectionContent(
+          doc,
+          selection.from,
+          selection.to,
+          selection.content().content,
+        )
     const valid = content.firstChild?.isInline
       ? Fragment.from(schema.nodes.paragraph!.create(null, content))
       : content
@@ -583,6 +596,11 @@ export class InkKitEditor {
       return
     }
     await this.pasteController.paste(input)
+  }
+
+  setCommentsVisible(visible: boolean): void {
+    this.assertAlive()
+    setCommentVisibility(this.editor.ctx.get(editorViewCtx), visible)
   }
 
   pasteAsPlainText(text: string): void {
@@ -724,6 +742,7 @@ export class InkKitEditor {
         unbind(emphasisKeymap)
         unbind(inlineCodeKeymap)
         unbind(strikethroughKeymap)
+        unbind(highlightKeymap)
         unbind(headingKeymap, ['DowngradeHeading'])
         unbind(paragraphKeymap)
         unbind(blockquoteKeymap)
@@ -826,7 +845,12 @@ export class InkKitEditor {
     instance.copyHandler = (event) => {
       if (instance.formatType === 'txt') return
       const view = instance.editor.ctx.get(editorViewCtx)
-      const fragment = view.state.selection.content().content
+      const fragment = commentSelectionContent(
+        view.state.doc,
+        view.state.selection.from,
+        view.state.selection.to,
+        view.state.selection.content().content,
+      )
       const expanded = selectionContent(view.state.doc, fragment)
       let hasImages = false
       expanded.descendants((node) => {
@@ -1362,6 +1386,9 @@ export class InkKitEditor {
         break
       case 'strikethrough':
         run(toggleStrikethroughCommand.key)
+        break
+      case 'highlight':
+        run(toggleHighlightCommand.key)
         break
       case 'code':
         this.toggleInlineCode()

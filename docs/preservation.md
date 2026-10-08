@@ -13,3 +13,11 @@ Ordinary Copy exports readable text and semantic HTML. Copy as Markdown explicit
 Tables retain cell boundaries. Unsupported HTML tables, including merged cells and nested block content, remain literal source. Managed images export portable bytes in HTML and native image slots. Private display URLs are not exported as external image URLs. An unavailable image retains alt text and reports the failure.
 
 Mixed image paste preserves surrounding text and commits one transaction. A result for a stale document is rejected. Native hosts must retain original clipboard content until export succeeds and keep imports bound to the captured document.
+
+Supported callout markers, titles and fold markers remain in source. Folding and comment visibility are presentation changes, so they do not affect snapshots or undo history. Highlights retain their source delimiters and adjacent formatting. Unsupported callout variants remain editable literal Markdown; see [supported syntax](supported-syntax.md).
+
+Complete HTML and Obsidian comments remain editable author content. Ordinary clipboard text, HTML and its inert metadata exclude comments, including comments inside required footnote definitions and preserved literal blocks. Explicit Markdown copy and snapshots retain them. Print hides comments even when revealed and includes collapsed callout bodies without editor controls. Incomplete delimiters, escaped syntax, code and TXT remain literal.
+
+When comments occur inside an authored reference label, ordinary sharing removes that label's reference provenance while retaining its semantic link target. Comment-free labels retain their authored reference form in InkKit's HTML paste path.
+
+Footnote identifiers and link destinations remain literal values under the Markdown grammar, including delimiter-looking text. This preserves their authored identity; comments in footnote bodies are excluded from ordinary sharing.

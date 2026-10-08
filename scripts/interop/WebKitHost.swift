@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import PDFKit
 import WebKit
 
 @MainActor
@@ -7,10 +8,11 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     var web: WKWebView!
     var window: NSWindow!
     let args = CommandLine.arguments
+    var printContinuation: CheckedContinuation<Bool, Never>?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         guard args.count == 5 else {
-            fputs("Usage: webkit-host BUNDLE export|partial|paste|scenario INPUT OUTPUT\n", stderr)
+            fputs("Usage: webkit-host BUNDLE export|partial|paste|scenario|print INPUT OUTPUT\n", stderr)
             exit(1)
         }
         web = WKWebView(frame: NSRect(x: 0, y: 0, width: 720, height: 640))
@@ -37,6 +39,15 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         }
     }
 
+    @objc nonisolated func printDidRun(_ operation: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let continuation = self.printContinuation
+            self.printContinuation = nil
+            continuation?.resume(returning: success)
+        }
+    }
+
     func execute() async {
         do {
             _ = try await js("""
@@ -48,8 +59,48 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             let input = try JSONSerialization.jsonObject(
                 with: Data(contentsOf: URL(fileURLWithPath: args[3]))) as! [String: Any]
             let result: Any
-            if args[2] == "scenario" {
-                result = try await js("return await window.interop.run(input)", ["input": input])
+            if args[2] == "scenario" || args[2] == "print" {
+                let scenario = try await js("return await window.interop.run(input)", ["input": input])
+                if args[2] == "print" {
+                    window.makeKeyAndOrderFront(nil)
+                    web.layoutSubtreeIfNeeded()
+                    _ = try await js("await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return true")
+                    let screenGeometry = try await js("return { viewportHeight: innerHeight, documentScrollHeight: document.documentElement.scrollHeight, editorScrollHeight: document.querySelector('.ProseMirror')?.scrollHeight ?? null, foldedCallouts: document.querySelectorAll('[data-inkkit-folded=\"true\"]').length, commentsVisible: document.querySelector('.ProseMirror')?.getAttribute('data-inkkit-comments-visible') ?? null }")
+                    let pdfURL = URL(fileURLWithPath: args[4]).appendingPathExtension("pdf")
+                    let info = NSPrintInfo()
+                    // Fixed page geometry makes verification independent of printer defaults.
+                    info.paperSize = NSSize(width: 595.28, height: 841.89)
+                    info.topMargin = 36
+                    info.bottomMargin = 36
+                    info.leftMargin = 36
+                    info.rightMargin = 36
+                    info.horizontalPagination = .fit
+                    info.verticalPagination = .automatic
+                    info.dictionary()[NSPrintInfo.AttributeKey.jobDisposition] = NSPrintInfo.JobDisposition.save.rawValue
+                    info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = pdfURL as NSURL
+                    let operation = web.printOperation(with: info)
+                    operation.showsPrintPanel = false
+                    operation.showsProgressPanel = false
+                    // WebKit pagination needs the main run loop free to receive page rectangles.
+                    operation.canSpawnSeparateThread = true
+                    let printed = await withCheckedContinuation { continuation in
+                        printContinuation = continuation
+                        operation.runModal(for: window, delegate: self, didRun: #selector(printDidRun(_:success:contextInfo:)), contextInfo: nil)
+                    }
+                    guard printed, let pdf = PDFDocument(url: pdfURL) else {
+                        throw NSError(domain: "Interop", code: 2, userInfo: [NSLocalizedDescriptionKey: "WKWebView print did not produce a PDF"])
+                    }
+                    var output = scenario as? [String: Any] ?? [:]
+                    output["print"] = [
+                        "pdf": pdfURL.path, "pages": pdf.pageCount, "text": pdf.string ?? "",
+                        "paperWidth": Double(info.paperSize.width), "paperHeight": Double(info.paperSize.height),
+                        "printableWidth": Double(info.imageablePageBounds.width), "printableHeight": Double(info.imageablePageBounds.height),
+                        "screenGeometry": screenGeometry,
+                    ]
+                    result = output
+                } else {
+                    result = scenario
+                }
             } else {
                 _ = try await js("return window.interop.load(source, format)", [
                     "source": input["source"] as? String ?? "",

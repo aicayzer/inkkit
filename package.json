@@ -1,6 +1,6 @@
 {
   "name": "@aicayzer/inkkit",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A preserving Markdown editor for offline web views and the web",
   "license": "MIT",
   "type": "module",
@@ -47,18 +47,22 @@
   "dependencies": {
     "@milkdown/kit": "7.22.1",
     "lowlight": "^3.3.0",
+    "mdast-util-from-markdown": "^2.1.0",
     "mdast-util-gfm-autolink-literal": "^2.0.1",
     "mdast-util-gfm-footnote": "^2.1.0",
     "mdast-util-gfm-strikethrough": "^2.0.0",
     "mdast-util-gfm-table": "^2.0.0",
     "mdast-util-gfm-task-list-item": "^2.0.0",
+    "mdast-util-highlight-mark": "1.2.2",
     "mdast-util-to-markdown": "2.2.0",
     "micromark-extension-gfm-autolink-literal": "^2.1.0",
     "micromark-extension-gfm-footnote": "^2.1.0",
     "micromark-extension-gfm-strikethrough": "^2.1.0",
     "micromark-extension-gfm-table": "^2.1.1",
     "micromark-extension-gfm-task-list-item": "^2.1.0",
+    "micromark-extension-highlight-mark": "1.2.0",
     "micromark-util-normalize-identifier": "^2.0.1",
+    "micromark-util-types": "^2.0.3",
     "prosemirror-search": "^1.1.1"
   },
   "devDependencies": {
