@@ -13,6 +13,8 @@ Verified on 8 October 2026. This record describes the tested release candidate; 
 
 The earlier archive, SHA-256 `07943c224e4c1fb47d5b1a49806e1424233f7e323bdd475dbe2b652ae021af07`, was replaced after an actual Obsidian reverse-copy check exposed a heading import defect. The replacement filters the copied encoding metadata and narrowly identified reading-view controls. A reduced native clipboard fixture and regression tests retain arbitrary authored SVG and similarly named content.
 
+Hosted CI passed at documentation commit `15dbd2d`. Its compressed archive has SHA-256 `598398bdd8088319fe7d42ad949cfe49dd91b5aa84e71b8e0757a9f817ec95be`; its decompressed tar is byte-identical to the native-tested archive (tar SHA-256 `705e20c51eaf967c692553b554f0e4c7757bee74dc0a56355f8aad25fa7ebd2f`). Only the compressed representation differs. The manual first publication must use the native-tested archive identified above, and registry verification must compare its npm integrity.
+
 ## Native app integrations
 
 The replacement archive was installed into isolated integration branches in PadPad, personal Memos and Memos WithMarfa. Each consumer passed four public-facade JavaScript checks, TypeScript, formatting, offline bundling and a native Xcode build.
