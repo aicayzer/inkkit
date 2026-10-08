@@ -2,6 +2,8 @@
 
 Unedited documents retain their original bytes. Edits retain unchanged source blocks, original gaps, supported line endings and definitions. The reconstructed source is reparsed before it is returned. If safe reconstruction is impossible, the editor reports a preservation error; the host must retain the document rather than save an incomplete result.
 
+Mermaid is stored as ordinary fenced code. Previews do not change revisions or source. Body edits retain authored fence characters, lengths, information strings and line endings; a fence grows when the edited body would otherwise close it. Invalid or unsupported diagrams retain their source through snapshots, save/reopen and undo. Complete diagram Markdown selections preserve authored fences; partial source selections retain selected code text.
+
 Unsupported syntax, raw HTML, frontmatter, unresolved references and unmanaged image references remain editable literal Markdown within a formatted document. HTML is not executed. An ordinary HTML clipboard round trip retains those literal blocks rather than turning them into fenced code. Author-created spacer paragraphs survive saving and reopening.
 
 Footnotes and full, collapsed and shortcut reference links retain authored labels and shared, unused definitions. Editing implicit link text expands only that occurrence to a full reference when needed to retain its target. Definition edits update every reference to that label; undo restores the original source.

@@ -22,6 +22,7 @@ export type EditorErrorCode =
   | 'destroyed'
   | 'preservation'
   | 'image-unavailable'
+  | 'diagram-unavailable'
 export class InkKitError extends Error {
   constructor(
     public readonly code: EditorErrorCode,
@@ -71,4 +72,10 @@ export interface ClipboardOutput {
   html: string
   markdown: string
   images: ClipboardImage[]
+  diagrams?: ClipboardDiagram[]
+}
+export interface ClipboardDiagram {
+  source: string
+  image?: PortableImage
+  error?: string
 }

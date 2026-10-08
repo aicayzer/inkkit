@@ -192,6 +192,25 @@ export class PasteController {
         const template = document.createElement('template')
         template.innerHTML = input.html
         const container = template.content
+        for (const warning of container.querySelectorAll(
+          '[data-inkkit-diagram-error]',
+        ))
+          warning.remove()
+        for (const diagram of container.querySelectorAll(
+          'figure[data-inkkit-mermaid]',
+        )) {
+          const source = diagram.getAttribute('data-inkkit-mermaid') ?? ''
+          if (source.length > 30000) continue
+          const pre = document.createElement('pre')
+          pre.dataset.language = 'mermaid'
+          const fence = diagram.getAttribute('data-inkkit-fence')
+          if (fence) pre.setAttribute('data-inkkit-fence', fence)
+          const code = document.createElement('code')
+          code.className = 'language-mermaid'
+          code.textContent = source
+          pre.append(code)
+          diagram.replaceWith(pre)
+        }
         if (markdown == null) {
           // Native destinations can keep node metadata after dropping the
           // Markdown wrapper and its definitions. Import their visible HTML.
@@ -399,8 +418,11 @@ export class PasteController {
               )
                 ? elements.find(
                     (element) =>
-                      Number(element.getAttribute('data-inkkit-image-slot')) ===
-                      position,
+                      Number(
+                        element.getAttribute(
+                          'data-inkkit-authored-image-slot',
+                        ) ?? element.getAttribute('data-inkkit-image-slot'),
+                      ) === position,
                   )
                 : elements[position]
               if (!element || !container.contains(element))

@@ -69,20 +69,31 @@ const load = (source, format = 'md', identity = 'interop') => {
   })
   return editor.snapshot()
 }
+const portableImage = (image) => {
+  if (!image) return undefined
+  let binary = ''
+  for (let offset = 0; offset < image.bytes.length; offset += 8192)
+    binary += String.fromCharCode(
+      ...image.bytes.subarray(offset, offset + 8192),
+    )
+  return { ...image, bytesBase64: btoa(binary), bytes: undefined }
+}
 const exportClipboard = async (all = true) => {
   const data = await editor.clipboardSnapshot(all)
   return {
     ...data,
     images: data.images.map((image) => ({
       ...image,
-      image: image.image
-        ? {
-            ...image.image,
-            bytesBase64: btoa(String.fromCharCode(...image.image.bytes)),
-            bytes: undefined,
-          }
-        : undefined,
+      image: portableImage(image.image),
     })),
+    ...(data.diagrams
+      ? {
+          diagrams: data.diagrams.map((diagram) => ({
+            ...diagram,
+            image: portableImage(diagram.image),
+          })),
+        }
+      : {}),
   }
 }
 
@@ -201,6 +212,19 @@ window.interop = {
       let result
       try {
         switch (operation.op) {
+          case 'awaitDOM': {
+            const deadline = performance.now() + (operation.timeout ?? 15_000)
+            do {
+              result = inspectDOM(operation.selector)
+              if (result.count === (operation.count ?? 1)) break
+              await settle()
+            } while (performance.now() < deadline)
+            if (result.count !== (operation.count ?? 1))
+              throw Error(
+                `Timed out waiting for ${operation.selector}: expected ${operation.count ?? 1}, got ${result.count}`,
+              )
+            break
+          }
           case 'select':
             result = await selectText(operation)
             break
@@ -226,6 +250,38 @@ window.interop = {
             result = selection.toString()
             break
           }
+          case 'selectBlocks': {
+            editor.focus()
+            const first = view().querySelectorAll(operation.fromSelector)[
+              operation.fromOccurrence ?? 0
+            ]
+            const last = view().querySelectorAll(operation.toSelector)[
+              operation.toOccurrence ?? 0
+            ]
+            if (!first || !last) throw Error('Selection block not found')
+            const range = document.createRange()
+            range.setStartBefore(first)
+            range.setEndAfter(last)
+            const selection = getSelection()
+            selection.removeAllRanges()
+            selection.addRange(range)
+            document.dispatchEvent(new Event('selectionchange'))
+            await settle()
+            result = selection.toString()
+            break
+          }
+          case 'security':
+            result = {
+              callbackExecuted: Boolean(window.inkkitUnsafeCallback),
+              externalResources: performance
+                .getEntriesByType('resource')
+                .map((entry) => entry.name)
+                .filter((name) => /^https?:/i.test(name)),
+              activeElements: view().querySelectorAll(
+                'script, iframe, object, embed, [onclick], [onerror]',
+              ).length,
+            }
+            break
           case 'dom':
             result = inspectDOM(operation.selector)
             break
@@ -384,6 +440,10 @@ window.interop = {
             if ('excludes' in operation && actual?.includes(operation.excludes))
               throw Error(
                 `Expected ${operation.path} to exclude ${JSON.stringify(operation.excludes)}, got ${JSON.stringify(actual)}`,
+              )
+            if ('truthy' in operation && Boolean(actual) !== operation.truthy)
+              throw Error(
+                `Expected ${operation.path} truthiness to equal ${operation.truthy}, got ${JSON.stringify(actual)}`,
               )
             result = { passed: true, actual }
             break

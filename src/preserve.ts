@@ -3,6 +3,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { serialize } from './dialect'
+import { restoreCodeEndings, finalCodeEnding } from './code-fences'
 
 interface Block {
   start: number
@@ -171,6 +172,46 @@ function retainSource(
     throw new PreservationError('A source token has no location')
   const raw = source.slice(start, end)
   if (
+    before.type === 'code' &&
+    after.type === 'code' &&
+    before.lang === after.lang
+  ) {
+    const opening = /^([ \t>]*)(`{3,}|~{3,})([^\r\n]*)(\r?\n)/.exec(raw)
+    if (opening) {
+      const lines = raw.slice(opening[0].length).split(/\r?\n/)
+      const closing = /^([ \t>]*)(`{3,}|~{3,})([ \t]*)$/.exec(
+        lines.at(-1) ?? '',
+      )
+      const originalLine =
+        (before.value ?? '').replace(/\r\n?/g, '\n').split('\n')[0] ?? ''
+      const first = lines[0] ?? ''
+      const gutter = first.endsWith(originalLine)
+        ? first.slice(0, first.length - originalLine.length)
+        : opening[1]!
+      const body = (after.value ?? '').replace(/\r\n?/g, '\n').split('\n')
+      const character = opening[2]![0]!
+      let length = opening[2]!.length
+      for (const line of body) {
+        const run = new RegExp(`^ {0,3}(${character}+)[ \\t]*$`).exec(line)
+        if (run) length = Math.max(length, run[1]!.length + 1)
+      }
+      const fence = character.repeat(length)
+      return (
+        opening[1] +
+        fence +
+        opening[3] +
+        lineEnding +
+        body.map((line) => gutter + line).join(lineEnding) +
+        (closing
+          ? lineEnding +
+            closing[1] +
+            character.repeat(Math.max(length, closing[2]!.length)) +
+            closing[3]
+          : '')
+      )
+    }
+  }
+  if (
     before.type === 'definition' &&
     after.type === 'definition' &&
     before.label === after.label &&
@@ -286,7 +327,7 @@ export class PreservationError extends Error {
 }
 
 function form(text: string): string {
-  return text.replace(/\n+$/, '')
+  return text.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
 }
 
 function blockForm(ctx: Ctx, node: ProseNode): string {
@@ -311,7 +352,7 @@ function semanticSignature(doc: ProseNode): string {
         if (!text) continue
         const token = {
           ...child,
-          text,
+          text: text.replace(/\r\n?/g, '\n'),
           marks: index === 1 ? child.marks : undefined,
         }
         const previous = tokens.at(-1)
@@ -336,6 +377,7 @@ function semanticSignature(doc: ProseNode): string {
         'id',
         'label',
         'spread',
+        'authoredFence',
       ].includes(key)
         ? undefined
         : value,
@@ -511,16 +553,22 @@ export class Preservation {
             canonical,
             this.lineEnding,
           )
-        } else output += text.replaceAll('\n', this.lineEnding)
+        } else
+          output += restoreCodeEndings(
+            this.ctx,
+            doc.type.create(null, [doc.child(index)]),
+            text.replaceAll('\n', this.lineEnding),
+          )
         previous = position
       })
       if (previous === this.blocks.length - 1 && this.blocks.length)
         output += this.source.slice(this.blocks[previous]!.end)
-      else if (output) output += this.lineEnding
+      else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
       const parse = this.ctx.get(parserCtx)
       const reopened = parse(output)
       if (
-        serialize(this.ctx, reopened) === canonical &&
+        serialize(this.ctx, reopened).replace(/\r\n?/g, '\n') ===
+          canonical.replace(/\r\n?/g, '\n') &&
         semanticSignature(reopened) === semanticSignature(doc)
       )
         return output
