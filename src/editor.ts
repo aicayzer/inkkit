@@ -6,7 +6,12 @@ import {
   remarkStringifyOptionsCtx,
   rootCtx,
 } from '@milkdown/kit/core'
-import { visibleClipboard, portableClipboard, clipboardText } from './clipboard'
+import {
+  visibleClipboard,
+  portableClipboard,
+  clipboardText,
+  clipboardContent,
+} from './clipboard'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
 import { history } from '@milkdown/kit/plugin/history'
 import { cursor } from '@milkdown/kit/plugin/cursor'
@@ -52,6 +57,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { findWrapping, liftTarget } from '@milkdown/kit/prose/transform'
 import {
   AllSelection,
+  NodeSelection,
   Plugin,
   PluginKey,
   Selection,
@@ -69,6 +75,17 @@ import {
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
 import { createDialect, serialize, stringifyOptions } from './dialect'
 import { Preservation } from './preserve'
+import {
+  normaliseLabel,
+  referenceDefinitions,
+  footnoteDefinitions,
+} from './references'
+import {
+  selectionMarkdown,
+  selectionContent,
+  referenceMetadata,
+  withReferenceMetadata,
+} from './reference-clipboard'
 import { imageView } from './images'
 import { tablePlugins, tableCommand, type TableCommand } from './tables'
 import {
@@ -395,6 +412,7 @@ export class InkKitEditor {
   private plain!: HTMLTextAreaElement
   private root!: HTMLElement
   private clickHandler?: (event: MouseEvent) => void
+  private footnoteKeyHandler?: (event: KeyboardEvent) => void
   private copyHandler?: (event: ClipboardEvent) => void
   private originalSource = ''
   private generation = 0
@@ -526,7 +544,7 @@ export class InkKitEditor {
     try {
       markdown = all
         ? snapshot.text
-        : serialize(this.editor.ctx, schema.topNodeType.create(null, valid))
+        : selectionMarkdown(this.editor.ctx, doc, valid)
     } catch (error) {
       throw new InkKitError(
         'preservation',
@@ -536,12 +554,15 @@ export class InkKitEditor {
       )
     }
     const result = await portableClipboard(
-      content,
+      all ? content : selectionContent(doc, content),
       schema,
       markdown,
       this.options.images,
       this.context(),
     )
+    const metadata = referenceMetadata(this.editor.ctx, doc, content)
+    if (metadata != null)
+      result.html = withReferenceMetadata(result.html, metadata)
     this.assertCurrent(snapshot.generation)
     if (snapshot.documentId !== this.documentId || epoch !== this.documentEpoch)
       throw new InkKitError('stale-document', 'Document changed')
@@ -630,6 +651,8 @@ export class InkKitEditor {
     this.pasteController.destroy()
     if (this.clickHandler)
       this.root.removeEventListener('click', this.clickHandler)
+    if (this.footnoteKeyHandler)
+      this.root.removeEventListener('keydown', this.footnoteKeyHandler, true)
     if (this.copyHandler) {
       this.root.removeEventListener('copy', this.copyHandler, true)
       this.root.removeEventListener('cut', this.copyHandler, true)
@@ -643,7 +666,16 @@ export class InkKitEditor {
     () =>
       new Plugin({
         key: new PluginKey('appKeymap'),
-        props: { handleKeyDown: (view, event) => this.keys(view, event) },
+        props: {
+          handleKeyDown: (view, event) => {
+            if (event.altKey && event.key === 'Enter') {
+              return this.navigateFootnote(
+                event.shiftKey ? 'reference' : 'definition',
+              )
+            }
+            return this.keys(view, event)
+          },
+        },
       }),
   )
 
@@ -742,7 +774,48 @@ export class InkKitEditor {
     instance.plain.addEventListener('compositionend', () => {
       instance.plainComposing = false
     })
+    const activateFootnote = (event: MouseEvent | KeyboardEvent): boolean => {
+      const element = (event.target as HTMLElement).closest(
+        '[data-inkkit-footnote-reference]',
+      )
+      if (!element) return false
+      const identifier = element.getAttribute('data-inkkit-footnote-reference')
+      const view = instance.editor.ctx.get(editorViewCtx)
+      let position: number | undefined
+      view.state.doc.descendants((node, pos) => {
+        if (
+          position == null &&
+          node.type.name === 'footnote_reference' &&
+          node.attrs.identifier === identifier
+        )
+          position = pos
+      })
+      if (position == null) return false
+      event.preventDefault()
+      try {
+        view.dispatch(
+          view.state.tr.setSelection(
+            NodeSelection.create(view.state.doc, position),
+          ),
+        )
+        instance.navigateFootnote('definition')
+      } catch (error) {
+        events.error?.(
+          error instanceof Error ? error : new Error(String(error)),
+        )
+      }
+      return true
+    }
+    instance.footnoteKeyHandler = (event) => {
+      if (
+        (event.key === 'Enter' || event.key === ' ') &&
+        activateFootnote(event)
+      )
+        event.stopPropagation()
+    }
+    root.addEventListener('keydown', instance.footnoteKeyHandler, true)
     instance.clickHandler = (event) => {
+      if (activateFootnote(event)) return
       const anchor = (event.target as HTMLElement).closest('a[href]')
       if (anchor && event.metaKey) {
         event.preventDefault()
@@ -754,11 +827,50 @@ export class InkKitEditor {
       if (instance.formatType === 'txt') return
       const view = instance.editor.ctx.get(editorViewCtx)
       const fragment = view.state.selection.content().content
+      const expanded = selectionContent(view.state.doc, fragment)
       let hasImages = false
-      fragment.descendants((node) => {
+      expanded.descendants((node) => {
         if (node.type.name === 'image') hasImages = true
       })
-      if (!hasImages) return
+      if (!hasImages) {
+        if (!event.clipboardData || fragment.size === 0) return
+        event.preventDefault()
+        event.stopPropagation()
+        try {
+          instance.snapshot()
+          const content = expanded
+          const valid = fragment.firstChild?.isInline
+            ? Fragment.from(
+                view.state.schema.nodes.paragraph!.create(null, fragment),
+              )
+            : fragment
+          const markdown = selectionMarkdown(
+            instance.editor.ctx,
+            view.state.doc,
+            valid,
+          )
+          const output = clipboardContent(content, view.state.schema)
+          event.clipboardData.setData('text/plain', output.text)
+          const metadata = referenceMetadata(
+            instance.editor.ctx,
+            view.state.doc,
+            valid,
+          )
+          event.clipboardData.setData(
+            'text/html',
+            metadata != null
+              ? withReferenceMetadata(output.html, metadata)
+              : output.html,
+          )
+          if (event.type === 'cut')
+            view.dispatch(view.state.tr.deleteSelection().scrollIntoView())
+        } catch (error) {
+          events.error?.(
+            error instanceof Error ? error : new Error(String(error)),
+          )
+        }
+        return
+      }
       event.preventDefault()
       event.stopPropagation()
       if (events.clipboard) {
@@ -797,7 +909,7 @@ export class InkKitEditor {
           )
       } else {
         const container = document.createElement('div')
-        container.textContent = clipboardText(fragment)
+        container.textContent = clipboardText(expanded)
         event.clipboardData?.setData('text/plain', container.textContent ?? '')
         event.clipboardData?.setData('text/html', container.outerHTML)
         events.error?.(
@@ -1270,6 +1382,22 @@ export class InkKitEditor {
         toggleTaskList(this.editor.ctx)
         break
       case 'link': {
+        const view = this.editor.ctx.get(editorViewCtx)
+        const reference =
+          view.state.selection.$from
+            .marks()
+            .find(
+              (mark) => mark.type.name === 'link' && mark.attrs.identifier,
+            ) ??
+          view.state.doc
+            .nodeAt(view.state.selection.from)
+            ?.marks.find(
+              (mark) => mark.type.name === 'link' && mark.attrs.identifier,
+            )
+        if (reference && typeof arg === 'string') {
+          this.editReferenceDefinition(String(reference.attrs.identifier), arg)
+          break
+        }
         const payload = typeof arg === 'string' ? { href: arg } : {}
         const toggle = () => run(toggleLinkCommand.key, payload)
         if (
@@ -1281,5 +1409,112 @@ export class InkKitEditor {
       }
     }
     this.focus()
+  }
+
+  editReferenceDefinition(
+    label: string,
+    destination: string,
+    title?: string,
+  ): boolean {
+    this.assertCurrent()
+    if (this.formatType === 'txt') return false
+    const view = this.editor.ctx.get(editorViewCtx)
+    const definitions = referenceDefinitions(view.state.doc)
+    const definition =
+      definitions.get(normaliseLabel(label)) ??
+      [...definitions.values()].find(
+        ({ node }) =>
+          normaliseLabel(String(node.attrs.label)) === normaliseLabel(label),
+      )
+    if (!definition) return false
+    view.dispatch(
+      view.state.tr.setNodeMarkup(definition.pos, undefined, {
+        ...definition.node.attrs,
+        url: destination,
+        title: title ?? definition.node.attrs.title,
+      }),
+    )
+    return true
+  }
+
+  insertFootnote(label?: string): void {
+    this.assertCurrent()
+    if (this.formatType === 'txt') return
+    const view = this.editor.ctx.get(editorViewCtx)
+    const definitions = footnoteDefinitions(view.state.doc)
+    if (label == null) {
+      let number = 1
+      const labels = new Set(definitions.keys())
+      for (const match of this.snapshot().text.matchAll(/\[\^([^\]\r\n]+)\]/g))
+        labels.add(normaliseLabel(match[1]!))
+      view.state.doc.descendants((node) => {
+        if (node.type.name === 'footnote_reference')
+          labels.add(String(node.attrs.identifier))
+      })
+      while (labels.has(normaliseLabel(String(number)))) number++
+      label = String(number)
+    }
+    if (!label || /[\s\[\]\\]/.test(label) || label.length > 999)
+      throw new Error(
+        'A footnote label must be 1–999 characters without whitespace, brackets or backslashes',
+      )
+    const identifier = normaliseLabel(label)
+    const reference = view.state.schema.nodes.footnote_reference!.create({
+      label,
+      identifier,
+    })
+    const tr = view.state.tr.insert(view.state.selection.to, reference)
+    if (!definitions.has(identifier)) {
+      const definition = view.state.schema.nodes.footnote_definition!.create(
+        { label, identifier },
+        view.state.schema.nodes.paragraph!.create(),
+      )
+      const position = tr.doc.content.size
+      tr.insert(position, definition).setSelection(
+        TextSelection.create(tr.doc, position + 2),
+      )
+    }
+    view.dispatch(tr.scrollIntoView())
+    this.focus()
+  }
+
+  navigateFootnote(target: 'definition' | 'reference'): boolean {
+    this.assertCurrent()
+    if (this.formatType === 'txt') return false
+    const view = this.editor.ctx.get(editorViewCtx)
+    const { $from } = view.state.selection
+    let identifier: string | undefined
+    for (let depth = $from.depth; depth > 0; depth--) {
+      const node = $from.node(depth)
+      if (node.type.name === 'footnote_definition')
+        identifier = String(node.attrs.identifier)
+    }
+    const at = view.state.doc.nodeAt(view.state.selection.from)
+    const adjacent =
+      at?.type.name === 'footnote_reference' ? at : $from.nodeBefore
+    if (adjacent?.type.name === 'footnote_reference')
+      identifier = String(adjacent.attrs.identifier)
+    if (!identifier) return false
+    let position: number | undefined
+    if (target === 'definition') {
+      const found = footnoteDefinitions(view.state.doc).get(identifier)
+      if (found) position = found.pos + 2
+    } else
+      view.state.doc.descendants((node, pos) => {
+        if (
+          position == null &&
+          node.type.name === 'footnote_reference' &&
+          node.attrs.identifier === identifier
+        )
+          position = pos
+      })
+    if (position == null) return false
+    view.dispatch(
+      view.state.tr
+        .setSelection(TextSelection.near(view.state.doc.resolve(position)))
+        .scrollIntoView(),
+    )
+    this.focus()
+    return true
   }
 }

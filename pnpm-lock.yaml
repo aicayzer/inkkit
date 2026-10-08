@@ -17,6 +17,9 @@ importers:
       mdast-util-gfm-autolink-literal:
         specifier: ^2.0.1
         version: 2.0.1
+      mdast-util-gfm-footnote:
+        specifier: ^2.1.0
+        version: 2.1.0
       mdast-util-gfm-strikethrough:
         specifier: ^2.0.0
         version: 2.0.1
@@ -32,6 +35,9 @@ importers:
       micromark-extension-gfm-autolink-literal:
         specifier: ^2.1.0
         version: 2.1.0
+      micromark-extension-gfm-footnote:
+        specifier: ^2.1.0
+        version: 2.1.0
       micromark-extension-gfm-strikethrough:
         specifier: ^2.1.0
         version: 2.1.0
@@ -41,6 +47,9 @@ importers:
       micromark-extension-gfm-task-list-item:
         specifier: ^2.1.0
         version: 2.1.0
+      micromark-util-normalize-identifier:
+        specifier: ^2.0.1
+        version: 2.0.1
       prosemirror-search:
         specifier: ^1.1.1
         version: 1.1.1

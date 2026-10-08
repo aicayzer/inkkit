@@ -25,12 +25,19 @@ export function clipboardText(
   missingImages: ReadonlySet<string> = new Set(),
 ): string {
   const blocks: string[] = []
-  content.forEach((node) => blocks.push(nodeText(node, missingImages)))
+  content.forEach((node) => {
+    if (node.type.name !== 'reference_definition')
+      blocks.push(nodeText(node, missingImages))
+  })
   const inline = content.firstChild?.isInline ?? false
   return blocks.join(inline ? '' : '\n\n')
 }
 
 function nodeText(node: Node, missingImages: ReadonlySet<string>): string {
+  if (node.type.name === 'reference_definition') return ''
+  if (node.type.name === 'footnote_reference') return `[${node.attrs.label}]`
+  if (node.type.name === 'footnote_definition')
+    return `[${node.attrs.label}] ${clipboardText(node.content, missingImages)}`
   if (node.isText) return node.text ?? ''
   if (node.type.name === 'hardbreak' || node.type.name === 'hard_break')
     return '\n'
@@ -108,6 +115,23 @@ export function clipboardContent(
     serializer.marks,
   )
   container.append(safe.serializeFragment(content))
+  for (const definition of container.querySelectorAll(
+    '[data-inkkit-reference-definition]',
+  ))
+    definition.remove()
+  for (const reference of container.querySelectorAll(
+    '[data-inkkit-footnote-reference]',
+  )) {
+    reference.removeAttribute('tabindex')
+    reference.removeAttribute('role')
+  }
+  for (const definition of container.querySelectorAll(
+    '[data-inkkit-footnote-definition]',
+  )) {
+    const label = document.createElement('span')
+    label.textContent = `[${definition.getAttribute('data-inkkit-label')}] `
+    definition.prepend(label)
+  }
   return { text: clipboardText(content), html: container.innerHTML }
 }
 
@@ -150,6 +174,7 @@ export async function portableClipboard(
   )
   await Promise.all(
     captured.map(async ({ element, reference, alt }, index) => {
+      element.setAttribute('data-inkkit-image-slot', String(index))
       try {
         if (!adapter) throw new Error('The image is unavailable.')
         const image = await adapter.exportImage(reference, { ...context })

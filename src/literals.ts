@@ -5,18 +5,15 @@ interface InkKitLiteral extends Literal {
   type: 'inkkitLiteral'
 }
 declare module 'mdast' {
+  interface BlockContentMap {
+    inkkitLiteral: InkKitLiteral
+  }
   interface RootContentMap {
     inkkitLiteral: InkKitLiteral
   }
 }
 
-const unsupported = new Set([
-  'html',
-  'image',
-  'imageReference',
-  'definition',
-  'linkReference',
-])
+const unsupported = new Set(['html', 'image', 'imageReference'])
 
 function restoreInlineBreaks(node: Nodes): void {
   if (
@@ -69,6 +66,22 @@ function containsUnsupported(
   )
 }
 
+function containsUnresolved(node: Nodes, source: string): boolean {
+  if (node.type === 'text') {
+    const start = node.position?.start.offset
+    const end = node.position?.end.offset
+    if (start == null || end == null) return false
+    const raw = source.slice(start, end)
+    return /(?<!\\)\[\^[^\]\n]+\]|(?<!\\)\[[^\]\n]+\](?:\[[^\]\n]*\])?/.test(
+      raw,
+    )
+  }
+  return (
+    'children' in node &&
+    node.children.some((child) => containsUnresolved(child, source))
+  )
+}
+
 // Keep syntax we cannot faithfully edit as literal text, without making the rest
 // of the document a source editor or allowing HTML and image network requests.
 export function createLiteralPreservation(images: boolean) {
@@ -82,6 +95,31 @@ export function createLiteralPreservation(images: boolean) {
         source,
       )
       const frontmatterEnd = frontmatter?.[0].length ?? 0
+      const preserveBlock = <T extends RootContent>(
+        node: T,
+        depth = 0,
+      ): T | InkKitLiteral => {
+        if (node.type === 'footnoteDefinition') {
+          node.children = node.children.map((child) =>
+            preserveBlock(child, depth + 1),
+          )
+          return node
+        }
+        const start = node.position?.start.offset
+        const end = node.position?.end.offset
+        if (
+          start == null ||
+          end == null ||
+          (!containsUnsupported(node, images) &&
+            !containsUnresolved(node, source))
+        )
+          return node
+        let raw = source.slice(start, end)
+        // Definition indentation is restored by the footnote serializer.
+        for (let index = 0; index < depth; index++)
+          raw = raw.replace(/\r?\n(?: {4}|\t)/g, '\n')
+        return { type: 'inkkitLiteral', value: raw, position: node.position }
+      }
       const blocks: RootContent[] = []
       if (frontmatter)
         blocks.push({
@@ -117,15 +155,7 @@ export function createLiteralPreservation(images: boolean) {
             })
           continue
         }
-        const raw = source.slice(start, end)
-        const footnote = node.type !== 'code' && /\[\^[^\]]+\]/.test(raw)
-        if (containsUnsupported(node, images) || footnote)
-          blocks.push({
-            type: 'inkkitLiteral',
-            value: raw,
-            position: node.position,
-          })
-        else blocks.push(node)
+        blocks.push(preserveBlock(node))
       }
       tree.children = blocks
     },

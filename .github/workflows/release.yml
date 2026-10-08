@@ -43,4 +43,8 @@ jobs:
         with:
           node-version: '26'
       - name: Publish through npm trusted publishing
-        run: npm publish ./release/*.tgz --access public --provenance
+        run: |
+          node --version
+          npm --version
+          version="${GITHUB_REF_NAME#v}"
+          npm publish "./release/$version/aicayzer-inkkit-$version.tgz" --access public --provenance

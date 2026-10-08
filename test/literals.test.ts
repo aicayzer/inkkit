@@ -13,7 +13,6 @@ import { withEditor } from './harness'
 for (const source of [
   '<section>&amp; **raw**</section>',
   '![Picture](images/local.png)',
-  'Text[^ref]\n\n[^ref]: definition',
 ]) {
   test(`HTML clipboard retains literal Markdown: ${source}`, async () => {
     await withEditor(source, (editor) => {
