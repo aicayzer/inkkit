@@ -318,6 +318,7 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         break
       case 'find':
         editor.find(String(args.text), generation)
+        editor.focus()
         break
       case 'replace':
         result = editor.replace(
