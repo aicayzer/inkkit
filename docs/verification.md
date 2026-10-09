@@ -1,6 +1,6 @@
 # Verification record
 
-Verified on 8 October 2026. Version 0.0.1 is published on npm, and post-publication registry verification is complete.
+This record separates native-tested candidates from completed registry publication. Release issues retain the artefact hashes, workflow results and verification evidence for each version.
 
 ## Candidate
 

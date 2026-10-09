@@ -38,7 +38,10 @@ import {
 } from '@milkdown/kit/preset/gfm'
 import { $remark } from '@milkdown/kit/utils'
 import { autolinkInputRule } from './autolink'
-import { normalizeTableAlignment } from './table-alignment'
+import {
+  normalizeTableAlignment,
+  normalizeTableColumnAlignment,
+} from './table-alignment'
 import {
   preservingCodeBlocks,
   remarkCodeFences,
@@ -324,7 +327,7 @@ export const tables: MilkdownPlugin[] = [
                 if (attrs === false) return false
                 return {
                   ...attrs,
-                  alignment: normalizeTableAlignment(dom),
+                  alignment: normalizeTableColumnAlignment(dom),
                 }
               },
             }

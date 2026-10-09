@@ -114,3 +114,31 @@ test('standalone spreadsheet logical alignment uses the same direction rules', (
     '<table dir="rtl"><tr><th style="text-align:start">head</th></tr><tr><td style="text-align:start">cell</td></tr></table>',
     'right',
   ))
+
+test('mixed HTML uses header column alignment when auto direction differs between Hebrew and Latin cells', () =>
+  run(
+    '<p>Before</p><table><tr><th dir="auto" style="text-align:start">שלום</th></tr><tr><td dir="auto" style="text-align:start">cell</td></tr></table>',
+    'right',
+    'שלום',
+  ))
+
+test('mixed HTML column alignment retains the header even when body requests another physical alignment', () =>
+  run(
+    '<p>Before</p><table><tr><th style="text-align:right">head</th></tr><tr><td style="text-align:left">cell</td></tr></table>',
+    'right',
+  ))
+
+test.each([
+  ['\u200fLatin', 'right'],
+  ['\u061cLatin', 'right'],
+  ['\u200eשלום', 'left'],
+] as const)(
+  'auto direction respects the first directional mark before letters: %s',
+  (text, expected) => {
+    const template = document.createElement('template')
+    template.innerHTML = `<table><tr><td dir="auto" style="text-align:start">${text}</td></tr></table>`
+    expect(normalizeTableAlignment(template.content.querySelector('td')!)).toBe(
+      expected,
+    )
+  },
+)
