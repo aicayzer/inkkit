@@ -19,7 +19,7 @@ App integrations and app releases follow package publication as a separate deliv
 
 ## GitHub workflow
 
-The [InkKit Project](https://github.com/users/aicayzer/projects/3) is the working roadmap. Issues describe outcomes and acceptance criteria; milestones group releases. Version 0.0.6 is published and verified. Delivery and publication of 0.0.7 editing tools are authorised; its implementation began after the 0.0.6 release gate closed. Later roadmap work and permanent client-app adoption remain outside this delivery scope. Keep implementation decisions with their issue rather than duplicating the backlog in documents.
+The [InkKit Project](https://github.com/users/aicayzer/projects/3) is the working roadmap. Issues describe outcomes and acceptance criteria; milestones group releases. Versions 0.0.6 and 0.0.7 are published and verified, completing the authorised table refinements and editing tools delivery. Version 0.0.7 implementation began after the 0.0.6 release gate closed. Later roadmap work and permanent client-app adoption require separate delivery scope. Keep implementation decisions with their issue rather than duplicating the backlog in documents.
 
 - **Backlog:** scoped work awaiting readiness or dependencies.
 - **Ready:** agreed and sufficiently scoped. This does not start an agent session.
