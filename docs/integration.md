@@ -1,6 +1,6 @@
 # Integration and customisation
 
-This guide covers the **unpublished 0.0.8 candidate**. Existing editing and image APIs are available in 0.0.7; editability, text-input preferences, command availability and mount-time labels/keymaps require 0.0.8.
+Editability, text-input preferences, command availability and mount-time labels/keymaps require 0.0.8 or later. Native text ranges and viewport coordination require 0.0.9 or later.
 
 InkKit supplies document editing and portable exports. Your app supplies its interface, files and storage. Use exports from `@aicayzer/inkkit`; hosts do not import Milkdown or ProseMirror internals. The [API reference](api.md) defines errors and asynchronous contracts, and [preservation](preservation.md) explains source and clipboard fidelity.
 
@@ -76,6 +76,14 @@ After loading, `editor.commandState(1)` returns current availability without cha
 `editor.setEditable(false)` makes both editing surfaces read-only. Selection, copying, find, heading navigation, folding and mode switching remain available. Host document loading is still allowed. Re-enable editing with `editor.setEditable(true)`; history is retained. Pending imports and deferred destructive operations invalidated by the transition cannot later commit, even after editing is re-enabled. The host adapter remains responsible for retained bytes and orphan cleanup.
 
 `editor.setTextInputPreferences({ spellcheck: false })` changes native HTML input attributes on both surfaces. It replaces the preference set; omitted fields remove earlier explicit attributes and leave behaviour to the browser. Editability and input-policy changes reject during composition without partial changes; successful transitions preserve source, revision, dirty state, history, focus and selection. Browser and OS support determines whether an input preference takes effect.
+
+## Host search and overlapping chrome
+
+Keep the search field and match list in the host. Capture `editor.textSnapshot()` and search its readable `text`; carry its `snapshotId` with every UTF-16 match range. A selection-only search result can call `selectTextRange()` without taking focus away from the host field. Use explicit reveal/navigation when the user asks to visit a result. Capture fresh ranges after edits, mode changes, reloads or document replacement. Handle stale-range rejection rather than reusing old offsets.
+
+Supply your own scroll container and header/search-bar insets through `setViewport()`. Geometry and drop coordinates use client CSS pixels; translate them into native coordinates in the host. The editor owns no header rendering, toolbar layout or native search UI. `textRangeRects()` and `visibleTextRanges()` are demand-driven; they do not require a stream of per-character geometry across the bridge.
+
+Loading a document does not grab focus or scroll a browsing host to a caret. External reload preserves valid selection, scrolling and focus. Explicit navigation reveals the target using the same inset-aware viewport on formatted and source/TXT surfaces. See the [API contract](api.md#native-readable-text-and-layout) for readable text, protected ranges and coordinate semantics.
 
 ## Appearance, labels and shortcuts
 

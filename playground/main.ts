@@ -65,6 +65,8 @@ let headings: readonly Heading[] = []
 let pendingImage: Promise<void> | undefined
 let diagnostics: { code: string | null; message: string }[] = []
 let lastResult: unknown = null
+let searchSnapshot: ReturnType<InkKitEditor['textSnapshot']> | undefined
+let searchRange: Parameters<InkKitEditor['selectTextRange']>[0] | undefined
 function record(error: unknown) {
   const entry = {
     code: error instanceof Error && 'code' in error ? String(error.code) : null,
@@ -102,6 +104,12 @@ function observe() {
   } catch (error) {
     commandStateError = String(error)
   }
+  let textSnapshot, textSnapshotError
+  try {
+    textSnapshot = editor.textSnapshot()
+  } catch (error) {
+    textSnapshotError = String(error)
+  }
   return {
     fixture: fixtureId,
     configuration,
@@ -113,6 +121,10 @@ function observe() {
     editable: editor.editable,
     commandState: commandState ?? null,
     commandStateError: commandStateError ?? null,
+    textSnapshot: textSnapshot ?? null,
+    textSnapshotError: textSnapshotError ?? null,
+    viewport: editor.viewport(),
+    secondTextSnapshot: secondEditor?.textSnapshot() ?? null,
     adapterEvents: [...images.events],
     diagnostics: [...diagnostics],
     lastResult,
@@ -199,6 +211,8 @@ async function reset(
   pendingImage = undefined
   diagnostics = []
   lastResult = null
+  searchSnapshot = undefined
+  searchRange = undefined
   fixtureId = nextFixture
   configuration = nextConfiguration
   images.setMode('import', adapterMode)
@@ -267,7 +281,58 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
   const operationEpoch = mountEpoch
   let result: unknown
   try {
+    const target = args.instance === 'second' ? secondEditor : editor
+    if (!target) throw Error('Requested editor instance is not mounted')
     switch (name) {
+      case 'textSnapshot':
+        result = target.textSnapshot()
+        break
+      case 'selectTextRange':
+        result = target.selectTextRange(
+          args.range as Parameters<InkKitEditor['selectTextRange']>[0],
+          args.options as Parameters<InkKitEditor['selectTextRange']>[1],
+        )
+        break
+      case 'revealTextRange':
+        result = target.revealTextRange(
+          args.range as Parameters<InkKitEditor['revealTextRange']>[0],
+        )
+        break
+      case 'replaceTextRange':
+        result = target.replaceTextRange(
+          args.range as Parameters<InkKitEditor['replaceTextRange']>[0],
+          String(args.text),
+        )
+        break
+      case 'textRangeRects':
+        result = target.textRangeRects(
+          args.range as Parameters<InkKitEditor['textRangeRects']>[0],
+        )
+        break
+      case 'visibleTextRanges':
+        result = target.visibleTextRanges(String(args.snapshotId))
+        break
+      case 'setViewport':
+        result = target.setViewport({
+          insets: args.insets as Parameters<
+            InkKitEditor['setViewport']
+          >[0]['insets'],
+        })
+        break
+      case 'viewport':
+        result = target.viewport()
+        break
+      case 'reload': {
+        const snapshot = target.snapshot()
+        if (target === editor && args.sameGeneration !== true) generation += 1
+        target.reloadDocument({
+          documentId: snapshot.documentId,
+          generation: target === editor ? generation : snapshot.generation + 1,
+          format: snapshot.format,
+          text: args.text === undefined ? snapshot.text : String(args.text),
+        })
+        break
+      }
       case 'format':
         result = editor.format(
           args.command as FormatCommand,
@@ -464,6 +529,45 @@ click('replace', () =>
 )
 click('replace-all', () =>
   operation('replaceAll', { search: query(), replacement: replacement() }),
+)
+click('capture-text', async () => {
+  searchSnapshot = (await operation('textSnapshot')) as ReturnType<
+    InkKitEditor['textSnapshot']
+  >
+  const from = searchSnapshot.text.indexOf(query())
+  if (from < 0)
+    throw Error('Search text is not present in the readable snapshot')
+  searchRange = {
+    snapshotId: searchSnapshot.snapshotId,
+    from,
+    to: from + query().length,
+  }
+})
+click('select-range', () => {
+  if (!searchRange) throw Error('Capture a matching text range first')
+  return operation('selectTextRange', {
+    range: searchRange,
+    options: { focus: true, reveal: true },
+  })
+})
+click('replace-range', () => {
+  if (!searchRange) throw Error('Capture a matching text range first')
+  return operation('replaceTextRange', {
+    range: searchRange,
+    text: replacement(),
+  })
+})
+click('range-rects', () => {
+  if (!searchRange) throw Error('Capture a matching text range first')
+  return operation('textRangeRects', { range: searchRange })
+})
+click('viewport-insets', () =>
+  operation('setViewport', {
+    insets: {
+      top: Number(element<HTMLInputElement>('inset-top').value),
+      bottom: Number(element<HTMLInputElement>('inset-bottom').value),
+    },
+  }),
 )
 click('navigate-heading', () =>
   operation('navigateHeading', {

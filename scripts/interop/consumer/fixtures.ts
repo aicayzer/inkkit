@@ -8,7 +8,21 @@ export interface Fixture {
   format: 'md' | 'txt'
   text: string
 }
+export const wrappedSearchText =
+  'Wrapped match spans several visual lines so its first and final character must both fit below the host search header and above the bottom inset.'
 export const fixtures: Record<string, Fixture> = {
+  'native-search': {
+    label: 'Native search and viewport',
+    format: 'md',
+    text:
+      '# Native search\n\nUnicode: A😀B é 👨‍👩‍👧‍👦 中文.\n\n**Formatted match** and `code match`.\n\n> [!NOTE]- Folded\n> Hidden body match.\n\n<!-- hidden author comment -->\n\n![Opaque image](images/native.png)\n\n' +
+      Array.from(
+        { length: 36 },
+        (_, index) =>
+          `Paragraph ${index + 1}: scrollable fixture content.\n${index === 28 ? `\n${wrappedSearchText}\n` : ''}`,
+      ).join('\n') +
+      '\nFinal navigation target.\n',
+  },
   everyday: {
     label: 'Everyday Markdown',
     format: 'md',

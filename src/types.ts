@@ -24,6 +24,7 @@ export type EditorErrorCode =
   | 'preservation'
   | 'image-unavailable'
   | 'diagram-unavailable'
+  | 'invalid-range'
 export class InkKitError extends Error {
   constructor(
     public readonly code: EditorErrorCode,
@@ -93,4 +94,44 @@ export interface PrintableDocument {
   styles: string
   assets: readonly PortableImage[]
   warnings: readonly PrintableWarning[]
+}
+
+export interface TextRange {
+  snapshotId: string
+  from: number
+  to: number
+}
+export interface ReadableTextSnapshot {
+  snapshotId: string
+  documentId: string
+  generation: number
+  revision: number
+  format: DocumentFormat
+  mode: 'source' | 'formatted'
+  text: string
+  selection: TextRange
+}
+export interface TextRect {
+  left: number
+  top: number
+  right: number
+  bottom: number
+  width: number
+  height: number
+}
+export interface ViewportInsets {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+export interface ViewportOptions {
+  scrollContainer?: HTMLElement
+  insets?: Partial<ViewportInsets>
+}
+export interface ViewportSnapshot {
+  rect: TextRect
+  insets: ViewportInsets
+  scrollTop: number
+  scrollLeft: number
 }

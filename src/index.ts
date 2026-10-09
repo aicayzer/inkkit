@@ -29,6 +29,12 @@ export type {
   ClipboardDiagram,
   PrintableDocument,
   PrintableWarning,
+  TextRange,
+  ReadableTextSnapshot,
+  TextRect,
+  ViewportInsets,
+  ViewportOptions,
+  ViewportSnapshot,
 } from './types'
 
 export type { EditorLabels } from './labels'

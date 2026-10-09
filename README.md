@@ -2,9 +2,9 @@
 
 InkKit is a reusable Markdown editor for simple writing tools and richer document apps. It provides formatted editing, source preservation, portable clipboard content and optional host-managed images, while your app controls its appearance, files and interface.
 
-Write in formatted or source mode with shared undo/redo. Edit tables, task lists, footnotes, reference links, highlights and callouts. Preview bounded Mermaid diagrams offline. Copy readable text and semantic HTML, explicitly copy Markdown source, or capture a complete printable document. Unsupported syntax remains editable literal Markdown.
+Write in formatted or source mode with shared undo/redo. Edit tables, task lists, footnotes, reference links, highlights and callouts. Preview bounded Mermaid diagrams offline. Copy readable text and semantic HTML, explicitly copy Markdown source, or capture a complete printable document. Native hosts can use scoped readable-text ranges and demand-driven geometry with their own search controls and viewport insets. Unsupported syntax remains editable literal Markdown.
 
-**Version status:** 0.0.7 is published. This branch documents the **unpublished 0.0.8 candidate**, adding read-only and text-input policies, command availability, scoped appearance, labels and shortcuts. Installing from npm currently gets the published release; the new controls require the candidate.
+Host controls, read-only and text-input policies, command availability, scoped appearance, labels and shortcuts are available from 0.0.8. Check the [releases](https://github.com/aicayzer/inkkit/releases) for published versions and verification evidence.
 
 ```sh
 npm install @aicayzer/inkkit
@@ -43,6 +43,6 @@ InkKit runs on the web and in offline web views. Hosts use its public TypeScript
 
 Start with the [feature guide](docs/supported-syntax.md) and [simple and rich integration examples](docs/integration.md). The [documentation index](docs/README.md) links to precise API, preservation, playground, verification and publication guidance.
 
-Scope and release status live in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [version milestones](https://github.com/aicayzer/inkkit/milestones). Planned search, viewport and media extensions are tracked there; they are not capabilities of this candidate.
+Scope and release status live in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [version milestones](https://github.com/aicayzer/inkkit/milestones). Optional media extensions are tracked there. Only documented, released features form the supported package contract.
 
 MIT licensed. InkKit builds on the public PadPad and Memos editors; see [NOTICE](NOTICE).

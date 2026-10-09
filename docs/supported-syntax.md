@@ -1,13 +1,13 @@
 # Supported syntax
 
-This matrix applies to **published 0.0.7** and the **unpublished 0.0.8 candidate**. Version 0.0.8 adds host controls and development fixtures, without expanding syntax support. Source mode can edit all Markdown literally; the statuses below describe formatted mode.
+This matrix applies to 0.0.7–0.0.9. Versions 0.0.8 and 0.0.9 add host controls, development fixtures and native text/layout contracts without expanding syntax support. Source mode can edit all Markdown literally; the statuses below describe formatted mode.
 
 - **Rendered and editable:** InkKit recognises the construct and exposes its content for editing.
 - **Preserved literally:** source remains editable and saveable, without that construct's formatted behaviour.
 - **Adapter-dependent:** a host image adapter supplies presentation and portable bytes; the source reference stays opaque.
 - **Unsupported:** the file format or feature has no package implementation. Planned work is not supported content.
 
-| Content                                                           | Example                                                 | Status in 0.0.7 and candidate 0.0.8                                                                          |
+| Content                                                           | Example                                                 | Status from 0.0.7                                                                                            |
 | ----------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | CommonMark headings, paragraphs, emphasis, lists, quotes and code | `# Heading`, `**bold**`, `[link](https://example.com)`  | Rendered and editable.                                                                                       |
 | Task lists, strikethrough and autolinks                           | `- [x] Done`, `~~old~~`, `https://example.com`          | Rendered and editable.                                                                                       |

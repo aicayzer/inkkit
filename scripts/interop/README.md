@@ -90,9 +90,9 @@ For 0.0.7, pass `0.0.7`. The suite also checks complete raw source, spelling-onl
 
 The distant-heading fixture checks caret visibility in the textarea viewport after navigation, find, replacement, undo and reload, including wrapped lines. `sourceViewport` mirrors computed text metrics because textarea selections expose no caret geometry; `sourceScroll` sets a controlled initial viewport without changing selection. The incomplete Mermaid fixture verifies its exact `diagram-unavailable` diagnostic before `acknowledgeError` clears it. Any other recorded diagnostic fails the acknowledgement.
 
-## Selected 0.0.8 candidate checks
+## Selected checks from 0.0.8
 
-The 0.0.8 candidate adds named reusable documents and controlled image adapters in `consumer/fixtures.ts`. The playground uses the same fixture resources. `minimal` omits the image adapter; `rich` supplies deterministic portable PNGs and explicit import/export rejection or manually released delays. The consumer stays an isolated package fixture, not an app integration.
+Version 0.0.8 adds named reusable documents and controlled image adapters in `consumer/fixtures.ts`. The playground uses the same fixture resources. `minimal` omits the image adapter; `rich` supplies deterministic portable PNGs and explicit import/export rejection or manually released delays. The consumer stays an isolated package fixture, not an app integration.
 
 Keep the original positional arguments. Selection flags can appear before or after them, and each `--group` or `--scenario` can be repeated. Selection is the union of requested groups and scenario names. Unknown options, groups and scenarios, missing values, and groups empty for the requested version fail before WKWebView launches. `--list` prints JSON without requiring bundle or host files.
 
@@ -102,7 +102,7 @@ node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8
 node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --scenario host-delayed-import-editability-epoch
 ```
 
-Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls` and `legacy`. Version 0.0.8 defaults to bounded `core`; previous versions retain their historical complete suite when no selector is supplied. `legacy` retains every prior scenario available for the version. No group includes `intentional-assertion-failure`; it requires explicit selection.
+Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls`, `native-search`, `layout` and `legacy`. Versions from 0.0.8 default to bounded `core`; previous versions retain their historical complete suite when no selector is supplied. `legacy` retains every prior scenario available for the version. No group includes `intentional-assertion-failure`; it requires explicit selection.
 
 The core covers reference preservation and shared source/formatted history. Host controls cover source focus/input preferences, read-only transitions and preserved history, bridge command state and stale generations, synthetic composition guards, and cancellation of manually delayed image imports after editability changes. Synthetic composition events verify guards; they do not prove complete IME interoperability.
 
@@ -117,3 +117,15 @@ node scripts/interop/verify-native.mjs BUNDLE _local/interop/controlled-failure 
 Expect a non-zero result with the mismatched value and assertion step. Never count this expected failure as passing verification.
 
 For candidate changes run `pnpm check`, `pnpm format:check`, `pnpm build:playground` and the small Chromium smoke. Select browser regressions for changed behaviour. Run selected native checks for changed WKWebView, focus/input, bridge, clipboard, print or resource-lifecycle boundaries. Source-only documentation changes need no native run. Print groups remain opt-in and retain the protected preferences/pasteboard procedure above. Release verification still uses the actual archive and exact-version clean offline consumer; hosted CI is distinct from local results.
+
+## Native text and viewport checks from 0.0.9
+
+The `native-search` fixture includes UTF-16 Unicode, comments, folded callouts, protected image labels and distant text. Select the bounded core plus `native-search` and `layout` for the changed native boundaries:
+
+```sh
+node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.9 --group core --group native-search --group layout
+```
+
+Facade operations include `textSnapshot`, `selectTextRange`, `replaceTextRange`, `revealTextRange`, `textRangeRects`, `visibleTextRanges`, `setViewport` and `viewport`. `text` and `sourceName` identify a substring in a named snapshot; range operations round-trip its snapshot ID and UTF-16 offsets through JSON. Host-focus, controlled resize and second-instance helpers inspect DOM behaviour without exposing editor internals. Geometry is client CSS pixels, with supplied insets representing overlapping host chrome.
+
+The selected cases cover Unicode replacement and shared undo; read-only/composition and stale scopes; formatted/source insets, navigation, reload focus and scroll; resize and multiple-instance independence. Browser cases additionally exercise TXT/CRLF and source composition. Synthetic composition establishes guards, not complete IME interoperability. No native clipboard exchange or print campaign is implied by these layout checks.

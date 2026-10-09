@@ -4,7 +4,7 @@ Release `0.0.1` was published manually from the verified tarball. The workflow r
 
 ## Publication checklist
 
-Version 0.0.8 is an **unpublished candidate**. Its authorised implementation session stops at local commits and reviewable evidence. Publication, tags, pushes, merging and app adoption need their own delivery authority. Record future publication checklists in the version milestone and release evidence, without opening another version-shaped release issue. Retain existing historical release issues unchanged.
+Implementation and publication require explicit delivery authority. Record publication checklists in the version milestone and release evidence without opening another version-shaped release issue. Retain existing historical release issues unchanged.
 
 Pushing a later matching version tag starts npm publication. Complete the gate **before pushing the tag**, within an explicitly authorised release session.
 

@@ -630,8 +630,38 @@ test('no-op replacement keeps an exact half-CRLF found selection usable', () =>
     expect(editor.snapshot().text).toBe('firstX\nsecond\r\nthird')
   }))
 
+function sourceGeometry(
+  editor: InkKitEditor,
+  plain: HTMLTextAreaElement,
+  root: HTMLElement,
+  caretTop: () => number,
+  inspect?: (range: Range) => void,
+) {
+  for (const element of [plain, root])
+    Object.defineProperties(element, {
+      clientWidth: { configurable: true, value: 300 },
+      clientHeight: { configurable: true, value: 200 },
+    })
+  editor.setViewport({ insets: { top: 10, bottom: 48 } })
+  const bounds = vi
+    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockReturnValue(new DOMRect(0, 0, 300, 200))
+  const rectangles = vi
+    .spyOn(Range.prototype, 'getClientRects')
+    .mockImplementation(function (this: Range) {
+      inspect?.(this)
+      return [
+        new DOMRect(16, caretTop() - plain.scrollTop, 0, 24),
+      ] as unknown as DOMRectList
+    })
+  return () => {
+    rectangles.mockRestore()
+    bounds.mockRestore()
+  }
+}
+
 test('source heading navigation reveals wrapped caret geometry in both scroll directions without edits', () =>
-  run((editor, plain) => {
+  run((editor, plain, _ctx, root) => {
     const raw =
       '\uFEFF# Start\r\n\r\n' +
       'long wrapped source line '.repeat(100) +
@@ -642,34 +672,28 @@ test('source heading navigation reveals wrapped caret geometry in both scroll di
     plain.style.padding = '10px 16px 48px'
     plain.style.letterSpacing = '1px'
     plain.style.tabSize = '4'
-    Object.defineProperties(plain, {
-      clientWidth: { configurable: true, value: 300 },
-      clientHeight: { configurable: true, value: 200 },
-    })
-    const before = editor.snapshot()
-    const headings = editor.headings()
+    const before = editor.snapshot(),
+      headings = editor.headings()
     let caretTop = 1500
-    const rectangles = vi
-      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockImplementation(function (this: HTMLElement) {
-        if (this.hasAttribute('data-inkkit-source-caret')) {
-          const mirror = this.parentElement!
-          expect(mirror.style.width).toBe('300px')
-          expect(mirror.style.whiteSpace).toBe('pre-wrap')
-          expect(mirror.style.overflowWrap).toBe('break-word')
-          expect(mirror.style.padding).toBe('10px 16px 48px')
-          expect(mirror.style.tabSize).toBe('4')
-          return { top: caretTop, height: 18 } as DOMRect
-        }
-        return { top: 0, height: 0 } as DOMRect
-      })
+    const restore = sourceGeometry(
+      editor,
+      plain,
+      root,
+      () => caretTop,
+      (range) => {
+        const mirror = range.startContainer.parentElement!
+        expect(mirror.style.width).toBe('300px')
+        expect(mirror.style.whiteSpace).toBe('pre-wrap')
+        expect(mirror.style.overflowWrap).toBe('break-word')
+        expect(mirror.style.padding).toBe('10px 16px 48px')
+        expect(mirror.style.tabSize).toBe('4')
+      },
+    )
     try {
       editor.navigateHeading(headings[1]!)
       expect(plain.scrollTop).toBe(1372)
       expect(plain.selectionStart).toBe(plain.value.indexOf('## Distant'))
-      expect(
-        plain.ownerDocument.body.querySelector('[aria-hidden="true"]'),
-      ).toBeNull()
+      expect(document.body.querySelector('[aria-hidden="true"]')).toBeNull()
       caretTop = 10
       editor.navigateHeading(headings[0]!)
       expect(plain.scrollTop).toBe(0)
@@ -677,53 +701,42 @@ test('source heading navigation reveals wrapped caret geometry in both scroll di
       expect(editor.snapshot()).toEqual(before)
       expect(editor.undo()).toBe(false)
     } finally {
-      rectangles.mockRestore()
+      restore()
     }
   }))
 
 test('literal find, replacement and history reveal selections without taking focus', () =>
-  run((editor, plain) => {
+  run((editor, plain, _ctx, root) => {
     const raw = 'top\r\n\r\n' + 'wrapped '.repeat(100) + 'needle'
     editor.loadDocument({ ...input, text: raw })
     editor.setEditingMode('source')
     plain.style.font = '16px / 24px monospace'
-    Object.defineProperties(plain, {
-      clientWidth: { configurable: true, value: 300 },
-      clientHeight: { configurable: true, value: 200 },
-    })
     const focused = document.activeElement
     let caretTop = 900
-    const rectangles = vi
-      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockImplementation(function (this: HTMLElement) {
-        return {
-          top: this.hasAttribute('data-inkkit-source-caret') ? caretTop : 0,
-          height: 18,
-        } as DOMRect
-      })
+    const restore = sourceGeometry(editor, plain, root, () => caretTop)
     try {
       plain.setSelectionRange(0, 0)
       editor.find('needle')
-      expect(plain.scrollTop).toBe(724)
+      expect(plain.scrollTop).toBe(772)
       expect(document.activeElement).toBe(focused)
       plain.scrollTop = 0
       editor.replace('needle', 'replacement')
-      expect(plain.scrollTop).toBe(724)
+      expect(plain.scrollTop).toBe(772)
       expect(document.activeElement).toBe(focused)
       plain.scrollTop = 0
       editor.undo()
-      expect(plain.scrollTop).toBe(724)
+      expect(plain.scrollTop).toBe(772)
       expect(document.activeElement).toBe(focused)
-      caretTop = 0
+      caretTop = 10
       editor.find('top')
       expect(plain.scrollTop).toBe(0)
     } finally {
-      rectangles.mockRestore()
+      restore()
     }
   }))
 
-test('source caret measurement uses first wrapped line rather than remaining span height', () =>
-  run((editor, plain) => {
+test('source selection measurement bounds the selected text rather than remaining text height', () =>
+  run((editor, plain, _ctx, root) => {
     editor.loadDocument({
       ...input,
       text: 'a word-that-wraps with remaining lines\n'.repeat(50),
@@ -732,37 +745,28 @@ test('source caret measurement uses first wrapped line rather than remaining spa
     plain.style.fontFamily = 'monospace'
     plain.style.fontSize = '16px'
     plain.style.lineHeight = '24px'
-    Object.defineProperties(plain, {
-      clientWidth: { configurable: true, value: 300 },
-      clientHeight: { configurable: true, value: 200 },
-    })
-    const clientRects = vi
-      .spyOn(HTMLElement.prototype, 'getClientRects')
-      .mockImplementation(function (this: HTMLElement) {
-        if (!this.hasAttribute('data-inkkit-source-caret'))
-          return [] as unknown as DOMRectList
-        expect(this.textContent).toBe(plain.value.slice(plain.selectionStart))
-        expect(this.parentElement!.style.fontFamily).toBe('monospace')
-        expect(this.parentElement!.style.lineHeight).toBe('24px')
-        return [{ top: 900, height: 18 }] as unknown as DOMRectList
-      })
-    const boundingRects = vi
-      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockImplementation(function (this: HTMLElement) {
-        return {
-          top: 0,
-          height: this.hasAttribute('data-inkkit-source-caret') ? 5000 : 0,
-        } as DOMRect
-      })
+    const restore = sourceGeometry(
+      editor,
+      plain,
+      root,
+      () => 900,
+      (range) => {
+        expect(range.startOffset).toBe(plain.selectionStart)
+        expect(range.endOffset).toBe(plain.selectionEnd)
+        expect(range.startContainer.parentElement!.style.fontFamily).toBe(
+          'monospace',
+        )
+        expect(range.startContainer.parentElement!.style.lineHeight).toBe(
+          '24px',
+        )
+      },
+    )
     try {
       plain.setSelectionRange(0, 0)
       editor.find('word-that-wraps')
-      expect(plain.scrollTop).toBe(724)
-      expect(
-        document.body.querySelector('[data-inkkit-source-caret]'),
-      ).toBeNull()
+      expect(plain.scrollTop).toBe(772)
+      expect(document.body.querySelector('[aria-hidden="true"]')).toBeNull()
     } finally {
-      clientRects.mockRestore()
-      boundingRects.mockRestore()
+      restore()
     }
   }))

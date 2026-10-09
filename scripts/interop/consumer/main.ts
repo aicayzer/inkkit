@@ -8,6 +8,7 @@ let currentCaretState
 let currentCommandState
 let pendingPaste
 let pendingPrintable
+let secondEditor
 const mountEditor = (configuration = 'rich') =>
   InkKitEditor.mount(
     document.querySelector('#editor'),
@@ -213,6 +214,29 @@ const inspectDOM = (selector) => {
 const valueAt = (result, path) =>
   path ? path.split('.').reduce((value, key) => value?.[key], result) : result
 
+const scopedRange = (operation, results) => {
+  if (operation.range) return operation.range
+  const snapshot = operation.sourceName
+    ? results[operation.sourceName]
+    : editor.textSnapshot()
+  const from =
+    operation.from ??
+    findOccurrence(snapshot.text, operation.text, operation.occurrence ?? 0) +
+      (operation.offset ?? 0)
+  return {
+    snapshotId: snapshot.snapshotId,
+    from,
+    to: operation.to ?? from + (operation.length ?? operation.text.length),
+  }
+}
+const viewportState = () => ({
+  viewport: editor.viewport(),
+  hostFocused:
+    document.activeElement === document.querySelector('#host-search'),
+  editorFocused: document.activeElement === activeEditor(),
+  selection: editor.textSnapshot().selection,
+})
+
 window.interop = {
   load,
   export: exportClipboard,
@@ -265,6 +289,114 @@ window.interop = {
       let result
       try {
         switch (operation.op) {
+          case 'textSnapshot':
+            result = editor.textSnapshot()
+            break
+          case 'selectTextRange': {
+            const range = scopedRange(operation, results)
+            const target =
+              operation.instance === 'second' ? secondEditor : editor
+            target.selectTextRange(range, operation.options)
+            const snapshot = target.textSnapshot()
+            result = {
+              selection: snapshot.selection,
+              text: snapshot.text.slice(
+                snapshot.selection.from,
+                snapshot.selection.to,
+              ),
+            }
+            break
+          }
+          case 'replaceTextRange':
+            result = editor.replaceTextRange(
+              scopedRange(operation, results),
+              operation.replacement,
+            )
+            break
+          case 'revealTextRange':
+            result = editor.revealTextRange(scopedRange(operation, results))
+            break
+          case 'textRangeRects':
+            result = editor.textRangeRects(scopedRange(operation, results))
+            break
+          case 'rangeGeometry': {
+            const range = scopedRange(operation, results)
+            const rects = editor.textRangeRects(range)
+            const viewport = editor.viewport()
+            const visible = editor.visibleTextRanges(range.snapshotId)
+            result = {
+              rects,
+              viewport,
+              hasRects: rects.length > 0,
+              wrapped:
+                new Set(rects.map((rect) => Math.round(rect.top))).size > 1,
+              fitsViewport:
+                rects.length > 0 &&
+                Math.max(...rects.map((rect) => rect.bottom)) -
+                  Math.min(...rects.map((rect) => rect.top)) <=
+                  viewport.rect.height,
+              insideViewport:
+                rects.length > 0 &&
+                rects.every(
+                  (rect) =>
+                    rect.top >= viewport.rect.top - 1 &&
+                    rect.bottom <= viewport.rect.bottom + 1,
+                ),
+              visibleContains: visible.some(
+                (entry) => entry.from <= range.from && entry.to >= range.to,
+              ),
+            }
+            break
+          }
+          case 'setViewport':
+            result = editor.setViewport({ insets: operation.insets })
+            break
+          case 'viewportState':
+            result = viewportState()
+            break
+          case 'hostFocus': {
+            const host = document.querySelector('#host-search')
+            host.hidden = false
+            host.focus()
+            result = { focused: document.activeElement === host }
+            break
+          }
+          case 'layout': {
+            const root = document.querySelector('#editor')
+            if (operation.height !== undefined)
+              root.style.height = `${operation.height}px`
+            if (operation.width !== undefined)
+              root.style.width = `${operation.width}px`
+            if (operation.top !== undefined) {
+              root.scrollTop = operation.top
+              const surface = activeEditor()
+              if (surface instanceof HTMLTextAreaElement)
+                surface.scrollTop = operation.top
+            }
+            await settle()
+            result = viewportState()
+            break
+          }
+          case 'mountSecond': {
+            const root = document.querySelector('#second-editor')
+            root.hidden = false
+            root.style.height = '200px'
+            root.style.width = '300px'
+            secondEditor = await InkKitEditor.mount(root, {
+              changed() {},
+              stateChanged() {},
+              copy() {},
+              openLink() {},
+            })
+            secondEditor.loadDocument({
+              documentId: 'second',
+              generation: 1,
+              format: 'md',
+              text: 'Independent 😀 text.',
+            })
+            result = secondEditor.textSnapshot()
+            break
+          }
           case 'awaitDOM': {
             const deadline = performance.now() + (operation.timeout ?? 15_000)
             do {
@@ -816,7 +948,7 @@ window.interop = {
           case 'reload':
             editor.reloadDocument({
               documentId,
-              generation: ++generation,
+              generation: operation.sameGeneration ? generation : ++generation,
               format: operation.format ?? documentFormat,
               text: operation.source,
             })
