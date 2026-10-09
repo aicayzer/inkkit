@@ -10,12 +10,12 @@ Pushing a later matching version tag starts npm publication. Complete the gate *
 2. Run the checks in [development](development.md), including relevant isolated native integrations and clipboard checks. Update API and supported-syntax documentation to match the implemented behaviour.
 3. Record the reviewed release commit, tested tarball SHA-256, npm integrity, decompressed tar SHA-256, offline bundle SHA-256 and verification results in the release issue. Retain the candidate and its evidence in `_local/release/<version>/`. Review the packed file allowlist and confirm version/tag agreement.
 4. Check the npm trusted-publisher configuration, then tag the reviewed commit `v<version>` and push that tag. Inspect the hosted workflow's validation and publication results.
-5. Download the release workflow's `release-package` artefact into a separate directory. Verify publication with the command below. Record the workflow URL, OIDC result and registry evidence before closing the release issue and milestone. Publish and verify 0.0.2 before beginning 0.0.3 delivery.
+5. Download the release workflow's `release-package` artefact into a separate directory. Verify publication with the command below. Record the workflow URL, OIDC result and registry evidence before closing the release issue and milestone. Publish and verify each authorised release before beginning implementation of the next.
 
 ```sh
-node scripts/verify-release.mjs 0.0.2 \
-  _local/release/0.0.2/aicayzer-inkkit-0.0.2.tgz \
-  _local/hosted-release/0.0.2/aicayzer-inkkit-0.0.2.tgz
+node scripts/verify-release.mjs 0.0.4 \
+  _local/release/0.0.4/aicayzer-inkkit-0.0.4.tgz \
+  _local/hosted-release/0.0.4/aicayzer-inkkit-0.0.4.tgz
 ```
 
 Use the corresponding version and paths for each release. The command verifies registry version and SHA-512 integrity, requires the registry's compressed archive to match the published CI archive exactly, and compares the decompressed tar byte-for-byte with the native-tested candidate. Different compression is acceptable only when decompressed tar bytes are identical; record that difference. A content mismatch blocks release completion.

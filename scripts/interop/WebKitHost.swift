@@ -4,7 +4,7 @@ import PDFKit
 import WebKit
 
 @MainActor
-final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate {
+final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     var web: WKWebView!
     var window: NSWindow!
     let args = CommandLine.arguments
@@ -15,15 +15,31 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             fputs("Usage: webkit-host BUNDLE export|partial|paste|scenario|print INPUT OUTPUT\n", stderr)
             exit(1)
         }
-        web = WKWebView(frame: NSRect(x: 0, y: 0, width: 720, height: 640))
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController.add(self, name: "diagnostic")
+        configuration.userContentController.addUserScript(WKUserScript(source: """
+            addEventListener('error', event => window.webkit.messageHandlers.diagnostic.postMessage(String(event.message)));
+            addEventListener('unhandledrejection', event => window.webkit.messageHandlers.diagnostic.postMessage(String(event.reason)));
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        web = WKWebView(frame: NSRect(x: 0, y: 0, width: 720, height: 640), configuration: configuration)
         web.navigationDelegate = self
         window = NSWindow(
             contentRect: NSRect(x: 20, y: 20, width: 720, height: 640),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "InkKit disposable clipboard fixture"
         window.contentView = web
+        window.orderFront(nil)
         let url = URL(fileURLWithPath: args[1])
         web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        fputs("WKWebView: \(message.body)\n", stderr)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        fputs("WKWebView navigation: \(error)\n", stderr)
+        exit(1)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

@@ -4,8 +4,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 
 const version = process.argv[5] ?? '0.0.2'
-if (!['0.0.2', '0.0.3'].includes(version))
-  throw Error('Native fixture version must be 0.0.2 or 0.0.3')
+if (!['0.0.2', '0.0.3', '0.0.4'].includes(version))
+  throw Error('Native fixture version must be 0.0.2, 0.0.3 or 0.0.4')
 const bundle = resolve(
   process.argv[2] ?? '_local/interop/consumer/dist/index.html',
 )
@@ -195,7 +195,7 @@ const calloutSource =
   '> [!NOTE] Native &#13; title\n> Native note body.\n>  Indented &amp; native source.\n\n> [!TIP]+ Native &#10; title\n> Native tip body.\n\n> [!IMPORTANT]\n> Native important body.\n\n> [!WARNING]- Native folded title\n> Native folded body.\n\n- > [!CAUTION] Native nested title\n  > Native caution body.\n\n> [!TODO]\n> Unsupported native callout.\n\n> [!NOTE] + Spaced fold stays literal\n> Unsupported native fold.\n'
 const commentSource =
   'Public [link][Shared] <!--INLINE_SECRET <script>window.commentExecuted=true</script>--> beside %%OBSIDIAN_SECRET%% text.\n\n<!--\nBLOCK_SECRET\n-->\n\n%%\nOBSIDIAN_BLOCK_SECRET\n%%\n\n[Shared]: https://example.com/shared\n'
-if (version === '0.0.3')
+if (version === '0.0.3' || version === '0.0.4')
   Object.assign(scenarios, {
     'callout-lifecycle': {
       source: calloutSource,
@@ -505,6 +505,158 @@ if (version === '0.0.3')
       ],
     },
   })
+if (version === '0.0.4') {
+  const flowchart = 'flowchart TD\n    A[Start] --> B[Finish]'
+  const authored = `\uFEFFBefore **bold**.\r\n\r\n~~~~mermaid\r\n${flowchart.replaceAll('\n', '\r\n')}\r\n~~~~\r\n\r\nAfter &amp; preserved.\r\n`
+  const editedSurrounding = authored.replace('Before', 'Changed')
+  const exportedImage = (name) => [
+    assert('diagrams.length', 1, name),
+    contains('diagrams.0.source', 'flowchart TD', name),
+    assert('diagrams.0.image.mimeType', 'image/png', name),
+    contains('diagrams.0.image.bytesBase64', 'iVBOR', name),
+    assert('images.length', 1, name),
+    assert('images.0.image.mimeType', 'image/png', name),
+    contains('html', '<img', name),
+    excludes('html', '<svg', name),
+  ]
+  Object.assign(scenarios, {
+    'mermaid-source-lifecycle': {
+      source: authored,
+      operations: [
+        assert('snapshot.text', authored),
+        { op: 'select', text: 'Before', selector: 'p' },
+        { op: 'insertText', text: 'Changed' },
+        assert('snapshot.text', editedSurrounding),
+        { op: 'save', name: 'surrounding' },
+        { op: 'reopen' },
+        same('snapshot.text', 'surrounding', 'text'),
+        { op: 'awaitDOM', selector: '.inkkit-mermaid-preview svg' },
+        { op: 'select', text: 'Start', selector: 'pre code' },
+        { op: 'insertText', text: 'Beginning' },
+        assert(
+          'snapshot.text',
+          editedSurrounding.replace('Start', 'Beginning'),
+        ),
+        { op: 'keyDown', key: 'z', code: 'KeyZ', metaKey: true },
+        assert('snapshot.text', editedSurrounding),
+        { op: 'select', text: 'Start', selector: 'pre code' },
+        { op: 'insertText', text: 'Beginning' },
+        { op: 'save', name: 'edited' },
+        { op: 'reopen' },
+        assert('snapshot.dirty', false),
+        same('snapshot.text', 'edited', 'text'),
+        { op: 'export', name: 'savedDiagram' },
+        same('markdown', 'edited', 'text', 'savedDiagram'),
+        contains('diagrams.0.source', 'Beginning', 'savedDiagram'),
+        { op: 'load', source: 'Replacement document' },
+        assert('snapshot.text', 'Replacement document'),
+        { op: 'awaitDOM', selector: '.inkkit-mermaid-preview', count: 0 },
+        { op: 'export', name: 'replacement' },
+        assert('diagrams.length', 0, 'replacement'),
+        assert('images.length', 0, 'replacement'),
+      ],
+    },
+    'mermaid-clipboard-selections': {
+      source: authored,
+      operations: [
+        { op: 'export', name: 'whole' },
+        assert('markdown', authored, 'whole'),
+        ...exportedImage('whole'),
+        contains('text', 'Before', 'whole'),
+        contains('text', 'After', 'whole'),
+        { op: 'selectContents', selector: 'pre' },
+        { op: 'export', all: false, name: 'diagramOnly' },
+        ...exportedImage('diagramOnly'),
+        contains('markdown', '~~~~mermaid', 'diagramOnly'),
+        contains('markdown', 'A[Start] --> B[Finish]', 'diagramOnly'),
+        excludes('markdown', 'Before', 'diagramOnly'),
+        excludes('markdown', 'After', 'diagramOnly'),
+        { op: 'selectBlocks', fromSelector: 'p', toSelector: 'pre' },
+        { op: 'export', all: false, name: 'mixed' },
+        ...exportedImage('mixed'),
+        contains('markdown', 'Before **bold**.', 'mixed'),
+        contains('markdown', '~~~~mermaid', 'mixed'),
+        contains('html', '<strong>bold</strong>', 'mixed'),
+        excludes('markdown', 'After', 'mixed'),
+        { op: 'load', source: '' },
+        { op: 'paste', input: { text: flowchart, markdown: authored } },
+        contains('snapshot.text', '~~~~mermaid'),
+        { op: 'export', name: 'pasted' },
+        ...exportedImage('pasted'),
+      ],
+    },
+    'mermaid-sequence': {
+      source:
+        '```mermaid\nsequenceDiagram\n    Alice->>Bob: Hello\n    Bob-->>Alice: Welcome\n```\n',
+      operations: [
+        { op: 'awaitDOM', selector: '.inkkit-mermaid-preview svg' },
+        { op: 'export', name: 'sequence' },
+        assert('diagrams.length', 1, 'sequence'),
+        contains('diagrams.0.source', 'sequenceDiagram', 'sequence'),
+        assert('diagrams.0.image.mimeType', 'image/png', 'sequence'),
+        contains('diagrams.0.image.bytesBase64', 'iVBOR', 'sequence'),
+        contains('markdown', 'Bob-->>Alice: Welcome', 'sequence'),
+        { op: 'security', name: 'safe' },
+        assert('externalResources.length', 0, 'safe'),
+        assert('activeElements', 0, 'safe'),
+      ],
+    },
+    'mermaid-literal-txt': {
+      source: authored,
+      format: 'txt',
+      operations: [
+        assert('snapshot.text', authored),
+        { op: 'select', text: 'Start' },
+        { op: 'insertText', text: 'Plain' },
+        assert('snapshot.text', authored.replace('Start', 'Plain')),
+        { op: 'save' },
+        { op: 'reopen' },
+        { op: 'export', name: 'literal' },
+        contains('text', '~~~~mermaid', 'literal'),
+        contains('text', 'A[Plain] --> B[Finish]', 'literal'),
+        assert('images.length', 0, 'literal'),
+      ],
+    },
+  })
+  for (const [name, source] of Object.entries({
+    invalid: 'flowchart TD\nA[Unclosed',
+    unsupported: 'unsupportedDiagram\nretained source',
+    directive: '%%{init: {"securityLevel":"loose"}}%%\nflowchart TD\nA-->B',
+    callback: 'flowchart TD\nA-->B\nclick A inkkitUnsafeCallback',
+    external: 'flowchart TD\nA-->B\nclick A "https://example.com/inkkit-probe"',
+    html: 'flowchart TD\nA["<img src=https://example.com/inkkit-probe onerror=window.inkkitUnsafeCallback=true>"]',
+  })) {
+    const markdown = `Before fallback.\n\n~~~mermaid\n${source}\n~~~\n\nAfter fallback.\n`
+    scenarios[`mermaid-fallback-${name}`] = {
+      source: markdown,
+      operations: [
+        assert('snapshot.text', markdown),
+        { op: 'export', name: 'fallback' },
+        assert('markdown', markdown, 'fallback'),
+        assert('diagrams.length', 1, 'fallback'),
+        {
+          op: 'assert',
+          path: 'diagrams.0.error',
+          truthy: true,
+          name: 'fallback',
+        },
+        assert('images.length', 0, 'fallback'),
+        contains('text', source, 'fallback'),
+        contains('html', 'Before fallback.', 'fallback'),
+        contains('html', 'After fallback.', 'fallback'),
+        { op: 'security', name: 'protected' },
+        assert('callbackExecuted', false, 'protected'),
+        assert('externalResources.length', 0, 'protected'),
+        assert('activeElements', 0, 'protected'),
+        { op: 'save', name: 'retained' },
+        { op: 'reopen' },
+        same('snapshot.text', 'retained', 'text'),
+        { op: 'load', source: 'Safe replacement' },
+        assert('snapshot.text', 'Safe replacement'),
+      ],
+    }
+  }
+}
 const evidence = {
   version,
   bundle,

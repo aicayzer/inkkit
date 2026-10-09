@@ -109,6 +109,7 @@ import {
   setSearchState,
 } from 'prosemirror-search'
 import { taskListPlugin, toggleTaskList } from './tasks'
+import { isMermaid, mermaidPreview } from './mermaid'
 
 export type Mark =
   'bold' | 'italic' | 'strikethrough' | 'highlight' | 'code' | 'link'
@@ -539,9 +540,26 @@ export class InkKitEditor {
           )
       const pre = document.createElement('pre')
       pre.textContent = text
-      return { text, html: pre.outerHTML, markdown: text, images: [] }
+      return {
+        text,
+        html: pre.outerHTML,
+        markdown: text,
+        images: [],
+        diagrams: [],
+      }
     }
     const { doc, schema, selection } = this.editor.ctx.get(editorViewCtx).state
+    const completeDiagrams = new Set<string>()
+    doc.descendants((node, pos) => {
+      if (
+        isMermaid(node) &&
+        (all ||
+          (selection.from <= pos + 1 &&
+            selection.to >= pos + node.nodeSize - 1))
+      ) {
+        completeDiagrams.add(node.textContent.replace(/\r\n?/g, '\n'))
+      }
+    })
     const content = all
       ? doc.content
       : commentSelectionContent(
@@ -557,7 +575,11 @@ export class InkKitEditor {
     try {
       markdown = all
         ? snapshot.text
-        : selectionMarkdown(this.editor.ctx, doc, valid)
+        : completeDiagrams.size
+          ? new Preservation(this.editor.ctx, snapshot.text).serialize(
+              doc.type.create(null, selectionContent(doc, valid)),
+            )
+          : selectionMarkdown(this.editor.ctx, doc, valid)
     } catch (error) {
       throw new InkKitError(
         'preservation',
@@ -572,6 +594,7 @@ export class InkKitEditor {
       markdown,
       this.options.images,
       this.context(),
+      completeDiagrams,
     )
     const metadata = referenceMetadata(this.editor.ctx, doc, content)
     if (metadata != null)
@@ -584,6 +607,13 @@ export class InkKitEditor {
         new InkKitError(
           'image-unavailable',
           'Some copied images were unavailable; their descriptions were retained',
+        ),
+      )
+    if (result.diagrams?.some((diagram) => diagram.error))
+      this.events.error?.(
+        new InkKitError(
+          'diagram-unavailable',
+          'Some diagrams could not be exported; their source was retained',
         ),
       )
     return result
@@ -774,6 +804,7 @@ export class InkKitEditor {
       .use(codeCopyPlugin((text) => events.copy(text)))
       .use(placeholderPlugin)
       .use(highlightPlugin)
+      .use(mermaidPreview((error) => events.error?.(error)))
       .use(selectionPlugin)
       .use($prose(() => search()))
       .use(options.images ? imageView(options.images) : [])
@@ -854,7 +885,7 @@ export class InkKitEditor {
       const expanded = selectionContent(view.state.doc, fragment)
       let hasImages = false
       expanded.descendants((node) => {
-        if (node.type.name === 'image') hasImages = true
+        if (node.type.name === 'image' || isMermaid(node)) hasImages = true
       })
       if (!hasImages) {
         if (!event.clipboardData || fragment.size === 0) return
@@ -905,10 +936,14 @@ export class InkKitEditor {
         void instance
           .clipboardSnapshot(false)
           .then(async (content) => {
-            if (cut && content.images.some((image) => image.error))
+            if (
+              cut &&
+              (content.images.some((image) => image.error) ||
+                content.diagrams?.some((diagram) => diagram.error))
+            )
               throw new InkKitError(
                 'image-unavailable',
-                'The selected images could not be cut safely',
+                'The selected content could not be cut safely',
               )
             await events.clipboard!(content)
             if (cut) {
@@ -939,7 +974,7 @@ export class InkKitEditor {
         events.error?.(
           new InkKitError(
             'image-unavailable',
-            'The host must provide a clipboard handler to copy images',
+            'The host must provide a clipboard handler for portable images and diagrams',
           ),
         )
       }

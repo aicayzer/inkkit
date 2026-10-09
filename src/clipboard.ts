@@ -7,8 +7,10 @@ import {
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { shareableFragment } from './comments'
+import { diagramImage } from './mermaid'
 import type {
   ClipboardImage,
+  ClipboardDiagram,
   ClipboardOutput,
   DocumentContext,
   ImageAdapter,
@@ -162,6 +164,7 @@ export async function portableClipboard(
   markdown: string,
   adapter: ImageAdapter | undefined,
   context: DocumentContext,
+  completeDiagrams?: ReadonlySet<string>,
 ): Promise<ClipboardOutput> {
   content = shareableFragment(content)
   const base = clipboardContent(content, schema)
@@ -186,6 +189,7 @@ export async function portableClipboard(
   await Promise.all(
     captured.map(async ({ element, reference, alt }, index) => {
       element.setAttribute('data-inkkit-image-slot', String(index))
+      element.setAttribute('data-inkkit-authored-image-slot', String(index))
       try {
         if (!adapter) throw new Error('The image is unavailable.')
         const image = await adapter.exportImage(reference, { ...context })
@@ -207,6 +211,56 @@ export async function portableClipboard(
       }
     }),
   )
+  const diagrams: ClipboardDiagram[] = []
+  for (const code of container.querySelectorAll(
+    'pre[data-language="mermaid"] > code',
+  )) {
+    const source = code.textContent ?? ''
+    if (completeDiagrams && !completeDiagrams.has(source)) continue
+    const result: ClipboardDiagram = { source }
+    diagrams.push(result)
+    try {
+      const image = await diagramImage(source)
+      let binary = ''
+      for (const byte of image.bytes) binary += String.fromCharCode(byte)
+      const figure = document.createElement('figure')
+      figure.setAttribute('data-inkkit-mermaid', source)
+      const fence = code.parentElement!.getAttribute('data-inkkit-fence')
+      if (fence) figure.setAttribute('data-inkkit-fence', fence)
+      const element = document.createElement('img')
+      element.src = `data:image/png;base64,${btoa(binary)}`
+      element.alt = `Mermaid diagram: ${source}`
+      figure.append(element)
+      code.parentElement!.replaceWith(figure)
+      result.image = image
+    } catch (error) {
+      result.error =
+        error instanceof Error
+          ? error.message
+          : 'The diagram could not be exported.'
+      const warning = document.createElement('p')
+      warning.setAttribute('data-inkkit-diagram-error', '')
+      warning.textContent = `Diagram unavailable: ${result.error}`
+      code.parentElement!.before(warning)
+    }
+  }
+  // Native attachment slots follow DOM order, including generated diagrams.
+  const orderedImages: ClipboardImage[] = []
+  for (const element of container.querySelectorAll('img')) {
+    const diagram = element.closest('[data-inkkit-mermaid]')
+    const item = diagram
+      ? {
+          reference: '',
+          alt: element.alt,
+          image: diagrams.find(
+            (entry) =>
+              entry.source === diagram.getAttribute('data-inkkit-mermaid'),
+          )!.image,
+        }
+      : images[Number(element.getAttribute('data-inkkit-image-slot'))]!
+    element.setAttribute('data-inkkit-image-slot', String(orderedImages.length))
+    orderedImages.push(item)
+  }
   // Scriptable links and event attributes are not part of semantic rich text.
   for (const element of container.querySelectorAll('*')) {
     for (const attribute of [...element.attributes])
@@ -224,6 +278,7 @@ export async function portableClipboard(
     text: clipboardText(content, missing),
     html: container.innerHTML,
     markdown,
-    images,
+    images: [...orderedImages, ...images.filter((image) => image.error)],
+    diagrams,
   }
 }

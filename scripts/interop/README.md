@@ -54,6 +54,16 @@ For 0.0.3, pass the version as the final argument:
 node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.3
 ```
 
+For 0.0.4, build a separate consumer from its candidate archive and pass `0.0.4` as the final argument. The suite retains the earlier scenarios and adds Mermaid source editing, undo, save/reopen, replacement, whole-document and diagram-only/mixed selection copying, flowchart/sequence PNG assets, invalid/unsafe-source fallback and literal TXT. Native clipboard destination tests remain separate.
+
+```sh
+node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE _local/interop/consumer-0.0.4
+swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/webkit-host-0.0.4
+node scripts/interop/verify-native.mjs _local/interop/consumer-0.0.4/dist/index.html _local/release/0.0.4/native _local/interop/webkit-host-0.0.4 0.0.4
+```
+
+`awaitDOM` waits for a selector to reach the requested `count` (default 1), with a bounded `timeout` in milliseconds (default 15000). `selectBlocks` creates a native DOM selection from `fromSelector` through `toSelector`, with optional zero-based `fromOccurrence`/`toOccurrence`. `security` records external resource loads, active embedded elements and the unsafe callback sentinel. Assertions can use `truthy` for errors whose exact wording belongs to the renderer. Portable image bytes in result JSON use `bytesBase64`, including each diagram's image and ordinary clipboard image slots.
+
 This retains the 0.0.2 scenarios and adds callout folding, highlight formatting, comment visibility and editing, source/ordinary-copy separation, reference-provenance privacy and native print checks. Additional operations inspect DOM attributes/styles, send DOM keys, set comment visibility and host keymaps, and paste a named frozen export. `assert.equalsFrom` compares against a named result without duplicating its bytes.
 
 `print` mode uses the WKWebView native print operation with hidden panels to save a disposable PDF beside its JSON result. PDFKit extracts its text for assertions that comments and editor controls are absent and collapsed callout bodies are included. Build the host against the current macOS SDK before running it.

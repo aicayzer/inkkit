@@ -652,3 +652,19 @@ body {
     display: block !important;
   }
 }
+/* Diagram previews are presentation; the authored code remains editable. */
+.inkkit-mermaid-preview {
+  padding: 16px;
+  overflow: auto;
+  background: #fff;
+  color: #222;
+}
+.inkkit-mermaid-preview svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.inkkit-mermaid-preview[data-state='error'] {
+  color: #9b2424;
+  font-size: 0.9em;
+}

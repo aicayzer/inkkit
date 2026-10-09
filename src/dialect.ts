@@ -38,6 +38,11 @@ import {
 } from '@milkdown/kit/preset/gfm'
 import { $remark } from '@milkdown/kit/utils'
 import { autolinkInputRule } from './autolink'
+import {
+  preservingCodeBlocks,
+  remarkCodeFences,
+  fencedCodeHandler,
+} from './code-fences'
 import { literalBlock, createLiteralPreservation } from './literals'
 import { references, remarkReferencesPlugin } from './references'
 import { callouts, remarkCalloutsPlugin } from './callouts'
@@ -147,7 +152,7 @@ function remarkDialect(this: Processor) {
   add('toMarkdownExtensions', gfmTaskListItemToMarkdown())
   add('toMarkdownExtensions', gfmAutolinkLiteralToMarkdown())
   add('toMarkdownExtensions', gfmTableToMarkdown())
-  add('toMarkdownExtensions', { handlers: { link } })
+  add('toMarkdownExtensions', { handlers: { link, code: fencedCodeHandler } })
 }
 
 export const remarkDialectPlugin = $remark('remarkDialect', () => remarkDialect)
@@ -333,6 +338,7 @@ export const tables: MilkdownPlugin[] = [
 
 export function createDialect(images: boolean): MilkdownPlugin[] {
   return [
+    remarkCodeFences,
     remarkReferencesPlugin,
     remarkCalloutsPlugin,
     remarkCommentsPlugin,
@@ -343,6 +349,7 @@ export function createDialect(images: boolean): MilkdownPlugin[] {
     callouts,
     comments,
     inlineHighlight,
+    preservingCodeBlocks,
     preserveSpacerParagraphs,
     visibleSoftbreaks,
     normalizedImages,

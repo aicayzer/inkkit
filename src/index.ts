@@ -21,4 +21,5 @@ export type {
   ClipboardInput,
   ClipboardOutput,
   ClipboardImage,
+  ClipboardDiagram,
 } from './types'
