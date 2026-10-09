@@ -8,6 +8,15 @@ const importedImages = new Map<
   { bytes: Uint8Array; mimeType: string }
 >()
 let currentCaretState
+let imageExportMode = 'normal'
+let imageExportStarted = false
+let releaseImageExport
+let imageExportGate
+let imageImportStarted = false
+let releaseImageImport
+let imageImportGate
+let pendingPaste
+let pendingPrintable
 const editor = await InkKitEditor.mount(
   document.querySelector('#editor'),
   {
@@ -32,6 +41,8 @@ const editor = await InkKitEditor.mount(
         }
       },
       async importImage(input) {
+        imageImportStarted = true
+        if (imageImportGate) await imageImportGate
         const reference = `images/imported-${importedImages.size}.png`
         importedImages.set(reference, {
           bytes: input.bytes.slice(),
@@ -40,6 +51,12 @@ const editor = await InkKitEditor.mount(
         return { reference }
       },
       async exportImage(reference) {
+        imageExportStarted = true
+        if (imageExportGate) await imageExportGate
+        if (imageExportMode === 'reject')
+          throw Error('Fixture image unavailable')
+        if (imageExportMode === 'corrupt')
+          return { bytes: bytes.subarray(0, 24), mimeType: 'image/png' }
         return importedImages.get(reference) ?? { bytes, mimeType: 'image/png' }
       },
     },
@@ -95,6 +112,26 @@ const exportClipboard = async (all = true) => {
         }
       : {}),
   }
+}
+const printableOutput = async (generation) => {
+  const data = await editor.printableSnapshot(generation)
+  const assets = data.assets.map(portableImage)
+  const document = new DOMParser().parseFromString(data.html, 'text/html')
+  const images = [...document.querySelectorAll('img')]
+  const assetGeometry = await Promise.all(
+    assets.map(async (asset, index) => {
+      const image = new Image()
+      const src = `data:${asset.mimeType};base64,${asset.bytesBase64}`
+      image.src = src
+      await image.decode()
+      return {
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+        htmlBytesMatch: images[index]?.getAttribute('src') === src,
+      }
+    }),
+  )
+  return { ...data, assets, assetGeometry, htmlImageCount: images.length }
 }
 
 const selectText = async ({ text, occurrence = 0, from = 0, to, selector }) => {
@@ -281,6 +318,122 @@ window.interop = {
                 'script, iframe, object, embed, [onclick], [onerror]',
               ).length,
             }
+            break
+          case 'imageFixture': {
+            const canvas = document.createElement('canvas')
+            canvas.width = operation.width
+            canvas.height = operation.height
+            const context = canvas.getContext('2d')
+            for (const [index, color] of [
+              '#f02020',
+              '#20c040',
+              '#2040f0',
+            ].entries()) {
+              context.fillStyle = color
+              context.fillRect(
+                0,
+                (index * canvas.height) / 3,
+                canvas.width,
+                canvas.height / 3,
+              )
+            }
+            const data = canvas.toDataURL('image/png').split(',')[1]
+            const image = {
+              bytes: Uint8Array.from(atob(data), (character) =>
+                character.charCodeAt(0),
+              ),
+              mimeType: 'image/png',
+            }
+            importedImages.set(operation.reference, image)
+            result = {
+              ...portableImage(image),
+              width: canvas.width,
+              height: canvas.height,
+            }
+            break
+          }
+          case 'imageExport':
+            imageExportMode = operation.mode ?? 'normal'
+            imageExportStarted = false
+            imageExportGate =
+              imageExportMode === 'hold'
+                ? new Promise((resolve) => {
+                    releaseImageExport = resolve
+                  })
+                : undefined
+            result = true
+            break
+          case 'startPrintable':
+            pendingPrintable = printableOutput(operation.generation).then(
+              (value) => ({ value }),
+              (error) => ({ error }),
+            )
+            for (let count = 0; count < 100 && !imageExportStarted; count++)
+              await settle()
+            if (!imageExportStarted)
+              throw Error('Held image export did not start')
+            result = { pending: true }
+            break
+          case 'finishPrintable': {
+            releaseImageExport?.()
+            imageExportGate = undefined
+            if (!pendingPrintable)
+              throw Error('No printable capture is pending')
+            const completed = await pendingPrintable
+            pendingPrintable = undefined
+            if (completed.error) throw completed.error
+            result = completed.value
+            break
+          }
+          case 'startImagePaste':
+            imageImportStarted = false
+            imageImportGate = new Promise((resolve) => {
+              releaseImageImport = resolve
+            })
+            pendingPaste = editor.paste({
+              text: '',
+              images: [{ bytes, mimeType: 'image/png', filename: 'held.png' }],
+            })
+            for (let count = 0; count < 100 && !imageImportStarted; count++)
+              await settle()
+            if (!imageImportStarted)
+              throw Error('Held image import did not start')
+            result = { pending: true }
+            break
+          case 'finishImagePaste':
+            releaseImageImport?.()
+            imageImportGate = undefined
+            if (!pendingPaste) throw Error('No image paste is pending')
+            await pendingPaste
+            pendingPaste = undefined
+            result = capture()
+            break
+          case 'composition':
+            ;(documentFormat === 'txt'
+              ? document.querySelector('textarea')
+              : view()
+            ).dispatchEvent(
+              new CompositionEvent(
+                operation.active ? 'compositionstart' : 'compositionend',
+                { bubbles: true },
+              ),
+            )
+            result = true
+            break
+          case 'insertPrintable': {
+            editor.insertText(
+              operation.text,
+              operation.generation ?? generation,
+            )
+            const sourceSnapshot = editor.snapshot()
+            result = {
+              ...(await printableOutput(operation.generation)),
+              sourceSnapshot,
+            }
+            break
+          }
+          case 'printable':
+            result = await printableOutput(operation.generation)
             break
           case 'dom':
             result = inspectDOM(operation.selector)
