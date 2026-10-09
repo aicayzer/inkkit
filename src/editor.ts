@@ -87,6 +87,7 @@ import {
   cleanSourceDoc,
   editedPlainSource,
   sourceSelection,
+  revealSourceCaret,
   rawOffset,
   normalizedOffset,
   type SourceProvenance,
@@ -501,11 +502,13 @@ export class InkKitEditor {
               const from = anchor?.from ?? this.plain.selectionStart
               const to = anchor?.to ?? this.plain.selectionEnd
               if (!this.plainComposing) this.plain.value = markdown
-              if (!this.plainComposing)
+              if (!this.plainComposing) {
                 this.plain.setSelectionRange(
                   Math.min(from, this.plain.value.length),
                   Math.min(to, this.plain.value.length),
                 )
+                revealSourceCaret(this.plain)
+              }
             }
             if (markdown === this.lastMarkdown) return
             this.lastMarkdown = markdown
@@ -1436,6 +1439,8 @@ export class InkKitEditor {
       : view.state.selection.from
     const end = wasLiteral ? this.plain.selectionEnd : at
     const top = this.root.scrollTop
+    const plainTop = this.plain.scrollTop,
+      plainLeft = this.plain.scrollLeft
     this.loadDocument(input)
     if (
       previousFormat === 'md' &&
@@ -1457,6 +1462,10 @@ export class InkKitEditor {
         ),
       )
     this.root.scrollTop = top
+    if (wasLiteral && this.literalSurface) {
+      this.plain.scrollTop = plainTop
+      this.plain.scrollLeft = plainLeft
+    }
   }
 
   private load(markdown: string, generation: number): void {
@@ -1520,6 +1529,7 @@ export class InkKitEditor {
           this.plain.selectionEnd,
         )
       this.plainSearch = text
+      revealSourceCaret(this.plain)
       return
     }
     findFormatted(this.editor.ctx.get(editorViewCtx), text)
@@ -1632,7 +1642,8 @@ export class InkKitEditor {
         this.outlineContext(),
       )
       this.plain.setSelectionRange(position, position)
-      this.plain.focus()
+      this.plain.focus({ preventScroll: true })
+      revealSourceCaret(this.plain)
       return true
     }
     return navigateFormattedHeading(
