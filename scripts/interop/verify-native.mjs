@@ -1186,6 +1186,16 @@ if (releaseAtLeast('0.0.7')) {
     '\uFEFF# Authored  \r\n\r\n[Label](<https://example.com>) and **bold**.\r\n\r\n<div data-private="untouched">unsupported\r\n\r\n~~~mermaid\r\nflowchart LR\r\nA -->\r\n'
   const original = '# Heading\n\n[Label](https://example.com)\n'
   const spelling = '# Heading\n\n[Label](<https://example.com>)\n'
+  const incompleteDiagramDiagnostic =
+    "Parse error on line 3:\nflowchart LRA -->\n-----------------^\nExpecting 'AMP', 'COLON', 'PIPE', 'TESTSTR', 'DOWN', 'DEFAULT', 'NUM', 'COMMA', 'NODE_STRING', 'BRKT', 'MINUS', 'MULT', 'UNICODE_TEXT', got 'EOF'"
+  const distantSource =
+    '# Start\n\n' +
+    Array.from(
+      { length: 250 },
+      (_, index) =>
+        `Line ${index}${index % 7 === 0 ? ' wrapped'.repeat(50) : ''}\n\n`,
+    ).join('') +
+    '## Distant\n'
   Object.assign(scenarios, {
     'source-complete-preservation': {
       source: raw,
@@ -1209,6 +1219,17 @@ if (releaseAtLeast('0.0.7')) {
         { op: 'reopen' },
         same('snapshot.text', 'saved', 'text'),
         assert('snapshot.dirty', false),
+        {
+          op: 'awaitDOM',
+          selector: '.inkkit-mermaid-preview[data-state="error"]',
+        },
+        assert('errorCode', 'diagram-unavailable'),
+        assert('error', incompleteDiagramDiagnostic),
+        {
+          op: 'acknowledgeError',
+          code: 'diagram-unavailable',
+          message: incompleteDiagramDiagnostic,
+        },
       ],
     },
     'source-spelling-cross-mode-history': {
@@ -1368,11 +1389,13 @@ if (releaseAtLeast('0.0.7')) {
         assert('snapshot.text', 'Before\r\nLiteral\r\n**raw**\r\nAfter'),
         { op: 'undo' },
         assert('snapshot.text', 'Before\r\nAlpha\r\nBeta\r\nAfter'),
+        { op: 'selectSourceRange', from: 0 },
         { op: 'find', text: '\r' },
         { op: 'replace', search: '\r', replacement: 'R' },
         assert('snapshot.text', 'BeforeR\nAlpha\r\nBeta\r\nAfter'),
         { op: 'undo' },
         assert('snapshot.text', 'Before\r\nAlpha\r\nBeta\r\nAfter'),
+        { op: 'selectSourceRange', from: 0 },
         { op: 'find', text: '\n' },
         { op: 'replace', search: '\n', replacement: 'N' },
         assert('snapshot.text', 'Before\rNAlpha\r\nBeta\r\nAfter'),
@@ -1384,10 +1407,12 @@ if (releaseAtLeast('0.0.7')) {
           format: 'md',
         },
         { op: 'editingMode', mode: 'source' },
+        { op: 'selectSourceRange', from: 0 },
         { op: 'find', text: '\r' },
         { op: 'replace', search: '\r', replacement: 'R' },
         assert('snapshot.text', 'BeforeR\nAlpha\r\nBeta\r\nAfter'),
         { op: 'undo' },
+        { op: 'selectSourceRange', from: 0 },
         { op: 'find', text: '\n' },
         { op: 'replace', search: '\n', replacement: 'N' },
         assert('snapshot.text', 'Before\rNAlpha\r\nBeta\r\nAfter'),
@@ -1665,6 +1690,61 @@ if (releaseAtLeast('0.0.7')) {
           expectedError: 'composition',
         },
         { op: 'composition', active: false },
+      ],
+    },
+    'outline-source-distant-heading-viewport': {
+      source: distantSource,
+      operations: [
+        { op: 'editingMode', mode: 'source' },
+        { op: 'selectSourceRange', from: 0, scrollTop: 0 },
+        { op: 'sourceState', name: 'top' },
+        assert('scrollTop', 0, 'top'),
+        { op: 'snapshot', name: 'original' },
+        { op: 'headings', name: 'outline' },
+        assert('length', 2, 'outline'),
+        assert('1.text', 'Distant', 'outline'),
+        { op: 'navigateHeading', sourceName: 'outline', index: 1 },
+        { op: 'sourceState', name: 'distant' },
+        { op: 'sourceViewport', name: 'viewport' },
+        { op: 'assert', path: 'scrollTop', truthy: true, name: 'distant' },
+        assert('inView', true, 'viewport'),
+        { op: 'navigateHeading', sourceName: 'outline', index: 0 },
+        { op: 'sourceState', name: 'returned' },
+        assert('start', 0, 'returned'),
+        assert('scrollTop', 0, 'returned'),
+        { op: 'sourceViewport', name: 'returnedViewport' },
+        assert('inView', true, 'returnedViewport'),
+        same('snapshot', 'original', ''),
+        { op: 'find', text: 'Distant', name: 'found' },
+        assert('', 'Distant', 'found'),
+        { op: 'sourceViewport', name: 'foundViewport' },
+        assert('inView', true, 'foundViewport'),
+        { op: 'sourceScroll', top: 0 },
+        { op: 'replace', search: 'Distant', replacement: 'Replaced heading' },
+        assert('selection', 'Replaced heading'),
+        assert(
+          'snapshot.text',
+          distantSource.replace('Distant', 'Replaced heading'),
+        ),
+        { op: 'sourceViewport', name: 'replacedViewport' },
+        assert('inView', true, 'replacedViewport'),
+        { op: 'sourceScroll', top: 0 },
+        { op: 'undo' },
+        same('snapshot.text', 'original', 'text'),
+        { op: 'sourceViewport', name: 'undoViewport' },
+        assert('inView', true, 'undoViewport'),
+        { op: 'sourceState', name: 'beforeReload' },
+        { op: 'assert', name: 'beforeReload', path: 'scrollTop', truthy: true },
+        { op: 'reload', source: distantSource },
+        assert('editingMode', 'source'),
+        same('snapshot.text', 'original', 'text'),
+        { op: 'sourceState', name: 'afterReload' },
+        same('start', 'beforeReload', 'start', 'afterReload'),
+        same('end', 'beforeReload', 'end', 'afterReload'),
+        same('scrollTop', 'beforeReload', 'scrollTop', 'afterReload'),
+        same('scrollLeft', 'beforeReload', 'scrollLeft', 'afterReload'),
+        { op: 'sourceViewport', name: 'reloadViewport' },
+        assert('inView', true, 'reloadViewport'),
       ],
     },
   })

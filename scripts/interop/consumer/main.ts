@@ -28,6 +28,11 @@ const editor = await InkKitEditor.mount(
     openLink() {},
     error(error) {
       window.lastError = error.message
+      window.lastErrorCode = error.code ?? null
+      ;(window.interopErrors ??= []).push({
+        code: error.code ?? null,
+        message: error.message,
+      })
     },
   },
   {
@@ -84,9 +89,13 @@ const capture = () => ({
   editingMode: editor.editingMode,
   caretState: currentCaretState ?? null,
   error: window.lastError ?? null,
+  errorCode: window.lastErrorCode ?? null,
+  diagnostics: window.interopErrors ?? [],
 })
 const load = (source, format = 'md', identity = 'interop') => {
   window.lastError = undefined
+  window.lastErrorCode = undefined
+  window.interopErrors = []
   documentId = identity
   documentFormat = format
   editor.loadDocument({
@@ -529,7 +538,45 @@ window.interop = {
               start: target.selectionStart,
               end: target.selectionEnd,
               focused: document.activeElement === target,
+              scrollTop: target.scrollTop,
+              scrollLeft: target.scrollLeft,
+              clientHeight: target.clientHeight,
+              scrollHeight: target.scrollHeight,
+              lineHeight: getComputedStyle(target).lineHeight,
             }
+            break
+          }
+          case 'selectSourceRange': {
+            const target = activeEditor()
+            if (!(target instanceof HTMLTextAreaElement))
+              throw Error('Source selection requires the source textarea')
+            target.focus()
+            target.setSelectionRange(
+              operation.from,
+              operation.to ?? operation.from,
+            )
+            if (operation.scrollTop !== undefined)
+              target.scrollTop = operation.scrollTop
+            result = selectedText()
+            break
+          }
+          case 'acknowledgeError': {
+            const diagnostics = window.interopErrors ?? []
+            if (
+              !diagnostics.length ||
+              diagnostics.some(
+                (error) =>
+                  error.code !== operation.code ||
+                  error.message !== operation.message,
+              )
+            )
+              throw Error(
+                `Unexpected diagnostics: ${JSON.stringify(diagnostics)}`,
+              )
+            result = diagnostics
+            window.interopErrors = []
+            window.lastError = undefined
+            window.lastErrorCode = undefined
             break
           }
           case 'surface': {
@@ -543,6 +590,81 @@ window.interop = {
                 ? getComputedStyle(formatted).display
                 : null,
             }
+            break
+          }
+          case 'sourceViewport': {
+            const target = activeEditor()
+            if (!(target instanceof HTMLTextAreaElement))
+              throw Error('Source viewport requires the source textarea')
+            const style = getComputedStyle(target)
+            // Textarea selections do not expose caret geometry.
+            const mirror = document.createElement('div')
+            for (const property of [
+              'font-family',
+              'font-size',
+              'font-weight',
+              'font-style',
+              'font-stretch',
+              'font-variant',
+              'line-height',
+              'letter-spacing',
+              'word-spacing',
+              'text-indent',
+              'direction',
+              'tab-size',
+              'padding',
+              'box-sizing',
+            ])
+              mirror.style.setProperty(
+                property,
+                style.getPropertyValue(property),
+              )
+            Object.assign(mirror.style, {
+              position: 'absolute',
+              visibility: 'hidden',
+              left: '-10000px',
+              top: '0',
+              width: `${target.clientWidth}px`,
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'break-word',
+            })
+            mirror.append(
+              document.createTextNode(
+                target.value.slice(0, target.selectionStart),
+              ),
+            )
+            const caret = document.createElement('span')
+            caret.textContent =
+              target.value.slice(target.selectionStart) || '\u200b'
+            mirror.append(caret)
+            document.body.append(mirror)
+            try {
+              const caretRect =
+                caret.getClientRects()[0] ?? caret.getBoundingClientRect()
+              const caretTop =
+                caretRect.top - mirror.getBoundingClientRect().top
+              result = {
+                caretTop,
+                caretBottom: caretTop + caretRect.height,
+                scrollTop: target.scrollTop,
+                clientHeight: target.clientHeight,
+                inView:
+                  caretTop >= target.scrollTop &&
+                  caretTop + caretRect.height <=
+                    target.scrollTop + target.clientHeight,
+              }
+            } finally {
+              mirror.remove()
+            }
+            break
+          }
+          case 'sourceScroll': {
+            const target = activeEditor()
+            if (!(target instanceof HTMLTextAreaElement))
+              throw Error('Source scroll requires the source textarea')
+            target.scrollTop = operation.top
+            if (operation.left !== undefined) target.scrollLeft = operation.left
+            result = { top: target.scrollTop, left: target.scrollLeft }
             break
           }
           case 'activeKeyDown': {
