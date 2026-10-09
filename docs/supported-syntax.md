@@ -1,4 +1,31 @@
-# Supported Markdown
+# Supported syntax
+
+This matrix applies to **published 0.0.7** and the **unpublished 0.0.8 candidate**. Version 0.0.8 adds host controls and development fixtures, without expanding syntax support. Source mode can edit all Markdown literally; the statuses below describe formatted mode.
+
+- **Rendered and editable:** InkKit recognises the construct and exposes its content for editing.
+- **Preserved literally:** source remains editable and saveable, without that construct's formatted behaviour.
+- **Adapter-dependent:** a host image adapter supplies presentation and portable bytes; the source reference stays opaque.
+- **Unsupported:** the file format or feature has no package implementation. Planned work is not supported content.
+
+| Content                                                           | Example                                                 | Status in 0.0.7 and candidate 0.0.8                                                                          |
+| ----------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| CommonMark headings, paragraphs, emphasis, lists, quotes and code | `# Heading`, `**bold**`, `[link](https://example.com)`  | Rendered and editable.                                                                                       |
+| Task lists, strikethrough and autolinks                           | `- [x] Done`, `~~old~~`, `https://example.com`          | Rendered and editable.                                                                                       |
+| GFM tables                                                        | `\| Name \| Value \|` with a delimiter row              | Rendered and editable; row/column movement, sorting and rectangular paste follow bounded contracts.          |
+| Footnotes                                                         | `A note[^1]` and `[^1]: Definition`                     | Rendered and editable; shared definitions and source labels are retained.                                    |
+| Reference links                                                   | `[label][id]` and `[id]: https://example.com`           | Rendered and editable when resolved; unresolved references are preserved literally.                          |
+| Supported callouts                                                | `> [!NOTE]- Details` followed by quoted body lines      | Rendered and editable; folding changes presentation only.                                                    |
+| Highlights                                                        | `==important==`                                         | Rendered and editable.                                                                                       |
+| Author comments                                                   | `<!-- private -->`, `%% private %%`                     | Preserved author content, editable when revealed; excluded from ordinary sharing and print.                  |
+| Bounded Mermaid                                                   | A `mermaid` code fence containing `flowchart LR; A-->B` | Editable source with offline preview; invalid or unsupported diagrams retain source and report a diagnostic. |
+| Managed images                                                    | `![Alt](opaque-reference)`                              | Adapter-dependent display, import and portable export.                                                       |
+| Unmanaged images                                                  | `![Alt](unmanaged-reference)` without an adapter        | Preserved literally; no host storage or image fetch is implied.                                              |
+| Raw HTML and frontmatter                                          | `<section>Text</section>`, a YAML frontmatter block     | Preserved literally; HTML is not executed.                                                                   |
+| Unsupported or unfinished Markdown                                | `$math$`, `[[wiki link]]`, an unfinished delimiter      | Preserved literally; no maths or wiki-link interpretation.                                                   |
+| TXT                                                               | `# This stays text` in a `txt` document                 | Literal editing; no Markdown rendering.                                                                      |
+| RTF files, audio/video and richer embedded media                  | An RTF document or media embed                          | Unsupported.                                                                                                 |
+
+See the sections below for limits and [the API](api.md) for host controls. The [Project](https://github.com/users/aicayzer/projects/3) holds planned syntax and media work.
 
 `printableSnapshot()` exports all supported document content as standalone semantic HTML with print styles and portable assets. Footnotes, resolved reference links, tables, full folded callouts and highlights remain readable; author comments and editor controls are excluded even when revealed. Invalid or unsupported Mermaid retains code with an explicit warning. Unavailable assets reject the export. TXT remains literal.
 

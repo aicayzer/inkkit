@@ -1,6 +1,10 @@
 # InkKit
 
-InkKit is a TypeScript Markdown editor for offline web views and the web. It provides readable clipboard output, editable tables, optional host-managed images, and preservation of original Markdown and unsupported syntax.
+InkKit is a reusable Markdown editor for simple writing tools and richer document apps. It provides formatted editing, source preservation, portable clipboard content and optional host-managed images, while your app controls its appearance, files and interface.
+
+Write in formatted or source mode with shared undo/redo. Edit tables, task lists, footnotes, reference links, highlights and callouts. Preview bounded Mermaid diagrams offline. Copy readable text and semantic HTML, explicitly copy Markdown source, or capture a complete printable document. Unsupported syntax remains editable literal Markdown.
+
+**Version status:** 0.0.7 is published. This branch documents the **unpublished 0.0.8 candidate**, adding read-only and text-input policies, command availability, scoped appearance, labels and shortcuts. Installing from npm currently gets the published release; the new controls require the candidate.
 
 ```sh
 npm install @aicayzer/inkkit
@@ -10,39 +14,35 @@ npm install @aicayzer/inkkit
 import { InkKitEditor } from '@aicayzer/inkkit'
 import '@aicayzer/inkkit/style.css'
 
-const editor = await InkKitEditor.mount(document.getElementById('editor')!, {
+const root = document.getElementById('editor')!
+const editor = await InkKitEditor.mount(root, {
   changed(text, generation) {
-    /* Notify the host. */
+    // Notify the host; capture a fresh snapshot when saving.
   },
   stateChanged(state) {
-    /* Update formatting controls. */
+    // Update the host's formatting controls.
   },
   openLink(href) {
-    /* Open through the host. */
+    // Open through the host.
   },
   copy(text) {
-    /* Write code-block text to the clipboard. */
+    // Write code-block text to the clipboard.
   },
 })
+
 editor.loadDocument({
   documentId: 'note',
   generation: 1,
   format: 'md',
-  text: '# Hello\n',
+  text: '# Hello\n\nStart writing.\n',
 })
 const snapshot = editor.snapshot(1)
 ```
 
-Markdown includes CommonMark, task lists, strikethrough, autolinks, GFM tables, editable footnotes and reference-style links, bounded callouts, highlights, author comments and offline Mermaid diagrams. Unsupported constructs remain literal Markdown. TXT mode treats all text literally. Images require a host adapter. RTF files remain outside the package scope.
+InkKit runs on the web and in offline web views. Hosts use its public TypeScript facade and own toolbars, menus, persistence, clipboard bridges, Print/PDF actions and image storage. Images require an adapter; private references stay opaque. TXT stays literal. RTF files and richer media are outside current support.
 
-Table controls include complete row/column movement and explicit stable text or numeric sorting. Ordinary spreadsheet paste preserves cell boundaries, replaces selected cells and grows supported tables. Hosts call these operations through the public facade; each is undoable.
+Start with the [feature guide](docs/supported-syntax.md) and [simple and rich integration examples](docs/integration.md). The [documentation index](docs/README.md) links to precise API, preservation, playground, verification and publication guidance.
 
-`await editor.printableSnapshot(1)` returns a complete printable HTML document, print styles and portable image bytes. It excludes author comments, includes folded content and reports unavailable assets or a changed document. Client apps own Print/PDF commands, dialogs and file generation.
-
-See [supported syntax](docs/supported-syntax.md), [the host API](docs/api.md), [preservation and clipboard behavior](docs/preservation.md), [development](docs/development.md), and [releases](docs/releasing.md).
-
-Delivery scope and release status are tracked in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [milestones](https://github.com/aicayzer/inkkit/milestones).
+Scope and release status live in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [version milestones](https://github.com/aicayzer/inkkit/milestones). Planned search, viewport and media extensions are tracked there; they are not capabilities of this candidate.
 
 MIT licensed. InkKit builds on the public PadPad and Memos editors; see [NOTICE](NOTICE).
-
-Complete source/formatted editing, literal find/replace and replace-all, and current ordered headings/navigation are available through the public facade. Mode switching keeps document identity and history; unsupported or incomplete source and TXT remain saveable. Hosts own the editing controls and outline presentation. See the [API contracts](docs/api.md).
