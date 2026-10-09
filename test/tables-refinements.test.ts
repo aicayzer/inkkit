@@ -546,3 +546,78 @@ test('unsupported HTML table outside a table retains complete captured source, c
     editor.loadDocument({ ...input, generation: 2, text: saved })
     expect(editor.snapshot().text).toBe(saved)
   }))
+
+test('mixed heading and spreadsheet HTML retains the ordinary formatted clipboard path', () =>
+  run(async (editor, ctx) => {
+    editor.loadDocument({ ...input, text: '' })
+    await editor.paste({
+      text: 'Heading\nA\tB\none\ttwo',
+      html: '<meta charset="utf-8"><h1>Heading</h1><p>Before <strong>bold</strong></p><table><tr><th>A</th><th>B</th></tr><tr><td>one</td><td>two</td></tr></table><p>After</p>',
+    })
+    const saved = editor.snapshot().text
+    expect(saved).toMatch(/^# Heading\n/)
+    expect(saved).toContain('Before **bold**')
+    expect(saved).toContain('After')
+    expect(values(ctx)).toEqual([
+      ['A', 'B'],
+      ['one', 'two'],
+    ])
+    expect(ctx.get(editorViewCtx).dom.querySelector('h1')?.textContent).toBe(
+      'Heading',
+    )
+  }))
+
+test('unsupported standalone image tables retain their complete raw structure without importing bytes', () =>
+  run(async (editor, ctx) => {
+    editor.loadDocument({ ...input, text: '' })
+    const html =
+      '<table><caption>Keep caption</caption><colgroup><col span="2"></colgroup><tr><td><img src="opaque:source" alt="Authored"></td><td>cell<!--private--></td></tr></table>'
+    await editor.paste({
+      text: 'Authored\tcell',
+      html,
+      images: [{ bytes: new Uint8Array([1]), mimeType: 'image/png' }],
+    })
+    const saved = editor.snapshot().text
+    expect(saved).toContain(html)
+    expect(ctx.get(editorViewCtx).dom.querySelector('img')).toBeNull()
+    const copy = await editor.clipboardSnapshot()
+    expect(copy.markdown).toContain(html)
+    expect(copy.text).not.toContain('private')
+    expect(copy.html).not.toContain('private')
+    const view = ctx.get(editorViewCtx)
+    undo(view.state, view.dispatch)
+    expect(editor.snapshot().text).toBe('')
+    editor.loadDocument({ ...input, generation: 2, text: source })
+    select(ctx, 1, 0)
+    await expect(
+      editor.paste({ text: 'Authored\tcell', html }),
+    ).rejects.toMatchObject({ code: 'preservation' })
+    expect(editor.snapshot().text).toBe(source)
+  }))
+
+test('supported standalone image tables retain the existing managed-image importer', () => {
+  let imports = 0
+  return run(
+    async (editor, ctx) => {
+      editor.loadDocument({ ...input, text: '' })
+      await editor.paste({
+        text: 'H\nAuthored',
+        html: '<table><tr><th>H</th></tr><tr><td><img src="opaque:source" alt="Authored"></td></tr></table>',
+        images: [{ bytes: new Uint8Array([1]), mimeType: 'image/png' }],
+      })
+      expect(imports).toBe(1)
+      expect(editor.snapshot().text).toContain('![Authored](host:managed)')
+      expect(current(ctx).table.type.name).toBe('table')
+    },
+    {
+      presentation: () => undefined,
+      async importImage() {
+        imports++
+        return { reference: 'host:managed' }
+      },
+      async exportImage() {
+        return { bytes: new Uint8Array([1]), mimeType: 'image/png' }
+      },
+    },
+  )
+})

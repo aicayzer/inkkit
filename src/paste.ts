@@ -168,8 +168,7 @@ export class PasteController {
       if (
         !plainText &&
         input.markdown == null &&
-        !images.length &&
-        pasteSpreadsheet(ctx, input)
+        pasteSpreadsheet(ctx, { ...input, images })
       )
         return
       const markdown = plainText

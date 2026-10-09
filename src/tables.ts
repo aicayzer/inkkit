@@ -282,9 +282,10 @@ function refineTable(
         compareCells(a.key, b.key, comparison, order) || a.index - b.index,
     )
     if (body.every(({ row }, index) => row === rows[index + 1])) return false
-    const activeRow = rows[top]!
+    const activeIndex = top - 1
     rows.splice(1, rows.length - 1, ...body.map(({ row }) => row))
-    top = rows.indexOf(activeRow)
+    top =
+      top === 0 ? 0 : body.findIndex(({ index }) => index === activeIndex) + 1
     bottom = top + 1
   } else if (command === 'moveRowUp' || command === 'moveRowDown') {
     const up = command === 'moveRowUp'

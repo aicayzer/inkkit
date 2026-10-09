@@ -19,9 +19,7 @@ type Grid = { cells: Fragment[][]; width: number; alignment?: string[] }
 
 export function pasteSpreadsheet(ctx: Ctx, input: ClipboardInput): boolean {
   const view = ctx.get(editorViewCtx)
-  if (input.plainText || input.markdown != null || input.images?.length)
-    return false
-  if (input.html && /<img[\s>]/i.test(input.html)) return false
+  if (input.plainText || input.markdown != null) return false
   const inTable = isInTable(view.state)
   if (
     input.html &&
@@ -29,6 +27,21 @@ export function pasteSpreadsheet(ctx: Ctx, input: ClipboardInput): boolean {
   ) {
     if (inTable && /<table[\s>]/i.test(input.html)) reject()
     return false
+  }
+  if (input.images?.length || (input.html && /<img[\s>]/i.test(input.html))) {
+    if (!input.html || !/<table[\s>]/i.test(input.html)) return false
+    const template = document.createElement('template')
+    template.innerHTML = input.html
+    for (const image of template.content.querySelectorAll('img'))
+      image.replaceWith(
+        document.createTextNode(image.getAttribute('alt') ?? 'Image'),
+      )
+    try {
+      htmlGrid(view.state.schema, template.innerHTML)
+      return false
+    } catch {
+      if (!inTable && !standaloneTable(input.html)) return false
+    }
   }
   let grid: Grid | undefined
   try {
@@ -39,6 +52,7 @@ export function pasteSpreadsheet(ctx: Ctx, input: ClipboardInput): boolean {
         : undefined
   } catch (error) {
     if (inTable || !input.html) throw error
+    if (!standaloneTable(input.html)) return false
     const schema = view.state.schema
     const children: ProseNode[] = []
     let cursor = 0
@@ -173,6 +187,17 @@ export function pasteSpreadsheet(ctx: Ctx, input: ClipboardInput): boolean {
   )
   dispatchTableOperation(view, tr)
   return true
+}
+
+function standaloneTable(html: string): boolean {
+  const template = document.createElement('template')
+  template.innerHTML = html
+  for (const metadata of template.content.querySelectorAll('meta[charset]'))
+    metadata.remove()
+  const elements = [...template.content.childNodes].filter(
+    (node) => node.nodeType !== 3 || node.textContent?.trim(),
+  )
+  return elements.length === 1 && elements[0] instanceof HTMLTableElement
 }
 
 function reject(): never {
