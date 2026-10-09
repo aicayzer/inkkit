@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { TextSelection, NodeSelection } from '@milkdown/kit/prose/state'
 import {
   InkKitEditor,
   type DocumentInput,
@@ -356,5 +356,135 @@ test('insets remain measured from the visible edges when the editor is clipped a
       expect(editor.textSnapshot()).toEqual(snapshot)
     } finally {
       bounds.mockRestore()
+    }
+  }))
+
+test.each([
+  {
+    text: 'Before\n\n> [!NOTE]- Protected title\n> Hidden body\n\nAfter\n',
+    label: 'Protected title',
+    type: 'inkkit_callout',
+  },
+  {
+    text: 'Before\n\n![photo](opaque)\n\nAfter\n',
+    label: 'photo',
+    type: 'image',
+  },
+])(
+  'reload retains valid $type node selections and safely falls back when the selected node disappears',
+  ({ text, label, type }) =>
+    run(
+      (editor, _root, ctx) => {
+        const document = { ...input, text }
+        editor.loadDocument(document)
+        editor.selectTextRange(range(editor, label))
+        const selected = editor.textSnapshot().selection
+        const view = ctx.get(editorViewCtx)
+        expect(view.state.selection).toBeInstanceOf(NodeSelection)
+        expect((view.state.selection as NodeSelection).node.type.name).toBe(
+          type,
+        )
+        editor.reloadDocument({ ...document, generation: 10 })
+        expect(view.state.selection).toBeInstanceOf(NodeSelection)
+        expect(editor.textSnapshot().selection).toMatchObject({
+          from: selected.from,
+          to: selected.to,
+        })
+        expect(editor.snapshot().text).toBe(text)
+        editor.reloadDocument({
+          ...document,
+          generation: 11,
+          text: 'Before\n\nReplacement\n\nAfter\n',
+        })
+        expect(view.state.selection).toBeInstanceOf(TextSelection)
+        expect(editor.snapshot().text).toBe('Before\n\nReplacement\n\nAfter\n')
+        expect(editor.textSnapshot().selection.to).toBeLessThanOrEqual(
+          editor.textSnapshot().text.length,
+        )
+      },
+      {
+        images: {
+          presentation: () => undefined,
+          importImage: async () => ({ reference: 'opaque' }),
+          exportImage: async () => ({
+            bytes: new Uint8Array(),
+            mimeType: 'image/png',
+          }),
+        },
+      },
+    ),
+)
+
+test('reveal fits a complete wrapped range and uses a stable leading anchor for oversized content', () =>
+  run((editor, root) => {
+    Object.defineProperties(root, {
+      clientWidth: { configurable: true, value: 220 },
+      clientHeight: { configurable: true, value: 150 },
+    })
+    const bounds = vi
+      .spyOn(root, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(10, 10, 220, 150))
+    let measured = [
+      new DOMRect(100, 152, 50, 18),
+      new DOMRect(120, 170, 100, 18),
+      new DOMRect(200, 188, 80, 18),
+    ]
+    const rects = vi.spyOn(editor, 'textRangeRects').mockImplementation(() =>
+      measured.map((rect) => ({
+        left: rect.left - root.scrollLeft,
+        right: rect.right - root.scrollLeft,
+        top: rect.top - root.scrollTop,
+        bottom: rect.bottom - root.scrollTop,
+        width: rect.width,
+        height: rect.height,
+      })),
+    )
+    try {
+      const target = range(editor, 'Title')
+      editor.revealTextRange(target)
+      expect([root.scrollTop, root.scrollLeft]).toEqual([46, 50])
+      const viewport = editor.viewport().rect
+      expect(
+        editor
+          .textRangeRects(target)
+          .every(
+            (rect) =>
+              rect.top >= viewport.top &&
+              rect.bottom <= viewport.bottom &&
+              rect.left >= viewport.left &&
+              rect.right <= viewport.right,
+          ),
+      ).toBe(true)
+      editor.revealTextRange(target)
+      expect([root.scrollTop, root.scrollLeft]).toEqual([46, 50])
+      root.scrollTop = 0
+      root.scrollLeft = 0
+      measured = [
+        new DOMRect(50, 152, 300, 200),
+        new DOMRect(50, 352, 300, 200),
+      ]
+      editor.revealTextRange(target)
+      expect([root.scrollTop, root.scrollLeft]).toEqual([142, 40])
+      editor.revealTextRange(target)
+      expect([root.scrollTop, root.scrollLeft]).toEqual([142, 40])
+    } finally {
+      rects.mockRestore()
+      bounds.mockRestore()
+    }
+  }))
+
+test('ordinary formatted find reveals its complete effective selection', () =>
+  run((editor) => {
+    const reveal = vi.spyOn(editor, 'revealTextRange')
+    try {
+      editor.find('😀 café')
+      expect(reveal).toHaveBeenCalledTimes(1)
+      expect(reveal.mock.calls[0]![0]).toEqual(editor.textSnapshot().selection)
+      const selected = editor.textSnapshot().selection
+      expect(editor.textSnapshot().text.slice(selected.from, selected.to)).toBe(
+        '😀 café',
+      )
+    } finally {
+      reveal.mockRestore()
     }
   }))

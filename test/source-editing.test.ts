@@ -735,7 +735,7 @@ test('literal find, replacement and history reveal selections without taking foc
     }
   }))
 
-test('source caret measurement uses a collapsed range rather than remaining text height', () =>
+test('source selection measurement bounds the selected text rather than remaining text height', () =>
   run((editor, plain, _ctx, root) => {
     editor.loadDocument({
       ...input,
@@ -751,7 +751,8 @@ test('source caret measurement uses a collapsed range rather than remaining text
       root,
       () => 900,
       (range) => {
-        expect(range.endOffset - range.startOffset).toBe(1)
+        expect(range.startOffset).toBe(plain.selectionStart)
+        expect(range.endOffset).toBe(plain.selectionEnd)
         expect(range.startContainer.parentElement!.style.fontFamily).toBe(
           'monospace',
         )

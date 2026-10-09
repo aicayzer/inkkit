@@ -328,6 +328,13 @@ window.interop = {
               rects,
               viewport,
               hasRects: rects.length > 0,
+              wrapped:
+                new Set(rects.map((rect) => Math.round(rect.top))).size > 1,
+              fitsViewport:
+                rects.length > 0 &&
+                Math.max(...rects.map((rect) => rect.bottom)) -
+                  Math.min(...rects.map((rect) => rect.top)) <=
+                  viewport.rect.height,
               insideViewport:
                 rects.length > 0 &&
                 rects.every(
@@ -360,7 +367,12 @@ window.interop = {
               root.style.height = `${operation.height}px`
             if (operation.width !== undefined)
               root.style.width = `${operation.width}px`
-            if (operation.top !== undefined) root.scrollTop = operation.top
+            if (operation.top !== undefined) {
+              root.scrollTop = operation.top
+              const surface = activeEditor()
+              if (surface instanceof HTMLTextAreaElement)
+                surface.scrollTop = operation.top
+            }
             await settle()
             result = viewportState()
             break

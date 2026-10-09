@@ -1,4 +1,5 @@
 import type { InkKitEditor } from '../../src/index'
+import { wrappedSearchText } from '../../scripts/interop/consumer/fixtures'
 import { test, expect, observe, operation } from './fixtures'
 
 type TextSnapshot = ReturnType<InkKitEditor['textSnapshot']>
@@ -228,6 +229,40 @@ for (const mode of ['formatted', 'source', 'txt'] as const) {
     >
     const root = await page.locator('#editor').boundingBox()
     expect(resized.rect.height).toBeLessThanOrEqual(root!.height - 64)
+    await page.locator('#editor').evaluate((root) => {
+      root.scrollTop = 0
+      const plain = root.querySelector('textarea')
+      if (plain) plain.scrollTop = 0
+    })
+    const wrapped = rangeFor(text, wrappedSearchText)
+    await operation(page, 'selectTextRange', {
+      range: wrapped,
+      options: { reveal: true },
+    })
+    const wrappedRects = (await operation(page, 'textRangeRects', {
+      range: wrapped,
+    })) as ReturnType<InkKitEditor['textRangeRects']>
+    const wrappedViewport = (await operation(page, 'viewport')) as ReturnType<
+      InkKitEditor['viewport']
+    >
+    expect(
+      new Set(wrappedRects.map((rect) => Math.round(rect.top))).size,
+    ).toBeGreaterThan(1)
+    expect(
+      Math.max(...wrappedRects.map((rect) => rect.bottom)) -
+        Math.min(...wrappedRects.map((rect) => rect.top)),
+    ).toBeLessThan(wrappedViewport.rect.height)
+    expect(
+      wrappedRects.every(
+        (rect) =>
+          rect.top >= wrappedViewport.rect.top - 1 &&
+          rect.bottom <= wrappedViewport.rect.bottom + 1,
+      ),
+    ).toBe(true)
+    await operation(page, 'selectTextRange', {
+      range: target,
+      options: { reveal: true },
+    })
     expect(
       await operation(page, 'viewport', { instance: 'second' }),
     ).toMatchObject({

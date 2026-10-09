@@ -107,10 +107,11 @@ function formattedQuery(text: string): SearchQuery {
     },
   })
 }
-export function findFormatted(view: EditorView, text: string): void {
+export function findFormatted(view: EditorView, text: string): boolean {
   const query = formattedQuery(text)
   const previous = getSearchState(view.state)?.query.search
   let tr = setSearchState(view.state.tr, query)
+  let found = false
   if (text) {
     const start =
       previous === query.search
@@ -118,14 +119,16 @@ export function findFormatted(view: EditorView, text: string): void {
         : view.state.selection.from
     const match =
       query.findNext(view.state, start) ?? query.findNext(view.state, 0)
-    if (match)
+    if (match) {
+      found = true
       tr = tr
         .setSelection(TextSelection.create(tr.doc, match.from, match.to))
         .scrollIntoView()
-    else tr = tr.setSelection(Selection.near(view.state.selection.$to))
+    } else tr = tr.setSelection(Selection.near(view.state.selection.$to))
   } else if (previous)
     tr = tr.setSelection(Selection.near(view.state.selection.$to))
   view.dispatch(tr)
+  return found
 }
 
 function replacementSlice(

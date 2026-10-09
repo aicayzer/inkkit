@@ -2008,11 +2008,14 @@ if (releaseAtLeast('0.0.9')) {
       assert('snapshot.text', 'A😀B é 中文.\r\nSecond line\r\n'),
     ],
   }
+  const wrappedText =
+    'Wrapped match spans several visual lines so its first and final character must both fit below the host search header and above the bottom inset.'
   const layoutSource =
     '# Layout\n\n' +
     Array.from(
       { length: 36 },
-      (_, index) => `Paragraph ${index + 1}: scrollable fixture.\n`,
+      (_, index) =>
+        `Paragraph ${index + 1}: scrollable fixture.\n${index === 28 ? `\n${wrappedText}\n` : ''}`,
     ).join('\n') +
     '\nFinal navigation target.\n'
   for (const mode of ['formatted', 'source']) {
@@ -2063,6 +2066,28 @@ if (releaseAtLeast('0.0.9')) {
           name: 'resized',
         },
         assert('insideViewport', true, 'resized'),
+        { op: 'layout', top: 0 },
+        {
+          op: 'selectTextRange',
+          sourceName: 'before',
+          text: wrappedText,
+          options: { reveal: true },
+        },
+        {
+          op: 'rangeGeometry',
+          sourceName: 'before',
+          text: wrappedText,
+          name: 'wrapped',
+        },
+        assert('wrapped', true, 'wrapped'),
+        assert('fitsViewport', true, 'wrapped'),
+        assert('insideViewport', true, 'wrapped'),
+        {
+          op: 'selectTextRange',
+          sourceName: 'before',
+          text: 'Final navigation target.',
+          options: { reveal: true },
+        },
         { op: 'hostFocus' },
         { op: 'viewportState', name: 'beforeReload' },
         { op: 'reload', sameGeneration: true, source: layoutSource },

@@ -1850,6 +1850,10 @@ export class InkKitEditor {
     const wasLiteral = this.literalSurface
     const previousMode = this.editingMode
     const previousFormat = this.formatType
+    const selectedNode =
+      !wasLiteral && view.state.selection instanceof NodeSelection
+        ? view.state.selection.node
+        : undefined
     const at = wasLiteral
       ? this.plain.selectionStart
       : view.state.selection.anchor
@@ -1878,17 +1882,24 @@ export class InkKitEditor {
           Math.min(end, this.plain.value.length),
           direction,
         )
-      else
+      else {
+        const anchor = Math.min(at, view.state.doc.content.size)
+        const node = view.state.doc.nodeAt(anchor)
         view.dispatch(
           view.state.tr.setSelection(
-            TextSelection.between(
-              view.state.doc.resolve(Math.min(at, view.state.doc.content.size)),
-              view.state.doc.resolve(
-                Math.min(end, view.state.doc.content.size),
-              ),
-            ),
+            selectedNode &&
+              node?.type === selectedNode.type &&
+              NodeSelection.isSelectable(node)
+              ? NodeSelection.create(view.state.doc, anchor)
+              : TextSelection.between(
+                  view.state.doc.resolve(anchor),
+                  view.state.doc.resolve(
+                    Math.min(end, view.state.doc.content.size),
+                  ),
+                ),
           ),
         )
+      }
       if (focused) {
         if (this.literalSurface) this.plain.focus({ preventScroll: true })
         else view.focus()
@@ -2218,20 +2229,48 @@ export class InkKitEditor {
 
   private revealRects(rects: readonly TextRect[]): void {
     if (!rects.length) return
-    const rect = rects[0]!
     const viewport = this.viewport().rect
+    const leading = rects[0]!
+    const envelope = {
+      top: leading.top,
+      bottom: leading.bottom,
+      left: leading.left,
+      right: leading.right,
+    }
+    for (const rect of rects) {
+      envelope.top = Math.min(envelope.top, rect.top)
+      envelope.bottom = Math.max(envelope.bottom, rect.bottom)
+      envelope.left = Math.min(envelope.left, rect.left)
+      envelope.right = Math.max(envelope.right, rect.right)
+    }
+    const fitsHeight = envelope.bottom - envelope.top <= viewport.height
+    const fitsWidth = envelope.right - envelope.left <= viewport.width
+    const rect = {
+      top: fitsHeight ? envelope.top : leading.top,
+      bottom: fitsHeight
+        ? envelope.bottom
+        : Math.min(leading.bottom, leading.top + viewport.height),
+      left: fitsWidth ? envelope.left : leading.left,
+      right: fitsWidth
+        ? envelope.right
+        : Math.min(leading.right, leading.left + viewport.width),
+    }
     const vertical =
-      rect.top < viewport.top
-        ? rect.top - viewport.top
-        : rect.bottom > viewport.bottom
-          ? rect.bottom - viewport.bottom
-          : 0
+      viewport.height <= 0
+        ? 0
+        : rect.top < viewport.top
+          ? rect.top - viewport.top
+          : rect.bottom > viewport.bottom
+            ? rect.bottom - viewport.bottom
+            : 0
     const horizontal =
-      rect.left < viewport.left
-        ? rect.left - viewport.left
-        : rect.right > viewport.right
-          ? rect.right - viewport.right
-          : 0
+      viewport.width <= 0
+        ? 0
+        : rect.left < viewport.left
+          ? rect.left - viewport.left
+          : rect.right > viewport.right
+            ? rect.right - viewport.right
+            : 0
     let remainingTop = vertical,
       remainingLeft = horizontal
     if (this.literalSurface) {
@@ -2269,15 +2308,16 @@ export class InkKitEditor {
     }
     const view = this.editor.ctx.get(editorViewCtx)
     const projection = this.readableScope().projection
-    const offset = projectionOffset(projection, view.state.selection.head)
+    const from = projectionOffset(projection, view.state.selection.from)
+    const to = projectionOffset(projection, view.state.selection.to)
     if (this.composing || this.pasteController.pending) {
-      this.revealRects(formattedRects(view, projection, offset, offset))
+      this.revealRects(formattedRects(view, projection, from, to))
       return
     }
     this.revealTextRange({
       snapshotId: this.readableScope().id,
-      from: offset,
-      to: offset,
+      from,
+      to,
     })
   }
 
@@ -2286,7 +2326,7 @@ export class InkKitEditor {
       literalRects(
         this.plain,
         this.plain.selectionStart,
-        this.plain.selectionStart,
+        this.plain.selectionEnd,
       ),
     )
   }
@@ -2354,7 +2394,8 @@ export class InkKitEditor {
       this.revealLiteralSelection()
       return
     }
-    findFormatted(this.editor.ctx.get(editorViewCtx), text)
+    if (findFormatted(this.editor.ctx.get(editorViewCtx), text))
+      this.revealCurrentSelection()
   }
 
   replace(
