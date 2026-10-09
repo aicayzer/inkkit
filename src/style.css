@@ -464,7 +464,7 @@
 .inkkit-root .ProseMirror li[data-item-type='task']::before {
   content: '';
   position: absolute;
-  left: -calc(var(--inkkit-font-size, 15px) * 1.667);
+  left: calc(var(--inkkit-font-size, 15px) * -1.667);
   top: 0.32em;
   width: calc(var(--inkkit-font-size, 15px) * 0.933);
   height: calc(var(--inkkit-font-size, 15px) * 0.933);
@@ -486,7 +486,7 @@
   li[data-item-type='task'][data-checked='true']::after {
   content: '';
   position: absolute;
-  left: -calc(var(--inkkit-font-size, 15px) * 1.333);
+  left: calc(var(--inkkit-font-size, 15px) * -1.333);
   top: 0.32em;
   margin-top: calc(var(--inkkit-font-size, 15px) * 0.133);
   width: calc(var(--inkkit-font-size, 15px) * 0.2);

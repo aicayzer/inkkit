@@ -1769,6 +1769,16 @@ if (releaseAtLeast('0.0.7')) {
 
 if (releaseAtLeast('0.0.8')) {
   Object.assign(scenarios, {
+    'host-task-marker-layout': {
+      source: '- [ ] First task\n- [x] Finished task\n',
+      operations: [
+        { op: 'dom', selector: 'li[data-item-type="task"]', name: 'tasks' },
+        assert('nodes.0.markerInGutter', true, 'tasks'),
+        assert('nodes.1.markerInGutter', true, 'tasks'),
+        assert('nodes.1.tickInsideMarker', true, 'tasks'),
+        assert('snapshot.dirty', false),
+      ],
+    },
     'host-read-only-history-and-input': {
       source: '# Host controls\n\nOriginal text.\n',
       operations: [

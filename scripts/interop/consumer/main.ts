@@ -192,6 +192,21 @@ const inspectDOM = (selector) => {
       hidden: node.hidden,
       display: getComputedStyle(node).display,
       visibility: getComputedStyle(node).visibility,
+      ...(node.matches('li[data-item-type="task"]')
+        ? (() => {
+            const before = getComputedStyle(node, '::before')
+            const after = getComputedStyle(node, '::after')
+            const left = Number.parseFloat(before.left)
+            const width = Number.parseFloat(before.width)
+            const tickLeft = Number.parseFloat(after.left)
+            const tickWidth = Number.parseFloat(after.width)
+            return {
+              markerInGutter: left + width < 0,
+              tickInsideMarker:
+                tickLeft > left && tickLeft + tickWidth < left + width,
+            }
+          })()
+        : {}),
     })),
   }
 }

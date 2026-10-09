@@ -138,6 +138,73 @@ test('two editors keep appearance inside their roots @host-controls', async ({
   ).toBe('24px')
 })
 
+test('task markers retain their gutter, tick offset and click target when scaled @host-controls', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  const task = page.locator('#editor li[data-item-type="task"]').first()
+  const completed = page.locator('#editor li[data-checked="true"]').last()
+  for (const size of [15, 24]) {
+    await page
+      .locator('#editor')
+      .evaluate(
+        (root, size) =>
+          root.style.setProperty('--inkkit-font-size', `${size}px`),
+        size,
+      )
+    const marker = await task.evaluate((node) => {
+      const style = getComputedStyle(node, '::before')
+      const bounds = node.getBoundingClientRect()
+      return {
+        left: Number.parseFloat(style.left),
+        width: Number.parseFloat(style.width),
+        x:
+          bounds.left +
+          Number.parseFloat(style.left) +
+          Number.parseFloat(style.width) / 2,
+        y:
+          bounds.top +
+          Number.parseFloat(style.top) +
+          Number.parseFloat(style.height) / 2,
+      }
+    })
+    const tickLeft = await completed.evaluate((node) =>
+      Number.parseFloat(getComputedStyle(node, '::after').left),
+    )
+    expect(marker.left).toBeCloseTo(size * -1.667, 2)
+    expect(tickLeft).toBeCloseTo(size * -1.333, 2)
+    expect(marker.left + marker.width).toBeLessThan(0)
+    expect(tickLeft).toBeGreaterThan(marker.left)
+    expect(tickLeft).toBeLessThan(marker.left + marker.width)
+    const checked = await task.getAttribute('data-checked')
+    await page.mouse.click(marker.x, marker.y)
+    await expect(task).toHaveAttribute(
+      'data-checked',
+      checked === 'true' ? 'false' : 'true',
+    )
+  }
+  await operation(page, 'editable', { editable: false })
+  const before = (await observe(page)).snapshot
+  const marker = await task.evaluate((node) => {
+    const style = getComputedStyle(node, '::before')
+    const bounds = node.getBoundingClientRect()
+    return {
+      x:
+        bounds.left +
+        Number.parseFloat(style.left) +
+        Number.parseFloat(style.width) / 2,
+      y:
+        bounds.top +
+        Number.parseFloat(style.top) +
+        Number.parseFloat(style.height) / 2,
+    }
+  })
+  await page.mouse.click(marker.x, marker.y)
+  await expect(task).toHaveAttribute('data-checked', 'false')
+  expect((await observe(page)).snapshot).toEqual(before)
+})
+
 test('availability observation stays clean and rejects a replaced generation @host-controls', async ({
   page,
   openFixture,
