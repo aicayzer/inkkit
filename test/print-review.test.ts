@@ -7,6 +7,7 @@ import {
   InkKitEditor,
   type ImageAdapter,
   type PortableImage,
+  type FileAdapter,
 } from '../src/index'
 import { setCommentVisibility } from '../src/comments'
 
@@ -119,13 +120,14 @@ async function run(
     ctx: Ctx,
   ) => Promise<void>,
   adapter?: ImageAdapter,
+  files?: FileAdapter,
 ) {
   const root = document.createElement('div')
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
     { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
-    { images: adapter },
+    { images: adapter, files },
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
   try {
@@ -642,3 +644,112 @@ test('TXT image-looking source remains literal without an adapter', () =>
       '![literal](images/a.png)',
     )
   }))
+
+test.each(['wiki', 'path'] as const)(
+  'resolved %s images keep portable bytes, useful names and width in copy and print',
+  (kind) => {
+    const seen: { kind: string; width?: number }[] = []
+    return run(
+      async (editor) => {
+        const source =
+          kind === 'wiki' ? '![[photo|240]]\n' : '![Photo|240](opaque.png)\n'
+        editor.loadDocument({ ...input, text: source })
+        const copied = await editor.clipboardSnapshot()
+        expect(copied.text).toBe('Resolved photo')
+        expect(copied.html).toContain('width="240"')
+        expect(copied.html).toContain(`data:image/png;base64,${pngBase64}`)
+        expect(copied.html).not.toContain('private://')
+        expect(copied.markdown).toBe(source)
+        const printed = await editor.printableSnapshot()
+        expect(
+          body(printed.html).querySelector('img')?.getAttribute('alt'),
+        ).toBe('Resolved photo')
+        expect(
+          body(printed.html).querySelector('img')?.getAttribute('width'),
+        ).toBe('240')
+        expect(printed.html).not.toContain('private://')
+        expect(printed.assets).toHaveLength(1)
+        expect(printed.assets[0]!.bytes).toEqual(pngBytes)
+        expect(printed.warnings).toEqual([])
+        expect(seen).toEqual([
+          { kind, width: 240 },
+          { kind, width: 240 },
+        ])
+        expect(editor.snapshot().text).toBe(source)
+      },
+      undefined,
+      {
+        resolve: async () => ({
+          kind: 'image',
+          label: 'Resolved photo',
+          url: 'private://photo',
+        }),
+        exportImage: async (reference) => {
+          seen.push({ kind: reference.kind, width: reference.width })
+          return portable()
+        },
+      },
+    )
+  },
+)
+
+test('optional files retain legacy path image exports but never use them for named images', () => {
+  const exported = vi.fn(async () => portable())
+  return run(
+    async (editor) => {
+      editor.loadDocument({ ...input, text: '![Path|120](opaque.png)\n' })
+      expect(
+        (await editor.clipboardSnapshot()).images[0]?.image?.bytes,
+      ).toEqual(pngBytes)
+      expect((await editor.printableSnapshot()).assets).toHaveLength(1)
+      expect(exported).toHaveBeenCalledTimes(2)
+      editor.loadDocument({ ...input, text: '![[named|120]]\n' })
+      expect((await editor.clipboardSnapshot()).images[0]?.error).toMatch(
+        /portable export/i,
+      )
+      await expect(editor.printableSnapshot()).rejects.toMatchObject({
+        code: 'image-unavailable',
+      })
+      expect(exported).toHaveBeenCalledTimes(2)
+    },
+    { ...images, exportImage: exported },
+    {
+      resolve: async () => ({ kind: 'image', url: 'private://photo' }),
+    },
+  )
+})
+
+test('reload promptly cancels a held image decoder and releases its object URL', () => {
+  let decoding = false
+  vi.stubGlobal(
+    'Image',
+    class {
+      naturalWidth = 1
+      naturalHeight = 1
+      onload?: () => void
+      onerror?: () => void
+      set src(_value: string) {
+        decoding = true
+      }
+    },
+  )
+  return run(
+    async (editor) => {
+      const document = { ...input, text: '![[photo]]\n' }
+      editor.loadDocument(document)
+      const printing = editor.printableSnapshot()
+      const rejected = expect(printing).rejects.toMatchObject({
+        code: 'stale-document',
+      })
+      await vi.waitFor(() => expect(decoding).toBe(true))
+      editor.reloadDocument(document)
+      await rejected
+      expect(URL.revokeObjectURL).toHaveBeenCalled()
+    },
+    undefined,
+    {
+      resolve: async () => ({ kind: 'image', url: 'private://photo' }),
+      exportImage: async () => portable(),
+    },
+  )
+})

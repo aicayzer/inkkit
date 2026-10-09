@@ -108,6 +108,8 @@ import {
   withReferenceMetadata,
 } from './reference-clipboard'
 import { imageView } from './images'
+import { wikiLinkView } from './wiki-view'
+import { withFileSignal } from './files'
 import {
   tablePlugins,
   tableCommand,
@@ -124,6 +126,8 @@ import {
   type DocumentSnapshot,
   type DocumentContext,
   type ImageAdapter,
+  type FileAdapter,
+  type WikiLinkAdapter,
   type ClipboardInput,
   type ClipboardOutput,
   type PrintableDocument,
@@ -241,6 +245,8 @@ export interface TextInputPreferences {
 
 export interface EditorOptions {
   images?: ImageAdapter
+  files?: FileAdapter
+  wikiLinks?: WikiLinkAdapter
   editable?: boolean
   textInput?: TextInputPreferences
   labels?: Partial<EditorLabels>
@@ -523,6 +529,7 @@ export class InkKitEditor {
   private revision = 0
   private documentEpoch = 0
   private operationSequence = 0
+  private exportControllers = new Set<AbortController>()
   private plainComposing = false
   private plainSearch = ''
   private literalMatch?: {
@@ -577,6 +584,8 @@ export class InkKitEditor {
           update: (view, previous) => {
             if (this.loading || view.state.doc.eq(previous.doc)) return
             this.revision += 1
+            this.cancelExports()
+            this.mediaPolicy()
             this.literalMatch = undefined
             let markdown: string
             try {
@@ -626,6 +635,48 @@ export class InkKitEditor {
       generation: this.generation,
       operationId: `${this.documentEpoch}:${this.generation}:${++this.operationSequence}`,
     }
+  }
+
+  private cancelExports(): void {
+    for (const controller of this.exportControllers) controller.abort()
+    this.exportControllers.clear()
+  }
+
+  private async exportContent<T>(
+    snapshot: DocumentSnapshot,
+    operation: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const epoch = this.documentEpoch
+    const mode = this.editingMode
+    const controller = new AbortController()
+    this.exportControllers.add(controller)
+    try {
+      return await withFileSignal(
+        operation(controller.signal),
+        controller.signal,
+      )
+    } finally {
+      this.exportControllers.delete(controller)
+      this.assertCurrent(snapshot.generation)
+      if (
+        controller.signal.aborted ||
+        epoch !== this.documentEpoch ||
+        snapshot.documentId !== this.documentId ||
+        snapshot.revision !== this.revision ||
+        mode !== this.editingMode
+      )
+        throw new InkKitError(
+          'stale-document',
+          'Document changed while preparing output',
+        )
+    }
+  }
+
+  private mediaPolicy(): void {
+    if (this.editor && this.root)
+      this.editor.ctx
+        .get(editorViewCtx)
+        .dom.dispatchEvent(new Event('inkkit-media-policy'))
   }
 
   private assertAlive(): void {
@@ -684,6 +735,7 @@ export class InkKitEditor {
         .get(editorViewCtx)
         .dom.dispatchEvent(new Event('inkkit-cancel-resize'))
       this.applyInputPolicy()
+      this.mediaPolicy()
     } finally {
       this.reportingSuppressed = suppressed
     }
@@ -930,6 +982,7 @@ export class InkKitEditor {
       left = container.scrollLeft
     const text = this.snapshot().text
     this.mode = mode
+    this.cancelExports()
     this.outlineEpoch += 1
     this.plainSearch = ''
     this.literalMatch = undefined
@@ -974,6 +1027,7 @@ export class InkKitEditor {
     )
     this.editor.ctx.get(editorViewCtx).dom.parentElement!.hidden =
       this.literalSurface
+    this.mediaPolicy()
   }
 
   replaceSource(text: string, expectedGeneration?: number): boolean {
@@ -1109,13 +1163,12 @@ export class InkKitEditor {
     expectedGeneration?: number,
   ): Promise<PrintableDocument> {
     const snapshot = this.snapshot(expectedGeneration)
-    const epoch = this.documentEpoch
     const state = this.editor.ctx.get(editorViewCtx).state
-    let output: Awaited<ReturnType<typeof printableMarkdown>>
-    try {
+    const output = await this.exportContent(snapshot, async (signal) => {
       if (
         snapshot.format === 'md' &&
         !this.options.images &&
+        !this.options.files &&
         hasAuthoredImagesInLiterals(state.doc.content, (source) =>
           this.editor.ctx.get(remarkCtx).parse(source),
         )
@@ -1124,27 +1177,17 @@ export class InkKitEditor {
           'image-unavailable',
           'No image adapter is configured for the authored images.',
         )
-      output =
-        snapshot.format === 'txt'
-          ? printableText(snapshot.text)
-          : await printableMarkdown(
-              state.doc.content,
-              state.schema,
-              this.options.images,
-              this.context(),
-            )
-    } finally {
-      this.assertCurrent(snapshot.generation)
-      if (
-        snapshot.documentId !== this.documentId ||
-        epoch !== this.documentEpoch ||
-        snapshot.revision !== this.revision
-      )
-        throw new InkKitError(
-          'stale-document',
-          'Document changed while preparing printable content',
-        )
-    }
+      return snapshot.format === 'txt'
+        ? printableText(snapshot.text)
+        : printableMarkdown(
+            state.doc.content,
+            state.schema,
+            this.options.images,
+            this.context(),
+            this.options.files,
+            signal,
+          )
+    })
     return Object.freeze({
       documentId: snapshot.documentId,
       generation: snapshot.generation,
@@ -1243,13 +1286,17 @@ export class InkKitEditor {
           : 'Cannot copy the selected Markdown',
       )
     }
-    const result = await portableClipboard(
-      all || selectedDoc ? content : selectionContent(doc, content),
-      schema,
-      markdown,
-      this.options.images,
-      this.context(),
-      completeDiagrams,
+    const result = await this.exportContent(snapshot, (signal) =>
+      portableClipboard(
+        all || selectedDoc ? content : selectionContent(doc, content),
+        schema,
+        markdown,
+        this.options.images,
+        this.context(),
+        completeDiagrams,
+        this.options.files,
+        signal,
+      ),
     )
     const metadata = referenceMetadata(
       this.editor.ctx,
@@ -1354,6 +1401,8 @@ export class InkKitEditor {
     if (this.destroyed) return
     this.destroyed = true
     this.ready = false
+    this.cancelExports()
+    this.mediaPolicy()
     this.pasteController.destroy()
     if (this.clickHandler)
       this.root.removeEventListener('click', this.clickHandler)
@@ -1535,7 +1584,13 @@ export class InkKitEditor {
       .use(instance.pasteController.plugin)
       .use(visibleClipboard)
       .use(instance.keymapPlugin)
-      .use(createDialect(Boolean(options.images)))
+      .use(
+        createDialect(
+          Boolean(options.images || options.files),
+          Boolean(options.wikiLinks),
+          Boolean(options.files),
+        ),
+      )
       .use(tablePlugins)
       .use(instance.changePlugin)
       .use(history)
@@ -1553,7 +1608,68 @@ export class InkKitEditor {
       .use(selectionPlugin)
       .use($prose(() => search()))
       .use(instance.policyPlugin)
-      .use(options.images ? imageView(options.images) : [])
+      .use(
+        options.wikiLinks
+          ? wikiLinkView(options.wikiLinks, {
+              capture: () => {
+                const epoch = instance.documentEpoch
+                const context = instance.context()
+                return {
+                  context,
+                  isCurrent: () =>
+                    !instance.destroyed &&
+                    epoch === instance.documentEpoch &&
+                    context.documentId === instance.documentId &&
+                    context.generation === instance.generation,
+                }
+              },
+              active: () =>
+                instance.ready &&
+                !instance.destroyed &&
+                !instance.literalSurface,
+              labels: { ...defaultLabels, ...options.labels },
+              error: (error) => events.error?.(error),
+            })
+          : [],
+      )
+      .use(
+        options.images || options.files
+          ? imageView(
+              options.images,
+              options.files
+                ? {
+                    adapter: options.files,
+                    capture: () => {
+                      const epoch = instance.documentEpoch
+                      const context = instance.context()
+                      return {
+                        context,
+                        isCurrent: () =>
+                          !instance.destroyed &&
+                          epoch === instance.documentEpoch &&
+                          context.documentId === instance.documentId &&
+                          context.generation === instance.generation,
+                      }
+                    },
+                    active: () =>
+                      instance.ready &&
+                      !instance.destroyed &&
+                      !instance.literalSurface,
+                    labels: { ...defaultLabels, ...options.labels },
+                    error: (error) => events.error?.(error),
+                  }
+                : undefined,
+              () => {
+                try {
+                  instance.assertMutation()
+                  return true
+                } catch {
+                  return false
+                }
+              },
+            )
+          : [],
+      )
       .create()
     configureTableMovement(instance.editor.ctx, () => {
       try {
@@ -1808,6 +1924,8 @@ export class InkKitEditor {
       ? this.plain.ownerDocument.activeElement === this.plain
       : this.editor.ctx.get(editorViewCtx).hasFocus()
     this.ready = false
+    this.cancelExports()
+    this.mediaPolicy()
     this.pasteController.cancelPending()
     this.documentEpoch += 1
     this.outlineEpoch += 1
@@ -1830,6 +1948,7 @@ export class InkKitEditor {
     this.lastMarkdown = input.text
     this.updateSurface()
     this.ready = true
+    this.mediaPolicy()
     if (focused) {
       if (this.literalSurface) this.plain.focus({ preventScroll: true })
       else this.editor.ctx.get(editorViewCtx).focus()

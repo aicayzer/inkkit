@@ -41,6 +41,12 @@ import { $node, $remark } from '@milkdown/kit/utils'
 import { autolinkInputRule } from './autolink'
 import { sourceAttribute } from './source'
 import {
+  linkedSyntax,
+  wikiLinkSchema,
+  namedFileMarkdown,
+  fileReference,
+} from './linked-syntax'
+import {
   normalizeTableAlignment,
   normalizeTableColumnAlignment,
 } from './table-alignment'
@@ -261,6 +267,14 @@ const normalizedImages = imageSchema.extendSchema((base) => (ctx) => {
   const schema = base(ctx)
   return {
     ...schema,
+    attrs: {
+      ...schema.attrs,
+      inkkitFileRaw: { default: null },
+      inkkitFileTarget: { default: null },
+      inkkitFileFragment: { default: null },
+      inkkitFileWidth: { default: null },
+      inkkitFileInTable: { default: false },
+    },
     parseDOM: [
       {
         tag: 'img[src]',
@@ -280,6 +294,31 @@ const normalizedImages = imageSchema.extendSchema((base) => (ctx) => {
           src: String(node.url ?? ''),
           alt: String(node.alt ?? ''),
           title: String(node.title ?? ''),
+          inkkitFileRaw: node.inkkitFileRaw ?? null,
+          inkkitFileTarget: node.inkkitFileTarget ?? null,
+          inkkitFileFragment: node.inkkitFileFragment ?? null,
+          inkkitFileWidth: node.inkkitFileWidth ?? null,
+          inkkitFileInTable: node.inkkitFileInTable ?? false,
+        })
+      },
+    },
+    toMarkdown: {
+      ...schema.toMarkdown,
+      runner(state, node) {
+        const raw = namedFileMarkdown(
+          node,
+          Boolean(node.attrs.inkkitFileInTable),
+        )
+        if (raw == null) return schema.toMarkdown.runner(state, node)
+        state.addNode('image', undefined, undefined, {
+          url: node.attrs.src,
+          alt: node.attrs.alt,
+          title: node.attrs.title || null,
+          inkkitFileRaw: raw,
+          inkkitFileTarget: node.attrs.inkkitFileTarget,
+          inkkitFileFragment: node.attrs.inkkitFileFragment,
+          inkkitFileWidth: fileReference(node).width ?? null,
+          inkkitFileInTable: node.attrs.inkkitFileInTable,
         })
       },
     },
@@ -353,14 +392,19 @@ export const tables: MilkdownPlugin[] = [
   exitTable,
 ].flat()
 
-export function createDialect(images: boolean): MilkdownPlugin[] {
+export function createDialect(
+  images: boolean,
+  wikiLinks = false,
+  files = false,
+): MilkdownPlugin[] {
   return [
     remarkCodeFences,
     remarkReferencesPlugin,
     remarkCalloutsPlugin,
     remarkCommentsPlugin,
+    wikiLinks || files ? linkedSyntax(wikiLinks, files) : [],
     // Protect unsupported inline HTML before the empty-line plugin consumes break nodes.
-    createLiteralPreservation(images),
+    createLiteralPreservation(images || files),
     commonmarkWithLiteralReferences,
     $node('doc', () => ({
       ...docSchema.schema,
@@ -370,6 +414,7 @@ export function createDialect(images: boolean): MilkdownPlugin[] {
       },
     })),
     references,
+    wikiLinks ? wikiLinkSchema : [],
     callouts,
     comments,
     inlineHighlight,

@@ -71,6 +71,7 @@ test('presentation URL remains separate from authored reference and portable cop
       { documentId: 'note', generation: 1, operationId: 'copy' },
     )
     expect(out.html).toContain('data:image/png;base64,AQID')
+    expect(out.html).toContain('width="320"')
     expect(out.html).not.toContain('private:')
     expect(out.markdown).toContain('(images/a.png)')
     expect(out.images[0]?.reference).toBe('images/a.png')

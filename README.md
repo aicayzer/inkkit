@@ -46,3 +46,5 @@ Start with the [feature guide](docs/supported-syntax.md) and [simple and rich in
 Scope and release status live in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [version milestones](https://github.com/aicayzer/inkkit/milestones). Optional media extensions are tracked there. Only documented, released features form the supported package contract.
 
 MIT licensed. InkKit builds on the public PadPad and Memos editors; see [NOTICE](NOTICE).
+
+Optional wiki links and a host-owned asynchronous file adapter support named/path images, audio, video, PDFs and file cards. Authored source and sizing are preserved; portable copy/print uses validated images or documented descriptive fallbacks. See [linked syntax](docs/supported-syntax.md#linked-syntax) and [adapter contracts](docs/api.md#optional-wiki-links-and-files).

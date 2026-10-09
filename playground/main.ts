@@ -8,6 +8,7 @@ import {
   fixtures,
   configurations,
   ControlledImages,
+  ControlledFiles,
   imageBytes,
   type AdapterMode,
 } from '../scripts/interop/consumer/fixtures'
@@ -59,6 +60,8 @@ for (const command of tableCommands) {
 let editor: InkKitEditor
 let secondEditor: InkKitEditor | undefined
 let images = new ControlledImages()
+let files = new ControlledFiles()
+let pendingOutput: Promise<{ value?: unknown; error?: unknown }> | undefined
 let generation = 0
 let mountEpoch = 0
 let headings: readonly Heading[] = []
@@ -126,6 +129,7 @@ function observe() {
     viewport: editor.viewport(),
     secondTextSnapshot: secondEditor?.textSnapshot() ?? null,
     adapterEvents: [...images.events],
+    fileEvents: [...files.events],
     diagnostics: [...diagnostics],
     lastResult,
   }
@@ -207,7 +211,10 @@ async function reset(
     secondEditor = undefined
   }
   images.dispose()
+  files.dispose()
   images = new ControlledImages()
+  files = new ControlledFiles()
+  pendingOutput = undefined
   pendingImage = undefined
   diagnostics = []
   lastResult = null
@@ -217,6 +224,7 @@ async function reset(
   configuration = nextConfiguration
   images.setMode('import', adapterMode)
   images.setMode('export', adapterMode)
+  files.setMode(adapterMode)
   const update = () => {
     if (epoch === mountEpoch)
       queueMicrotask(() => {
@@ -245,6 +253,16 @@ async function reset(
     },
     {
       images: configuration === 'rich' ? images.adapter : undefined,
+      files:
+        configuration === 'rich' &&
+        (fixtureId === 'linked-files' || params.get('files') === 'true')
+          ? files.adapter
+          : undefined,
+      wikiLinks:
+        configuration === 'rich' &&
+        (fixtureId === 'linked-files' || params.get('files') === 'true')
+          ? files.wiki
+          : undefined,
       editable: params.get('editable') !== 'false',
       textInput:
         configuration === 'rich'
@@ -439,6 +457,34 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         result = { pending: true }
         break
       }
+      case 'fileMode':
+        files.setMode(args.mode as AdapterMode)
+        break
+      case 'fileRelease':
+        files.release()
+        break
+      case 'fileEvents':
+        result = [...files.events]
+        break
+      case 'startOutput':
+        pendingOutput = (
+          args.kind === 'print'
+            ? editor.printableSnapshot()
+            : editor.clipboardSnapshot()
+        ).then(
+          (value) => ({ value }),
+          (error) => ({ error }),
+        )
+        result = { pending: true }
+        break
+      case 'finishOutput': {
+        if (!pendingOutput) throw Error('No output is pending')
+        const completed = await pendingOutput
+        pendingOutput = undefined
+        if (completed.error) throw completed.error
+        result = completed.value
+        break
+      }
       case 'finishImagePaste':
         images.release('import')
         if (!pendingImage) throw Error('No image paste is pending')
@@ -483,6 +529,7 @@ click('replace-document', () =>
 )
 click('read-only', () => operation('editable', { editable: !editor.editable }))
 click('release', () => {
+  files.release()
   images.release('import')
   images.release('export')
 })
@@ -588,6 +635,7 @@ element('adapter').addEventListener('change', () => {
   adapterMode = element<HTMLSelectElement>('adapter').value as AdapterMode
   images.setMode('import', adapterMode)
   images.setMode('export', adapterMode)
+  files.setMode(adapterMode)
   updateControls()
 })
 element('table-action').addEventListener('change', updateControls)

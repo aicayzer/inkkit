@@ -24,6 +24,14 @@ export interface EditorLabels {
   tableAlignRight: string
   tableMoveColumn: string
   tableMoveRow: string
+  fileLoading: string
+  fileMissing: string
+  fileError: string
+  fileRetry: string
+  fileOpen: string
+  filePreviewUnavailable: string
+  filePDFPreview: string
+  wikiMissing: string
 }
 
 export const defaultLabels: Readonly<EditorLabels> = {
@@ -46,6 +54,14 @@ export const defaultLabels: Readonly<EditorLabels> = {
   tableAlignRight: 'Align right',
   tableMoveColumn: 'Move column',
   tableMoveRow: 'Move row',
+  fileLoading: 'Loading file…',
+  fileMissing: 'File unavailable',
+  fileError: 'File could not be loaded',
+  fileRetry: 'Retry',
+  fileOpen: 'Open',
+  filePreviewUnavailable: 'Preview unavailable',
+  filePDFPreview: 'Open to view this PDF',
+  wikiMissing: 'Link unavailable',
 }
 
 export const labelsCtx = $ctx<Readonly<EditorLabels>, 'inkkitLabels'>(

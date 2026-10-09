@@ -309,7 +309,7 @@ export const calloutView = $prose(
       key: new PluginKey('inkkitCalloutView'),
       props: {
         nodeViews: {
-          inkkit_callout(node) {
+          inkkit_callout(node, view) {
             const dom = document.createElement('blockquote')
             dom.className = 'inkkit-callout'
             dom.setAttribute('data-inkkit-callout', String(node.attrs.kind))
@@ -331,6 +331,7 @@ export const calloutView = $prose(
                   .toLowerCase()
                   .replace(/^./, (letter) => letter.toUpperCase())
               dom.setAttribute('data-inkkit-folded', String(folded))
+              view.dom.dispatchEvent(new Event('inkkit-media-policy'))
               button.hidden = !node.attrs.fold
               button.setAttribute('aria-expanded', String(!folded))
               button.setAttribute(

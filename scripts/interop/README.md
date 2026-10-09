@@ -5,7 +5,7 @@ These probes distinguish a packed-package WebKit consumer from tests hosted in a
 Build the offline consumer from the exact candidate archive. The builder uses an archive filename containing its SHA-256 so that replacing a candidate at the same version cannot reuse the previous package installation.
 
 ```sh
-node scripts/interop/build-consumer.mjs _local/release/aicayzer-inkkit-0.0.1.tgz
+node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE
 swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/webkit-host
 swiftc scripts/interop/Clipboard.swift -o _local/interop/clipboard
 ```
@@ -102,7 +102,7 @@ node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8
 node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --scenario host-delayed-import-editability-epoch
 ```
 
-Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls`, `native-search`, `layout` and `legacy`. Versions from 0.0.8 default to bounded `core`; previous versions retain their historical complete suite when no selector is supplied. `legacy` retains every prior scenario available for the version. No group includes `intentional-assertion-failure`; it requires explicit selection.
+Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls`, `native-search`, `layout`, `linked-files`, `media`, `portable-files` and `legacy`. Versions from 0.0.8 default to bounded `core`; previous versions retain their historical complete suite when no selector is supplied. `legacy` retains every prior scenario available for the version. No group includes `intentional-assertion-failure`; it requires explicit selection.
 
 The core covers reference preservation and shared source/formatted history. Host controls cover source focus/input preferences, read-only transitions and preserved history, bridge command state and stale generations, synthetic composition guards, and cancellation of manually delayed image imports after editability changes. Synthetic composition events verify guards; they do not prove complete IME interoperability.
 
@@ -129,3 +129,17 @@ node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.9
 Facade operations include `textSnapshot`, `selectTextRange`, `replaceTextRange`, `revealTextRange`, `textRangeRects`, `visibleTextRanges`, `setViewport` and `viewport`. `text` and `sourceName` identify a substring in a named snapshot; range operations round-trip its snapshot ID and UTF-16 offsets through JSON. Host-focus, controlled resize and second-instance helpers inspect DOM behaviour without exposing editor internals. Geometry is client CSS pixels, with supplied insets representing overlapping host chrome.
 
 The selected cases cover Unicode replacement and shared undo; read-only/composition and stale scopes; formatted/source insets, navigation, reload focus and scroll; resize and multiple-instance independence. Browser cases additionally exercise TXT/CRLF and source composition. Synthetic composition establishes guards, not complete IME interoperability. No native clipboard exchange or print campaign is implied by these layout checks.
+
+## Optional linked files and media from 0.0.10
+
+The shared `linked-files` fixture contains Unicode wiki targets and aliases, escaped table separators, named and path images, audio/video fragments, a PDF, file cards, missing/error states and unsupported forms. Rich configuration enables the controlled `files` and `wikiLinks` adapters; minimal leaves optional syntax literal. Resources are local and disposable. Host actions are recorded callbacks, without storage, permissions or native opening.
+
+```sh
+node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE _local/interop/consumer-0.0.10
+swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/webkit-host-0.0.10
+node scripts/interop/verify-native.mjs _local/interop/consumer-0.0.10/dist/index.html _local/release/0.0.10/native _local/interop/webkit-host-0.0.10 0.0.10 --group core --group linked-files --group media --group portable-files
+```
+
+`linked-files` selects syntax/source preservation, host wiki actions and named-image sizing with undo. Browser cases cover retry, file actions and path sizing. `media` selects read-only controls and resource release through mode/document lifecycle changes. `portable-files` selects ordinary clipboard, explicit Markdown and printable representations for all supported kinds, including descriptive nonimage fallbacks, unavailable image warnings and stale asynchronous exports. The selected native case also prints the frozen portable document to a real PDF. Select only groups relevant to a later changed boundary.
+
+Additional fixture operations are `fileMode` (`normal`, `reject`, `hold`, `corrupt`), `fileRelease`, `fileEvents`, `fileResize` (optional cancellation), `startFileOutput` (`kind: 'print'` for printable output; otherwise clipboard export) and `finishFileOutput`. Browser regressions use `@linked-files`; native assertions retain callback identities, source snapshots and portable output alongside the usual evidence hashes. Portable-output checks exercise the captured API result; native PDF printing remains a separate selected check with the protected clipboard/preferences procedure above. A PDF view's host opening callback does not prove a native PDF viewer integration.

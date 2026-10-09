@@ -1,6 +1,6 @@
 # Integration and customisation
 
-Editability, text-input preferences, command availability and mount-time labels/keymaps require 0.0.8 or later. Native text ranges and viewport coordination require 0.0.9 or later.
+Editability, text-input preferences, command availability and mount-time labels/keymaps require 0.0.8 or later. Native text ranges and viewport coordination require 0.0.9 or later. Optional linked syntax and file adapters require 0.0.10 or later.
 
 InkKit supplies document editing and portable exports. Your app supplies its interface, files and storage. Use exports from `@aicayzer/inkkit`; hosts do not import Milkdown or ProseMirror internals. The [API reference](api.md) defines errors and asynchronous contracts, and [preservation](preservation.md) explains source and clipboard fidelity.
 
@@ -100,3 +100,11 @@ Image references are opaque. The adapter owns bytes, access control, storage and
 For native clipboard writes, await `clipboardSnapshot()` and validate the captured document before replacing the clipboard. Supply `events.clipboard` for image or diagram selections and resolve its promise only after the native write succeeds. Cut waits for that acknowledgement before deleting content. Encode byte arrays explicitly when crossing a JSON bridge.
 
 `printableSnapshot()` returns a complete frozen printable document with portable assets; the app owns Print/PDF commands, dialogs and file generation. Before switching or closing a document, capture a fresh save snapshot. Increment generation when replacing it, and await `editor.destroy()` before removing the mounted root.
+
+## Optional linked files
+
+Add `wikiLinks` and/or `files` to the mount options when the host can resolve them. Keep the existing `images` adapter for captured-image imports and legacy path-image export. File resolution receives an abort signal and opaque reference; return a declared kind and a private offline display resource, or an explicit missing/error result. Supply portable image bytes through `files.exportImage` when named images must copy or print. Storage, permissions, URL creation/revocation, note lookup and native Open/Reveal actions stay in the host.
+
+Keep private URLs out of source and host clipboard writers. Use `clipboardSnapshot`/`events.clipboard` output for portable rich copy, and `printableSnapshot` for printing. Media/file descriptions are supported print representations, with `attachment-fallback` warnings; unresolved files produce `attachment-unavailable`. Handle `image-unavailable` as an asset failure rather than printing a broken image. Honour `FileContext.signal`; InkKit also ignores stale results and cancels pending output if the captured document or mode changes. No app adoption is implied by enabling these package adapters.
+
+See the [public adapter contract](api.md#optional-wiki-links-and-files) and [representation table](supported-syntax.md#linked-syntax) before wiring native actions.
