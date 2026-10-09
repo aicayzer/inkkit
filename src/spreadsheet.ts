@@ -9,6 +9,7 @@ import {
 import { isInTable, selectedRect } from '@milkdown/kit/prose/tables'
 import { InkKitError, type ClipboardInput } from './types'
 import { literalCommentSpans } from './comments'
+import { normalizeTableAlignment } from './table-alignment'
 import {
   dispatchTableOperation,
   editableTable,
@@ -333,12 +334,8 @@ function htmlGrid(schema: Schema, html: string): Grid {
       return parsed.firstChild!.content
     })
   })
-  const alignment = [...rows[0]!.children].map((cell) => {
-    const value =
-      (cell as HTMLElement).style.textAlign ||
-      cell.getAttribute('align') ||
-      'left'
-    return ['left', 'right', 'center'].includes(value) ? value : 'left'
-  })
+  const alignment = [...rows[0]!.children].map(
+    (cell) => normalizeTableAlignment(cell as HTMLElement) ?? 'left',
+  )
   return { width, cells, alignment }
 }
