@@ -32,10 +32,11 @@ The [existing native runner](../scripts/interop/README.md) preserves earlier sce
 ```sh
 node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --list
 node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --group core --group host-controls
-node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --scenario SCENARIO_NAME
+node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.9 --group core --group native-search --group layout
+node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.9 --scenario SCENARIO_NAME
 ```
 
-Groups are `core`, `host-controls`, `references`, `tables`, `source`, `diagrams`, `print` and `legacy`. Repeat `--group` or `--scenario` to select a union. `--list` lists selection without launching WKWebView; 0.0.8 defaults to the bounded core. Explicitly select changed-contract cases and keep their evidence in a distinct output directory.
+Groups are `core`, `host-controls`, `native-search`, `layout`, `references`, `tables`, `source`, `diagrams`, `print` and `legacy`. Repeat `--group` or `--scenario` to select a union. `--list` lists selection without launching WKWebView; Versions from 0.0.8 default to the bounded core. Explicitly select changed-contract cases and keep their evidence in a distinct output directory.
 
 A native facade consumer establishes behaviour in WKWebView with its fixture bridge. Browser WebKit does not prove WKWebView behaviour, and neither proves a consumer app's native actions or compatibility with an external clipboard destination. Synthetic composition events test guards and transitions; they do not establish complete IME interoperability. Include those limits in the handover.
 
@@ -47,7 +48,7 @@ App integrations and app releases follow package publication as a separate deliv
 
 ## GitHub workflow
 
-The [InkKit Project](https://github.com/users/aicayzer/projects/3) is the working roadmap. Issues describe outcomes and acceptance criteria; milestones group releases. Versions 0.0.6 and 0.0.7 are published and verified. Version 0.0.8 is an unpublished candidate for host controls, fixtures and focused verification. Later roadmap work and permanent client-app adoption require separate delivery scope. Use feature-first Project views to track implementation, and version milestones to group delivery scope and publication status.
+The [InkKit Project](https://github.com/users/aicayzer/projects/3) is the working roadmap. Issues describe outcomes and acceptance criteria; milestones group releases. [GitHub releases](https://github.com/aicayzer/inkkit/releases) record published versions and their verification evidence. Permanent client-app adoption remains separate work. Use feature-first Project views to track implementation, and version milestones to group delivery scope and publication status.
 
 - **Roadmap** lists open feature issues, excluding release records, ideas and cancelled work.
 - **Upcoming** groups the scheduled version milestones.

@@ -1,6 +1,6 @@
 # Development playground
 
-The playground is an internal fixture and inspection tool for the **unpublished 0.0.8 candidate**. It uses the public facade and reusable controlled image adapters. It is not a separate showcase or a client app, and its automation helpers are not package exports.
+The playground is an internal fixture and inspection tool. It uses the public facade and reusable controlled image adapters. It is not a separate showcase or a client app, and its automation helpers are not package exports.
 
 ```sh
 pnpm dev
@@ -18,19 +18,19 @@ Use query parameters on the Vite URL, for example:
 /?fixture=tables&configuration=minimal&editable=false&editors=2
 ```
 
-| Parameter       | Values                                                                                                                                 |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `fixture`       | `everyday`, `tables`, `references` (footnotes and callouts), `mermaid`, `images`, `txt`, `unsupported`, `untidy`. Default: `everyday`. |
-| `configuration` | `minimal`, `rich`. Default: `rich`.                                                                                                    |
-| `adapter`       | `normal` (success), `reject` (failure), `hold` (manually released delay). Default: `normal`. Applies when the rich adapter is present. |
-| `editable`      | `false` starts read-only; otherwise editable.                                                                                          |
-| `editors`       | `2` adds a separate read-only editor beside unrelated host content for style/focus checks.                                             |
+| Parameter       | Values                                                                                                                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fixture`       | `everyday`, `tables`, `references` (footnotes and callouts), `mermaid`, `images`, `txt`, `unsupported`, `untidy`, `native-search` (Unicode, folding, embeds and long scrolling content). Default: `everyday`. |
+| `configuration` | `minimal`, `rich`. Default: `rich`.                                                                                                                                                                           |
+| `adapter`       | `normal` (success), `reject` (failure), `hold` (manually released delay). Default: `normal`. Applies when the rich adapter is present.                                                                        |
+| `editable`      | `false` starts read-only; otherwise editable.                                                                                                                                                                 |
+| `editors`       | `2` adds a separate read-only editor beside unrelated host content for style/focus checks.                                                                                                                    |
 
 Unknown fixture, configuration or adapter values fail explicitly. The fixture selectors switch the loaded content/configuration. **Reset fixture** recreates the selected configuration and original content, advances generation, clears observations/diagnostics and disposes pending fixture resources. **Replace document** tests replacement separately. The adapter selector changes deterministic behaviour; **Release image operations** completes a held import/export without timing-dependent sleeps.
 
 Observations contain the complete snapshot or an explicit snapshot error, selected text, editing mode, editability, command availability or its error, adapter events, diagnostics and the last operation result. A failed snapshot is not an unchanged document. Observe these values without reaching into Milkdown internals.
 
-Development-only `window.inkkitPlayground` exposes `fixtures`, `configurations`, `reset(fixture?, configuration?)`, `selectFixture(fixture?, configuration?)`, `replaceDocument(text, format, documentId?)`, `operation(name, args?)`, `observe()` and controlled `adapter.setMode(kind, mode)` / `adapter.release(kind)` helpers. `operation` delegates to public editor operations; its names and arguments are defined in `playground/main.ts`. Supported operations include formatting, tables, mode/editability/input policies, history, source replacement, find/replace, headings, clipboard/printable capture and held image paste. Browser tests use this boundary plus ordinary DOM locators.
+Development-only `window.inkkitPlayground` exposes `fixtures`, `configurations`, `reset(fixture?, configuration?)`, `selectFixture(fixture?, configuration?)`, `replaceDocument(text, format, documentId?)`, `operation(name, args?)`, `observe()` and controlled `adapter.setMode(kind, mode)` / `adapter.release(kind)` helpers. `operation` delegates to public editor operations; its names and arguments are defined in `playground/main.ts`. Supported operations include formatting, tables, mode/editability/input policies, history, source replacement, find/replace, headings, readable-text snapshots/ranges, geometry, viewport insets, clipboard/printable capture and held image paste. Browser tests use this boundary plus ordinary DOM locators.
 
 ## Browser selection and diagnostics
 
@@ -40,6 +40,7 @@ Use Playwright's [standard CLI](https://playwright.dev/docs/test-cli), reports a
 pnpm exec playwright test --list
 pnpm exec playwright test --project=chromium --grep @smoke
 pnpm exec playwright test --project=chromium --grep @host-controls
+pnpm exec playwright test --project=chromium --grep @native-search
 pnpm exec playwright test --project=webkit --grep @host-controls
 pnpm exec playwright show-report _local/playwright/report
 pnpm exec playwright show-trace PATH_TO_TRACE_ZIP

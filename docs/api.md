@@ -1,6 +1,6 @@
 # Host API
 
-This reference includes the **unpublished 0.0.8 candidate**. Version 0.0.7 is published; the host-policy and availability sections below describe candidate additions.
+This reference describes the public facade. Host policies and command availability require 0.0.8 or later; native text ranges and viewport coordination require 0.0.9 or later. Check the [releases](https://github.com/aicayzer/inkkit/releases) for verified published versions.
 
 `InkKitEditor.mount(root, events, options?: EditorOptions)` creates the editor. `EditorOptions` accepts optional `images`, `editable`, `textInput`, `labels` and `keymap`. Editing defaults to enabled; omitted text-input preferences retain browser behaviour. Import `@aicayzer/inkkit/style.css` into the host bundle. Keep the root alive until `destroy()` completes.
 
@@ -41,6 +41,22 @@ The state contains `documentId`, `generation`, `revision`, `format`, `mode`, `ed
 The optional `events.commandStateChanged(state)` callback publishes current state after selection, editing, history, mode or input-policy changes and after document replacement. Document loading suppresses intermediate state. The existing `events.stateChanged(CaretState)` contract is retained for active formatting.
 
 Source and TXT disable formatted commands. Read-only disables mutations while retaining non-mutating operations. Availability is contextual: recheck generation and handle the operation's result/errors when a user acts. The host owns toolbar/menu presentation; querying availability never dirties the document.
+
+## Native readable text and layout
+
+From 0.0.9, `textSnapshot(expectedGeneration?)` returns an immutable readable-text snapshot with an opaque `snapshotId`, document identity, generation, revision, format, mode, text and current UTF-16 selection. Keep ranges as `{ snapshotId, from, to }`; `from` and `to` are zero-based, half-open UTF-16 offsets in that snapshot’s `text`. They are not raw Markdown offsets or ProseMirror positions. Hosts continue to own search queries and controls.
+
+Source and TXT expose displayed textarea text, with CRLF normalised to LF. The ordinary `snapshot()` still contains the exact authored source. Formatted snapshots join textblocks and hard breaks with LF. Readable image alt text, footnote labels and callout titles are protected content; author comments and reference-definition metadata are excluded. Footnote definition bodies remain readable text. Empty image alt text uses `Image`; callout labels use their title or kind. Folded bodies remain in logical text, while hidden content has no current rectangles.
+
+`selectTextRange(range, options?)`, `revealTextRange(range)` and `replaceTextRange(range, text)` use that same mapping. Selection preserves host focus unless explicitly requested. Complete protected image and footnote labels select their atomic node; a complete callout title selects the callout block, so the returned effective selection includes its body. Partial protected labels reject. Reveal may unfold a folded ancestor and scroll to the range. Replacement is literal, retains surrounding structure and inline marks, and forms one shared undo step. Replacement rejects protected embeds, existing hard breaks, hidden comments and cross-block boundaries before editing; use source mode for source syntax. Offsets that split a surrogate pair, partial protected labels and unsupported replacement boundaries reject with `invalid-range`. Invalid viewport containers or non-finite/negative insets throw `RangeError` before changing layout policy.
+
+Reloads, document replacements, revisions and mode changes invalidate old snapshot IDs, including reloads with otherwise identical generation/revision and mode round trips. IDs are editor-local. Caret changes, scrolling, insets and resizing do not invalidate unchanged text. Read-only permits selection and reveal but rejects replacement. Text snapshots, selection and geometry reject during composition or pending operations, as well as after destruction or before a document is ready. Capture a new text snapshot after an edit or a stale-range rejection.
+
+`textRangeRects(range)` computes geometry only when requested; `visibleTextRanges(snapshotId)` returns currently visible logical ranges. Rectangles use CSS pixels in the web view’s client coordinate space, with the same origin as DOM pointer/drop coordinates. They are not device pixels or coordinates relative to the mounted root. Hosts translate them at their native bridge boundary.
+
+`setViewport({ scrollContainer?, insets? })` identifies the host-owned scroll container and overlapping chrome insets. The mounted root is the default scroll container. Insets are non-negative CSS pixels on each edge of its visible viewport; `viewport()` reports the resulting visible rectangle, insets and combined scroll offsets. Rectangle fields are `left`, `top`, `right`, `bottom`, `width` and `height`. Source/TXT retain the textarea’s internal scrolling. Explicit range reveal, find and heading navigation share this viewport contract. Layout and headers stay in the host.
+
+Loading does not focus the editor or reveal a saved caret. External reloads preserve valid selection, focus and scroll positions without jumping a browsing host. Explicit focus/navigation may reveal the caret. Each editor retains its own text identities, viewport and layout state.
 
 ## Footnotes and reference links
 

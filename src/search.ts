@@ -1,7 +1,11 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Fragment, Slice } from '@milkdown/kit/prose/model'
 import { closeHistory } from '@milkdown/kit/prose/history'
-import { Selection, TextSelection } from '@milkdown/kit/prose/state'
+import {
+  Selection,
+  TextSelection,
+  type EditorState,
+} from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { SearchQuery, setSearchState, getSearchState } from 'prosemirror-search'
 import { InkKitError } from './types'
@@ -124,6 +128,35 @@ export function findFormatted(view: EditorView, text: string): void {
   view.dispatch(tr)
 }
 
+function replacementSlice(
+  state: EditorState,
+  from: number,
+  to: number,
+  value: string,
+): Slice {
+  const start = state.doc.resolve(from),
+    end = state.doc.resolve(to)
+  const marks = start.marksAcross(end) ?? start.marks()
+  const nodes: ProseNode[] = []
+  if (start.parent.type.spec.code) {
+    if (value) nodes.push(state.schema.text(value, marks))
+  } else {
+    const lines = value.split('\n')
+    lines.forEach((line, index) => {
+      if (index)
+        nodes.push(
+          state.schema.nodes.hardbreak!.create(
+            { isHTML: index === lines.length - 1 && line === '' },
+            null,
+            marks,
+          ),
+        )
+      if (line) nodes.push(state.schema.text(line, marks))
+    })
+  }
+  return new Slice(Fragment.fromArray(nodes), 0, 0)
+}
+
 export function replaceFormatted(
   view: EditorView,
   search: string,
@@ -161,29 +194,11 @@ export function replaceFormatted(
   if (!changed.length) return 0
   let tr = setSearchState(state.tr, query)
   for (const match of [...changed].reverse()) {
-    const from = state.doc.resolve(match.from)
-    const to = state.doc.resolve(match.to)
-    const marks = from.marksAcross(to) ?? from.marks()
-    let content = Fragment.empty
-    if (from.parent.type.spec.code) {
-      if (value) content = Fragment.from(state.schema.text(value, marks))
-    } else {
-      const nodes: ProseNode[] = []
-      const lines = value.split('\n')
-      lines.forEach((line, index) => {
-        if (index)
-          nodes.push(
-            state.schema.nodes.hardbreak!.create(
-              { isHTML: index === lines.length - 1 && line === '' },
-              null,
-              marks,
-            ),
-          )
-        if (line) nodes.push(state.schema.text(line, marks))
-      })
-      content = Fragment.fromArray(nodes)
-    }
-    tr.replace(match.from, match.to, new Slice(content, 0, 0))
+    tr.replace(
+      match.from,
+      match.to,
+      replacementSlice(state, match.from, match.to, value),
+    )
   }
   if (!all) {
     const match = changed[0]!
@@ -203,4 +218,46 @@ export function replaceFormatted(
   view.dispatch(closeHistory(tr).scrollIntoView())
   view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
   return changed.length
+}
+
+export function replaceFormattedRange(
+  view: EditorView,
+  from: number,
+  to: number,
+  replacement: string,
+  preflight: (doc: ProseNode) => void,
+): boolean {
+  const start = view.state.doc.resolve(from)
+  const end = view.state.doc.resolve(to)
+  let textOnly = start.parent === end.parent && start.parent.inlineContent
+  view.state.doc.nodesBetween(from, to, (node) => {
+    if (!node.isText && !node.isTextblock) textOnly = false
+  })
+  if (!textOnly)
+    throw new InkKitError(
+      'invalid-range',
+      'Replacement requires literal text within one block',
+    )
+  const value = replacement.replace(/\r\n?/g, '\n')
+  if (view.state.doc.textBetween(from, to) === value) return false
+  const tr = closeHistory(
+    view.state.tr.replace(
+      from,
+      to,
+      replacementSlice(view.state, from, to, value),
+    ),
+  )
+  tr.setSelection(TextSelection.create(tr.doc, from, tr.mapping.map(to, 1)))
+  try {
+    preflight(tr.doc)
+  } catch (error) {
+    if (error instanceof InkKitError) throw error
+    throw new InkKitError(
+      'preservation',
+      error instanceof Error ? error.message : 'Cannot preserve replacement',
+    )
+  }
+  view.dispatch(tr)
+  view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
+  return true
 }

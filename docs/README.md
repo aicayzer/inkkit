@@ -1,6 +1,6 @@
 # InkKit documentation
 
-This documentation describes the **unpublished 0.0.8 candidate**. Version 0.0.7 is the published release; host editability, text-input preferences, command availability and appearance/label/shortcut controls are candidate additions. Check the [milestones](https://github.com/aicayzer/inkkit/milestones) for publication status.
+These guides describe InkKit’s public contracts. Host editability, text-input preferences, command availability and appearance/label/shortcut controls are available from 0.0.8. Check the [releases](https://github.com/aicayzer/inkkit/releases) and [milestones](https://github.com/aicayzer/inkkit/milestones) for publication and verification status.
 
 | Guide                                           | Use it to                                                                                                  |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |

@@ -22,7 +22,16 @@ for (let index = 2; index < process.argv.length; index++) {
 if (positional.length > 4)
   throw Error('Expected at most BUNDLE OUTPUT_DIRECTORY HOST_BINARY VERSION')
 const version = positional[3] ?? '0.0.2'
-const versions = ['0.0.2', '0.0.3', '0.0.4', '0.0.5', '0.0.6', '0.0.7', '0.0.8']
+const versions = [
+  '0.0.2',
+  '0.0.3',
+  '0.0.4',
+  '0.0.5',
+  '0.0.6',
+  '0.0.7',
+  '0.0.8',
+  '0.0.9',
+]
 if (!versions.includes(version))
   throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
 const releaseAtLeast = (target) =>
@@ -1876,6 +1885,216 @@ if (releaseAtLeast('0.0.8')) {
     },
   })
 }
+if (releaseAtLeast('0.0.9')) {
+  scenarios['native-search-scoped-unicode'] = {
+    source:
+      'Unicode A😀B é 中文.\n\n**Formatted match**.\n\n> [!NOTE]- Folded\n> Hidden body match.\n\n<!-- hidden author comment -->\n\n![Opaque image](images/native.png)\n',
+    operations: [
+      { op: 'textSnapshot', name: 'before' },
+      contains('text', 'A😀B é 中文', 'before'),
+      {
+        op: 'assert',
+        path: 'text',
+        excludes: 'hidden author comment',
+        name: 'before',
+      },
+      {
+        op: 'selectTextRange',
+        sourceName: 'before',
+        text: '😀',
+        name: 'emoji',
+      },
+      assert('text', '😀', 'emoji'),
+      {
+        op: 'selectTextRange',
+        sourceName: 'before',
+        text: '😀',
+        length: 1,
+        expectedError: 'invalid-range',
+      },
+      {
+        op: 'replaceTextRange',
+        sourceName: 'before',
+        text: '😀',
+        replacement: '界',
+      },
+      contains('snapshot.text', 'A界B é'),
+      {
+        op: 'selectTextRange',
+        sourceName: 'before',
+        text: '😀',
+        expectedError: 'stale-document',
+      },
+      { op: 'undo' },
+      { op: 'textSnapshot', name: 'restored' },
+      {
+        op: 'selectTextRange',
+        sourceName: 'restored',
+        text: 'é',
+        name: 'accent',
+      },
+      assert('text', 'é', 'accent'),
+      {
+        op: 'textRangeRects',
+        sourceName: 'restored',
+        text: 'Hidden body match',
+        name: 'folded',
+      },
+      assert('', [], 'folded'),
+      {
+        op: 'replaceTextRange',
+        sourceName: 'restored',
+        text: 'Opaque image',
+        replacement: 'NO',
+        expectedError: 'invalid-range',
+      },
+      { op: 'composition', active: true },
+      { op: 'textSnapshot', expectedError: 'composition' },
+      {
+        op: 'selectTextRange',
+        sourceName: 'restored',
+        text: 'é',
+        expectedError: 'composition',
+      },
+      { op: 'composition', active: false },
+      { op: 'editingMode', mode: 'source' },
+      { op: 'textSnapshot', name: 'source' },
+      {
+        op: 'selectTextRange',
+        sourceName: 'source',
+        text: '😀',
+        name: 'sourceEmoji',
+      },
+      assert('text', '😀', 'sourceEmoji'),
+      {
+        op: 'replaceTextRange',
+        sourceName: 'source',
+        text: '😀',
+        replacement: '界',
+      },
+      { op: 'undo' },
+      { op: 'editingMode', mode: 'formatted' },
+      {
+        op: 'textRangeRects',
+        sourceName: 'restored',
+        text: 'é',
+        expectedError: 'stale-document',
+      },
+      { op: 'mountSecond' },
+      {
+        op: 'selectTextRange',
+        instance: 'second',
+        sourceName: 'source',
+        text: '😀',
+        expectedError: 'stale-document',
+      },
+      { op: 'load', format: 'txt', source: 'A😀B é 中文.\r\nSecond line\r\n' },
+      { op: 'textSnapshot', name: 'txt' },
+      assert('text', 'A😀B é 中文.\nSecond line\n', 'txt'),
+      {
+        op: 'selectTextRange',
+        sourceName: 'txt',
+        text: '😀',
+        name: 'txtEmoji',
+      },
+      assert('text', '😀', 'txtEmoji'),
+      {
+        op: 'replaceTextRange',
+        sourceName: 'txt',
+        text: '😀',
+        replacement: '界',
+      },
+      { op: 'undo' },
+      assert('snapshot.text', 'A😀B é 中文.\r\nSecond line\r\n'),
+    ],
+  }
+  const layoutSource =
+    '# Layout\n\n' +
+    Array.from(
+      { length: 36 },
+      (_, index) => `Paragraph ${index + 1}: scrollable fixture.\n`,
+    ).join('\n') +
+    '\nFinal navigation target.\n'
+  for (const mode of ['formatted', 'source']) {
+    scenarios[`native-layout-${mode}`] = {
+      source: layoutSource,
+      operations: [
+        ...(mode === 'source' ? [{ op: 'editingMode', mode }] : []),
+        { op: 'layout', height: 340, width: 500 },
+        { op: 'hostFocus' },
+        { op: 'textSnapshot', name: 'before' },
+        {
+          op: 'setViewport',
+          insets: { top: 36, bottom: 28, left: 12, right: 10 },
+        },
+        {
+          op: 'selectTextRange',
+          sourceName: 'before',
+          text: 'Final navigation target.',
+        },
+        { op: 'viewportState', name: 'quiet' },
+        assert('hostFocused', true, 'quiet'),
+        assert('viewport.scrollTop', 0, 'quiet'),
+        {
+          op: 'selectTextRange',
+          sourceName: 'before',
+          text: 'Final navigation target.',
+          options: { focus: true, reveal: true },
+        },
+        {
+          op: 'rangeGeometry',
+          sourceName: 'before',
+          text: 'Final navigation target.',
+          name: 'revealed',
+        },
+        assert('hasRects', true, 'revealed'),
+        assert('insideViewport', true, 'revealed'),
+        assert('visibleContains', true, 'revealed'),
+        { op: 'layout', height: 260, width: 360 },
+        {
+          op: 'revealTextRange',
+          sourceName: 'before',
+          text: 'Final navigation target.',
+        },
+        {
+          op: 'rangeGeometry',
+          sourceName: 'before',
+          text: 'Final navigation target.',
+          name: 'resized',
+        },
+        assert('insideViewport', true, 'resized'),
+        { op: 'hostFocus' },
+        { op: 'viewportState', name: 'beforeReload' },
+        { op: 'reload', sameGeneration: true, source: layoutSource },
+        { op: 'viewportState', name: 'afterReload' },
+        assert('hostFocused', true, 'afterReload'),
+        {
+          op: 'assert',
+          path: 'viewport.scrollTop',
+          name: 'afterReload',
+          equalsFrom: { name: 'beforeReload', path: 'viewport.scrollTop' },
+        },
+        { op: 'textSnapshot', name: 'reloaded' },
+        {
+          op: 'selectTextRange',
+          sourceName: 'before',
+          text: 'Final navigation target.',
+          expectedError: 'stale-document',
+        },
+        {
+          op: 'selectTextRange',
+          sourceName: 'reloaded',
+          text: 'Final navigation target.',
+          name: 'restored',
+        },
+        assert('text', 'Final navigation target.', 'restored'),
+        { op: 'load', source: 'Replacement document.' },
+        { op: 'viewportState', name: 'replacement' },
+        assert('hostFocused', true, 'replacement'),
+      ],
+    }
+  }
+}
 const names = Object.keys(scenarios)
 const groups = {
   core: [
@@ -1888,8 +2107,13 @@ const groups = {
   diagrams: names.filter((name) => name.startsWith('mermaid-')),
   print: names.filter((name) => /print/.test(name)),
   'host-controls': names.filter((name) => name.startsWith('host-')),
+  'native-search': names.filter((name) => name.startsWith('native-search-')),
+  layout: names.filter((name) => name.startsWith('native-layout-')),
   legacy: names.filter(
-    (name) => !name.startsWith('host-') && !name.startsWith('intentional-'),
+    (name) =>
+      !name.startsWith('host-') &&
+      !name.startsWith('intentional-') &&
+      !name.startsWith('native-'),
   ),
 }
 const selected = new Set()
@@ -1906,7 +2130,7 @@ for (const name of requestedScenarios) {
   selected.add(name)
 }
 if (!requestedGroups.length && !requestedScenarios.length) {
-  ;(version === '0.0.8' ? groups.core : groups.legacy).forEach((name) =>
+  ;(releaseAtLeast('0.0.8') ? groups.core : groups.legacy).forEach((name) =>
     selected.add(name),
   )
 }
