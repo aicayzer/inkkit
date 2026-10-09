@@ -2,6 +2,7 @@ import {
   Editor,
   defaultValueCtx,
   editorViewCtx,
+  parserCtx,
   editorViewOptionsCtx,
   remarkCtx,
   remarkStringifyOptionsCtx,
@@ -15,6 +16,11 @@ import {
 } from './clipboard'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
 import { history } from '@milkdown/kit/plugin/history'
+import {
+  closeHistory,
+  undo as undoHistory,
+  redo as redoHistory,
+} from '@milkdown/kit/prose/history'
 import { cursor } from '@milkdown/kit/plugin/cursor'
 import {
   blockquoteKeymap,
@@ -74,8 +80,17 @@ import {
   type $UserKeymap,
 } from '@milkdown/kit/utils'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
-import { createDialect, serialize, stringifyOptions } from './dialect'
+import { createDialect, stringifyOptions } from './dialect'
 import { Preservation } from './preserve'
+import {
+  sourceAttribute,
+  cleanSourceDoc,
+  editedPlainSource,
+  sourceSelection,
+  rawOffset,
+  normalizedOffset,
+  type SourceProvenance,
+} from './source'
 import {
   normaliseLabel,
   referenceDefinitions,
@@ -110,12 +125,21 @@ import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
 import { commentSelectionContent, setCommentVisibility } from './comments'
 import { PasteController } from './paste'
 import { selectionPlugin } from './selection'
+import { search, SearchQuery, setSearchState } from 'prosemirror-search'
 import {
-  search,
-  SearchQuery,
-  getSearchState,
-  setSearchState,
-} from 'prosemirror-search'
+  findFormatted,
+  findLiteral,
+  replaceFormatted,
+  replaceLiteral,
+} from './search'
+import {
+  collectFormattedHeadings,
+  collectSourceHeadings,
+  navigateFormattedHeading,
+  sourceHeadingPosition,
+  type Heading,
+  type OutlineContext,
+} from './outline'
 import { taskListPlugin, toggleTaskList } from './tasks'
 import { isMermaid, mermaidPreview } from './mermaid'
 import {
@@ -134,6 +158,8 @@ export type Block =
   | { type: 'bulletList' }
   | { type: 'orderedList' }
   | { type: 'taskList' }
+
+export type EditingMode = 'source' | 'formatted'
 
 export interface CaretState {
   marks: Mark[]
@@ -365,13 +391,14 @@ const dropControlCharacters = $prose(
 
 // The listener plugin reports selection changes from inside state.apply, before
 // the view holds the new state, so the caret state is read from the view instead.
-function caretStatePlugin(events: EditorEvents) {
+function caretStatePlugin(events: EditorEvents, active = () => true) {
   return $prose(
     () =>
       new Plugin({
         key: new PluginKey('caretState'),
         view: () => ({
           update(view, previous) {
+            if (!active()) return
             const { state } = view
             if (
               state.selection.eq(previous.selection) &&
@@ -417,7 +444,6 @@ function joinLists(tr: Transaction, start: number, index: number): void {
 export class InkKitEditor {
   private editor!: Editor
   private lastMarkdown = ''
-  private baseline = ''
   private documentId = ''
   private formatType: 'md' | 'txt' = 'md'
   private revision = 0
@@ -425,6 +451,19 @@ export class InkKitEditor {
   private operationSequence = 0
   private plainComposing = false
   private plainSearch = ''
+  private literalMatch?: {
+    query: string
+    from: number
+    to: number
+    displayedFrom: number
+    displayedTo: number
+    revision: number
+    epoch: number
+  }
+  private beforePlainInput?: { from: number; to: number }
+  private mode: EditingMode = 'formatted'
+  private sourcePreservations = new WeakMap<SourceProvenance, Preservation>()
+  private outlineEpoch = 0
   private ready = false
   private destroyed = false
   private preservation?: Preservation
@@ -445,23 +484,32 @@ export class InkKitEditor {
           update: (view, previous) => {
             if (this.loading || view.state.doc.eq(previous.doc)) return
             this.revision += 1
+            this.literalMatch = undefined
             let markdown: string
             try {
-              markdown =
-                this.preservation?.serialize(view.state.doc) ??
-                serialize(this.editor.ctx, view.state.doc)
+              markdown = this.currentText(view.state.doc)
             } catch (error) {
               this.events.error?.(
                 error instanceof Error ? error : new Error(String(error)),
               )
               return
             }
+            if (this.literalSurface) {
+              const anchor = view.state.doc.attrs[
+                sourceAttribute
+              ] as SourceProvenance | null
+              const from = anchor?.from ?? this.plain.selectionStart
+              const to = anchor?.to ?? this.plain.selectionEnd
+              if (!this.plainComposing) this.plain.value = markdown
+              if (!this.plainComposing)
+                this.plain.setSelectionRange(
+                  Math.min(from, this.plain.value.length),
+                  Math.min(to, this.plain.value.length),
+                )
+            }
             if (markdown === this.lastMarkdown) return
             this.lastMarkdown = markdown
-            this.events.changed(
-              markdown === this.baseline ? this.originalSource : markdown,
-              this.generation,
-            )
+            this.events.changed(markdown, this.generation)
           },
         }),
       }),
@@ -494,7 +542,7 @@ export class InkKitEditor {
     if (generation !== this.generation)
       throw new InkKitError('stale-document', 'Document changed')
     if (
-      this.formatType === 'txt'
+      this.literalSurface
         ? this.plainComposing
         : this.editor.ctx.get(editorViewCtx).composing
     )
@@ -506,25 +554,179 @@ export class InkKitEditor {
       )
   }
 
-  private plainSource(): string {
-    const normalized = this.originalSource.replace(/\r\n?/g, '\n')
-    if (this.plain.value === normalized) return this.originalSource
-    const crlf =
-      this.originalSource.includes('\r\n') &&
-      !this.originalSource.replaceAll('\r\n', '').includes('\n')
-    return crlf ? this.plain.value.replaceAll('\n', '\r\n') : this.plain.value
+  private get literalSurface(): boolean {
+    return this.formatType === 'txt' || this.mode === 'source'
+  }
+
+  get editingMode(): EditingMode {
+    this.assertAlive()
+    return this.literalSurface ? 'source' : 'formatted'
+  }
+
+  private currentText(
+    doc = this.editor.ctx.get(editorViewCtx).state.doc,
+  ): string {
+    const provenance = doc.attrs[sourceAttribute] as SourceProvenance | null
+    if (this.formatType === 'txt')
+      return provenance?.text ?? this.originalSource
+    let preservation = this.preservation
+    if (provenance) {
+      preservation = this.sourcePreservations.get(provenance)
+      if (!preservation) {
+        preservation = new Preservation(this.editor.ctx, provenance.text)
+        this.sourcePreservations.set(provenance, preservation)
+      }
+    }
+    return preservation!.serialize(cleanSourceDoc(doc))
+  }
+
+  setEditingMode(mode: EditingMode, expectedGeneration?: number): boolean {
+    this.assertCurrent(expectedGeneration)
+    if (mode !== 'source' && mode !== 'formatted')
+      throw new RangeError('Editing mode must be source or formatted')
+    if (this.formatType === 'txt' || this.mode === mode) return false
+    const text = this.snapshot().text
+    this.mode = mode
+    this.outlineEpoch += 1
+    this.plainSearch = ''
+    this.literalMatch = undefined
+    if (mode === 'source') {
+      this.plain.value = text
+      this.plain.setSelectionRange(
+        this.plain.value.length,
+        this.plain.value.length,
+      )
+    }
+    this.updateSurface()
+    this.events.stateChanged(
+      this.literalSurface
+        ? { marks: [], block: { type: 'paragraph' }, quoted: false }
+        : caretState(this.editor.ctx.get(editorViewCtx).state),
+    )
+    return true
+  }
+
+  private updateSurface(): void {
+    this.plain.hidden = !this.literalSurface
+    this.plain.setAttribute(
+      'aria-label',
+      this.formatType === 'txt' ? 'Plain text editor' : 'Markdown source',
+    )
+    this.editor.ctx.get(editorViewCtx).dom.parentElement!.hidden =
+      this.literalSurface
+  }
+
+  replaceSource(text: string, expectedGeneration?: number): boolean {
+    this.assertCurrent(expectedGeneration)
+    return this.applySource(text, true)
+  }
+
+  private applySource(
+    text: string,
+    isolated: boolean,
+    from?: number,
+    to?: number,
+  ): boolean {
+    if (typeof text !== 'string') throw new TypeError('Source must be a string')
+    if (text === this.currentText()) return false
+    const view = this.editor.ctx.get(editorViewCtx)
+    const normalizedLength = text.replace(/\r\n?/g, '\n').length
+    const provenance: SourceProvenance = Object.freeze({
+      text,
+      format: this.formatType,
+      from: from ?? normalizedLength,
+      to: to ?? from ?? normalizedLength,
+    })
+    let parsed: ProseNode
+    try {
+      parsed =
+        this.formatType === 'txt'
+          ? view.state.schema.topNodeType.create(
+              null,
+              view.state.schema.nodes.paragraph!.create(
+                null,
+                text ? view.state.schema.text(text) : undefined,
+              ),
+            )
+          : this.editor.ctx.get(parserCtx)(text)
+      if (this.formatType === 'md')
+        this.sourcePreservations.set(
+          provenance,
+          new Preservation(this.editor.ctx, text),
+        )
+    } catch (error) {
+      throw new InkKitError(
+        'preservation',
+        error instanceof Error ? error.message : 'Cannot read Markdown source',
+      )
+    }
+    if (this.literalSurface) {
+      const previous: SourceProvenance = Object.freeze({
+        text: this.currentText(),
+        format: this.formatType,
+        from: this.beforePlainInput?.from ?? this.plain.selectionStart,
+        to: this.beforePlainInput?.to ?? this.plain.selectionEnd,
+      })
+      // History must retain the source caret even when the formatted document has no corresponding position.
+      this.loading = true
+      try {
+        view.dispatch(
+          view.state.tr
+            .setDocAttribute(sourceAttribute, previous)
+            .setMeta('addToHistory', false),
+        )
+      } finally {
+        this.loading = false
+      }
+    }
+    let tr = view.state.tr
+      .replaceWith(0, view.state.doc.content.size, parsed.content)
+      .setDocAttribute(sourceAttribute, provenance)
+    tr.setSelection(Selection.atEnd(tr.doc))
+    if (isolated) tr = closeHistory(tr)
+    view.dispatch(tr)
+    if (isolated)
+      view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
+    return true
+  }
+
+  undo(expectedGeneration?: number): boolean {
+    this.assertCurrent(expectedGeneration)
+    const view = this.editor.ctx.get(editorViewCtx)
+    return undoHistory(view.state, view.dispatch)
+  }
+
+  redo(expectedGeneration?: number): boolean {
+    this.assertCurrent(expectedGeneration)
+    const view = this.editor.ctx.get(editorViewCtx)
+    return redoHistory(view.state, view.dispatch)
+  }
+
+  private replaceLiteralSelection(
+    text: string,
+    isolated = true,
+    retainEndings = false,
+  ): void {
+    const value = this.plain.value
+    const start = this.plain.selectionStart,
+      end = this.plain.selectionEnd
+    const next =
+      value.slice(0, start) + text.replace(/\r\n?/g, '\n') + value.slice(end)
+    const caret = start + text.replace(/\r\n?/g, '\n').length
+    const previous = this.currentText()
+    const source = retainEndings
+      ? previous.slice(0, rawOffset(previous, start)) +
+        text +
+        previous.slice(rawOffset(previous, end))
+      : editedPlainSource(previous, next)
+    this.applySource(source, isolated, caret, caret)
   }
 
   snapshot(expectedGeneration?: number): DocumentSnapshot {
     this.assertCurrent(expectedGeneration)
     let text: string
     try {
-      text =
-        this.formatType === 'txt'
-          ? this.plainSource()
-          : this.preservation!.serialize(
-              this.editor.ctx.get(editorViewCtx).state.doc,
-            )
+      text = this.currentText()
     } catch (error) {
       throw new InkKitError(
         'preservation',
@@ -608,9 +810,9 @@ export class InkKitEditor {
     if (this.formatType === 'txt') {
       const text = all
         ? snapshot.text
-        : this.plain.value.slice(
-            this.plain.selectionStart,
-            this.plain.selectionEnd,
+        : snapshot.text.slice(
+            rawOffset(snapshot.text, this.plain.selectionStart),
+            rawOffset(snapshot.text, this.plain.selectionEnd),
           )
       const pre = document.createElement('pre')
       pre.textContent = text
@@ -623,37 +825,54 @@ export class InkKitEditor {
       }
     }
     const { doc, schema, selection } = this.editor.ctx.get(editorViewCtx).state
+    const selectedSource =
+      !all && this.mode === 'source'
+        ? sourceSelection(
+            snapshot.text,
+            this.plain.selectionStart,
+            this.plain.selectionEnd,
+          )
+        : undefined
+    const selectedDoc = selectedSource
+      ? this.editor.ctx.get(parserCtx)(selectedSource.shareable)
+      : undefined
     const completeDiagrams = new Set<string>()
-    doc.descendants((node, pos) => {
+    ;(selectedDoc ?? doc).descendants((node, pos) => {
       if (
         isMermaid(node) &&
-        (all ||
-          (selection.from <= pos + 1 &&
-            selection.to >= pos + node.nodeSize - 1))
+        (selectedDoc
+          ? Boolean(node.attrs.authoredFence?.close)
+          : all ||
+            (selection.from <= pos + 1 &&
+              selection.to >= pos + node.nodeSize - 1))
       ) {
         completeDiagrams.add(node.textContent.replace(/\r\n?/g, '\n'))
       }
     })
-    const content = all
-      ? doc.content
-      : commentSelectionContent(
-          doc,
-          selection.from,
-          selection.to,
-          selection.content().content,
-        )
+    const content = selectedDoc
+      ? selectedDoc.content
+      : all
+        ? doc.content
+        : commentSelectionContent(
+            doc,
+            selection.from,
+            selection.to,
+            selection.content().content,
+          )
     const valid = content.firstChild?.isInline
       ? Fragment.from(schema.nodes.paragraph!.create(null, content))
       : content
     let markdown: string
     try {
-      markdown = all
-        ? snapshot.text
-        : completeDiagrams.size
-          ? new Preservation(this.editor.ctx, snapshot.text).serialize(
-              doc.type.create(null, selectionContent(doc, valid)),
-            )
-          : selectionMarkdown(this.editor.ctx, doc, valid)
+      markdown = selectedSource
+        ? selectedSource.markdown
+        : all
+          ? snapshot.text
+          : completeDiagrams.size
+            ? new Preservation(this.editor.ctx, snapshot.text).serialize(
+                doc.type.create(null, selectionContent(doc, valid)),
+              )
+            : selectionMarkdown(this.editor.ctx, doc, valid)
     } catch (error) {
       throw new InkKitError(
         'preservation',
@@ -663,18 +882,26 @@ export class InkKitEditor {
       )
     }
     const result = await portableClipboard(
-      all ? content : selectionContent(doc, content),
+      all || selectedDoc ? content : selectionContent(doc, content),
       schema,
       markdown,
       this.options.images,
       this.context(),
       completeDiagrams,
     )
-    const metadata = referenceMetadata(this.editor.ctx, doc, content)
+    const metadata = referenceMetadata(
+      this.editor.ctx,
+      selectedDoc ?? doc,
+      content,
+    )
     if (metadata != null)
       result.html = withReferenceMetadata(result.html, metadata)
     this.assertCurrent(snapshot.generation)
-    if (snapshot.documentId !== this.documentId || epoch !== this.documentEpoch)
+    if (
+      snapshot.documentId !== this.documentId ||
+      epoch !== this.documentEpoch ||
+      snapshot.revision !== this.revision
+    )
       throw new InkKitError('stale-document', 'Document changed')
     if (result.images.some((image) => image.error))
       this.events.error?.(
@@ -695,8 +922,12 @@ export class InkKitEditor {
 
   async paste(input: ClipboardInput): Promise<void> {
     this.assertCurrent()
-    if (this.formatType === 'txt' || input.plainText) {
-      this.pasteAsPlainText(input.text)
+    if (this.literalSurface || input.plainText) {
+      this.pasteAsPlainText(
+        this.mode === 'source' && this.formatType === 'md'
+          ? (input.markdown ?? input.text)
+          : input.text,
+      )
       return
     }
     await this.pasteController.paste(input)
@@ -709,14 +940,8 @@ export class InkKitEditor {
 
   pasteAsPlainText(text: string): void {
     this.assertCurrent()
-    if (this.formatType === 'txt') {
-      this.plain.setRangeText(
-        text,
-        this.plain.selectionStart,
-        this.plain.selectionEnd,
-        'end',
-      )
-      this.plain.dispatchEvent(new Event('input'))
+    if (this.literalSurface) {
+      this.replaceLiteralSelection(text, true, this.formatType === 'md')
     } else {
       const view = this.editor.ctx.get(editorViewCtx)
       if (view.state.selection.$from.parent.type.spec.code) {
@@ -759,7 +984,7 @@ export class InkKitEditor {
 
   table(command: TableCommand, options?: TableOptions): boolean {
     this.assertCurrent()
-    if (this.formatType === 'txt') return false
+    if (this.literalSurface) return false
     return tableCommand(this.editor.ctx, command, options)
   }
 
@@ -798,6 +1023,72 @@ export class InkKitEditor {
       }),
   )
 
+  private copySourceSelection(event: ClipboardEvent): void {
+    event.preventDefault()
+    event.stopPropagation()
+    try {
+      const snapshot = this.snapshot()
+      const from = this.plain.selectionStart,
+        to = this.plain.selectionEnd
+      const selected = sourceSelection(snapshot.text, from, to)
+      const parsed = this.editor.ctx.get(parserCtx)(selected.shareable)
+      let portable = false
+      parsed.descendants((node) => {
+        if (node.type.name === 'image' || isMermaid(node)) portable = true
+      })
+      const cut = event.type === 'cut'
+      const epoch = this.documentEpoch
+      if (portable && this.events.clipboard) {
+        void this.clipboardSnapshot(false)
+          .then(async (content) => {
+            if (
+              cut &&
+              (content.images.some((image) => image.error) ||
+                content.diagrams?.some((diagram) => diagram.error))
+            )
+              throw new InkKitError(
+                'image-unavailable',
+                'The selected content could not be cut safely',
+              )
+            await this.events.clipboard!(content)
+            if (cut) {
+              this.assertCurrent(snapshot.generation)
+              if (
+                epoch !== this.documentEpoch ||
+                snapshot.revision !== this.revision
+              )
+                throw new InkKitError(
+                  'stale-document',
+                  'Document changed before cutting',
+                )
+              this.plain.setSelectionRange(from, to)
+              this.replaceLiteralSelection('')
+            }
+          })
+          .catch((error) => this.events.error?.(error))
+      } else {
+        const output = clipboardContent(parsed.content, parsed.type.schema)
+        if (!event.clipboardData) return
+        event.clipboardData.setData('text/plain', output.text)
+        event.clipboardData.setData('text/html', output.html)
+        if (portable) {
+          this.events.error?.(
+            new InkKitError(
+              'image-unavailable',
+              'The host must provide a clipboard handler for portable images and diagrams',
+            ),
+          )
+          return
+        }
+        if (cut) this.replaceLiteralSelection('')
+      }
+    } catch (error) {
+      this.events.error?.(
+        error instanceof Error ? error : new Error(String(error)),
+      )
+    }
+  }
+
   static async mount(
     root: HTMLElement,
     events: EditorEvents,
@@ -813,7 +1104,8 @@ export class InkKitEditor {
         events.error?.(
           error instanceof Error ? error : new Error(String(error)),
         ),
-      literalText: () => instance.formatType === 'txt',
+      literalText: () => instance.literalSurface,
+      editable: () => !instance.literalSurface,
     })
     instance.editor = await Editor.make()
       .config((ctx) => {
@@ -857,7 +1149,7 @@ export class InkKitEditor {
           scrollMargin: { top: 8, right: 0, bottom: 24, left: 0 },
         }))
       })
-      .use(caretStatePlugin(events))
+      .use(caretStatePlugin(events, () => !instance.literalSurface))
       .use(instance.pasteController.plugin)
       .use(visibleClipboard)
       .use(instance.keymapPlugin)
@@ -883,7 +1175,7 @@ export class InkKitEditor {
     configureTableMovement(instance.editor.ctx, () => {
       try {
         instance.assertCurrent()
-        return instance.formatType === 'md'
+        return !instance.literalSurface
       } catch {
         return false
       }
@@ -893,9 +1185,53 @@ export class InkKitEditor {
     instance.plain.setAttribute('aria-label', 'Plain text editor')
     instance.plain.hidden = true
     root.append(instance.plain)
+    instance.plain.addEventListener('beforeinput', () => {
+      if (instance.ready && instance.literalSurface)
+        instance.beforePlainInput = {
+          from: instance.plain.selectionStart,
+          to: instance.plain.selectionEnd,
+        }
+    })
     instance.plain.addEventListener('input', () => {
-      instance.revision += 1
-      events.changed(instance.plainSource(), instance.generation)
+      if (!instance.ready || !instance.literalSurface) return
+      try {
+        instance.applySource(
+          editedPlainSource(instance.currentText(), instance.plain.value),
+          false,
+          instance.plain.selectionStart,
+          instance.plain.selectionEnd,
+        )
+      } catch (error) {
+        events.error?.(
+          error instanceof Error ? error : new Error(String(error)),
+        )
+      } finally {
+        instance.beforePlainInput = undefined
+      }
+    })
+    instance.plain.addEventListener('keydown', (event) => {
+      if (instance.plainComposing || !(event.metaKey || event.ctrlKey)) return
+      if (event.key.toLowerCase() !== 'z' && event.key.toLowerCase() !== 'y')
+        return
+      event.preventDefault()
+      try {
+        if (event.key.toLowerCase() === 'y' || event.shiftKey) instance.redo()
+        else instance.undo()
+      } catch (error) {
+        events.error?.(
+          error instanceof Error ? error : new Error(String(error)),
+        )
+      }
+    })
+    instance.plain.addEventListener('paste', (event) => {
+      if (!event.clipboardData) return
+      event.preventDefault()
+      void instance
+        .paste({
+          text: event.clipboardData.getData('text/plain'),
+          markdown: event.clipboardData.getData('text/markdown') || undefined,
+        })
+        .catch((error) => events.error?.(error))
     })
     instance.plain.addEventListener('compositionstart', () => {
       instance.plainComposing = true
@@ -954,6 +1290,10 @@ export class InkKitEditor {
     root.addEventListener('click', instance.clickHandler)
     instance.copyHandler = (event) => {
       if (instance.formatType === 'txt') return
+      if (instance.mode === 'source') {
+        instance.copySourceSelection(event)
+        return
+      }
       const view = instance.editor.ctx.get(editorViewCtx)
       const fragment = commentSelectionContent(
         view.state.doc,
@@ -1067,33 +1407,46 @@ export class InkKitEditor {
     this.assertAlive()
     this.pasteController.cancelPending()
     this.documentEpoch += 1
+    this.outlineEpoch += 1
+    this.sourcePreservations = new WeakMap()
+    this.mode = 'formatted'
     this.plainComposing = false
+    this.beforePlainInput = undefined
     this.plainSearch = ''
+    this.literalMatch = undefined
     this.documentId = input.documentId
     this.formatType = input.format
     this.revision = 0
-    this.plain.hidden = input.format !== 'txt'
-    this.editor.ctx.get(editorViewCtx).dom.parentElement!.hidden =
-      input.format === 'txt'
     this.plain.value = input.text
     this.load(input.format === 'txt' ? '' : input.text, input.generation)
     this.originalSource = input.text
+    this.lastMarkdown = input.text
     this.ready = true
+    this.updateSurface()
   }
 
   reloadDocument(input: DocumentInput): void {
     this.assertAlive()
     const view = this.editor.ctx.get(editorViewCtx)
-    const at =
-      this.formatType === 'txt'
-        ? this.plain.selectionStart
-        : view.state.selection.from
+    const wasLiteral = this.literalSurface
+    const previousMode = this.editingMode
+    const previousFormat = this.formatType
+    const at = wasLiteral
+      ? this.plain.selectionStart
+      : view.state.selection.from
+    const end = wasLiteral ? this.plain.selectionEnd : at
     const top = this.root.scrollTop
     this.loadDocument(input)
-    if (input.format === 'txt')
+    if (
+      previousFormat === 'md' &&
+      input.format === 'md' &&
+      previousMode === 'source'
+    )
+      this.setEditingMode('source', input.generation)
+    if (this.literalSurface)
       this.plain.setSelectionRange(
-        Math.min(at, input.text.length),
-        Math.min(at, input.text.length),
+        Math.min(at, this.plain.value.length),
+        Math.min(end, this.plain.value.length),
       )
     else
       view.dispatch(
@@ -1107,8 +1460,6 @@ export class InkKitEditor {
   }
 
   private load(markdown: string, generation: number): void {
-    // A loaded document only counts as changed once it is edited, so its
-    // canonical form is the baseline, not the text as stored.
     this.generation = generation
     this.originalSource = markdown
     this.loading = true
@@ -1118,8 +1469,7 @@ export class InkKitEditor {
       this.loading = false
     }
     this.preservation = new Preservation(this.editor.ctx, markdown)
-    this.baseline = serialize(this.editor.ctx)
-    this.lastMarkdown = this.baseline
+    this.lastMarkdown = markdown
     const view = this.editor.ctx.get(editorViewCtx)
     // A caret at the end, where writing carries on; at the start it would sit in a first-line heading and
     // show its marks. The last place text can go, so a document ending in a rule takes a caret above it
@@ -1137,21 +1487,34 @@ export class InkKitEditor {
     this.events.stateChanged(caretState(view.state))
   }
 
-  find(text: string): void {
-    this.assertCurrent()
-    if (this.formatType === 'txt') {
-      const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const matches = text
-        ? [...this.plain.value.matchAll(new RegExp(escaped, 'giu'))]
-        : []
+  find(text: string, expectedGeneration?: number): void {
+    this.assertCurrent(expectedGeneration)
+    if (this.literalSurface) {
       const from =
         this.plainSearch === text
           ? this.plain.selectionEnd
           : this.plain.selectionStart
-      const match = matches.find((item) => item.index >= from) ?? matches[0]
-      if (match)
-        this.plain.setSelectionRange(match.index, match.index + match[0].length)
-      else if (this.plainSearch)
+      const raw = this.currentText()
+      const match = findLiteral(raw, text, rawOffset(raw, from))
+      this.literalMatch = undefined
+      if (match) {
+        // A textarea displays CRLF as one character; retain a match of either raw half for replacement.
+        const start =
+          raw[match.from] === '\n' && raw[match.from - 1] === '\r'
+            ? match.from - 1
+            : match.from
+        const displayedFrom = normalizedOffset(raw, start),
+          displayedTo = normalizedOffset(raw, match.to)
+        this.plain.setSelectionRange(displayedFrom, displayedTo)
+        this.literalMatch = {
+          ...match,
+          query: text,
+          displayedFrom,
+          displayedTo,
+          revision: this.revision,
+          epoch: this.documentEpoch,
+        }
+      } else if (this.plainSearch)
         this.plain.setSelectionRange(
           this.plain.selectionEnd,
           this.plain.selectionEnd,
@@ -1159,39 +1522,139 @@ export class InkKitEditor {
       this.plainSearch = text
       return
     }
-    const view = this.editor.ctx.get(editorViewCtx)
-    const previous = getSearchState(view.state)?.query.search
-    const query = new SearchQuery({ search: text, literal: true })
-    let tr = setSearchState(view.state.tr, query)
-    if (text) {
-      const from =
-        previous === text ? view.state.selection.to : view.state.selection.from
-      const match =
-        query.findNext(view.state, from) ?? query.findNext(view.state, 0)
-      if (match)
-        tr = tr
-          .setSelection(TextSelection.create(tr.doc, match.from, match.to))
-          .scrollIntoView()
-      else tr = tr.setSelection(Selection.near(view.state.selection.$to))
-    } else if (previous) {
-      tr = tr.setSelection(Selection.near(view.state.selection.$to))
+    findFormatted(this.editor.ctx.get(editorViewCtx), text)
+  }
+
+  replace(
+    search: string,
+    replacement: string,
+    expectedGeneration?: number,
+  ): boolean {
+    this.assertCurrent(expectedGeneration)
+    return this.replaceMatches(search, replacement, false) > 0
+  }
+
+  replaceAll(
+    search: string,
+    replacement: string,
+    expectedGeneration?: number,
+  ): number {
+    this.assertCurrent(expectedGeneration)
+    return this.replaceMatches(search, replacement, true)
+  }
+
+  private replaceMatches(
+    search: string,
+    replacement: string,
+    all: boolean,
+  ): number {
+    if (this.literalSurface) {
+      const raw = this.currentText()
+      const remembered = this.literalMatch
+      const selection =
+        remembered &&
+        remembered.query === search &&
+        remembered.revision === this.revision &&
+        remembered.epoch === this.documentEpoch &&
+        remembered.displayedFrom === this.plain.selectionStart &&
+        remembered.displayedTo === this.plain.selectionEnd
+          ? { from: remembered.from, to: remembered.to }
+          : {
+              from: rawOffset(raw, this.plain.selectionStart),
+              to: rawOffset(raw, this.plain.selectionEnd),
+            }
+      if (remembered?.query !== search) this.literalMatch = undefined
+      const result = replaceLiteral(raw, search, replacement, selection, all)
+      if (result.count)
+        this.applySource(
+          result.text,
+          true,
+          normalizedOffset(result.text, result.from),
+          normalizedOffset(result.text, result.to),
+        )
+      this.plainSearch = search
+      return result.count
     }
-    view.dispatch(tr)
+    return replaceFormatted(
+      this.editor.ctx.get(editorViewCtx),
+      search,
+      replacement,
+      (doc) => {
+        this.currentText(doc)
+      },
+      all,
+    )
+  }
+
+  private outlineContext(): OutlineContext {
+    return {
+      documentId: this.documentId,
+      generation: this.generation,
+      revision: this.revision,
+      epoch: this.outlineEpoch,
+      mode: this.editingMode,
+    }
+  }
+
+  headings(expectedGeneration?: number): readonly Heading[] {
+    this.assertCurrent(expectedGeneration)
+    if (this.formatType === 'txt') return Object.freeze([])
+    return this.mode === 'source'
+      ? collectSourceHeadings(
+          this.editor.ctx,
+          this.plain.value,
+          this.outlineContext(),
+        )
+      : collectFormattedHeadings(
+          this.editor.ctx.get(editorViewCtx).state.doc,
+          this.outlineContext(),
+        )
+  }
+
+  navigateHeading(heading: Heading): boolean {
+    this.assertCurrent()
+    if (!heading || typeof heading !== 'object')
+      throw new InkKitError(
+        'stale-document',
+        'The heading is no longer current',
+      )
+    this.assertCurrent(heading.generation)
+    if (this.formatType === 'txt')
+      throw new InkKitError(
+        'stale-document',
+        'The heading is no longer current',
+      )
+    if (this.mode === 'source') {
+      const position = sourceHeadingPosition(
+        this.editor.ctx,
+        this.plain.value,
+        heading,
+        this.outlineContext(),
+      )
+      this.plain.setSelectionRange(position, position)
+      this.plain.focus()
+      return true
+    }
+    return navigateFormattedHeading(
+      this.editor.ctx.get(editorViewCtx),
+      heading,
+      this.outlineContext(),
+    )
   }
 
   /** Buffered native typing follows the same input rules as direct typing. */
   insertText(text: string, generation: number): boolean {
     this.assertAlive()
     if (
-      (this.formatType === 'txt'
+      (this.literalSurface
         ? this.plainComposing
         : this.editor.ctx.get(editorViewCtx).composing) &&
       generation === this.generation
     )
       return false
     this.assertCurrent(generation)
-    if (this.formatType === 'txt') {
-      this.pasteAsPlainText(text)
+    if (this.literalSurface) {
+      this.replaceLiteralSelection(text, false)
       return true
     }
     const view = this.editor.ctx.get(editorViewCtx)
@@ -1220,14 +1683,44 @@ export class InkKitEditor {
   ): boolean {
     this.assertAlive()
     if (
-      (this.formatType === 'txt'
+      (this.literalSurface
         ? this.plainComposing
         : this.editor.ctx.get(editorViewCtx).composing) &&
       generation === this.generation
     )
       return false
     this.assertCurrent(generation)
-    if (this.formatType === 'txt') return false
+    if (this.literalSurface) {
+      if ((metaKey || ctrlKey) && key.toLowerCase() === 'z')
+        return shiftKey ? this.redo(generation) : this.undo(generation)
+      if ((metaKey || ctrlKey) && key.toLowerCase() === 'y')
+        return this.redo(generation)
+      if (metaKey || ctrlKey || altKey) return false
+      if (key === 'Enter' || key === 'Tab') {
+        this.replaceLiteralSelection(key === 'Enter' ? '\n' : '\t', false)
+        return true
+      }
+      if (key === 'Backspace' || key === 'Delete') {
+        const start = this.plain.selectionStart,
+          end = this.plain.selectionEnd
+        if (start === end) {
+          if (key === 'Backspace' && start > 0)
+            this.plain.setSelectionRange(
+              start - [...this.plain.value.slice(0, start)].at(-1)!.length,
+              end,
+            )
+          else if (key === 'Delete' && end < this.plain.value.length)
+            this.plain.setSelectionRange(
+              start,
+              end + [...this.plain.value.slice(end)][0]!.length,
+            )
+          else return false
+        }
+        this.replaceLiteralSelection('', false)
+        return true
+      }
+      return false
+    }
     const view = this.editor.ctx.get(editorViewCtx)
     if (view.composing) return false
     const event = new KeyboardEvent('keydown', {
@@ -1249,7 +1742,7 @@ export class InkKitEditor {
     this.assertAlive()
     if (!this.ready)
       throw new InkKitError('not-ready', 'No document has been loaded')
-    if (this.formatType === 'txt') this.plain.focus()
+    if (this.literalSurface) this.plain.focus()
     else this.editor.ctx.get(editorViewCtx).focus()
   }
 
@@ -1274,7 +1767,7 @@ export class InkKitEditor {
   insertPaths(paths: string[], x: number, y: number): void {
     this.assertCurrent()
     if (paths.length === 0) return
-    if (this.formatType === 'txt') {
+    if (this.literalSurface) {
       this.pasteAsPlainText(paths.join('\n\n'))
       return
     }
@@ -1295,7 +1788,7 @@ export class InkKitEditor {
   ): void {
     this.assertCurrent()
     if (!images.length) return
-    if (!this.options.images || this.formatType === 'txt')
+    if (!this.options.images || this.literalSurface)
       throw new InkKitError(
         'image-unavailable',
         'This editor has no image adapter',
@@ -1477,7 +1970,7 @@ export class InkKitEditor {
 
   format(command: FormatCommand, arg?: string | number): void {
     this.assertCurrent()
-    if (this.formatType === 'txt') return
+    if (this.literalSurface) return
     const run = (cmd: Parameters<typeof callCommand>[0], payload?: unknown) =>
       this.editor.action(callCommand(cmd, payload))
     const state = caretState(this.editor.ctx.get(editorViewCtx).state)
@@ -1558,7 +2051,7 @@ export class InkKitEditor {
     title?: string,
   ): boolean {
     this.assertCurrent()
-    if (this.formatType === 'txt') return false
+    if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
     const definitions = referenceDefinitions(view.state.doc)
     const definition =
@@ -1580,7 +2073,7 @@ export class InkKitEditor {
 
   insertFootnote(label?: string): void {
     this.assertCurrent()
-    if (this.formatType === 'txt') return
+    if (this.literalSurface) return
     const view = this.editor.ctx.get(editorViewCtx)
     const definitions = footnoteDefinitions(view.state.doc)
     if (label == null) {
@@ -1621,7 +2114,7 @@ export class InkKitEditor {
 
   navigateFootnote(target: 'definition' | 'reference'): boolean {
     this.assertCurrent()
-    if (this.formatType === 'txt') return false
+    if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
     const { $from } = view.state.selection
     let identifier: string | undefined

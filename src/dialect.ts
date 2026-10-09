@@ -3,6 +3,7 @@ import type { Ctx, MilkdownPlugin } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import {
   commonmark,
+  docSchema,
   hardbreakSchema,
   imageSchema,
   paragraphSchema,
@@ -36,8 +37,9 @@ import {
   setAlignCommand,
   exitTable,
 } from '@milkdown/kit/preset/gfm'
-import { $remark } from '@milkdown/kit/utils'
+import { $node, $remark } from '@milkdown/kit/utils'
 import { autolinkInputRule } from './autolink'
+import { sourceAttribute } from './source'
 import {
   normalizeTableAlignment,
   normalizeTableColumnAlignment,
@@ -360,6 +362,13 @@ export function createDialect(images: boolean): MilkdownPlugin[] {
     // Protect unsupported inline HTML before the empty-line plugin consumes break nodes.
     createLiteralPreservation(images),
     commonmarkWithLiteralReferences,
+    $node('doc', () => ({
+      ...docSchema.schema,
+      attrs: {
+        ...docSchema.schema.attrs,
+        [sourceAttribute]: { default: null },
+      },
+    })),
     references,
     callouts,
     comments,

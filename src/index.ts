@@ -1,6 +1,7 @@
 export { InkKitEditor } from './editor'
 export type {
   EditorEvents,
+  EditingMode,
   CaretState,
   Mark,
   Block,
@@ -8,6 +9,7 @@ export type {
   Keymap,
 } from './editor'
 export type { TableCommand, TableOptions } from './tables'
+export type { Heading } from './outline'
 export { InkKitError } from './types'
 export type {
   DocumentFormat,
