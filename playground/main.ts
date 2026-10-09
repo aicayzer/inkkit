@@ -1,9 +1,9 @@
-import { InkKitEditor } from '../src/index'
+import { InkKitEditor, type TableCommand } from '../src/index'
 import '../src/style.css'
 
 document.head.insertAdjacentHTML(
   'beforeend',
-  '<style>#toolbar{display:flex;gap:8px;padding:8px;box-sizing:border-box;height:48px}#editor{height:calc(100% - 48px)}#status{position:fixed;bottom:4px;left:16px;font-size:12px}</style>',
+  '<style>#toolbar{display:flex;gap:8px;padding:8px;box-sizing:border-box;min-height:48px;flex-wrap:wrap}#editor{height:calc(100% - 96px)}#status{position:fixed;bottom:4px;left:16px;font-size:12px}</style>',
 )
 
 const status = document.querySelector<HTMLOutputElement>('#status')!
@@ -60,4 +60,20 @@ document.querySelector('#mode')!.addEventListener('click', () => {
   })
   document.querySelector('#mode')!.textContent =
     `Switch to ${snapshot.format === 'md' ? 'MD' : 'TXT'}`
+})
+
+document.querySelector('#apply-table')!.addEventListener('click', () => {
+  try {
+    const command = document.querySelector<HTMLSelectElement>('#table-action')!
+      .value as TableCommand
+    const comparison = document.querySelector<HTMLSelectElement>('#comparison')!
+      .value as 'text' | 'number'
+    const order = document.querySelector<HTMLSelectElement>('#sort-order')!
+      .value as 'ascending' | 'descending'
+    status.value = editor.table(command, { comparison, order })
+      ? 'Table updated'
+      : 'Select an editable table cell'
+  } catch (error) {
+    status.value = String(error)
+  }
 })

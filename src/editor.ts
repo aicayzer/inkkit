@@ -88,7 +88,13 @@ import {
   withReferenceMetadata,
 } from './reference-clipboard'
 import { imageView } from './images'
-import { tablePlugins, tableCommand, type TableCommand } from './tables'
+import {
+  tablePlugins,
+  tableCommand,
+  configureTableMovement,
+  type TableCommand,
+  type TableOptions,
+} from './tables'
 import {
   InkKitError,
   type DocumentInput,
@@ -751,10 +757,7 @@ export class InkKitEditor {
     }
   }
 
-  table(
-    command: TableCommand,
-    options?: { rows?: number; columns?: number },
-  ): boolean {
+  table(command: TableCommand, options?: TableOptions): boolean {
     this.assertCurrent()
     if (this.formatType === 'txt') return false
     return tableCommand(this.editor.ctx, command, options)
@@ -877,6 +880,14 @@ export class InkKitEditor {
       .use($prose(() => search()))
       .use(options.images ? imageView(options.images) : [])
       .create()
+    configureTableMovement(instance.editor.ctx, () => {
+      try {
+        instance.assertCurrent()
+        return instance.formatType === 'md'
+      } catch {
+        return false
+      }
+    })
     instance.plain = document.createElement('textarea')
     instance.plain.className = 'inkkit-plain'
     instance.plain.setAttribute('aria-label', 'Plain text editor')

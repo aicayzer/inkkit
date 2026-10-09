@@ -487,6 +487,34 @@ window.interop = {
           case 'format':
             result = editor.format(operation.command, operation.argument)
             break
+          case 'table':
+            result = editor.table(operation.command, operation.options)
+            break
+          case 'tableCells':
+            result = [...view().querySelectorAll('table')].map((table) =>
+              [...table.querySelectorAll('tr')].map((row) =>
+                [...row.querySelectorAll('th,td')].map((cell) => ({
+                  text: cell.textContent,
+                  html: cell.innerHTML,
+                  alignment: cell.getAttribute('style'),
+                })),
+              ),
+            )
+            break
+          case 'domPaste': {
+            const clipboardData = new DataTransfer()
+            for (const [type, text] of Object.entries(operation.types))
+              clipboardData.setData(type, String(text))
+            const event = new ClipboardEvent('paste', {
+              clipboardData,
+              bubbles: true,
+              cancelable: true,
+            })
+            view().dispatchEvent(event)
+            await settle()
+            result = { prevented: event.defaultPrevented, ...capture() }
+            break
+          }
           case 'keyDown':
             result = editor.keyDown(
               operation.key,

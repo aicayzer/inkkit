@@ -35,3 +35,9 @@ Put the body on subsequent quoted lines. Fold markers must directly follow the c
 Complete HTML `<!--comments-->` and Obsidian `%%comments%%` are editable author content, including inline and multiline comments. They start hidden; hosts can reveal them with `setCommentsVisible(true)`. Markdown snapshots and explicit Markdown copy retain comments. Ordinary text, HTML, clipboard metadata and print omit them even when revealed. Code and TXT remain literal; incomplete comment syntax remains literal. HTML is never executed.
 
 Comment delimiters inside footnote identifiers or link destinations are literal identifier or destination text. They are not author comments. Footnote body comments follow the ordinary comment rules.
+
+## Spreadsheet clipboard
+
+Ordinary paste supports tab-separated rows with LF, CRLF or CR endings and simple HTML tables containing inline text and supported formatting. Tab-separated fields can use paired double quotes and doubled quote escapes. Ragged rows are padded with empty cells; trailing empty cells are retained. One terminal row separator is ignored. The first row becomes a new table's header. Existing table headers keep their role when their cells are overwritten. Tables are bounded to 100 rows and 100 columns, including growth.
+
+Merged or nested HTML tables, block or multiline cell content, images requiring import, unsupported inline elements, malformed quoted fields and oversized input are outside this spreadsheet path. Malformed or unsupported TSV rejects without mutation. Existing editable tables also reject unsupported tabular HTML and reference-provenance metadata; outside a table, unsupported HTML retains its existing preservation path. Explicit Markdown and Paste as Plain Text do not trigger spreadsheet interpretation. Spreadsheet text is literal cell content: Markdown punctuation is escaped on save.

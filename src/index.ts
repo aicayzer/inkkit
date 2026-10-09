@@ -7,7 +7,7 @@ export type {
   FormatCommand,
   Keymap,
 } from './editor'
-export type { TableCommand } from './tables'
+export type { TableCommand, TableOptions } from './tables'
 export { InkKitError } from './types'
 export type {
   DocumentFormat,

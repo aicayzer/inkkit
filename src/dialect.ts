@@ -152,6 +152,19 @@ function remarkDialect(this: Processor) {
   add('toMarkdownExtensions', gfmTaskListItemToMarkdown())
   add('toMarkdownExtensions', gfmAutolinkLiteralToMarkdown())
   add('toMarkdownExtensions', gfmTableToMarkdown())
+  add('toMarkdownExtensions', {
+    handlers: {
+      text(node, parent, state, info) {
+        const value = defaultHandlers.text(node, parent, state, info)
+        // GFM trims literal whitespace at cell edges on reopening.
+        return state.stack.includes('tableCell')
+          ? value.replace(/^[ \t]+|[ \t]+$/g, (spaces) =>
+              spaces.replaceAll(' ', '&#x20;').replaceAll('\t', '&#x9;'),
+            )
+          : value
+      },
+    },
+  } satisfies StringifyOptions)
   add('toMarkdownExtensions', { handlers: { link, code: fencedCodeHandler } })
 }
 

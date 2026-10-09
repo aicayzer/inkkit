@@ -8,6 +8,7 @@ import {
 } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
+import { pasteSpreadsheet } from './spreadsheet'
 import {
   avoidReferenceCollisions,
   markdownFromHTML,
@@ -164,6 +165,13 @@ export class PasteController {
         input.plainText ||
         this.options.literalText?.() ||
         view.state.selection.$from.parent.type.spec.code
+      if (
+        !plainText &&
+        input.markdown == null &&
+        !images.length &&
+        pasteSpreadsheet(ctx, input)
+      )
+        return
       const markdown = plainText
         ? undefined
         : (input.markdown ??
