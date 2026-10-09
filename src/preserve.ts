@@ -375,6 +375,14 @@ function blockForm(ctx: Ctx, node: ProseNode): string {
 
 function semanticSignature(doc: ProseNode): string {
   const clean = (value: Record<string, unknown>): Record<string, unknown> => {
+    if (value.type === 'inkkit_wiki_link' && value.attrs) {
+      const {
+        raw: _raw,
+        inTable: _inTable,
+        ...attrs
+      } = value.attrs as Record<string, unknown>
+      value = { ...value, attrs }
+    }
     const content = value.content as Record<string, unknown>[] | undefined
     if (!content) return value
     const tokens: Record<string, unknown>[] = []
@@ -414,6 +422,9 @@ function semanticSignature(doc: ProseNode): string {
         'label',
         'spread',
         'authoredFence',
+        'inkkitFileRaw',
+        'inkkitFileWidth',
+        'inkkitFileInTable',
       ].includes(key)
         ? undefined
         : value,

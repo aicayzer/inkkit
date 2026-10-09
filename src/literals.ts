@@ -92,6 +92,45 @@ function containsUnresolved(node: Nodes, source: string): boolean {
   )
 }
 
+function containsUnsupportedLinked(node: Nodes, source: string): boolean {
+  const start = node.position?.start.offset,
+    end = node.position?.end.offset
+  if (start == null || end == null || node.type === 'definition') return false
+  const supported: { from: number; to: number }[] = []
+  const visit = (child: Nodes) => {
+    if (
+      [
+        'inkkitWikiLink',
+        'image',
+        'code',
+        'inlineCode',
+        'link',
+        'inkkitCommentInline',
+        'inkkitCommentBlock',
+      ].includes(child.type)
+    ) {
+      const from = child.position?.start.offset,
+        to = child.position?.end.offset
+      if (from != null && to != null) supported.push({ from, to })
+      return
+    }
+    if ('children' in child) child.children.forEach(visit)
+  }
+  visit(node)
+  for (const match of source
+    .slice(start, end)
+    .matchAll(/!?\[\[[^\r\n]*?\]\]/g)) {
+    const from = start + match.index,
+      to = from + match[0].length
+    let escapes = 0
+    while (from - escapes > 0 && source[from - escapes - 1] === '\\') escapes++
+    if (escapes % 2) continue
+    if (!supported.some((span) => span.from <= from && span.to >= to))
+      return true
+  }
+  return false
+}
+
 // Keep syntax we cannot faithfully edit as literal text, without making the rest
 // of the document a source editor or allowing HTML and image network requests.
 export function createLiteralPreservation(images: boolean) {
@@ -119,7 +158,8 @@ export function createLiteralPreservation(images: boolean) {
           start == null ||
           end == null ||
           (!containsUnsupported(node, images) &&
-            !containsUnresolved(node, source))
+            !containsUnresolved(node, source) &&
+            !containsUnsupportedLinked(node, source))
         )
           return node
         let raw = source.slice(start, end)

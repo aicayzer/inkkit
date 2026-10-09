@@ -31,6 +31,7 @@ const versions = [
   '0.0.7',
   '0.0.8',
   '0.0.9',
+  '0.0.10',
 ]
 if (!versions.includes(version))
   throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
@@ -2120,6 +2121,130 @@ if (releaseAtLeast('0.0.9')) {
     }
   }
 }
+if (releaseAtLeast('0.0.10')) {
+  Object.assign(scenarios, {
+    'linked-files-source-sizing': {
+      files: true,
+      fixture: 'linked-files',
+      operations: [
+        { op: 'fileState', name: 'files' },
+        contains('kinds', 'audio', 'files'),
+        contains('kinds', 'video', 'files'),
+        contains('kinds', 'pdf', 'files'),
+        assert('pdfSandbox', '', 'files'),
+        assert('pdfFallback', true, 'files'),
+        { op: 'domKeyDown', selector: '.inkkit-wiki-link', key: 'Enter' },
+        { op: 'fileState', name: 'opened' },
+        assert('wikiOpens', 1, 'opened'),
+        { op: 'fileResize', selector: '.image img', occurrence: 1, width: 180 },
+        contains('snapshot.text', '![[Photo|180]]'),
+        { op: 'keyDown', key: 'z', code: 'KeyZ', metaKey: true },
+        contains('snapshot.text', '![[Photo|140]]'),
+        { op: 'setEditable', editable: false },
+        { op: 'fileResize', selector: '.image img', occurrence: 1, width: 200 },
+        contains('snapshot.text', '![[Photo|140]]'),
+        { op: 'mode', mode: 'source' },
+        contains('snapshot.text', '[[Notes/旅行#Résumé|Travel plan]]'),
+        { op: 'reopen' },
+        contains('snapshot.text', '![[Photo|140]]'),
+      ],
+    },
+    'media-lifecycle': {
+      files: true,
+      source:
+        '![[Voice#t=0,0.5]]\n\n![[Movie#t=0,0.5]]\n\n![[Document#page=1]]\n',
+      operations: [
+        { op: 'fileState', name: 'ready' },
+        assert('media.0.controls', true, 'ready'),
+        assert('media.1.controls', true, 'ready'),
+        assert('media.0.autoplay', false, 'ready'),
+        assert('media.1.autoplay', false, 'ready'),
+        assert('media.0.source', true, 'ready'),
+        assert('media.1.source', true, 'ready'),
+        { op: 'setEditable', editable: false },
+        { op: 'fileState', name: 'readonly' },
+        assert('media.0.source', true, 'readonly'),
+        { op: 'mode', mode: 'source' },
+        { op: 'fileState', name: 'hidden' },
+        assert('media.0.source', false, 'hidden'),
+        assert('media.1.source', false, 'hidden'),
+        { op: 'mode', mode: 'formatted' },
+        { op: 'fileState', name: 'restored' },
+        assert('media.0.source', true, 'restored'),
+        assert('pdfFallback', true, 'restored'),
+        { op: 'fileMode', mode: 'hold' },
+        { op: 'load', source: '![[Photo]]\n' },
+        { op: 'fileState', name: 'held' },
+        assert('pending', 1, 'held'),
+        { op: 'load', source: '> [!NOTE]- Folded\n> ![[Photo]]\n' },
+        { op: 'fileState', name: 'folded' },
+        assert('pending', 0, 'folded'),
+        { op: 'fileRelease' },
+        { op: 'fileState', name: 'late' },
+        assert('pending', 0, 'late'),
+      ],
+    },
+    'portable-files-native-print': {
+      files: true,
+      fixture: 'linked-files',
+      mode: 'printable',
+      printIncludes: [
+        'Travel plan',
+        '[Audio: Voice#t=0,0.5]',
+        '[Video: Movie#t=0,0.5]',
+        '[PDF: Document#page=1]',
+        '[File: Archive]',
+      ],
+      printExcludes: ['blob:', 'Retry', 'Open to view'],
+      printMinImages: 1,
+      operations: [
+        { op: 'export', name: 'clipboard' },
+        contains('text', '[Audio: Voice#t=0,0.5]', 'clipboard'),
+        contains('text', '[PDF: Document#page=1]', 'clipboard'),
+        { op: 'assert', path: 'html', excludes: 'blob:', name: 'clipboard' },
+        assert('images.length', 3, 'clipboard'),
+        { op: 'textSnapshot', name: 'readable' },
+        {
+          op: 'selectTextRange',
+          sourceName: 'readable',
+          from: 0,
+          to: 99999,
+          expectedError: 'invalid-range',
+        },
+        {
+          op: 'selectBlocks',
+          fromSelector: ':scope > h1',
+          toSelector: ':scope > p:last-child',
+        },
+        { op: 'domCopy', name: 'domCopy' },
+        contains('text', '[Audio:', 'domCopy'),
+        { op: 'printable', name: 'printable' },
+        assert('assets.length', 3, 'printable'),
+        assert('warnings.length', 6, 'printable'),
+      ],
+    },
+    'portable-files-stale-exports': {
+      files: true,
+      source: '![[Photo]]\n',
+      operations: [
+        { op: 'fileMode', mode: 'hold' },
+        { op: 'startFileOutput', kind: 'copy' },
+        { op: 'load', source: 'Replacement 😀 document.' },
+        { op: 'finishFileOutput', expectedError: 'stale-document' },
+        { op: 'fileRelease' },
+        { op: 'load', source: '![[Photo]]\n' },
+        { op: 'fileMode', mode: 'hold' },
+        { op: 'startFileOutput', kind: 'print' },
+        { op: 'mode', mode: 'source' },
+        { op: 'finishFileOutput', expectedError: 'stale-document' },
+        { op: 'fileRelease' },
+        { op: 'mode', mode: 'formatted' },
+        { op: 'export', name: 'recovered' },
+        assert('images.length', 1, 'recovered'),
+      ],
+    },
+  })
+}
 const names = Object.keys(scenarios)
 const groups = {
   core: [
@@ -2133,6 +2258,9 @@ const groups = {
   print: names.filter((name) => /print/.test(name)),
   'host-controls': names.filter((name) => name.startsWith('host-')),
   'native-search': names.filter((name) => name.startsWith('native-search-')),
+  'linked-files': names.filter((name) => name.startsWith('linked-files-')),
+  media: names.filter((name) => name.startsWith('media-')),
+  'portable-files': names.filter((name) => name.startsWith('portable-files-')),
   layout: names.filter((name) => name.startsWith('native-layout-')),
   legacy: names.filter(
     (name) =>

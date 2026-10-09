@@ -1,13 +1,16 @@
-import type { Fragment, Schema } from '@milkdown/kit/prose/model'
+import type { Fragment, Node, Schema } from '@milkdown/kit/prose/model'
 import { clipboardContent } from './clipboard'
 import { shareableFragment } from './comments'
-import { splitAlt } from './images'
+import { fileReference } from './linked-syntax'
 import { sourceFrontmatter } from './literals'
 import { diagramImage, renderDiagram } from './mermaid'
+import { portableFile, portableFileImage } from './portable-files'
+import { withFileSignal } from './files'
 import {
   InkKitError,
   type DocumentContext,
   type ImageAdapter,
+  type FileAdapter,
   type PortableImage,
   type PrintableDocument,
   type PrintableWarning,
@@ -161,7 +164,11 @@ function matchesSignature(bytes: Uint8Array, mimeType: string): boolean {
   }
 }
 
-async function validatedImage(input: PortableImage): Promise<PortableImage> {
+async function validatedImage(
+  input: PortableImage,
+  signal: AbortSignal,
+): Promise<PortableImage> {
+  signal.throwIfAborted()
   const image = {
     bytes: new Uint8Array(input.bytes),
     mimeType: input.mimeType.toLowerCase(),
@@ -177,16 +184,21 @@ async function validatedImage(input: PortableImage): Promise<PortableImage> {
     await new Promise<void>((resolve, reject) => {
       const decoder = new Image()
       const timeout = setTimeout(() => {
-        decoder.onload = decoder.onerror = null
-        decoder.removeAttribute('src')
-        reject(new Error('The portable image could not be decoded.'))
+        decoder.src = ''
+        finish(new Error('The portable image could not be decoded.'))
       }, 10000)
       const finish = (error?: Error) => {
         clearTimeout(timeout)
         decoder.onload = decoder.onerror = null
+        signal.removeEventListener('abort', cancelled)
         if (error) reject(error)
         else resolve()
       }
+      const cancelled = () => {
+        decoder.src = ''
+        finish(new DOMException('Image export cancelled', 'AbortError'))
+      }
+      signal.addEventListener('abort', cancelled, { once: true })
       decoder.onload = () =>
         finish(
           decoder.naturalWidth > 0 && decoder.naturalHeight > 0
@@ -329,19 +341,17 @@ export async function printableMarkdown(
   schema: Schema,
   adapter: ImageAdapter | undefined,
   context: DocumentContext,
+  files?: FileAdapter,
+  signal: AbortSignal = new AbortController().signal,
 ): Promise<PrintableContent> {
+  signal.throwIfAborted()
   content = shareableFragment(content)
   const container = document.createElement('div')
   container.innerHTML = clipboardContent(content, schema).html
-  const references: { reference: string; alt: string; width: number | null }[] =
-    []
+  const references: Node[] = []
   const tasks: (boolean | null)[] = []
   content.descendants((node) => {
-    if (node.type.name === 'image')
-      references.push({
-        reference: String(node.attrs.src ?? ''),
-        ...splitAlt(String(node.attrs.alt ?? '')),
-      })
+    if (node.type.name === 'image') references.push(node)
     if (node.type.name === 'list_item') tasks.push(node.attrs.checked ?? null)
   })
   for (const [index, item] of [...container.querySelectorAll('li')].entries()) {
@@ -382,22 +392,51 @@ export async function printableMarkdown(
   }
 
   const images = new Map<Element, PortableImage>()
+  const warnings: PrintableWarning[] = []
   for (const [index, element] of [
     ...container.querySelectorAll('img'),
   ].entries()) {
-    const reference = references[index]
+    const node = references[index]
     try {
-      if (!adapter || !reference)
+      if (!node) throw new Error('The authored image is unavailable.')
+      const reference = fileReference(node)
+      const file = files
+        ? await portableFile(node, files, context, signal)
+        : undefined
+      if (file && file.presentation.kind !== 'image') {
+        const fallback = document.createElement('span')
+        fallback.textContent = file.description
+        element.replaceWith(fallback)
+        const unavailable =
+          file.presentation.kind === 'missing' ||
+          file.presentation.kind === 'error'
+        warnings.push({
+          code: unavailable ? 'attachment-unavailable' : 'attachment-fallback',
+          message: unavailable
+            ? `${file.label} is unavailable; its description is printed.`
+            : `${file.label} is printed as a ${file.presentation.kind === 'pdf' ? 'PDF' : file.presentation.kind} description.`,
+        })
+        continue
+      }
+      if (!file && !adapter)
         throw new Error('The authored image is unavailable.')
       const image = await validatedImage(
-        await adapter.exportImage(reference.reference, { ...context }),
+        file
+          ? await portableFileImage(file, files!, adapter, context, signal)
+          : await withFileSignal(
+              adapter!.exportImage(reference.reference, { ...context }),
+              signal,
+            ),
+        signal,
       )
+      signal.throwIfAborted()
       images.set(element, image)
       element.setAttribute('src', dataURL(image))
-      element.setAttribute('alt', reference.alt)
+      element.setAttribute('alt', file?.label || reference.label || '')
       if (reference.width != null && reference.width > 0)
         element.setAttribute('width', String(Math.min(4096, reference.width)))
     } catch (error) {
+      signal.throwIfAborted()
       throw new InkKitError(
         'image-unavailable',
         error instanceof Error
@@ -406,14 +445,14 @@ export async function printableMarkdown(
       )
     }
   }
-  const warnings: PrintableWarning[] = []
   for (const code of container.querySelectorAll(
     'pre[data-language="mermaid"] > code',
   )) {
     const source = code.textContent ?? ''
     try {
-      await renderDiagram(source)
+      await withFileSignal(renderDiagram(source), signal)
     } catch (error) {
+      signal.throwIfAborted()
       const message = `${error instanceof Error ? error.message : 'This diagram could not be rendered.'} The source is printed below.`
       warnings.push({ code: 'diagram-unavailable', message })
       const warning = document.createElement('p')
@@ -422,7 +461,10 @@ export async function printableMarkdown(
       continue
     }
     try {
-      const image = await validatedImage(await diagramImage(source))
+      const image = await validatedImage(
+        await withFileSignal(diagramImage(source), signal),
+        signal,
+      )
       const figure = document.createElement('figure')
       figure.className = 'inkkit-print-diagram'
       const element = document.createElement('img')
@@ -444,5 +486,6 @@ export async function printableMarkdown(
   const assets = [...container.querySelectorAll('img')].map((element) =>
     images.get(element)!,
   )
+  signal.throwIfAborted()
   return documentOutput(container, assets, warnings)
 }

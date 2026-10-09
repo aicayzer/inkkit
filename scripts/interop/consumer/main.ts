@@ -1,7 +1,16 @@
 import { InkKitEditor } from '@aicayzer/inkkit'
 import '@aicayzer/inkkit/style.css'
-import { ControlledImages, imageBytes, fixtures } from './fixtures'
+import {
+  ControlledImages,
+  ControlledFiles,
+  imageBytes,
+  fixtures,
+} from './fixtures'
 const images = new ControlledImages()
+const files = new ControlledFiles()
+let linkedEnabled = false
+let receivedClipboard
+let pendingFileOutput
 const bytes = imageBytes()
 const importedImages = images.imported
 let currentCaretState
@@ -9,7 +18,7 @@ let currentCommandState
 let pendingPaste
 let pendingPrintable
 let secondEditor
-const mountEditor = (configuration = 'rich') =>
+const mountEditor = (configuration = 'rich', linked = false) =>
   InkKitEditor.mount(
     document.querySelector('#editor'),
     {
@@ -21,6 +30,9 @@ const mountEditor = (configuration = 'rich') =>
         currentCommandState = state
       },
       copy() {},
+      clipboard(data) {
+        receivedClipboard = data
+      },
       openLink() {},
       error(error) {
         window.lastError = error.message
@@ -33,6 +45,8 @@ const mountEditor = (configuration = 'rich') =>
     },
     {
       images: configuration === 'rich' ? images.adapter : undefined,
+      files: configuration === 'rich' && linked ? files.adapter : undefined,
+      wikiLinks: configuration === 'rich' && linked ? files.wiki : undefined,
     },
   )
 let editor = await mountEditor()
@@ -61,6 +75,7 @@ const capture = () => ({
   commandStateEvent: currentCommandState ?? null,
   editable: editor.editable,
   adapterEvents: [...images.events],
+  fileEvents: [...files.events],
   error: window.lastError ?? null,
   errorCode: window.lastErrorCode ?? null,
   diagnostics: window.interopErrors ?? [],
@@ -268,12 +283,17 @@ window.interop = {
   },
   get: capture,
   async run(input) {
-    if (input.configuration) {
-      if (!['minimal', 'rich'].includes(input.configuration))
+    if (input.configuration || input.files) {
+      if (
+        input.configuration &&
+        !['minimal', 'rich'].includes(input.configuration)
+      )
         throw Error(`Unknown configuration: ${input.configuration}`)
       await editor.destroy()
       images.dispose()
-      editor = await mountEditor(input.configuration)
+      files.dispose()
+      linkedEnabled = Boolean(input.files)
+      editor = await mountEditor(input.configuration, linkedEnabled)
     }
     if (input.fixture && !fixtures[input.fixture])
       throw Error(`Unknown fixture: ${input.fixture}`)
@@ -498,6 +518,132 @@ window.interop = {
               width: canvas.width,
               height: canvas.height,
             }
+            break
+          }
+          case 'fileState': {
+            const nodes = [
+              ...view().querySelectorAll('[data-inkkit-file-kind]'),
+            ]
+            const media = [...view().querySelectorAll('audio, video')]
+            result = {
+              kinds: nodes.map((node) => node.dataset.inkkitFileKind),
+              states: nodes.map((node) => node.dataset.inkkitFileState),
+              media: media.map((node) => ({
+                kind: node.tagName.toLowerCase(),
+                controls: node.controls,
+                autoplay: node.autoplay,
+                source: Boolean(node.getAttribute('src')),
+                duration: Number.isFinite(node.duration) ? node.duration : null,
+              })),
+              widths: [...view().querySelectorAll('.image img')].map((node) =>
+                Math.round(node.getBoundingClientRect().width),
+              ),
+              pdfSandbox:
+                view().querySelector('iframe')?.getAttribute('sandbox') ?? null,
+              pdfFallback: view().textContent.includes('Open to view this PDF'),
+              wikiOpens: files.events.filter(
+                (event) => event.operation === 'wikiOpen',
+              ).length,
+              pending: nodes.filter(
+                (node) => node.dataset.inkkitFileState === 'loading',
+              ).length,
+            }
+            break
+          }
+          case 'fileContextMenu':
+            view()
+              .querySelector(operation.selector)
+              .dispatchEvent(
+                new MouseEvent('contextmenu', {
+                  bubbles: true,
+                  clientX: 12,
+                  clientY: 18,
+                }),
+              )
+            result = [...files.events]
+            break
+          case 'domCopy': {
+            receivedClipboard = undefined
+            activeEditor().dispatchEvent(
+              new ClipboardEvent('copy', {
+                bubbles: true,
+                cancelable: true,
+                clipboardData: new DataTransfer(),
+              }),
+            )
+            for (let count = 0; count < 50 && !receivedClipboard; count++)
+              await settle()
+            if (!receivedClipboard)
+              throw Error('Host clipboard callback did not run')
+            result = {
+              ...receivedClipboard,
+              images: receivedClipboard.images.map((item) => ({
+                ...item,
+                image: portableImage(item.image),
+              })),
+            }
+            break
+          }
+          case 'fileMode':
+            files.setMode(operation.mode ?? 'normal')
+            result = true
+            break
+          case 'fileRelease':
+            files.release()
+            result = true
+            break
+          case 'fileEvents':
+            result = [...files.events]
+            break
+          case 'startFileOutput':
+            pendingFileOutput = (
+              operation.kind === 'print' ? printableOutput() : exportClipboard()
+            ).then(
+              (value) => ({ value }),
+              (error) => ({ error }),
+            )
+            await settle()
+            result = { pending: true }
+            break
+          case 'finishFileOutput': {
+            if (!pendingFileOutput) throw Error('No file output is pending')
+            const completed = await pendingFileOutput
+            pendingFileOutput = undefined
+            if (completed.error) throw completed.error
+            result = completed.value
+            break
+          }
+          case 'fileResize': {
+            const image = view().querySelectorAll(
+              operation.selector ?? '.image img',
+            )[operation.occurrence ?? 0]
+            const handle = image?.parentElement.querySelector('.image-handle')
+            if (!handle) throw Error('Resize handle not found')
+            const width = image.getBoundingClientRect().width
+            const capturePointer = handle.setPointerCapture
+            handle.setPointerCapture = () => {}
+            handle.dispatchEvent(
+              new PointerEvent('pointerdown', {
+                bubbles: true,
+                pointerId: 1,
+                clientX: 0,
+              }),
+            )
+            handle.dispatchEvent(
+              new PointerEvent('pointermove', {
+                bubbles: true,
+                pointerId: 1,
+                clientX: operation.width - width,
+              }),
+            )
+            handle.dispatchEvent(
+              new PointerEvent(
+                operation.cancel ? 'pointercancel' : 'pointerup',
+                { bubbles: true, pointerId: 1 },
+              ),
+            )
+            handle.setPointerCapture = capturePointer
+            result = capture()
             break
           }
           case 'imageExport':

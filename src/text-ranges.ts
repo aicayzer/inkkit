@@ -1,6 +1,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitError, type TextRect } from './types'
+import { fileReference } from './linked-syntax'
 
 export interface TextSpan {
   from: number
@@ -63,11 +64,17 @@ export function readableProjection(doc: ProseNode): TextProjection {
       append('\n', position, position + node.nodeSize, 'break')
       return false
     }
-    if (name === 'image' || name === 'footnote_reference') {
+    if (
+      name === 'image' ||
+      name === 'footnote_reference' ||
+      name === 'inkkit_wiki_link'
+    ) {
       append(
         name === 'image'
-          ? String(node.attrs.alt ?? '').replace(/\|\d{1,5}$/, '') || 'Image'
-          : `[${node.attrs.label}]`,
+          ? fileReference(node).label || 'Image'
+          : name === 'inkkit_wiki_link'
+            ? String(node.attrs.label || node.attrs.target || 'Link')
+            : `[${node.attrs.label}]`,
         position,
         position + node.nodeSize,
         'embed',

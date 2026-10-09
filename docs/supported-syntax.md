@@ -21,13 +21,13 @@ This matrix applies to 0.0.7–0.0.9. Versions 0.0.8 and 0.0.9 add host controls
 | Managed images                                                    | `![Alt](opaque-reference)`                              | Adapter-dependent display, import and portable export.                                                       |
 | Unmanaged images                                                  | `![Alt](unmanaged-reference)` without an adapter        | Preserved literally; no host storage or image fetch is implied.                                              |
 | Raw HTML and frontmatter                                          | `<section>Text</section>`, a YAML frontmatter block     | Preserved literally; HTML is not executed.                                                                   |
-| Unsupported or unfinished Markdown                                | `$math$`, `[[wiki link]]`, an unfinished delimiter      | Preserved literally; no maths or wiki-link interpretation.                                                   |
+| Unsupported or unfinished Markdown                                | `$math$`, an unfinished delimiter                       | Preserved literally; no interpretation beyond enabled syntax.                                                |
 | TXT                                                               | `# This stays text` in a `txt` document                 | Literal editing; no Markdown rendering.                                                                      |
-| RTF files, audio/video and richer embedded media                  | An RTF document or media embed                          | Unsupported.                                                                                                 |
+| RTF documents and note transclusion                               | An RTF document or document embed                       | Unsupported.                                                                                                 |
 
 See the sections below for limits and [the API](api.md) for host controls. The [Project](https://github.com/users/aicayzer/projects/3) holds planned syntax and media work.
 
-`printableSnapshot()` exports all supported document content as standalone semantic HTML with print styles and portable assets. Footnotes, resolved reference links, tables, full folded callouts and highlights remain readable; author comments and editor controls are excluded even when revealed. Invalid or unsupported Mermaid retains code with an explicit warning. Unavailable assets reject the export. TXT remains literal.
+`printableSnapshot()` exports all supported document content as standalone semantic HTML with print styles and portable assets. Footnotes, resolved reference links, tables, full folded callouts and highlights remain readable; author comments and editor controls are excluded even when revealed. Invalid or unsupported Mermaid retains code with an explicit warning. Unavailable image assets reject the export; linked media use the defined descriptive fallbacks. TXT remains literal.
 
 InkKit supports CommonMark, task lists, strikethrough, autolinks, GFM tables, footnotes and full, collapsed and shortcut reference links. Unresolved references and unsupported constructs remain editable literal source. TXT mode treats every character literally.
 
@@ -72,3 +72,29 @@ Merged or nested HTML tables, block or multiline cell content, images requiring 
 ## Editing tools
 
 Complete Markdown source is editable through the facade alongside formatted editing. Unsupported syntax and unfinished delimiters remain source; TXT stays literal. Mode switches retain history and document identity. Literal find, replacement and replace-all support source/TXT text and editable formatted segments, with safe rejection when a formatted replacement cannot reconstruct the source. Ordered heading data and navigation cover actual Markdown headings, including nested supported content; heading-looking code or unsupported literal source is excluded. See [the host API](api.md) for matching, clipboard, undo and stale-navigation contracts.
+
+## Linked syntax
+
+These features are optional in 0.0.10 and later. Enable `wikiLinks` for wiki links and `files` for host-resolved named/path embeds. Disabled features and unsupported forms remain editable source.
+
+| Form                                | Contract                                                                     |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
+| `[[target]]`, `[[target#fragment]]` | Host-resolved target and optional fragment; Unicode and spaces are retained. |
+| `[[target                           | alias]]`, `[[target#fragment                                                 | alias]]`                                                                                                        | Plain-text readable alias, with the authored target retained. |
+| `[[#Heading]]`                      | A local fragment passed to the host with an empty target.                    |
+| `![[name]]`, `![[name#fragment      | 400]]`                                                                       | Host-resolved file; an optional positive width from 1 to 99999. No extension guessing or document transclusion. |
+| `![alt                              | 400](opaque-path#fragment)`                                                  | Existing path image syntax; a file adapter may resolve another supported kind.                                  |
+
+Forms occupy one line, with one optional unescaped fragment separator and one alias/width separator. Backslash escapes support brackets, pipe, hash and backslash. GFM table cells require an extra pipe-escape layer: `[[target\|alias]]` and `![[name\|400]]`. Copying a table cell into ordinary Markdown adjusts that table layer while preserving its meaning. Nested brackets, newlines, empty aliases/fragments, block references such as `#^block`, non-numeric embed aliases and note transclusion are unsupported. Edit targets, aliases and references in source mode; adjacent formatted edits, save/reopen and undo retain untouched authored spelling, including leading-zero widths. Resizing replaces only width metadata.
+
+| Kind                  | Ordinary text                                       | Ordinary HTML                                                          | Copy as Markdown              | Printable output                                          |
+| --------------------- | --------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------------- |
+| Wiki link             | Authored alias or target/fragment                   | Escaped readable label, without a private link                         | Authored wiki syntax          | Readable label                                            |
+| Image                 | Useful alt/name; unavailable description on failure | Portable image bytes with authored width; descriptive failure fallback | Authored path or named syntax | Validated portable image and width; asset failure rejects |
+| Audio                 | `[Audio: name]`                                     | Escaped descriptive text                                               | Authored embed and fragment   | Same descriptive fallback; `attachment-fallback` warning  |
+| Video                 | `[Video: name]`                                     | Escaped descriptive text                                               | Authored embed and fragment   | Same descriptive fallback; `attachment-fallback` warning  |
+| PDF                   | `[PDF: name]`                                       | Escaped descriptive text                                               | Authored embed and fragment   | Same descriptive fallback; `attachment-fallback` warning  |
+| File/unsupported kind | `[File: name]`                                      | Escaped descriptive text                                               | Authored embed                | Same descriptive fallback; `attachment-fallback` warning  |
+| Missing/error         | Named unavailable/error description                 | Escaped descriptive text                                               | Authored embed                | Description and `attachment-unavailable` warning          |
+
+Descriptive fallbacks retain surrounding content without exporting private URLs, loading file content or embedding active media. HTML paste retains their readable text; explicit Markdown paste retains linked syntax when enabled. Unmanaged source remains literal. TXT retains literal text. Markdown source selections retain their source-form selection rules; whole-document portable export uses the supported representation table.

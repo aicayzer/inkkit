@@ -56,6 +56,53 @@ export interface ImageAdapter {
     context: DocumentContext,
   ): Promise<PortableImage>
 }
+export interface WikiLinkReference {
+  target: string
+  fragment?: string
+  label: string
+}
+export interface WikiLinkAdapter {
+  resolve?(
+    reference: WikiLinkReference,
+    context: DocumentContext,
+  ): { missing?: boolean } | undefined
+  open(reference: WikiLinkReference, context: DocumentContext): void
+}
+export interface FileReference {
+  reference: string
+  kind: 'path' | 'wiki'
+  fragment?: string
+  label?: string
+  width?: number
+}
+export interface FileContext extends DocumentContext {
+  signal: AbortSignal
+}
+export type FilePresentation =
+  | {
+      kind: 'image' | 'audio' | 'video' | 'pdf'
+      url: string
+      label?: string
+      mimeType?: string
+    }
+  | { kind: 'file' | 'missing'; label?: string }
+  | { kind: 'error'; label?: string; message: string }
+export interface FileAdapter {
+  resolve(
+    reference: FileReference,
+    context: FileContext,
+  ): Promise<FilePresentation>
+  exportImage?(
+    reference: FileReference,
+    context: FileContext,
+  ): Promise<PortableImage>
+  open?(reference: FileReference, context: DocumentContext): void
+  contextMenu?(
+    reference: FileReference,
+    point: { clientX: number; clientY: number },
+    context: DocumentContext,
+  ): void
+}
 export interface ClipboardInput {
   text: string
   markdown?: string
@@ -82,7 +129,7 @@ export interface ClipboardDiagram {
   error?: string
 }
 export interface PrintableWarning {
-  code: 'diagram-unavailable'
+  code: 'diagram-unavailable' | 'attachment-fallback' | 'attachment-unavailable'
   message: string
 }
 export interface PrintableDocument {

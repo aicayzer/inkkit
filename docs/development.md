@@ -11,7 +11,7 @@ pnpm build:playground
 
 `pnpm dev` starts the [development playground](playground.md); it does not start a browser automatically. `pnpm test:package` packs the built package, installs it in a fresh consumer with an isolated npm cache, checks declarations and CSS, and builds an offline single-file Vite page. The archive and `package-evidence.json` are written to ignored `_local/release/<version>/`, preserving evidence from earlier releases. Evidence records the commit, working-tree state, compressed SHA-256, npm integrity, decompressed tar SHA-256 and offline bundle SHA-256. Commit the candidate before recording final evidence; release verification rejects evidence from a dirty working tree.
 
-The public API is `src/index.ts`. App hosts own persistence, native menus and file access. Regression tests cover formatting, source preservation, clipboard import/export, tables, snapshots and asynchronous image operations. CI uses hosted runners.
+The public API is `src/index.ts`. App hosts own persistence, native menus and file access. Regression tests cover formatting, source preservation, clipboard import/export, tables, snapshots, asynchronous image/file operations and optional wiki links. The clean consumer compiles `FileAdapter`, `WikiLinkAdapter`, their reference/context/presentation types and `EditorOptions` alongside the existing public facade. CI uses hosted runners.
 
 ## Bounded verification
 
@@ -30,13 +30,13 @@ Browser tests use the public facade and normal DOM interaction. Use [Playwright'
 The [existing native runner](../scripts/interop/README.md) preserves earlier scenarios and supports `--list`, `--group` and `--scenario` selection. Run a bounded core and the cases matching a changed native boundary. Retain its summary and individual input/result JSON beside package evidence. A rejected or empty selection is a failure, not a zero-case pass. Record exact commands, reviewed commit, bundle/host hashes and failures. Preserve older release evidence.
 
 ```sh
-node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --list
-node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --group core --group host-controls
+node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.10 --list
 node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.9 --group core --group native-search --group layout
-node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.9 --scenario SCENARIO_NAME
+node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.10 --group core --group linked-files --group media --group portable-files
+node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.10 --scenario SCENARIO_NAME
 ```
 
-Groups are `core`, `host-controls`, `native-search`, `layout`, `references`, `tables`, `source`, `diagrams`, `print` and `legacy`. Repeat `--group` or `--scenario` to select a union. `--list` lists selection without launching WKWebView; Versions from 0.0.8 default to the bounded core. Explicitly select changed-contract cases and keep their evidence in a distinct output directory.
+Groups are `core`, `host-controls`, `native-search`, `layout`, `linked-files`, `media`, `portable-files`, `references`, `tables`, `source`, `diagrams`, `print` and `legacy`. Repeat `--group` or `--scenario` to select a union. `--list` lists selection without launching WKWebView; versions from 0.0.8 default to the bounded core. Explicitly select changed-contract cases and keep their evidence in a distinct output directory. Optional linked-file/media work uses the `linked-files` playground fixture, browser tag `@linked-files` and the corresponding native groups. These checks exercise local fixture resources and host callbacks; they do not establish consumer-app storage, permissions or native opening actions.
 
 A native facade consumer establishes behaviour in WKWebView with its fixture bridge. Browser WebKit does not prove WKWebView behaviour, and neither proves a consumer app's native actions or compatibility with an external clipboard destination. Synthetic composition events test guards and transitions; they do not establish complete IME interoperability. Include those limits in the handover.
 
