@@ -191,7 +191,7 @@ export type FormatCommand =
   | 'taskList'
   | 'link'
 
-/** The bindings the app sets, by shortcut name; each runs a format command. */
+/** Host bindings by documented formatting, history or table shortcut name. */
 export type Keymap = Record<string, string[]>
 
 const shortcutCommands: Record<string, [FormatCommand, number?]> = {
@@ -523,6 +523,7 @@ export class InkKitEditor {
   private pasteController!: PasteController
   private plain!: HTMLTextAreaElement
   private root!: HTMLElement
+  private ownsRootClass = false
   private clickHandler?: (event: MouseEvent) => void
   private footnoteKeyHandler?: (event: KeyboardEvent) => void
   private copyHandler?: (event: ClipboardEvent) => void
@@ -729,7 +730,14 @@ export class InkKitEditor {
       italic: check(toggleEmphasisCommand.key),
       strikethrough: check(toggleStrikethroughCommand.key),
       highlight: check(toggleHighlightCommand.key),
-      code: check(toggleInlineCodeCommand.key),
+      code:
+        formatted &&
+        (state.selection.empty
+          ? state.selection.$from.parent.inlineContent &&
+            state.selection.$from.parent.type.allowsMarkType(
+              inlineCodeSchema.type(this.editor.ctx),
+            )
+          : check(toggleInlineCodeCommand.key)),
       codeBlock:
         check(createCodeBlockCommand.key, '') || check(turnIntoTextCommand.key),
       quote: formatted && this.canQuote(state),
@@ -1302,6 +1310,7 @@ export class InkKitEditor {
     }
     this.plain.remove()
     await this.editor.destroy()
+    if (this.ownsRootClass) this.root.classList.remove('inkkit-root')
   }
 
   // The app's bindings, replaced whole whenever they change; the plugin stays.
@@ -1397,6 +1406,7 @@ export class InkKitEditor {
   ): Promise<InkKitEditor> {
     const instance = new InkKitEditor(events, options)
     instance.root = root
+    instance.ownsRootClass = !root.classList.contains('inkkit-root')
     root.classList.add('inkkit-root')
     instance.pasteController = new PasteController({
       ctx: () => instance.editor.ctx,
@@ -2049,6 +2059,8 @@ export class InkKitEditor {
       bubbles: true,
       cancelable: true,
     })
+    if (!this.literalSurface && altKey && key === 'Enter')
+      return this.navigateFootnote(shiftKey ? 'reference' : 'definition')
     if (!this.writable) {
       if (['Enter', 'Tab', 'Backspace', 'Delete'].includes(key))
         this.assertMutation(generation)
@@ -2124,7 +2136,11 @@ export class InkKitEditor {
       ...keymap,
     }
     const bindings: Record<string, Command> = {}
-    const historyBindings: Record<string, Command> = {}
+    // Consuming unbound history keys prevents the browser's separate undo stack
+    // from changing source/TXT outside the shared document history.
+    const historyBindings: Record<string, Command> = Object.fromEntries(
+      ['Mod-z', 'Mod-y', 'Shift-Mod-z'].map((key) => [key, () => true]),
+    )
     for (const name of ['undo', 'redo'] as const) {
       for (const key of this.configuredKeys[name] ?? []) {
         historyBindings[key] = () => {

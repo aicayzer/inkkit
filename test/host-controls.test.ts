@@ -277,9 +277,9 @@ test.each(['formatted', 'source'] as const)(
       editor.insertText('!', 8)
       const edited = editor.snapshot()
       const key = (key: string) =>
-        editor.keyDown(key, '', false, true, false, false, 8)
+        editor.keyDown(key, '', key === 'z', key !== 'z', false, false, 8)
       editor.setKeymap({ undo: [], redo: [] })
-      expect(key('z')).toBe(false)
+      expect(key('z')).toBe(true)
       expect(editor.snapshot()).toEqual(edited)
       editor.setKeymap({ undo: ['Ctrl-u'], redo: ['Ctrl-r'] })
       expect(key('u')).toBe(true)
@@ -491,4 +491,55 @@ test('formatted input preferences retain focus, selection, history and exact sou
     editor.setEditable(true)
     expect(editor.undo()).toBe(true)
     expect(editor.snapshot().text).toBe(input.text)
+  }))
+
+test('inline code is available at a caret and configured shortcuts retain stored-mark typing', () =>
+  run((editor) => {
+    editor.setKeymap({ code: ['Ctrl-e'] })
+    expect(editor.commandState().commands.format.code).toBe(true)
+    expect(editor.keyDown('e', '', false, true, false, false, 8)).toBe(true)
+    editor.insertText('code', 8)
+    expect(editor.snapshot().text).toContain('`code`')
+  }))
+
+test('read-only buffered footnote navigation remains available', () =>
+  run((editor, _root, ctx) => {
+    editor.loadDocument({ ...input, text: 'Text[^note]\n\n[^note]: body\n' })
+    const view = ctx.get(editorViewCtx)
+    let reference = 0
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'footnote_reference') reference = pos
+    })
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, reference),
+      ),
+    )
+    editor.setEditable(false)
+    const before = editor.snapshot()
+    expect(editor.keyDown('Enter', '', false, false, true, false, 8)).toBe(true)
+    expect(editor.snapshot()).toEqual(before)
+    expect(view.state.selection.$from.parent.textContent).toBe('body')
+  }))
+
+test('table exit defaults can be disabled without blocking ordinary formatted Enter', () =>
+  run((editor, _root, ctx) => {
+    editor.setKeymap({ tableExit: [] })
+    editor.table('insert')
+    const view = ctx.get(editorViewCtx)
+    let cell = 0
+    view.state.doc.descendants((node, pos) => {
+      if (!cell && node.type.name === 'table_cell') cell = pos + 2
+    })
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, cell)),
+    )
+    const before = editor.snapshot()
+    expect(editor.keyDown('Enter', '', true, false, false, false, 8)).toBe(
+      false,
+    )
+    expect(editor.snapshot()).toEqual(before)
+    editor.setKeymap({})
+    expect(editor.keyDown('Enter', '', true, false, false, false, 8)).toBe(true)
+    expect(editor.snapshot().text).not.toBe(before.text)
   }))
