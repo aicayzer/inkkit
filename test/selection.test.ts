@@ -27,7 +27,7 @@ async function withEditor(
 }
 
 function paintedText(): string[] {
-  return Array.from(CSS.highlights.get('selection') ?? [], (range) =>
+  return Array.from(CSS.highlights.get('inkkit-selection') ?? [], (range) =>
     (range as Range).toString(),
   )
 }
@@ -79,4 +79,42 @@ test('whole-document selection splits highlights across paragraphs, lists and co
     )
     expect(editor.snapshot().dirty).toBe(false)
   })
+})
+
+test('separate editors retain their highlights when either selection updates or is destroyed', async () => {
+  await withEditor(async (one, firstCtx) => {
+    one.loadDocument({
+      documentId: 'one',
+      format: 'md',
+      text: 'First',
+      generation: 1,
+    })
+    const first = firstCtx.get(editorViewCtx)
+    first.dispatch(
+      first.state.tr.setSelection(TextSelection.create(first.state.doc, 1, 6)),
+    )
+    await withEditor((two, secondCtx) => {
+      two.loadDocument({
+        documentId: 'two',
+        format: 'md',
+        text: 'Second',
+        generation: 1,
+      })
+      const second = secondCtx.get(editorViewCtx)
+      second.dispatch(
+        second.state.tr.setSelection(
+          TextSelection.create(second.state.doc, 1, 7),
+        ),
+      )
+      expect(paintedText()).toEqual(['First', 'Second'])
+      first.dispatch(
+        first.state.tr.setSelection(
+          TextSelection.create(first.state.doc, 1, 3),
+        ),
+      )
+      expect(paintedText()).toEqual(['Fi', 'Second'])
+    })
+    expect(paintedText()).toEqual(['Fi'])
+  })
+  expect(CSS.highlights.has('inkkit-selection')).toBe(false)
 })

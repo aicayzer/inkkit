@@ -1,3 +1,4 @@
+import { editorLabels } from './labels'
 import { $node, $remark, $prose } from '@milkdown/kit/utils'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
@@ -313,7 +314,7 @@ export const referenceDefinition = $node('reference_definition', () => ({
   },
 }))
 
-export const footnoteReference = $node('footnote_reference', () => ({
+export const footnoteReference = $node('footnote_reference', (ctx) => ({
   inline: true,
   group: 'inline',
   atom: true,
@@ -334,7 +335,7 @@ export const footnoteReference = $node('footnote_reference', () => ({
       class: 'inkkit-footnote-reference',
       tabindex: '0',
       role: 'button',
-      'aria-label': `Footnote ${node.attrs.label}`,
+      'aria-label': `${editorLabels(ctx).footnote} ${node.attrs.label}`,
       'data-inkkit-footnote-reference': node.attrs.identifier,
       'data-inkkit-label': node.attrs.label,
     },
@@ -359,7 +360,7 @@ export const footnoteReference = $node('footnote_reference', () => ({
   },
 }))
 
-export const footnoteDefinition = $node('footnote_definition', () => ({
+export const footnoteDefinition = $node('footnote_definition', (ctx) => ({
   group: 'block',
   content: 'block+',
   defining: true,
@@ -377,7 +378,7 @@ export const footnoteDefinition = $node('footnote_definition', () => ({
     'div',
     {
       class: 'inkkit-footnote-definition',
-      'aria-label': `Footnote ${node.attrs.label}`,
+      'aria-label': `${editorLabels(ctx).footnote} ${node.attrs.label}`,
       'data-inkkit-footnote-definition': node.attrs.identifier,
       'data-inkkit-label': node.attrs.label,
     },

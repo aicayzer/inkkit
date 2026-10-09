@@ -1,6 +1,7 @@
 import { Plugin, PluginKey, type EditorState } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { editorLabels } from './labels'
 
 const copyIcon =
   '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>'
@@ -9,11 +10,14 @@ const doneIcon =
 
 // The button reads the block's text when clicked, so the same widget can stay
 // mounted while the block is edited.
-function copyButton(onCopy: (text: string) => void): HTMLElement {
+function copyButton(
+  onCopy: (text: string) => void,
+  label: string,
+): HTMLElement {
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'copy'
-  button.setAttribute('aria-label', 'Copy')
+  button.setAttribute('aria-label', label)
   button.innerHTML = copyIcon
   button.addEventListener('mousedown', (event) => event.preventDefault())
   button.addEventListener('click', () => {
@@ -31,7 +35,7 @@ function copyButton(onCopy: (text: string) => void): HTMLElement {
 
 export function codeCopyPlugin(onCopy: (text: string) => void) {
   return $prose(
-    () =>
+    (ctx) =>
       new Plugin({
         key: new PluginKey('codeCopy'),
         props: {
@@ -40,11 +44,15 @@ export function codeCopyPlugin(onCopy: (text: string) => void) {
             state.doc.descendants((node, pos) => {
               if (node.type.name !== 'code_block') return true
               widgets.push(
-                Decoration.widget(pos + 1, () => copyButton(onCopy), {
-                  side: -1,
-                  key: 'copy',
-                  ignoreSelection: true,
-                }),
+                Decoration.widget(
+                  pos + 1,
+                  () => copyButton(onCopy, editorLabels(ctx).copyCode),
+                  {
+                    side: -1,
+                    key: 'copy',
+                    ignoreSelection: true,
+                  },
+                ),
               )
               return false
             })
@@ -56,7 +64,7 @@ export function codeCopyPlugin(onCopy: (text: string) => void) {
 }
 
 export const placeholderPlugin = $prose(
-  () =>
+  (ctx) =>
     new Plugin({
       key: new PluginKey('placeholder'),
       props: {
@@ -72,7 +80,7 @@ export const placeholderPlugin = $prose(
           return DecorationSet.create(state.doc, [
             Decoration.node(0, first.nodeSize, {
               class: 'empty',
-              'data-placeholder': 'Start typing…',
+              'data-placeholder': editorLabels(ctx).placeholder,
             }),
           ])
         },

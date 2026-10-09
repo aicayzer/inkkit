@@ -3,7 +3,8 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 
 /** The stylesheet paints the selection under this name. */
-const name = 'selection'
+const name = 'inkkit-selection'
+const ranges = new Map<EditorView, Range[]>()
 
 interface Span {
   from: number
@@ -34,10 +35,23 @@ function domRange(view: EditorView, span: Span): Range {
   return range
 }
 
-function paint(view: EditorView, highlight: Highlight): void {
-  highlight.clear()
-  for (const span of covered(view.state) ?? [])
-    highlight.add(domRange(view, span))
+function paint(view: EditorView): void {
+  ranges.set(
+    view,
+    (covered(view.state) ?? []).map((span) => domRange(view, span)),
+  )
+  refresh()
+}
+
+function refresh(): void {
+  if (ranges.size === 0) {
+    CSS.highlights.delete(name)
+    return
+  }
+  const highlight = new Highlight()
+  for (const selection of ranges.values())
+    for (const range of selection) highlight.add(range)
+  CSS.highlights.set(name, highlight)
 }
 
 // Paint only selected text, without WebKit filling the surrounding margins.
@@ -46,12 +60,13 @@ export const selectionPlugin = $prose(
     new Plugin({
       key: new PluginKey('selection'),
       view(view) {
-        const highlight = new Highlight()
-        CSS.highlights.set(name, highlight)
-        paint(view, highlight)
+        paint(view)
         return {
-          update: (view) => paint(view, highlight),
-          destroy: () => CSS.highlights.delete(name),
+          update: (view) => paint(view),
+          destroy: () => {
+            ranges.delete(view)
+            refresh()
+          },
         }
       },
     }),
