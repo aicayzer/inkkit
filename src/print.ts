@@ -51,7 +51,10 @@ figure { margin-inline: 0; }
 figure, img { break-inside: avoid; }
 hr { border: 0; border-top: 1px solid #aaa; }
 @page { margin: 18mm; }
-@media print { .inkkit-print-document { padding: 0; } }
+@media print {
+  .inkkit-print-document { padding: 0; }
+  img { max-height: 90vh; object-fit: contain; }
+}
 `.trim()
 
 function documentOutput(

@@ -659,7 +659,7 @@ if (['0.0.4', '0.0.5'].includes(version)) {
 }
 if (version === '0.0.5') {
   const imageData =
-    'iVBORw0KGgoAAAANSUhEUgAAAFAAAAAoCAYAAABpYH0BAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAUKADAAQAAAABAAAAKAAAAADbisV7AAAAlUlEQVRoBe3SMQ0AIQAEQR4X6MC/Nj5BAtvO9dtM7jtrn2HPAvO5FF4BgPEIAAFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPjIA/2VgCmiePpoIAAAAASUVORK5CYII='
+    'iVBORw0KGgoAAAANSUhEUgAAAFAAAAAoCAYAAABpYH0BAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAUKADAAQAAAABAAAAKAAAAADbisV7AAAAlUlEQVRoBe3SMQ0AIQAEQR4X6MC/Nj5BAtvO9dtM7jtrn2HPAvO5FF4BgPEIAAFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPjIA/2VgCmiePpoIAAAAASUVORK5CYII='
   const imageSource =
     'Before image.\n\n![Authored](images/fixture.png)\n\nAfter image.\n'
   const longBody = Array.from(
@@ -672,6 +672,7 @@ if (version === '0.0.5') {
   const markdown = `# Frozen print heading\n\nBefore latest edit with [Reference][Shared], footnote[^Note] and ==PRINT_HIGHLIGHT==. <!--PRINT_PRIVATE_HTML--> %%PRINT_PRIVATE_OBSIDIAN%%\n\n![Authored](images/fixture.png)\n\n![Portrait](images/portrait.png)\n\n\`\`\`mermaid\nflowchart TD\nA[Printed start] --> B[Printed finish]\n\`\`\`\n\n> [!WARNING]- PRINT_FOLDED_TITLE\n${longBody}> PRINT_FOLDED_LAST\n\n| Column | Content |\n| --- | --- |\n| PRINT_TABLE | ${unbroken} |\n\n\`\`\`text\n${unbroken}\n\`\`\`\n\nPRINT_FINAL_SENTINEL\n\n[Shared]: https://example.com/printed "Printed reference"\n\n[^Note]: PRINT_FOOTNOTE_BODY with **formatting**.\n\n    PRINT_FOOTNOTE_CONTINUATION\n`
   Object.assign(scenarios, {
     'printable-frozen-multipage': {
+      printPortrait: { width: 120, height: 2400 },
       source: markdown,
       mode: 'printable',
       printMinPages: 4,
@@ -965,7 +966,7 @@ for (const [name, fixture] of Object.entries(scenarios)) {
                 (image) =>
                   image.width === asset.width &&
                   image.height === asset.height &&
-                  image.pageVisibleFraction > 0.999 &&
+                  image.mediaBoxFraction > 0.999 &&
                   image.drawnWidth > 0 &&
                   image.drawnHeight > 0,
               )
@@ -974,6 +975,36 @@ for (const [name, fixture] of Object.entries(scenarios)) {
                     `Printed PDF has no complete page-contained image placement for ${asset.width}x${asset.height}`,
                   ],
             )
+          : []),
+        ...(fixture.printPortrait &&
+        !result?.print?.imagePlacements?.some((image) => {
+          if (
+            image.width !== fixture.printPortrait.width ||
+            image.height !== fixture.printPortrait.height ||
+            image.mediaBoxFraction < 0.999
+          )
+            return false
+          const raster = result?.print?.pageRasters?.find(
+            (page) => page.page === image.page && page.image === image.name,
+          )?.portrait
+          const bands = [
+            raster?.red ?? 0,
+            raster?.green ?? 0,
+            raster?.blue ?? 0,
+          ]
+          const coverage =
+            (raster?.colourPixels ?? 0) / (image.drawnWidth * image.drawnHeight)
+          return (
+            raster?.rendered === true &&
+            Math.min(...bands) > 100 &&
+            Math.max(...bands) / Math.min(...bands) < 1.06 &&
+            coverage > 0.95 &&
+            coverage < 1.05
+          )
+        })
+          ? [
+              'Native PDF raster does not show all equal portrait bands covering the complete drawn image area',
+            ]
           : []),
       ]
     : []

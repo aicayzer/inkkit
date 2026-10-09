@@ -104,7 +104,7 @@ final class PDFImagePlacement {
             let area = drawn.width * drawn.height
             records.append(["page": page, "name": String(cString: name), "width": width, "height": height,
                             "x": drawn.minX, "y": drawn.minY, "drawnWidth": drawn.width, "drawnHeight": drawn.height,
-                            "pageVisibleFraction": area > 0 && !visible.isNull ? visible.width * visible.height / area : 0])
+                            "mediaBoxFraction": area > 0 && !visible.isNull ? visible.width * visible.height / area : 0])
         } else if String(cString: subtype) == "Form" {
             var resources: CGPDFDictionaryRef?
             guard CGPDFDictionaryGetDictionary(dictionary, "Resources", &resources), let resources else { return }
@@ -120,6 +120,38 @@ final class PDFImagePlacement {
             records.append(contentsOf: nested.records)
         }
     }
+}
+
+func portraitRasterProof(_ page: CGPDFPage, region: CGRect) -> [String: Any] {
+    let bounds = page.getBoxRect(.mediaBox)
+    let width = Int(ceil(bounds.width))
+    let height = Int(ceil(bounds.height))
+    var pixels = [UInt8](repeating: 255, count: width * height * 4)
+    let rendered = pixels.withUnsafeMutableBytes { buffer -> Bool in
+        guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.translateBy(x: -bounds.minX, y: -bounds.minY)
+        context.drawPDFPage(page)
+        return true
+    }
+    let colours: [[Int]] = [[240, 32, 32], [32, 192, 64], [32, 64, 240]]
+    var counts = [Int](repeating: 0, count: 3)
+    let left = max(0, Int(floor(region.minX - bounds.minX)))
+    let right = min(width, Int(ceil(region.maxX - bounds.minX)))
+    let bottom = max(0, Int(floor(region.minY - bounds.minY)))
+    let top = min(height, Int(ceil(region.maxY - bounds.minY)))
+    if left < right && bottom < top {
+        for y in bottom..<top {
+            for x in left..<right {
+                let offset = ((height - 1 - y) * width + x) * 4
+                for (index, colour) in colours.enumerated() {
+                    if (0..<3).allSatisfy({ abs(Int(pixels[offset + $0]) - colour[$0]) <= 8 }) { counts[index] += 1 }
+                }
+            }
+        }
+    }
+    return ["rendered": rendered, "dpi": 72, "width": width, "height": height, "region": ["x": region.minX, "y": region.minY, "width": region.width, "height": region.height], "red": counts[0], "green": counts[1], "blue": counts[2], "colourPixels": counts.reduce(0, +)]
 }
 
 @MainActor
@@ -261,6 +293,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         let images = PDFImages()
         var pages: [[String: Any]] = []
         var placements: [[String: Any]] = []
+        var rasters: [[String: Any]] = []
         for index in 0..<pdf.pageCount {
             guard let page = pdf.page(at: index) else { continue }
             let bounds = page.bounds(for: .mediaBox)
@@ -269,6 +302,10 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
                 let placement = PDFImagePlacement(page: index + 1, bounds: bounds)
                 placement.scan(CGPDFContentStreamCreateWithPage(reference))
                 placements.append(contentsOf: placement.records)
+                for image in placement.records where image["width"] as? Int == 120 && image["height"] as? Int == 2400 {
+                    let region = CGRect(x: image["x"] as? CGFloat ?? 0, y: image["y"] as? CGFloat ?? 0, width: image["drawnWidth"] as? CGFloat ?? 0, height: image["drawnHeight"] as? CGFloat ?? 0)
+                    rasters.append(["page": index + 1, "image": image["name"] ?? "", "portrait": portraitRasterProof(reference, region: region)])
+                }
             }
             var resources: CGPDFDictionaryRef?
             if let dictionary = page.pageRef?.dictionary,
@@ -281,7 +318,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
             "paperWidth": Double(info.paperSize.width), "paperHeight": Double(info.paperSize.height),
             "printableWidth": Double(info.imageablePageBounds.width), "printableHeight": Double(info.imageablePageBounds.height),
             "screenGeometry": geometry, "frozenDocument": frozen,
-            "imageXObjects": images.records, "imagePlacements": placements, "pageGeometry": pages,
+            "imageXObjects": images.records, "imagePlacements": placements, "pageRasters": rasters, "pageGeometry": pages,
         ]
     }
 
