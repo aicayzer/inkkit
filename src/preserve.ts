@@ -22,9 +22,7 @@ interface SourceNode {
 
 function signature(node: SourceNode): string {
   return JSON.stringify(node, (key, value) =>
-    ['position', 'data', 'url', 'title', 'marker'].includes(key)
-      ? undefined
-      : value,
+    ['position', 'data', 'marker'].includes(key) ? undefined : value,
   )
 }
 
@@ -41,6 +39,7 @@ function retainText(
   before: string,
   after: string,
   quoteIndent = false,
+  inTable = false,
 ): string {
   before = before.replace(/\r\n?/g, '\n')
   after = after.replace(/\r\n?/g, '\n')
@@ -100,7 +99,7 @@ function retainText(
   }
   if (decoded !== before) {
     // Continuation indentation is excluded from a quoted paragraph's text.
-    return quoteIndent ? after : retainText(raw, before, after, true)
+    return quoteIndent ? after : retainText(raw, before, after, true, inTable)
   }
   const inserted = after
     .slice(prefix, after.length - suffix)
@@ -110,7 +109,9 @@ function retainText(
       const delimiter =
         (character === '%' || character === '=') &&
         (after[at - 1] === character || after[at + 1] === character)
-      return delimiter || /[\\`*_[\]<>]/.test(character)
+      return delimiter ||
+        /[\\`*_[\]<>]/.test(character) ||
+        (inTable && character === '|')
         ? `\\${character}`
         : character
     })
@@ -163,6 +164,7 @@ function retainSource(
   source: string,
   canonical: string,
   lineEnding: string,
+  inTable = false,
 ): string {
   const start = before.position?.start.offset
   const end = before.position?.end.offset
@@ -230,7 +232,7 @@ function retainSource(
   }
   if (before.type === 'text' && after.type === 'text')
     return retainBoundaryWhitespace(
-      retainText(raw, before.value!, after.value!),
+      retainText(raw, before.value!, after.value!, false, inTable),
       canonical.slice(newStart, newEnd),
     )
   if (
@@ -247,20 +249,54 @@ function retainSource(
   ) {
     let output = '',
       previous = start
+    const retained = new Set<number>()
     before.children.forEach((child, index) => {
+      const incoming = after.children![index]!
+      const movedIndex =
+        before.type === 'table' || before.type === 'tableRow'
+          ? before.children!.findIndex(
+              (candidate, candidateIndex) =>
+                !retained.has(candidateIndex) &&
+                signature(candidate) === signature(incoming) &&
+                ownShape(candidate) === ownShape(incoming),
+            )
+          : -1
+      const original = movedIndex < 0 ? child : before.children![movedIndex]!
+      if (movedIndex >= 0) retained.add(movedIndex)
       const childStart = child.position?.start.offset,
         childEnd = child.position?.end.offset
       if (childStart == null || childEnd == null)
         throw new PreservationError('A source token has no location')
-      output +=
-        source.slice(previous, childStart) +
-        retainSource(
-          child,
-          after.children![index]!,
-          source,
-          canonical,
-          lineEnding,
-        )
+      let retainedSource = retainSource(
+        original,
+        incoming,
+        source,
+        canonical,
+        lineEnding,
+        inTable || before.type === 'tableCell',
+      )
+      if (before.type === 'tableRow' && movedIndex >= 0) {
+        // Cell positions own different pipe boundaries at the row edges.
+        const originalFrom = original.children?.[0]?.position?.start.offset
+        const originalTo = original.children?.at(-1)?.position?.end.offset
+        const from = child.children?.[0]?.position?.start.offset
+        const to = child.children?.at(-1)?.position?.end.offset
+        retainedSource =
+          originalFrom != null &&
+          originalTo != null &&
+          from != null &&
+          to != null
+            ? source.slice(childStart, from) +
+              source.slice(originalFrom, originalTo) +
+              source.slice(to, childEnd)
+            : canonical
+                .slice(
+                  incoming.position!.start.offset!,
+                  incoming.position!.end.offset!,
+                )
+                .replaceAll('\n', lineEnding)
+      }
+      output += source.slice(previous, childStart) + retainedSource
       previous = childEnd
     })
     return output + source.slice(previous, end)

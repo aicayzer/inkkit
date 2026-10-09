@@ -13,9 +13,9 @@ Pushing a later matching version tag starts npm publication. Complete the gate *
 5. Download the release workflow's `release-package` artefact into a separate directory. Verify publication with the command below. Record the workflow URL, OIDC result and registry evidence before closing the release issue and milestone. Publish and verify each authorised release before beginning implementation of the next.
 
 ```sh
-node scripts/verify-release.mjs 0.0.4 \
-  _local/release/0.0.4/aicayzer-inkkit-0.0.4.tgz \
-  _local/hosted-release/0.0.4/aicayzer-inkkit-0.0.4.tgz
+node scripts/verify-release.mjs 0.0.6 \
+  _local/release/0.0.6/aicayzer-inkkit-0.0.6.tgz \
+  _local/hosted-release/0.0.6/0.0.6/aicayzer-inkkit-0.0.6.tgz
 ```
 
 Use the corresponding version and paths for each release. The command verifies registry version and SHA-512 integrity, requires the registry's compressed archive to match the published CI archive exactly, and compares the decompressed tar byte-for-byte with the native-tested candidate. Different compression is acceptable only when decompressed tar bytes are identical; record that difference. A content mismatch blocks release completion.
@@ -34,7 +34,7 @@ In the package's npm settings, add a GitHub Actions trusted publisher with:
 - Environment name: leave empty
 - Publishing permissions: allow direct publishing through `npm publish`
 
-The workflow uses GitHub-hosted runners, Node.js 26 and npm's OIDC authentication. npm requires version 11.5.1 or later for trusted publishing. The publish job has `contents: read` and `id-token: write`; no npm token is stored. The workflow filename must match the actual file in `.github/workflows/`. Check live settings before pushing each release tag; `npm trust list @aicayzer/inkkit --json` is available with npm 11.15 or later and may require account authentication. Follow [npm's trusted-publisher documentation](https://docs.npmjs.com/trusted-publishers/).
+The workflow uses GitHub-hosted runners, Node.js 26 and npm's OIDC authentication. npm requires version 11.5.1 or later for trusted publishing. The publish job has `contents: read` and `id-token: write`; no npm token is stored. The workflow filename must match the actual file in `.github/workflows/`. Check available configuration evidence before pushing each release tag. Successful OIDC releases establish the publishing path when the workflow and package configuration are unchanged. `npm trust list @aicayzer/inkkit --json` is an optional read with npm 11.15 or later and may require account authentication; that request alone does not require local npm login. Investigate actual configuration changes or publication failures. Follow [npm's trusted-publisher documentation](https://docs.npmjs.com/trusted-publishers/).
 
 Subsequent matching version tags validate and publish the tested tarball. OIDC publication is only proven after such a release succeeds. Do not create a new version merely to test OIDC.
 

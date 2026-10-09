@@ -1,6 +1,6 @@
 # Verification record
 
-Verified on 8 October 2026. Version 0.0.1 is published on npm, and post-publication registry verification is complete.
+This record separates native-tested candidates from completed registry publication. Release issues retain the artefact hashes, workflow results and verification evidence for each version.
 
 ## Candidate
 
@@ -71,3 +71,13 @@ Craft was named as an example application, not a required test destination. Its 
 The reusable packed-consumer, WebKit and native clipboard probes are in [`scripts/interop`](../scripts/interop/README.md). The captured evidence remains in ignored scratch storage; production clipboard snapshots, notes, downloaded applications and account data are not committed.
 
 The test Mail compose window was closed using **Don't Save** after confirming its unique fixture subject. It had no recipients and no message was sent. The original native clipboard was restored, then saved again and compared byte-for-byte with the original snapshot. Existing Mail windows were not closed and Mail was not quit.
+
+## 0.0.6 candidate verification
+
+On 9 October 2026, clean candidate `4969787146ae65f442fa8f46e30409a22f94cca3` passed 394 regressions, TypeScript, formatting, playground and fresh packed-consumer checks, including public declarations, CSS and offline bundling. Independent source and preservation review included the actual Obsidian clipboard return and malformed table input. Candidate archive SHA-256: `04211d3efd21d25ef70604d2273b3c5cf7e3fe3b4d6cd0d8bbf03ea6d23d0701`.
+
+All 55 installed package files in the standalone WKWebView and three isolated app hosts match the candidate. On Atlas, macOS 27 and Xcode 27, the standalone consumer passed 37 scenarios and 740 operations covering retained features, table operations, source reconstruction, undo, copying, saving and reopening.
+
+The isolated PadPad, Memos and Memos WithMarfa hosts passed 87 functions and 90 parameter cases, including native Paste, growth, undo and malformed-input handling. Full and partial native transfers to and from Obsidian 1.14.4 and Mail 16.0 passed. Returned tables retain the exact ordered 3×3 cells. Obsidian normalises column alignment to logical start; native rich returns can normalise Markdown spelling and discard Mermaid metadata while retaining a verified portable bitmap. These are semantic clipboard checks.
+
+Clipboard, app and print preferences were protected and independently checked against restoration baselines. Disposable notes and unsent compose windows were removed; no client app adopted the package permanently. Earlier candidates and failure evidence remain retained. Publication and registry verification are recorded separately in [release gate #22](https://github.com/aicayzer/inkkit/issues/22).

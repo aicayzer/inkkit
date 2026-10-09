@@ -4,8 +4,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 
 const version = process.argv[5] ?? '0.0.2'
-if (!['0.0.2', '0.0.3', '0.0.4', '0.0.5'].includes(version))
-  throw Error('Native fixture version must be 0.0.2, 0.0.3, 0.0.4 or 0.0.5')
+const versions = ['0.0.2', '0.0.3', '0.0.4', '0.0.5', '0.0.6']
+if (!versions.includes(version))
+  throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
+const releaseAtLeast = (target) =>
+  versions.indexOf(version) >= versions.indexOf(target)
 const bundle = resolve(
   process.argv[2] ?? '_local/interop/consumer/dist/index.html',
 )
@@ -195,7 +198,7 @@ const calloutSource =
   '> [!NOTE] Native &#13; title\n> Native note body.\n>  Indented &amp; native source.\n\n> [!TIP]+ Native &#10; title\n> Native tip body.\n\n> [!IMPORTANT]\n> Native important body.\n\n> [!WARNING]- Native folded title\n> Native folded body.\n\n- > [!CAUTION] Native nested title\n  > Native caution body.\n\n> [!TODO]\n> Unsupported native callout.\n\n> [!NOTE] + Spaced fold stays literal\n> Unsupported native fold.\n'
 const commentSource =
   'Public [link][Shared] <!--INLINE_SECRET <script>window.commentExecuted=true</script>--> beside %%OBSIDIAN_SECRET%% text.\n\n<!--\nBLOCK_SECRET\n-->\n\n%%\nOBSIDIAN_BLOCK_SECRET\n%%\n\n[Shared]: https://example.com/shared\n'
-if (['0.0.3', '0.0.4', '0.0.5'].includes(version))
+if (releaseAtLeast('0.0.3'))
   Object.assign(scenarios, {
     'callout-lifecycle': {
       source: calloutSource,
@@ -505,7 +508,7 @@ if (['0.0.3', '0.0.4', '0.0.5'].includes(version))
       ],
     },
   })
-if (['0.0.4', '0.0.5'].includes(version)) {
+if (releaseAtLeast('0.0.4')) {
   const flowchart = 'flowchart TD\n    A[Start] --> B[Finish]'
   const authored = `\uFEFFBefore **bold**.\r\n\r\n~~~~mermaid\r\n${flowchart.replaceAll('\n', '\r\n')}\r\n~~~~\r\n\r\nAfter &amp; preserved.\r\n`
   const editedSurrounding = authored.replace('Before', 'Changed')
@@ -657,7 +660,7 @@ if (['0.0.4', '0.0.5'].includes(version)) {
     }
   }
 }
-if (version === '0.0.5') {
+if (releaseAtLeast('0.0.5')) {
   const imageData =
     'iVBORw0KGgoAAAANSUhEUgAAAFAAAAAoCAYAAABpYH0BAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAUKADAAQAAAABAAAAKAAAAADbisV7AAAAlUlEQVRoBe3SMQ0AIQAEQR4X6MC/Nj5BAtvO9dtM7jtrn2HPAvO5FF4BgPEIAAFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPjIA/2VgCmiePpoIAAAAASUVORK5CYII='
   const imageSource =
@@ -888,6 +891,296 @@ if (version === '0.0.5') {
     },
   })
 }
+
+if (releaseAtLeast('0.0.6')) {
+  const richTable =
+    '\uFEFFBefore table.\r\n\r\n| Name | Value | Detail |\r\n| :--- | ---: | :---: |\r\n| Bravo | 2 | **bold** [ref][Shared] and note[^Note] |\r\n| Alpha | 1 | `code` ==highlight== ![opaque](images/fixture.png) |\r\n| Equal | 2 | third detail |\r\n\r\nAfter table.\r\n\r\n[Shared]: https://example.com/shared "Authored"\r\n\r\n[^Note]: Retained footnote.\r\n'
+  const undo = { op: 'keyDown', key: 'z', code: 'KeyZ', metaKey: true }
+  Object.assign(scenarios, {
+    'table-row-movement': {
+      source: richTable,
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        { op: 'select', text: 'Name' },
+        { op: 'table', command: 'moveRowDown', name: 'headerMove' },
+        assert('', false, 'headerMove'),
+        same('snapshot.text', 'original', 'text'),
+        { op: 'select', text: 'Alpha' },
+        { op: 'table', command: 'moveRowUp', name: 'moved' },
+        assert('', true, 'moved'),
+        { op: 'tableCells', name: 'rows' },
+        assert('0.0.0.text', 'Name', 'rows'),
+        assert('0.1.0.text', 'Alpha', 'rows'),
+        assert('0.2.0.text', 'Bravo', 'rows'),
+        contains('0.1.2.html', '<code>code</code>', 'rows'),
+        contains('0.1.2.html', '<mark>highlight</mark>', 'rows'),
+        contains('0.2.2.html', '<strong>bold</strong>', 'rows'),
+        contains('snapshot.text', '[ref][Shared]'),
+        contains('snapshot.text', '[^Note]'),
+        contains('snapshot.text', '![opaque](images/fixture.png)'),
+        contains(
+          'snapshot.text',
+          '[Shared]: https://example.com/shared "Authored"',
+        ),
+        undo,
+        same('snapshot.text', 'original', 'text'),
+        { op: 'select', text: 'Alpha' },
+        { op: 'table', command: 'moveRowDown' },
+        { op: 'export', name: 'copied' },
+        contains('html', '<strong>bold</strong>', 'copied'),
+        contains('html', '<mark>highlight</mark>', 'copied'),
+        assert('images.length', 1, 'copied'),
+        { op: 'save', name: 'saved' },
+        { op: 'reopen' },
+        same('snapshot.text', 'saved', 'text'),
+        assert('snapshot.dirty', false),
+      ],
+    },
+    'table-column-movement': {
+      source: richTable,
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        { op: 'tableCells', name: 'originalCells' },
+        { op: 'select', text: 'Value' },
+        { op: 'table', command: 'moveColumnLeft', name: 'moved' },
+        assert('', true, 'moved'),
+        { op: 'tableCells', name: 'columns' },
+        assert('0.0.0.text', 'Value', 'columns'),
+        assert('0.0.1.text', 'Name', 'columns'),
+        assert('0.1.0.text', '2', 'columns'),
+        same('0.0.0.alignment', 'originalCells', '0.0.1.alignment', 'columns'),
+        same('0.0.1.alignment', 'originalCells', '0.0.0.alignment', 'columns'),
+        contains('snapshot.text', '[ref][Shared]'),
+        undo,
+        same('snapshot.text', 'original', 'text'),
+        { op: 'select', text: 'Value' },
+        { op: 'table', command: 'moveColumnRight' },
+        { op: 'save', name: 'saved' },
+        { op: 'reopen' },
+        same('snapshot.text', 'saved', 'text'),
+        { op: 'tableCells', name: 'reopened' },
+        assert('0.0.2.text', 'Value', 'reopened'),
+      ],
+    },
+    'table-sort-order': {
+      source:
+        '| Name | Number |\n| :--- | ---: |\n| tenth | 10 |\n| second | 2 |\n| tied | 2 |\n| blank | |\n',
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        { op: 'select', text: 'tenth' },
+        {
+          op: 'table',
+          command: 'sortRows',
+          options: { column: 1, comparison: 'number', order: 'ascending' },
+        },
+        { op: 'tableCells', name: 'ascending' },
+        ...['Name', 'second', 'tied', 'tenth', 'blank'].map((text, row) =>
+          assert(`0.${row}.0.text`, text, 'ascending'),
+        ),
+        undo,
+        same('snapshot.text', 'original', 'text'),
+        { op: 'select', text: 'tenth' },
+        {
+          op: 'table',
+          command: 'sortRows',
+          options: { column: 1, comparison: 'number', order: 'descending' },
+        },
+        { op: 'tableCells', name: 'descending' },
+        ...['Name', 'tenth', 'second', 'tied', 'blank'].map((text, row) =>
+          assert(`0.${row}.0.text`, text, 'descending'),
+        ),
+        { op: 'save', name: 'saved' },
+        { op: 'reopen' },
+        same('snapshot.text', 'saved', 'text'),
+        { op: 'select', text: 'tenth' },
+        {
+          op: 'table',
+          command: 'sortRows',
+          options: { column: 1, comparison: 'text', order: 'ascending' },
+        },
+        { op: 'tableCells', name: 'text' },
+        ...['Name', 'tenth', 'second', 'tied', 'blank'].map((text, row) =>
+          assert(`0.${row}.0.text`, text, 'text'),
+        ),
+      ],
+    },
+    'table-sort-rich-rows': {
+      source: richTable,
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        { op: 'select', text: 'Bravo' },
+        {
+          op: 'table',
+          command: 'sortRows',
+          options: { column: 0, comparison: 'text', order: 'ascending' },
+        },
+        { op: 'tableCells', name: 'sorted' },
+        ...['Name', 'Alpha', 'Bravo', 'Equal'].map((text, row) =>
+          assert(`0.${row}.0.text`, text, 'sorted'),
+        ),
+        contains('0.1.2.html', '<code>code</code>', 'sorted'),
+        contains('0.2.2.html', '<strong>bold</strong>', 'sorted'),
+        contains('snapshot.text', '[ref][Shared]'),
+        contains('snapshot.text', '![opaque](images/fixture.png)'),
+        { op: 'export', name: 'copied' },
+        contains('html', 'https://example.com/shared', 'copied'),
+        contains('markdown', '[^Note]: Retained footnote.', 'copied'),
+        undo,
+        same('snapshot.text', 'original', 'text'),
+      ],
+    },
+    'table-spreadsheet-growth': {
+      source: '| A | B |\n| :--- | ---: |\n| old | retained |\n',
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        { op: 'select', text: 'retained' },
+        { op: 'paste', input: { text: 'one\ttwo\r\nthree\tfour\r\n' } },
+        { op: 'tableCells', name: 'pasted' },
+        assert('0.length', 3, 'pasted'),
+        assert('0.0.length', 3, 'pasted'),
+        assert('0.1.0.text', 'old', 'pasted'),
+        assert('0.1.1.text', 'one', 'pasted'),
+        assert('0.1.2.text', 'two', 'pasted'),
+        assert('0.2.1.text', 'three', 'pasted'),
+        assert('0.2.2.text', 'four', 'pasted'),
+        undo,
+        same('snapshot.text', 'original', 'text'),
+        { op: 'select', text: 'old' },
+        {
+          op: 'domPaste',
+          types: {
+            'text/plain': '"literal **bold**"\t"quoted ""value"""\nnext\tlast',
+          },
+          name: 'nativeEvent',
+        },
+        assert('prevented', true, 'nativeEvent'),
+        { op: 'tableCells', name: 'literal' },
+        assert('0.1.0.text', 'literal **bold**', 'literal'),
+        excludes('0.1.0.html', '<strong>', 'literal'),
+        assert('0.1.1.text', 'quoted "value"', 'literal'),
+        assert('0.2.0.text', 'next', 'literal'),
+        { op: 'export', name: 'copied' },
+        contains('text', 'quoted "value"', 'copied'),
+        { op: 'save', name: 'saved' },
+        { op: 'reopen' },
+        same('snapshot.text', 'saved', 'text'),
+      ],
+    },
+    'table-spreadsheet-html': {
+      source: '| A | B |\n| --- | --- |\n| old | retained |\n',
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        { op: 'select', text: 'old' },
+        {
+          op: 'paste',
+          input: {
+            text: 'rich\tlink\nnext\tlast',
+            html: '<table><tr><td><strong>rich</strong></td><td><a href="https://example.com/cell">link</a></td></tr><tr><td><code>next</code></td><td>last</td></tr></table>',
+          },
+        },
+        { op: 'tableCells', name: 'rich' },
+        contains('0.1.0.html', '<strong>rich</strong>', 'rich'),
+        contains('0.1.1.html', 'href="https://example.com/cell"', 'rich'),
+        contains('0.2.0.html', '<code>next</code>', 'rich'),
+        undo,
+        same('snapshot.text', 'original', 'text'),
+        { op: 'select', text: 'old' },
+        {
+          op: 'paste',
+          input: {
+            text: 'broken\tinput',
+            html: '<table><tr><td colspan="2">merged</td></tr></table>',
+          },
+          expectedError: 'preservation',
+        },
+        same('snapshot.text', 'original', 'text'),
+        {
+          op: 'paste',
+          input: { text: '"unfinished\tcell' },
+          expectedError: 'preservation',
+        },
+        same('snapshot.text', 'original', 'text'),
+      ],
+    },
+    'table-mixed-unsupported-comment': {
+      source: '',
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        {
+          op: 'paste',
+          input: {
+            text: 'Before head cell After',
+            html: '<p>Before</p><table><!--PRIVATE_TABLE_COMMENT--><tr><th>head</th></tr><tr><td>cell</td></tr></table><p>After</p>',
+          },
+        },
+        contains('snapshot.text', '<table><!--PRIVATE_TABLE_COMMENT-->'),
+        contains('snapshot.text', '<td>cell</td>'),
+        contains('snapshot.text', 'Before'),
+        contains('snapshot.text', 'After'),
+        { op: 'export', name: 'copied' },
+        contains('markdown', '<!--PRIVATE_TABLE_COMMENT-->', 'copied'),
+        excludes('text', 'PRIVATE_TABLE_COMMENT', 'copied'),
+        excludes('html', 'PRIVATE_TABLE_COMMENT', 'copied'),
+        contains('text', 'head', 'copied'),
+        contains('text', 'cell', 'copied'),
+        { op: 'save', name: 'saved' },
+        undo,
+        same('snapshot.text', 'original', 'text'),
+        { op: 'reopen' },
+        same('snapshot.text', 'saved', 'text'),
+        { op: 'export', name: 'reopened' },
+        excludes('text', 'PRIVATE_TABLE_COMMENT', 'reopened'),
+        excludes('html', 'PRIVATE_TABLE_COMMENT', 'reopened'),
+        { op: 'load', source: '' },
+        {
+          op: 'domPaste',
+          types: {
+            'text/plain': 'Before head cell After',
+            'text/html':
+              '<p>Before</p><table><!--PRIVATE_TABLE_COMMENT--><tr><th>head</th></tr><tr><td>cell</td></tr></table><p>After</p>',
+          },
+          name: 'event',
+        },
+        assert('prevented', true, 'event'),
+        contains('snapshot.text', '<!--PRIVATE_TABLE_COMMENT-->'),
+        undo,
+        assert('snapshot.text', ''),
+      ],
+    },
+    'table-sort-invalid-number': {
+      source: '| Key | Value |\n| --- | --- |\n| one | 1 |\n| bad | 2x |\n',
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        { op: 'select', text: 'one' },
+        {
+          op: 'table',
+          command: 'sortRows',
+          options: { column: 1, comparison: 'number' },
+          expectedError: 'finite decimal',
+        },
+        same('snapshot.text', 'original', 'text'),
+      ],
+    },
+    'table-outside-and-txt': {
+      source: 'Outside table',
+      operations: [
+        { op: 'table', command: 'moveRowDown', name: 'outside' },
+        assert('', false, 'outside'),
+        { op: 'load', format: 'txt', source: '| Literal | **source** |\r\n' },
+        { op: 'snapshot', name: 'literal' },
+        {
+          op: 'table',
+          command: 'sortRows',
+          options: { comparison: 'number' },
+          name: 'txt',
+        },
+        assert('', false, 'txt'),
+        same('snapshot.text', 'literal', 'text'),
+      ],
+    },
+  })
+}
+
 const evidence = {
   version,
   bundle,

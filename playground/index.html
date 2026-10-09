@@ -11,6 +11,22 @@
       ><button id="plain">Paste as Plain Text</button
       ><button id="source">Copy as Markdown</button
       ><button id="mode">Switch to TXT</button>
+      <select id="table-action" aria-label="Table operation">
+        <option value="moveRowUp">Move row up</option>
+        <option value="moveRowDown">Move row down</option>
+        <option value="moveColumnLeft">Move column left</option>
+        <option value="moveColumnRight">Move column right</option>
+        <option value="sortRows">Sort rows</option>
+      </select>
+      <select id="comparison" aria-label="Sort comparison">
+        <option value="text">Text</option>
+        <option value="number">Number</option>
+      </select>
+      <select id="sort-order" aria-label="Sort order">
+        <option value="ascending">Ascending</option>
+        <option value="descending">Descending</option>
+      </select>
+      <button id="apply-table">Apply to table</button>
     </nav>
     <main id="editor"></main>
     <output id="status" role="status"></output>
