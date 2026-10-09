@@ -79,3 +79,17 @@ export interface ClipboardDiagram {
   image?: PortableImage
   error?: string
 }
+export interface PrintableWarning {
+  code: 'diagram-unavailable'
+  message: string
+}
+export interface PrintableDocument {
+  documentId: string
+  generation: number
+  revision: number
+  format: DocumentFormat
+  html: string
+  styles: string
+  assets: readonly PortableImage[]
+  warnings: readonly PrintableWarning[]
+}

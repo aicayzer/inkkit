@@ -22,4 +22,6 @@ export type {
   ClipboardOutput,
   ClipboardImage,
   ClipboardDiagram,
+  PrintableDocument,
+  PrintableWarning,
 } from './types'

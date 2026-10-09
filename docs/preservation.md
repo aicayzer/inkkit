@@ -23,3 +23,5 @@ Complete HTML and Obsidian comments remain editable author content. Ordinary cli
 When comments occur inside an authored reference label, ordinary sharing removes that label's reference provenance while retaining its semantic link target. Comment-free labels retain their authored reference form in InkKit's HTML paste path.
 
 Footnote identifiers and link destinations remain literal values under the Markdown grammar, including delimiter-looking text. This preserves their authored identity; comments in footnote bodies are excluded from ordinary sharing.
+
+Printable output uses the complete frozen document model rather than the rendered editor or its selection. It includes folded content and excludes comments even when revealed. Exporting does not change source, revision, folding or undo history. Portable assets are copied and decoded before completion; unavailable authored assets reject the whole export. Invalid diagrams retain readable code with explicit warnings. An edit, undo or document replacement during export rejects the stale result.

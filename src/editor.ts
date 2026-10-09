@@ -3,6 +3,7 @@ import {
   defaultValueCtx,
   editorViewCtx,
   editorViewOptionsCtx,
+  remarkCtx,
   remarkStringifyOptionsCtx,
   rootCtx,
 } from '@milkdown/kit/core'
@@ -96,6 +97,7 @@ import {
   type ImageAdapter,
   type ClipboardInput,
   type ClipboardOutput,
+  type PrintableDocument,
 } from './types'
 import { highlightPlugin } from './highlight'
 import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
@@ -110,6 +112,11 @@ import {
 } from 'prosemirror-search'
 import { taskListPlugin, toggleTaskList } from './tasks'
 import { isMermaid, mermaidPreview } from './mermaid'
+import {
+  hasAuthoredImagesInLiterals,
+  printableMarkdown,
+  printableText,
+} from './print'
 
 export type Mark =
   'bold' | 'italic' | 'strikethrough' | 'highlight' | 'code' | 'link'
@@ -526,6 +533,67 @@ export class InkKitEditor {
       text,
       dirty: text !== this.originalSource,
     }
+  }
+
+  async printableSnapshot(
+    expectedGeneration?: number,
+  ): Promise<PrintableDocument> {
+    const snapshot = this.snapshot(expectedGeneration)
+    const epoch = this.documentEpoch
+    const state = this.editor.ctx.get(editorViewCtx).state
+    let output: Awaited<ReturnType<typeof printableMarkdown>>
+    try {
+      if (
+        snapshot.format === 'md' &&
+        !this.options.images &&
+        hasAuthoredImagesInLiterals(state.doc.content, (source) =>
+          this.editor.ctx.get(remarkCtx).parse(source),
+        )
+      )
+        throw new InkKitError(
+          'image-unavailable',
+          'No image adapter is configured for the authored images.',
+        )
+      output =
+        snapshot.format === 'txt'
+          ? printableText(snapshot.text)
+          : await printableMarkdown(
+              state.doc.content,
+              state.schema,
+              this.options.images,
+              this.context(),
+            )
+    } finally {
+      this.assertCurrent(snapshot.generation)
+      if (
+        snapshot.documentId !== this.documentId ||
+        epoch !== this.documentEpoch ||
+        snapshot.revision !== this.revision
+      )
+        throw new InkKitError(
+          'stale-document',
+          'Document changed while preparing printable content',
+        )
+    }
+    return Object.freeze({
+      documentId: snapshot.documentId,
+      generation: snapshot.generation,
+      revision: snapshot.revision,
+      format: snapshot.format,
+      html: output.html,
+      styles: output.styles,
+      assets: Object.freeze(
+        output.assets.map((asset) =>
+          Object.freeze({
+            ...asset,
+            bytes: new Uint8Array(asset.bytes),
+          }),
+        ),
+      ),
+      warnings: Object.freeze(
+        output.warnings.map((warning) => Object.freeze({ ...warning })),
+      ),
+    })
   }
 
   async clipboardSnapshot(all = true): Promise<ClipboardOutput> {

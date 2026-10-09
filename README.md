@@ -33,10 +33,12 @@ editor.loadDocument({
 const snapshot = editor.snapshot(1)
 ```
 
-Markdown includes CommonMark, task lists, strikethrough, autolinks, GFM tables, editable footnotes and reference-style links, bounded callouts, highlights and author comments. Unsupported constructs remain literal Markdown. TXT mode treats all text literally. Images require a host adapter. RTF files remain outside the package scope.
+Markdown includes CommonMark, task lists, strikethrough, autolinks, GFM tables, editable footnotes and reference-style links, bounded callouts, highlights, author comments and offline Mermaid diagrams. Unsupported constructs remain literal Markdown. TXT mode treats all text literally. Images require a host adapter. RTF files remain outside the package scope.
+
+`await editor.printableSnapshot(1)` returns a complete printable HTML document, print styles and portable image bytes. It excludes author comments, includes folded content and reports unavailable assets or a changed document. Client apps own Print/PDF commands, dialogs and file generation.
 
 See [supported syntax](docs/supported-syntax.md), [the host API](docs/api.md), [preservation and clipboard behavior](docs/preservation.md), [development](docs/development.md), and [releases](docs/releasing.md).
 
-Planned work and release scope are tracked in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [milestones](https://github.com/aicayzer/inkkit/milestones). Release 0.0.2 is published and verified; 0.0.3 delivery is authorised. Targets from 0.0.4 remain provisional.
+Delivery scope and release status are tracked in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [milestones](https://github.com/aicayzer/inkkit/milestones).
 
 MIT licensed. InkKit builds on the public PadPad and Memos editors; see [NOTICE](NOTICE).
