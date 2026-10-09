@@ -10,7 +10,9 @@
       <button id="bold">Bold</button><button id="table">Insert table</button
       ><button id="plain">Paste as Plain Text</button
       ><button id="source">Copy as Markdown</button
-      ><button id="mode">Switch to TXT</button>
+      ><button id="mode">Load as TXT</button>
+      <button id="editing-mode">Edit source</button>
+      <button id="undo">Undo</button><button id="redo">Redo</button>
       <select id="table-action" aria-label="Table operation">
         <option value="moveRowUp">Move row up</option>
         <option value="moveRowDown">Move row down</option>
@@ -27,6 +29,17 @@
         <option value="descending">Descending</option>
       </select>
       <button id="apply-table">Apply to table</button>
+      <input id="query" aria-label="Find text" placeholder="Find text" />
+      <input
+        id="replacement"
+        aria-label="Replacement text"
+        placeholder="Replace with"
+      />
+      <button id="find">Find next</button>
+      <button id="replace">Replace</button>
+      <button id="replace-all">Replace all</button>
+      <select id="headings" aria-label="Document heading"></select>
+      <button id="navigate-heading">Go to heading</button>
     </nav>
     <main id="editor"></main>
     <output id="status" role="status"></output>

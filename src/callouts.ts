@@ -1,6 +1,7 @@
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { remarkCtx } from '@milkdown/kit/core'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Nodes, Parent, Root, RootContent } from 'mdast'
 import type { Processor } from 'unified'
 import { defaultHandlers, type Handle } from 'mdast-util-to-markdown'
@@ -25,6 +26,23 @@ declare module 'mdast' {
 }
 
 const kinds = new Set(['NOTE', 'TIP', 'IMPORTANT', 'WARNING', 'CAUTION'])
+
+export function revealCalloutAncestors(
+  view: EditorView,
+  position: number,
+): void {
+  const node = view.domAtPos(position).node
+  let element = node instanceof HTMLElement ? node : node.parentElement
+  while (element && element !== view.dom) {
+    if (element.getAttribute('data-inkkit-folded') === 'true')
+      element
+        .querySelector<HTMLButtonElement>(
+          ':scope > .inkkit-callout-header > [data-inkkit-callout-toggle]',
+        )
+        ?.click()
+    element = element.parentElement
+  }
+}
 
 function plainHeader(
   processor: Pick<Processor, 'parse'>,

@@ -44,3 +44,5 @@ See [supported syntax](docs/supported-syntax.md), [the host API](docs/api.md), [
 Delivery scope and release status are tracked in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [milestones](https://github.com/aicayzer/inkkit/milestones).
 
 MIT licensed. InkKit builds on the public PadPad and Memos editors; see [NOTICE](NOTICE).
+
+Complete source/formatted editing, literal find/replace and replace-all, and current ordered headings/navigation are available through the public facade. Mode switching keeps document identity and history; unsupported or incomplete source and TXT remain saveable. Hosts own the editing controls and outline presentation. See the [API contracts](docs/api.md).
