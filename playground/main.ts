@@ -1,67 +1,150 @@
 import {
   InkKitEditor,
-  InkKitError,
   type TableCommand,
+  type FormatCommand,
   type Heading,
 } from '../src/index'
+import {
+  fixtures,
+  configurations,
+  ControlledImages,
+  imageBytes,
+  type AdapterMode,
+} from '../scripts/interop/consumer/fixtures'
 import '../src/style.css'
+import './style.css'
 
-document.head.insertAdjacentHTML(
-  'beforeend',
-  '<style>body{margin:0;height:100dvh;display:flex;flex-direction:column}#toolbar{display:flex;gap:8px;padding:8px;box-sizing:border-box;flex-wrap:wrap}#toolbar input{min-width:8rem}#editor{flex:1;min-height:0;overflow:auto}#status{padding:4px 16px;font-size:12px;min-height:1.5em}#headings{max-width:16rem}</style>',
-)
-
-let active = false
-const status = document.querySelector<HTMLOutputElement>('#status')!
-const editor = await InkKitEditor.mount(
-  document.querySelector<HTMLElement>('#editor')!,
-  {
-    changed() {
-      if (active)
-        queueMicrotask(() => {
-          try {
-            updateControls()
-          } catch (error) {
-            if (!(
-              error instanceof InkKitError &&
-              ['composition', 'operation-pending'].includes(error.code)
-            ))
-              status.value = String(error)
-          }
-        })
-    },
-    stateChanged() {},
-    openLink(href) {
-      status.value = href
-    },
-    copy(text) {
-      void navigator.clipboard.writeText(text)
-    },
-    error(error) {
-      status.value = error.message
-    },
-  },
-)
-let generation = 1
-editor.loadDocument({
-  documentId: 'playground',
-  generation,
-  format: 'md',
-  text: '# InkKit\n\nEdit, copy and paste here.\n\n| Name | Value |\n| --- | --- |\n| Alice | 42 |\n',
-})
+const params = new URLSearchParams(location.search)
+const element = <T extends HTMLElement = HTMLElement>(id: string) =>
+  document.getElementById(id) as T
+let fixtureId = params.get('fixture') ?? 'everyday'
+let configuration = params.get('configuration') ?? 'rich'
+let adapterMode = (params.get('adapter') ?? 'normal') as AdapterMode
+if (!fixtures[fixtureId]) throw Error(`Unknown fixture: ${fixtureId}`)
+if (!configurations.includes(configuration as (typeof configurations)[number]))
+  throw Error(`Unknown configuration: ${configuration}`)
+if (!['normal', 'reject', 'hold'].includes(adapterMode))
+  throw Error(`Unknown adapter: ${adapterMode}`)
+for (const [id, fixture] of Object.entries(fixtures)) {
+  const option = document.createElement('option')
+  option.value = id
+  option.textContent = fixture.label
+  element<HTMLSelectElement>('fixture').append(option)
+}
+const tableCommands: TableCommand[] = [
+  'insert',
+  'addRowBefore',
+  'addRowAfter',
+  'addColumnBefore',
+  'addColumnAfter',
+  'deleteRow',
+  'deleteColumn',
+  'deleteTable',
+  'alignLeft',
+  'alignCenter',
+  'alignRight',
+  'moveRowUp',
+  'moveRowDown',
+  'moveColumnLeft',
+  'moveColumnRight',
+  'sortRows',
+  'exit',
+]
+for (const command of tableCommands) {
+  const option = document.createElement('option')
+  option.value = command
+  option.textContent = command
+  element<HTMLSelectElement>('table-action').append(option)
+}
+let editor: InkKitEditor
+let secondEditor: InkKitEditor | undefined
+let images = new ControlledImages()
+let generation = 0
+let mountEpoch = 0
 let headings: readonly Heading[] = []
+let pendingImage: Promise<void> | undefined
+let diagnostics: { code: string | null; message: string }[] = []
+let lastResult: unknown = null
+function record(error: unknown) {
+  const entry = {
+    code: error instanceof Error && 'code' in error ? String(error.code) : null,
+    message: error instanceof Error ? error.message : String(error),
+  }
+  diagnostics.push(entry)
+  element<HTMLOutputElement>('status').value = entry.message
+}
+function selectedText() {
+  const plain = element('editor').querySelector('textarea')
+  return plain instanceof HTMLTextAreaElement
+    ? plain.value.slice(plain.selectionStart, plain.selectionEnd)
+    : (getSelection()?.toString() ?? '')
+}
+function observe() {
+  let snapshot, snapshotError
+  try {
+    snapshot = editor.snapshot(generation)
+  } catch (error) {
+    snapshotError = {
+      message: String(error),
+      code: error instanceof Error && 'code' in error ? error.code : null,
+    }
+  }
+  let commandState, commandStateError
+  try {
+    commandState = editor.commandState(generation)
+  } catch (error) {
+    commandStateError = String(error)
+  }
+  return {
+    fixture: fixtureId,
+    configuration,
+    adapterMode,
+    snapshot: snapshot ?? null,
+    snapshotError: snapshotError ?? null,
+    selectedText: selectedText(),
+    mode: editor.editingMode,
+    editable: editor.editable,
+    commandState: commandState ?? null,
+    commandStateError: commandStateError ?? null,
+    adapterEvents: [...images.events],
+    diagnostics: [...diagnostics],
+    lastResult,
+  }
+}
 function updateControls() {
-  const source = editor.editingMode === 'source'
-  const snapshot = editor.snapshot(generation)
-  document.querySelector('#editing-mode')!.textContent = source
-    ? 'Edit formatted'
-    : 'Edit source'
-  document.querySelector<HTMLButtonElement>('#editing-mode')!.disabled =
-    snapshot.format === 'txt'
-  for (const id of ['bold', 'table', 'apply-table'])
-    document.querySelector<HTMLButtonElement>(`#${id}`)!.disabled = source
-  headings = editor.headings(generation)
-  const select = document.querySelector<HTMLSelectElement>('#headings')!
+  if (!editor) return
+  const observation = observe()
+  element('observations').textContent = JSON.stringify(observation, null, 2)
+  element('editing-mode').textContent =
+    editor.editingMode === 'source' ? 'Edit formatted' : 'Edit source'
+  element('read-only').textContent = editor.editable
+    ? 'Make read-only'
+    : 'Make editable'
+  const state = observation.commandState
+  if (state) {
+    for (const [id, enabled] of Object.entries({
+      bold: state.commands.format.bold,
+      table: state.commands.table.insert,
+      undo: state.commands.undo,
+      redo: state.commands.redo,
+      replace: state.commands.replace,
+      'replace-all': state.commands.replace,
+      'import-image': state.commands.paste && configuration === 'rich',
+      plain: state.commands.paste,
+      'apply-table':
+        state.commands.table[
+          element<HTMLSelectElement>('table-action').value as TableCommand
+        ],
+    }))
+      element<HTMLButtonElement>(id).disabled = !enabled
+    element<HTMLButtonElement>('editing-mode').disabled = state.format === 'txt'
+  }
+  try {
+    headings = editor.headings(generation)
+  } catch {
+    headings = []
+  }
+  const select = element<HTMLSelectElement>('headings')
   const selected = select.value
   select.replaceChildren()
   for (const heading of headings) {
@@ -70,123 +153,351 @@ function updateControls() {
     option.textContent = `${'  '.repeat(heading.level - 1)}${heading.text || 'Untitled heading'}`
     select.append(option)
   }
-  if (!headings.length) {
-    const option = document.createElement('option')
-    option.textContent = 'No headings'
-    select.append(option)
-  } else if (headings.some((heading) => heading.id === selected))
+  if (headings.some((heading) => heading.id === selected))
     select.value = selected
   select.disabled = !headings.length
-  document.querySelector<HTMLButtonElement>('#navigate-heading')!.disabled =
-    !headings.length
-  status.value = `${snapshot.documentId}, generation ${snapshot.generation}, revision ${snapshot.revision}, ${snapshot.dirty ? 'Unsaved changes' : 'Unchanged'}`
+  element<HTMLButtonElement>('navigate-heading').disabled = !headings.length
+  if (!diagnostics.length && observation.snapshot)
+    element<HTMLOutputElement>('status').value =
+      `${observation.snapshot.documentId}, generation ${generation}, revision ${observation.snapshot.revision}, ${observation.snapshot.dirty ? 'Unsaved changes' : 'Unchanged'}`
 }
-function act(action: () => void) {
-  try {
-    action()
-    updateControls()
-  } catch (error) {
-    status.value = String(error)
-  }
+function load(
+  text: string,
+  format: 'md' | 'txt',
+  documentId = `fixture:${fixtureId}`,
+) {
+  editor.loadDocument({ documentId, generation: ++generation, format, text })
+  updateControls()
+  return observe()
 }
-active = true
-updateControls()
-editor.setKeymap({ bold: ['Mod-b'], italic: ['Mod-i'], code: ['Mod-e'] })
-document
-  .querySelector('#bold')!
-  .addEventListener('click', () => editor.format('bold'))
-document
-  .querySelector('#table')!
-  .addEventListener('click', () => editor.table('insert'))
-document.querySelector('#plain')!.addEventListener('click', async () => {
-  try {
-    editor.pasteAsPlainText(await navigator.clipboard.readText())
-  } catch (error) {
-    status.value = String(error)
-  }
-})
-document.querySelector('#source')!.addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(editor.snapshot().text)
-  } catch (error) {
-    status.value = String(error)
-  }
-})
-document.querySelector('#mode')!.addEventListener('click', () =>
-  act(() => {
-    const snapshot = editor.snapshot(generation)
-    const nextGeneration = generation + 1
-    editor.loadDocument({
-      ...snapshot,
-      generation: nextGeneration,
-      format: snapshot.format === 'md' ? 'txt' : 'md',
-    })
-    generation = nextGeneration
-    document.querySelector('#mode')!.textContent =
-      `Load as ${snapshot.format === 'md' ? 'MD' : 'TXT'}`
-  }),
-)
-
-document.querySelector('#apply-table')!.addEventListener('click', () => {
-  try {
-    const command = document.querySelector<HTMLSelectElement>('#table-action')!
-      .value as TableCommand
-    const comparison = document.querySelector<HTMLSelectElement>('#comparison')!
-      .value as 'text' | 'number'
-    const order = document.querySelector<HTMLSelectElement>('#sort-order')!
-      .value as 'ascending' | 'descending'
-    status.value = editor.table(command, { comparison, order })
-      ? 'Table updated'
-      : 'Select an editable table cell'
-  } catch (error) {
-    status.value = String(error)
-  }
-})
-
-document.querySelector('#editing-mode')!.addEventListener('click', () =>
-  act(() => {
-    editor.setEditingMode(
-      editor.editingMode === 'source' ? 'formatted' : 'source',
-      generation,
+async function reset(
+  nextFixture = fixtureId,
+  nextConfiguration = configuration,
+) {
+  if (!fixtures[nextFixture]) throw Error(`Unknown fixture: ${nextFixture}`)
+  if (
+    !configurations.includes(
+      nextConfiguration as (typeof configurations)[number],
     )
-    editor.focus()
+  )
+    throw Error(`Unknown configuration: ${nextConfiguration}`)
+  const epoch = ++mountEpoch
+  if (editor) await editor.destroy()
+  if (secondEditor) {
+    await secondEditor.destroy()
+    secondEditor = undefined
+  }
+  images.dispose()
+  images = new ControlledImages()
+  pendingImage = undefined
+  diagnostics = []
+  lastResult = null
+  fixtureId = nextFixture
+  configuration = nextConfiguration
+  images.setMode('import', adapterMode)
+  images.setMode('export', adapterMode)
+  const update = () => {
+    if (epoch === mountEpoch) queueMicrotask(updateControls)
+  }
+  editor = await InkKitEditor.mount(
+    element('editor'),
+    {
+      changed: update,
+      stateChanged: update,
+      commandStateChanged: update,
+      openLink: (href) => {
+        lastResult = href
+        update()
+      },
+      copy: (text) => {
+        void navigator.clipboard.writeText(text).catch(record)
+      },
+      error: (error) => {
+        if (epoch === mountEpoch) {
+          record(error)
+          update()
+        }
+      },
+    },
+    {
+      images: configuration === 'rich' ? images.adapter : undefined,
+      editable: params.get('editable') !== 'false',
+      textInput:
+        configuration === 'rich'
+          ? { spellcheck: false, autocorrect: false, autocapitalize: 'off' }
+          : undefined,
+    },
+  )
+  const fixture = fixtures[fixtureId]!
+  load(fixture.text, fixture.format)
+  for (const [id, value] of Object.entries({
+    fixture: fixtureId,
+    configuration,
+    adapter: adapterMode,
+  }))
+    element<HTMLSelectElement>(id).value = value
+  if (params.get('editors') === '2') {
+    element('second-editor').hidden = false
+    secondEditor = await InkKitEditor.mount(
+      element('second-editor'),
+      { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+      { editable: false },
+    )
+    secondEditor.loadDocument({
+      documentId: 'second',
+      generation: 1,
+      format: 'md',
+      text: '# Independent fixture\n\nIndependent content.\n',
+    })
+  }
+  updateControls()
+  return observe()
+}
+async function operation(name: string, args: Record<string, unknown> = {}) {
+  let result: unknown
+  try {
+    switch (name) {
+      case 'format':
+        result = editor.format(
+          args.command as FormatCommand,
+          args.arg as string | number | undefined,
+        )
+        break
+      case 'table':
+        result = editor.table(
+          args.command as TableCommand,
+          args.options as Parameters<InkKitEditor['table']>[1],
+        )
+        break
+      case 'editingMode':
+        result = editor.setEditingMode(
+          args.mode as 'source' | 'formatted',
+          generation,
+        )
+        break
+      case 'editable':
+        result = editor.setEditable(Boolean(args.editable))
+        break
+      case 'textInput':
+        result = editor.setTextInputPreferences(
+          args.preferences as Parameters<
+            InkKitEditor['setTextInputPreferences']
+          >[0],
+        )
+        break
+      case 'keymap':
+        result = editor.setKeymap(
+          args.keymap as Parameters<InkKitEditor['setKeymap']>[0],
+        )
+        break
+      case 'focus':
+        editor.focus()
+        break
+      case 'insertText':
+        result = editor.insertText(String(args.text), generation)
+        break
+      case 'replaceSource':
+        result = editor.replaceSource(String(args.text), generation)
+        break
+      case 'undo':
+        result = editor.undo(generation)
+        break
+      case 'redo':
+        result = editor.redo(generation)
+        break
+      case 'find':
+        editor.find(String(args.text), generation)
+        break
+      case 'replace':
+        result = editor.replace(
+          String(args.search),
+          String(args.replacement),
+          generation,
+        )
+        break
+      case 'replaceAll':
+        result = editor.replaceAll(
+          String(args.search),
+          String(args.replacement),
+          generation,
+        )
+        break
+      case 'headings':
+        result = editor.headings(generation)
+        break
+      case 'navigateHeading':
+        result = editor.navigateHeading(args.heading as Heading)
+        break
+      case 'clipboard':
+        result = await editor.clipboardSnapshot(args.all !== false)
+        break
+      case 'printable':
+        result = await editor.printableSnapshot(generation)
+        break
+      case 'paste':
+        await editor.paste(args.input as Parameters<InkKitEditor['paste']>[0])
+        break
+      case 'pastePlain':
+        editor.pasteAsPlainText(String(args.text))
+        break
+      case 'commandState':
+        result = editor.commandState(args.generation as number | undefined)
+        break
+      case 'startImagePaste': {
+        const epoch = mountEpoch
+        pendingImage = editor
+          .paste({
+            text: '',
+            images: [
+              {
+                bytes: imageBytes(),
+                mimeType: 'image/png',
+                filename: 'fixture.png',
+              },
+            ],
+          })
+          .catch((error) => {
+            if (epoch === mountEpoch) record(error)
+          })
+        result = { pending: true }
+        break
+      }
+      case 'finishImagePaste':
+        images.release('import')
+        if (!pendingImage) throw Error('No image paste is pending')
+        await pendingImage
+        pendingImage = undefined
+        break
+      default:
+        throw Error(`Unknown public operation: ${name}`)
+    }
+    lastResult = result ?? null
+  } catch (error) {
+    record(error)
+    throw error
+  } finally {
+    updateControls()
+  }
+  return result ?? null
+}
+async function act(action: () => unknown) {
+  try {
+    await action()
+  } catch (error) {
+    if (
+      diagnostics.at(-1)?.message !==
+      String(error instanceof Error ? error.message : error)
+    )
+      record(error)
+  }
+  updateControls()
+}
+const click = (id: string, action: () => unknown) =>
+  element(id).addEventListener('click', () => {
+    void act(action)
+  })
+click('reset', () => reset())
+click('replace-document', () =>
+  load(
+    '# Replacement document\n\nDisposable replacement.\n',
+    'md',
+    'replacement',
+  ),
+)
+click('read-only', () => operation('editable', { editable: !editor.editable }))
+click('release', () => {
+  images.release('import')
+  images.release('export')
+})
+click('import-image', () => operation('startImagePaste'))
+click('bold', () => operation('format', { command: 'bold' }))
+click('table', () => operation('table', { command: 'insert' }))
+click('plain', async () =>
+  operation('pastePlain', { text: await navigator.clipboard.readText() }),
+)
+click('source', async () =>
+  navigator.clipboard.writeText(editor.snapshot(generation).text),
+)
+click('copy-readable', async () => {
+  const data = await editor.clipboardSnapshot()
+  await navigator.clipboard.writeText(data.text)
+})
+click('printable', () => operation('printable'))
+click('editing-mode', async () => {
+  await operation('editingMode', {
+    mode: editor.editingMode === 'source' ? 'formatted' : 'source',
+  })
+  editor.focus()
+})
+click('mode', () => {
+  const snapshot = editor.snapshot(generation)
+  return load(snapshot.text, snapshot.format === 'md' ? 'txt' : 'md')
+})
+click('undo', () => operation('undo'))
+click('redo', () => operation('redo'))
+click('apply-table', () =>
+  operation('table', {
+    command: element<HTMLSelectElement>('table-action').value,
+    options: {
+      comparison: element<HTMLSelectElement>('comparison').value,
+      order: element<HTMLSelectElement>('sort-order').value,
+    },
   }),
 )
-document.querySelector('#undo')!.addEventListener('click', () =>
-  act(() => {
-    editor.undo(generation)
+const query = () => element<HTMLInputElement>('query').value
+const replacement = () => element<HTMLInputElement>('replacement').value
+click('find', () => operation('find', { text: query() }))
+click('replace', () =>
+  operation('replace', { search: query(), replacement: replacement() }),
+)
+click('replace-all', () =>
+  operation('replaceAll', { search: query(), replacement: replacement() }),
+)
+click('navigate-heading', () =>
+  operation('navigateHeading', {
+    heading: headings.find(
+      (heading) => heading.id === element<HTMLSelectElement>('headings').value,
+    ),
   }),
 )
-document.querySelector('#redo')!.addEventListener('click', () =>
-  act(() => {
-    editor.redo(generation)
-  }),
-)
-const query = () => document.querySelector<HTMLInputElement>('#query')!.value
-const replacement = () =>
-  document.querySelector<HTMLInputElement>('#replacement')!.value
-document.querySelector('#find')!.addEventListener('click', () =>
-  act(() => {
-    editor.find(query(), generation)
-    editor.focus()
-  }),
-)
-document.querySelector('#replace')!.addEventListener('click', () =>
-  act(() => {
-    editor.replace(query(), replacement(), generation)
-    editor.focus()
-  }),
-)
-document.querySelector('#replace-all')!.addEventListener('click', () =>
-  act(() => {
-    editor.replaceAll(query(), replacement(), generation)
-    editor.focus()
-  }),
-)
-document.querySelector('#navigate-heading')!.addEventListener('click', () =>
-  act(() => {
-    const id = document.querySelector<HTMLSelectElement>('#headings')!.value
-    const heading = headings.find((entry) => entry.id === id)
-    if (heading) editor.navigateHeading(heading)
-  }),
-)
+element('fixture').addEventListener('change', () => {
+  void act(() => reset(element<HTMLSelectElement>('fixture').value))
+})
+element('configuration').addEventListener('change', () => {
+  void act(() =>
+    reset(fixtureId, element<HTMLSelectElement>('configuration').value),
+  )
+})
+element('adapter').addEventListener('change', () => {
+  adapterMode = element<HTMLSelectElement>('adapter').value as AdapterMode
+  images.setMode('import', adapterMode)
+  images.setMode('export', adapterMode)
+  updateControls()
+})
+element('table-action').addEventListener('change', updateControls)
+export const playground = {
+  fixtures: Object.keys(fixtures),
+  configurations,
+  reset,
+  selectFixture: reset,
+  replaceDocument: load,
+  operation,
+  observe,
+  adapter: {
+    setMode: (kind: 'import' | 'export', mode: AdapterMode) => {
+      images.setMode(kind, mode)
+      updateControls()
+    },
+    release: (kind: 'import' | 'export') => {
+      images.release(kind)
+      updateControls()
+    },
+  },
+}
+declare global {
+  interface Window {
+    inkkitPlayground: typeof playground
+  }
+}
+window.inkkitPlayground = playground
+await reset()

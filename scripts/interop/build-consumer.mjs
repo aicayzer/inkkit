@@ -22,7 +22,12 @@ await writeFile(
     devDependencies: { vite: '8.3.3', 'vite-plugin-singlefile': '2.3.3' },
   }),
 )
-for (const filename of ['main.ts', 'index.html', 'vite.config.mjs'])
+for (const filename of [
+  'main.ts',
+  'fixtures.ts',
+  'index.html',
+  'vite.config.mjs',
+])
   await copyFile(
     join(script, 'consumer', filename),
     join(destination, filename),

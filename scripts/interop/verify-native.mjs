@@ -3,20 +3,37 @@ import { spawnSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 
-const version = process.argv[5] ?? '0.0.2'
-const versions = ['0.0.2', '0.0.3', '0.0.4', '0.0.5', '0.0.6', '0.0.7']
+const positional = []
+const requestedGroups = []
+const requestedScenarios = []
+let list = false
+for (let index = 2; index < process.argv.length; index++) {
+  const argument = process.argv[index]
+  if (argument === '--list') list = true
+  else if (argument === '--group' || argument === '--scenario') {
+    const value = process.argv[++index]
+    if (!value || value.startsWith('--'))
+      throw Error(`Missing value for ${argument}`)
+    ;(argument === '--group' ? requestedGroups : requestedScenarios).push(value)
+  } else if (argument.startsWith('--'))
+    throw Error(`Unknown option: ${argument}`)
+  else positional.push(argument)
+}
+if (positional.length > 4)
+  throw Error('Expected at most BUNDLE OUTPUT_DIRECTORY HOST_BINARY VERSION')
+const version = positional[3] ?? '0.0.2'
+const versions = ['0.0.2', '0.0.3', '0.0.4', '0.0.5', '0.0.6', '0.0.7', '0.0.8']
 if (!versions.includes(version))
   throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
 const releaseAtLeast = (target) =>
   versions.indexOf(version) >= versions.indexOf(target)
 const bundle = resolve(
-  process.argv[2] ?? '_local/interop/consumer/dist/index.html',
+  positional[0] ?? '_local/interop/consumer/dist/index.html',
 )
 const destination = resolve(
-  process.argv[3] ?? `_local/interop/regression-${version}`,
+  positional[1] ?? `_local/interop/regression-${version}`,
 )
-const host = resolve(process.argv[4] ?? '_local/interop/webkit-host')
-await mkdir(destination, { recursive: true })
+const host = resolve(positional[2] ?? '_local/interop/webkit-host')
 const assert = (path, equals, name) => ({ op: 'assert', path, equals, name })
 const contains = (path, includes, name) => ({
   op: 'assert',
@@ -1750,6 +1767,152 @@ if (releaseAtLeast('0.0.7')) {
   })
 }
 
+if (releaseAtLeast('0.0.8')) {
+  Object.assign(scenarios, {
+    'host-read-only-history-and-input': {
+      source: '# Host controls\n\nOriginal text.\n',
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        { op: 'editingMode', mode: 'source' },
+        { op: 'selectSourceRange', from: 0 },
+        {
+          op: 'textInput',
+          preferences: {
+            spellcheck: false,
+            autocorrect: false,
+            autocapitalize: 'off',
+          },
+        },
+        { op: 'inputAttributes', name: 'attributes' },
+        assert('spellcheck', 'false', 'attributes'),
+        assert('autocorrect', 'off', 'attributes'),
+        assert('autocapitalize', 'off', 'attributes'),
+        assert('focused', true, 'attributes'),
+        { op: 'replaceSource', text: '# Host controls\n\nChanged text.\n' },
+        { op: 'editable', editable: false },
+        { op: 'commandState', name: 'readonly' },
+        assert('editable', false, 'readonly'),
+        assert('commands.undo', false, 'readonly'),
+        { op: 'replaceSource', text: 'NO', expectedError: 'read-only' },
+        { op: 'insertText', text: 'NO', expectedError: 'read-only' },
+        { op: 'undo', expectedError: 'read-only' },
+        { op: 'paste', input: { text: 'NO' }, expectedError: 'read-only' },
+        { op: 'find', text: 'Changed' },
+        assert('selection', 'Changed'),
+        { op: 'editingMode', mode: 'formatted' },
+        { op: 'format', command: 'bold', expectedError: 'read-only' },
+        { op: 'table', command: 'insert', expectedError: 'read-only' },
+        { op: 'editable', editable: true },
+        { op: 'undo' },
+        {
+          op: 'assert',
+          path: 'snapshot.text',
+          equalsFrom: { name: 'original', path: 'text' },
+        },
+        { op: 'commandState', name: 'restored' },
+        assert('commands.redo', true, 'restored'),
+        { op: 'load', documentId: 'replacement', source: '# Replacement\n' },
+        { op: 'commandState', generation: 1, expectedError: 'stale-document' },
+        { op: 'commandState', name: 'replacement' },
+        assert('documentId', 'replacement', 'replacement'),
+        assert('commands.undo', false, 'replacement'),
+      ],
+    },
+    'host-composition-transitions-and-availability': {
+      source: 'Composing text',
+      operations: [
+        { op: 'editingMode', mode: 'source' },
+        { op: 'selectSourceRange', from: 0 },
+        { op: 'composition', active: true },
+        { op: 'commandState', name: 'composing' },
+        assert('composing', true, 'composing'),
+        assert('commands.insertText', false, 'composing'),
+        { op: 'editable', editable: false, expectedError: 'composition' },
+        {
+          op: 'textInput',
+          preferences: { spellcheck: false },
+          expectedError: 'composition',
+        },
+        { op: 'composition', active: false },
+        assert('snapshot.text', 'Composing text'),
+        assert('editable', true),
+        { op: 'editable', editable: false },
+        { op: 'inputAttributes', name: 'readonly' },
+        assert('readOnly', true, 'readonly'),
+        assert('focused', true, 'readonly'),
+      ],
+    },
+    'host-delayed-import-editability-epoch': {
+      source: 'Before import',
+      operations: [
+        { op: 'select', text: 'Before import', from: 13 },
+        { op: 'startImagePaste' },
+        { op: 'commandState', name: 'pending' },
+        assert('pending', true, 'pending'),
+        { op: 'editable', editable: false },
+        { op: 'editable', editable: true },
+        { op: 'finishImagePaste' },
+        assert('snapshot.text', 'Before import'),
+        { op: 'commandState', name: 'after' },
+        assert('pending', false, 'after'),
+        assert('commands.undo', false, 'after'),
+      ],
+    },
+    'intentional-assertion-failure': {
+      source: 'Controlled failure',
+      operations: [
+        assert('snapshot.text', 'Intentionally incorrect expected text'),
+      ],
+    },
+  })
+}
+const names = Object.keys(scenarios)
+const groups = {
+  core: [
+    'reference-lifecycle',
+    ...(releaseAtLeast('0.0.7') ? ['source-spelling-cross-mode-history'] : []),
+  ],
+  references: names.filter((name) => /reference|footnote/.test(name)),
+  tables: names.filter((name) => name.startsWith('table-')),
+  source: names.filter((name) => /^(source-|replacement-|outline-)/.test(name)),
+  diagrams: names.filter((name) => name.startsWith('mermaid-')),
+  print: names.filter((name) => /print/.test(name)),
+  'host-controls': names.filter((name) => name.startsWith('host-')),
+  legacy: names.filter(
+    (name) => !name.startsWith('host-') && !name.startsWith('intentional-'),
+  ),
+}
+const selected = new Set()
+for (const group of requestedGroups) {
+  if (!(group in groups))
+    throw Error(
+      `Unknown group: ${group}. Available: ${Object.keys(groups).join(', ')}`,
+    )
+  if (!groups[group].length) throw Error(`Empty group ${group} for ${version}`)
+  groups[group].forEach((name) => selected.add(name))
+}
+for (const name of requestedScenarios) {
+  if (!(name in scenarios)) throw Error(`Unknown scenario: ${name}`)
+  selected.add(name)
+}
+if (!requestedGroups.length && !requestedScenarios.length) {
+  ;(version === '0.0.8' ? groups.core : groups.legacy).forEach((name) =>
+    selected.add(name),
+  )
+}
+if (!selected.size) throw Error('Selection contains no scenarios')
+if (list) {
+  console.log(
+    JSON.stringify(
+      { version, groups, selected: [...selected], scenarios: names },
+      null,
+      2,
+    ),
+  )
+  process.exit(0)
+}
+await mkdir(destination, { recursive: true })
+
 const evidence = {
   version,
   bundle,
@@ -1761,9 +1924,11 @@ const evidence = {
     .update(await readFile(host))
     .digest('hex'),
   testedAt: new Date().toISOString(),
+  selection: { groups: requestedGroups, scenarios: [...selected] },
   scenarios: [],
 }
-for (const [name, fixture] of Object.entries(scenarios)) {
+for (const name of selected) {
+  const fixture = scenarios[name]
   const input = join(destination, `${name}.input.json`)
   const output = join(destination, `${name}.result.json`)
   await writeFile(input, `${JSON.stringify(fixture, null, 2)}\n`)
@@ -1878,7 +2043,9 @@ for (const [name, fixture] of Object.entries(scenarios)) {
     error: run.error?.message ?? run.stderr.trim(),
     input,
     output,
-    steps: result?.steps.length ?? 0,
+    steps: result?.steps?.length ?? 0,
+    failures: result?.steps?.filter((step) => !step.passed) ?? [],
+    finalError: result?.final?.error ?? null,
     ...(['print', 'printable'].includes(fixture.mode)
       ? { print: result?.print, printFailures }
       : {}),
