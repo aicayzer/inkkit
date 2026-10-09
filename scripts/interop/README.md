@@ -1,6 +1,6 @@
 # Native clipboard probes
 
-These probes distinguish a packed-package WebKit consumer from tests hosted in an app. Run the destination tests only in a disposable desktop session, vault and documents. Do not use production notes or send a test message.
+These probes distinguish a packed-package WebKit consumer from tests hosted in an app. External-app destination checks are exceptional: first identify a changed interoperability contract or a reproduced bug, then select one relevant application and direction. Do not resume the 0.0.7 return matrix. Run any authorised destination check only in a disposable desktop session, vault and documents. Do not use production notes or send a test message.
 
 Build the offline consumer from the exact candidate archive. The builder uses an archive filename containing its SHA-256 so that replacing a candidate at the same version cannot reuse the previous package installation.
 
@@ -80,12 +80,40 @@ node scripts/interop/verify-native.mjs _local/interop/consumer-0.0.5/dist/index.
 
 The native `printable` mode reads the named `printable` result (or `printableName`), loads its captured HTML into a **separate WKWebView**, disables content JavaScript, waits for all portable images to decode, and prints asynchronously using the native print operation. It does not print the live editor DOM. The main fixture replaces the live document after capture to verify that the PDF contains the frozen document. Native PDF checks cover multiple pages, the final sentinel, complete folded content, tables, highlights, references and footnotes, excluded revealed comments and controls, image XObject streams, image placements within page bounds, and paper geometry. Placement bounds measure containment within the PDF MediaBox; they do not model arbitrary clipping paths. The portrait fixture also rasterizes each PDF page through CoreGraphics and requires all three equal authored color bands to cover the complete drawn image area on one page. This detects clipping that image resource counts or page bounds alone can miss. Invalid Mermaid retains its source with a `diagram-unavailable` warning; TXT prints escaped literal source.
 
-These probes create disposable PDFs and can affect macOS print preferences. Run them within a wrapper that saves the clipboard and scoped print preferences, restores both on every exit, compares their original bytes independently, and retains restoration proofs. Keep private backups in ignored storage and remove them only after verification. Package-native tests do not establish compatibility with consumer app hosts or clipboard destinations; run those isolated checks separately.
+These probes create disposable PDFs and can affect macOS print preferences. Run them within a wrapper that saves the clipboard and scoped print preferences, restores both on every exit, compares their original bytes independently, and retains restoration proofs. Keep private backups in ignored storage and remove them only after verification. Package-native tests do not establish compatibility with consumer app hosts or clipboard destinations. Run one isolated check only when its changed contract or reproduced bug requires it.
 
 For 0.0.6, pass `0.0.6` as the final argument. The suite retains the earlier scenarios and checks row/header movement, whole-column alignment, stable text and numeric sorting, rich cell preservation, spreadsheet growth, HTML cell formatting, rejected malformed input, mixed unsupported tables with private comments, undo, copying and save/reopen. `table` calls the public facade with `command` and optional `options`; `tableCells` captures ordered cell content and alignment. `domPaste` dispatches a DOM clipboard event with the supplied MIME `types`. It exercises the browser event handler; separate app-host checks must exercise the native Paste action and real pasteboard.
 
 For 0.0.7, pass `0.0.7`. The suite also checks complete raw source, spelling-only changes, history across editing modes, native textarea input and composition, literal source paste, partial-comment copy privacy, TXT, Unicode replacement, literal replacement tokens, multiline replacement, structured boundaries, failed table replacement, ordered headings, folded-heading navigation and stale entries after edits, mode changes, reloads and document switching.
 
-`editingMode`, `replaceSource`, `undo`, `redo`, `replace`, `replaceAll`, `headings` and `navigateHeading` call the public facade. Heading navigation round-trips entries through JSON to exercise a native bridge. `sourceInput` dispatches a textarea input event; `sourceState` records the textarea caret and focus. `surface` checks actual textarea and formatted-wrapper visibility after document loading or reloading. CRLF fixtures distinguish normalised DOM caret positions from exact source and TXT clipboard bytes. `domPaste`, `activeKeyDown` and `composition` target the active editing surface. Real source Paste still requires the separate protected app-host checks.
+`editingMode`, `replaceSource`, `undo`, `redo`, `replace`, `replaceAll`, `headings` and `navigateHeading` call the public facade. Heading navigation round-trips entries through JSON to exercise a native bridge. `sourceInput` dispatches a textarea input event; `sourceState` records the textarea caret and focus. `surface` checks actual textarea and formatted-wrapper visibility after document loading or reloading. CRLF fixtures distinguish normalised DOM caret positions from exact source and TXT clipboard bytes. `domPaste`, `activeKeyDown` and `composition` target the active editing surface. DOM source Paste does not prove native Paste. Run a protected app-host check only for a changed native clipboard contract or reproduced bug.
 
 The distant-heading fixture checks caret visibility in the textarea viewport after navigation, find, replacement, undo and reload, including wrapped lines. `sourceViewport` mirrors computed text metrics because textarea selections expose no caret geometry; `sourceScroll` sets a controlled initial viewport without changing selection. The incomplete Mermaid fixture verifies its exact `diagram-unavailable` diagnostic before `acknowledgeError` clears it. Any other recorded diagnostic fails the acknowledgement.
+
+## Selected 0.0.8 candidate checks
+
+The 0.0.8 candidate adds named reusable documents and controlled image adapters in `consumer/fixtures.ts`. The playground uses the same fixture resources. `minimal` omits the image adapter; `rich` supplies deterministic portable PNGs and explicit import/export rejection or manually released delays. The consumer stays an isolated package fixture, not an app integration.
+
+Keep the original positional arguments. Selection flags can appear before or after them, and each `--group` or `--scenario` can be repeated. Selection is the union of requested groups and scenario names. Unknown options, groups and scenarios, missing values, and groups empty for the requested version fail before WKWebView launches. `--list` prints JSON without requiring bundle or host files.
+
+```sh
+node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --list
+node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --group core --group host-controls
+node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --scenario host-delayed-import-editability-epoch
+```
+
+Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls` and `legacy`. Version 0.0.8 defaults to bounded `core`; previous versions retain their historical complete suite when no selector is supplied. `legacy` retains every prior scenario available for the version. No group includes `intentional-assertion-failure`; it requires explicit selection.
+
+The core covers reference preservation and shared source/formatted history. Host controls cover source focus/input preferences, read-only transitions and preserved history, bridge command state and stale generations, synthetic composition guards, and cancellation of manually delayed image imports after editability changes. Synthetic composition events verify guards; they do not prove complete IME interoperability.
+
+New public-facade operations are `editable`, `textInput` and `commandState`; `inputAttributes` inspects the active DOM surface. Captures include pull-based command state, the most recent command-state event, editability and adapter events. Command state is round-tripped through JSON to check bridge-readable values. The runner records hashes, exact selection, failed steps and final errors in `evidence.json`, beside complete input/result files.
+
+To demonstrate the diagnostic path separately from passing evidence:
+
+```sh
+node scripts/interop/verify-native.mjs BUNDLE _local/interop/controlled-failure HOST_BINARY 0.0.8 --scenario intentional-assertion-failure
+```
+
+Expect a non-zero result with the mismatched value and assertion step. Never count this expected failure as passing verification.
+
+For candidate changes run `pnpm check`, `pnpm format:check`, `pnpm build:playground` and the small Chromium smoke. Select browser regressions for changed behaviour. Run selected native checks for changed WKWebView, focus/input, bridge, clipboard, print or resource-lifecycle boundaries. Source-only documentation changes need no native run. Print groups remain opt-in and retain the protected preferences/pasteboard procedure above. Release verification still uses the actual archive and exact-version clean offline consumer; hosted CI is distinct from local results.

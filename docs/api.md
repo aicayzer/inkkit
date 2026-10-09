@@ -1,6 +1,8 @@
 # Host API
 
-`InkKitEditor.mount(root, events, { images? })` creates the editor. Import `@aicayzer/inkkit/style.css` into the host bundle. Keep the root alive until `destroy()` completes.
+This reference includes the **unpublished 0.0.8 candidate**. Version 0.0.7 is published; the host-policy and availability sections below describe candidate additions.
+
+`InkKitEditor.mount(root, events, options?: EditorOptions)` creates the editor. `EditorOptions` accepts optional `images`, `editable`, `textInput`, `labels` and `keymap`. Editing defaults to enabled; omitted text-input preferences retain browser behaviour. Import `@aicayzer/inkkit/style.css` into the host bundle. Keep the root alive until `destroy()` completes.
 
 `loadDocument({ documentId, generation, format, text })` loads Markdown (`md`) or literal text (`txt`). Increment the generation when replacing a document. `reloadDocument(input)` retains the caret, scroll position and Markdown editing mode for an external reload.
 
@@ -19,6 +21,26 @@ Mermaid previews leave code source editable. Clipboard output adds `diagrams`, w
 `format(command, argument?)`, `table(command, options?)`, `find(text)`, `focus()` and `setKeymap(bindings)` implement host controls. Table commands include insert, row/column addition and deletion, alignment and exit. Default inserted tables have three rows and two columns. `insertText` and `keyDown` accept a generation for buffered native input; composition leaves buffered input unhandled.
 
 `insertPaths(paths, x, y)` places literal paths at a drop location. `insertImages([{ path, alt, title? }], x?, y?)` inserts already-stored references when an image adapter is configured. `destroy()` cancels pending work and releases the editor.
+
+## Editability and text input
+
+`editable` returns the current editing policy. `setEditable(boolean)` changes it on both formatted and source/TXT surfaces. `setTextInputPreferences(preferences: TextInputPreferences)` replaces the preferences and updates native HTML input attributes on both surfaces. Omitted fields remove explicit attributes rather than retaining earlier overrides. `TextInputPreferences` contains optional `spellcheck: boolean`, `autocorrect: boolean` and `autocapitalize: 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters'`. Omitted preferences leave behaviour to the browser; these are input preferences rather than guarantees of OS behaviour.
+
+Read-only permits selection, copying, find, navigation, folding and formatted/source switching. Host document loading and reloading remain explicit host operations. Mutating facade calls reject with `InkKitError` code `read-only`; typing, paste/drop, cut completion, task toggles, table controls, reference editing and resizing cannot change content. Undo/redo are disabled while read-only, retaining history for later re-enabling.
+
+Entering read-only cancels pending imports and invalidates deferred destructive operations, including acknowledged Cut. A late result cannot mutate the editor after editing is re-enabled. Active image resize previews are cancelled. Imported asset retention and cleanup remain the host adapter's responsibility.
+
+Editability and input-preference transitions reject during active composition with code `composition` and no partial change. Successful changes preserve focus, selection, source, document identity, revision, dirty state and shared history. These transitions are presentation changes, not document edits.
+
+## Command availability
+
+`commandState(expectedGeneration?)` returns the current `CommandState` without dispatching edits or changing history. A missing document, stale expected generation or destroyed editor rejects the query. Unlike a save snapshot, availability remains readable during composition and pending imports, with affected commands disabled.
+
+The state contains `documentId`, `generation`, `revision`, `format`, `mode`, `editable`, `composing`, `pending`, `caret: CaretState`, optional `table` context (`row`, `column`, `rows`, `columns`) and `commands`. The command booleans cover `undo`, `redo`, `insertText`, `paste`, `replace`, `replaceSource`, `insertImages`, `insertPaths`, `insertFootnote` and `editReferenceDefinition`; `commands.format` maps each `FormatCommand` to availability, and `commands.table` maps each `TableCommand`. Row and column indices are zero-based.
+
+The optional `events.commandStateChanged(state)` callback publishes current state after selection, editing, history, mode or input-policy changes and after document replacement. Document loading suppresses intermediate state. The existing `events.stateChanged(CaretState)` contract is retained for active formatting.
+
+Source and TXT disable formatted commands. Read-only disables mutations while retaining non-mutating operations. Availability is contextual: recheck generation and handle the operation's result/errors when a user acts. The host owns toolbar/menu presentation; querying availability never dirties the document.
 
 ## Footnotes and reference links
 
@@ -83,3 +105,48 @@ Formatted replacements retain surrounding structure and formatting; replacement 
 `headings(expectedGeneration?)` returns immutable, ordered `Heading` entries with `id`, `level`, readable `text`, `documentId`, `generation` and `revision`. The opaque ID belongs to the current loaded document and editing mode. Heading-looking code, unsupported literal blocks and TXT do not create outline entries. Author comments are excluded from heading text; image alt text and readable footnote labels are retained. Query again after edits, undo, document loads or mode changes.
 
 `navigateHeading(entry)` validates the entry against the current document, generation, revision, editing mode and load epoch. A stale entry throws `stale-document`. Navigation focuses and scrolls to the heading and reveals folded callout ancestors without changing source, history, revision or dirty state. Hosts own outline layout and presentation; the playground demonstrates selection and navigation through these APIs.
+
+## Appearance, labels and shortcuts
+
+The mounted root receives `.inkkit-root`. Package rules, including table styles, are scoped beneath it; they do not set the host's `:root` font size or colour scheme. Set these public CSS custom properties on the root or an ancestor. Properties beginning `--_inkkit-` are internal.
+
+| Tokens                                                                                                                                        | Default or purpose                                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `--inkkit-font-family`, `--inkkit-font-size`, `--inkkit-line-height`                                                                          | System sans-serif, `15px`; line height defaults to `normal` in formatted mode and `1.5` in source/TXT. |
+| `--inkkit-monospace-font`                                                                                                                     | System monospace stack for source, TXT and code.                                                       |
+| `--inkkit-color-scheme`                                                                                                                       | `light dark`.                                                                                          |
+| `--inkkit-min-height`, `--inkkit-reading-width`                                                                                               | `100%`, `100%`.                                                                                        |
+| `--inkkit-padding-top`, `--inkkit-padding-inline`, `--inkkit-padding-bottom`                                                                  | `10px`, `16px`, `48px`.                                                                                |
+| `--inkkit-paragraph-spacing`                                                                                                                  | About two-thirds of the editor font size.                                                              |
+| `--inkkit-accent-color`, `--inkkit-text-color`                                                                                                | `#0a84ff`, `CanvasText`.                                                                               |
+| `--inkkit-muted-color`, `--inkkit-rule-color`, `--inkkit-code-background`                                                                     | System text mixed with transparency for secondary text, borders and code background.                   |
+| `--inkkit-code-comment`, `--inkkit-code-keyword`, `--inkkit-code-string`, `--inkkit-code-number`, `--inkkit-code-title`, `--inkkit-code-attr` | Syntax highlighting colours.                                                                           |
+| `--inkkit-focus-width`, `--inkkit-focus-color`, `--inkkit-focus-offset`                                                                       | `2px`, editor accent, `-2px`; footnote links default to current text colour and `2px` offset.          |
+
+Inherited legacy `--accent`, `--text`, `--muted`, `--rule`, `--code-bg`, `--mono` and `--reading-width` remain fallbacks when their new tokens are absent. Each editor root can have independent styling.
+
+```css
+.document-editor {
+  --inkkit-font-size: 17px;
+  --inkkit-reading-width: 48rem;
+  --inkkit-padding-inline: 24px;
+  --inkkit-accent-color: #286343;
+}
+```
+
+`EditorOptions.labels` is `Partial<EditorLabels>`. Omitted labels keep their defaults; overrides are inserted safely as text. The label keys are:
+
+| Area                         | Label keys                                                                                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Editing surfaces             | `formattedEditor`, `plainTextEditor`, `sourceEditor`, `placeholder`.                                                                                                |
+| Code and callouts            | `copyCode`, `expandCallout`, `collapseCallout`.                                                                                                                     |
+| Diagram status and footnotes | `diagramRendering`, `diagramUnavailable`, `footnote`; the latter two prefix a diagnostic or authored label.                                                         |
+| Table operations             | `tableAddRow`, `tableAddColumn`, `tableDeleteRow`, `tableDeleteColumn`, `tableAlignLeft`, `tableAlignCenter`, `tableAlignRight`, `tableMoveColumn`, `tableMoveRow`. |
+
+The host owns its localisation catalogue, toolbar and menu labels. Labels are fixed at mount time.
+
+`EditorOptions.keymap` and `setKeymap(bindings: Keymap)` configure bindings in ProseMirror key notation. Formatting names are `heading1` through `heading6`, `paragraph`, `bold`, `italic`, `strikethrough`, `highlight`, `code`, `codeBlock`, `quote`, `bulletList`, `orderedList` and `taskList`. Formatting has no default host bindings.
+
+History names are `undo` and `redo`. Table names are `tableInsert`, `tableAddRowBefore`, `tableAddRowAfter`, `tableAddColumnBefore`, `tableAddColumnAfter`, `tableDeleteRow`, `tableDeleteColumn`, `tableDeleteTable`, `tableAlignLeft`, `tableAlignCenter`, `tableAlignRight`, `tableMoveRowUp`, `tableMoveRowDown`, `tableMoveColumnLeft`, `tableMoveColumnRight`, `tableSortRows` and `tableExit`.
+
+Omitted history bindings keep `Mod-z` for undo and `Mod-y` / `Shift-Mod-z` for redo; an explicit empty array disables configurable defaults for that name. Omitted `tableExit` bindings keep `Mod-Enter` and `Enter` in table context; an explicit empty array disables both. Unbound default history keys are consumed to prevent the browser's separate undo stack from changing source/TXT. The same history bindings apply across formatted/source/TXT surfaces. Formatted and table commands are disabled outside their applicable context and while read-only. Keyboard dispatch follows the same mutation guards as facade calls. Hosts can query command availability to present current shortcut/menu state.

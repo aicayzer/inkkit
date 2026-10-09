@@ -6,28 +6,64 @@
     <title>InkKit playground</title>
   </head>
   <body>
-    <nav id="toolbar">
-      <button id="bold">Bold</button><button id="table">Insert table</button
-      ><button id="plain">Paste as Plain Text</button
-      ><button id="source">Copy as Markdown</button
-      ><button id="mode">Load as TXT</button>
+    <header>
+      <h1>InkKit development playground</h1>
+      <p>
+        Disposable fixtures. Clipboard permissions depend on your browser.
+        Browser checks do not prove native clipboard or IME compatibility.
+      </p>
+    </header>
+    <nav id="toolbar" aria-label="Editor controls">
+      <label
+        >Fixture
+        <select id="fixture"></select
+      ></label>
+      <label
+        >Configuration
+        <select id="configuration">
+          <option>minimal</option>
+          <option>rich</option>
+        </select></label
+      >
+      <label
+        >Image adapter
+        <select id="adapter">
+          <option value="normal">Success</option>
+          <option value="reject">Reject</option>
+          <option value="hold">Manual release</option>
+        </select></label
+      >
+      <button id="reset">Reset fixture</button>
+      <button id="replace-document">Replace document</button>
+      <button id="read-only">Make read-only</button>
+      <button id="release">Release image operations</button>
+      <button id="import-image">Import fixture image</button>
+      <button id="bold">Bold</button><button id="table">Insert table</button>
+      <button id="plain">Paste as Plain Text</button>
+      <button id="source">Copy as Markdown</button>
+      <button id="copy-readable">Copy readable content</button>
+      <button id="printable">Capture printable output</button>
+      <button id="mode">Load as TXT</button>
       <button id="editing-mode">Edit source</button>
       <button id="undo">Undo</button><button id="redo">Redo</button>
-      <select id="table-action" aria-label="Table operation">
-        <option value="moveRowUp">Move row up</option>
-        <option value="moveRowDown">Move row down</option>
-        <option value="moveColumnLeft">Move column left</option>
-        <option value="moveColumnRight">Move column right</option>
-        <option value="sortRows">Sort rows</option>
-      </select>
-      <select id="comparison" aria-label="Sort comparison">
-        <option value="text">Text</option>
-        <option value="number">Number</option>
-      </select>
-      <select id="sort-order" aria-label="Sort order">
-        <option value="ascending">Ascending</option>
-        <option value="descending">Descending</option>
-      </select>
+      <label
+        >Table operation
+        <select id="table-action"></select
+      ></label>
+      <label
+        >Sort comparison
+        <select id="comparison">
+          <option value="text">Text</option>
+          <option value="number">Number</option>
+        </select></label
+      >
+      <label
+        >Sort order
+        <select id="sort-order">
+          <option value="ascending">Ascending</option>
+          <option value="descending">Descending</option>
+        </select></label
+      >
       <button id="apply-table">Apply to table</button>
       <input id="query" aria-label="Find text" placeholder="Find text" />
       <input
@@ -35,14 +71,31 @@
         aria-label="Replacement text"
         placeholder="Replace with"
       />
-      <button id="find">Find next</button>
-      <button id="replace">Replace</button>
-      <button id="replace-all">Replace all</button>
-      <select id="headings" aria-label="Document heading"></select>
-      <button id="navigate-heading">Go to heading</button>
+      <button id="find">Find next</button><button id="replace">Replace</button
+      ><button id="replace-all">Replace all</button>
+      <select id="headings" aria-label="Document heading"></select
+      ><button id="navigate-heading">Go to heading</button>
     </nav>
-    <main id="editor"></main>
+    <aside id="host-content">
+      <p class="ProseMirror">Unrelated host paragraph</p>
+      <table class="milkdown-table-block">
+        <tbody>
+          <tr>
+            <td>Host table cell</td>
+          </tr>
+        </tbody>
+      </table>
+      <textarea aria-label="Host text">Host text</textarea>
+    </aside>
+    <main id="editors">
+      <div id="editor" aria-label="Fixture editor"></div>
+      <div id="second-editor" hidden aria-label="Second fixture editor"></div>
+    </main>
     <output id="status" role="status"></output>
+    <details open>
+      <summary>Structured observations</summary>
+      <pre id="observations" aria-label="Structured observations"></pre>
+    </details>
     <script type="module" src="/main.ts"></script>
   </body>
 </html>

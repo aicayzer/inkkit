@@ -14,6 +14,7 @@ export const taskListPlugin = $prose(
       key: new PluginKey('taskToggle'),
       props: {
         handleClickOn(view, _pos, node, nodePos, event) {
+          if (!view.editable) return false
           if (node.type.name !== 'list_item' || node.attrs.checked == null)
             return false
           const target = event.target as HTMLElement

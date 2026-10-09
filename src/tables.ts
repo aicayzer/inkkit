@@ -1,3 +1,4 @@
+import { editorLabels, type EditorLabels } from './labels'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
@@ -27,7 +28,7 @@ import {
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import type { Transaction } from '@milkdown/kit/prose/state'
+import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { keymap } from '@milkdown/kit/prose/keymap'
 import { $prose } from '@milkdown/kit/utils'
 import { clipboardText } from './clipboard'
@@ -50,6 +51,88 @@ export type TableCommand =
   | 'moveColumnRight'
   | 'sortRows'
   | 'exit'
+export const tableCommands: readonly TableCommand[] = [
+  'insert',
+  'addRowBefore',
+  'addRowAfter',
+  'addColumnBefore',
+  'addColumnAfter',
+  'deleteRow',
+  'deleteColumn',
+  'deleteTable',
+  'alignLeft',
+  'alignCenter',
+  'alignRight',
+  'moveRowUp',
+  'moveRowDown',
+  'moveColumnLeft',
+  'moveColumnRight',
+  'sortRows',
+  'exit',
+]
+
+export function tableContext(state: EditorState):
+  | {
+      row: number
+      column: number
+      rows: number
+      columns: number
+    }
+  | undefined {
+  if (!isInTable(state)) return undefined
+  const rect = selectedRect(state)
+  return {
+    row: rect.top,
+    column: rect.left,
+    rows: rect.map.height,
+    columns: rect.map.width,
+  }
+}
+
+/** Checks the same default operations without dispatching a transaction. */
+export function tableAvailability(ctx: Ctx): Record<TableCommand, boolean> {
+  const view = ctx.get(editorViewCtx)
+  const state = view.state
+  const commands = ctx.get(commandsCtx)
+  const available = Object.fromEntries(
+    tableCommands.map((name) => [name, false]),
+  ) as Record<TableCommand, boolean>
+  available.insert = commands.get(insertTableCommand.key)({ row: 3, col: 2 })(
+    state,
+  )
+  const actions = {
+    addRowBefore,
+    addRowAfter,
+    addColumnBefore,
+    addColumnAfter,
+    deleteRow,
+    deleteColumn,
+    deleteTable,
+  }
+  for (const [name, action] of Object.entries(actions))
+    available[name as keyof typeof actions] = action(state)
+  available.exit = commands.get(exitTable.key)()(state)
+  if (!isInTable(state)) return available
+  const rect = selectedRect(state)
+  available.alignLeft = available.alignCenter = available.alignRight = true
+  if (!editableTable(rect.table)) return available
+  available.moveRowUp = rect.top > 1
+  available.moveRowDown = rect.top > 0 && rect.bottom < rect.map.height
+  available.moveColumnLeft = rect.left > 0
+  available.moveColumnRight = rect.right < rect.map.width
+  const body: { key: string; index: number }[] = []
+  rect.table.forEach((row, _offset, index) => {
+    if (index)
+      body.push({ key: clipboardText(row.child(rect.left).content), index })
+  })
+  const sorted = [...body].sort(
+    (a, b) =>
+      compareCells(a.key, b.key, 'text', 'ascending') || a.index - b.index,
+  )
+  available.sortRows = sorted.some((row, index) => row !== body[index])
+  return available
+}
+
 export interface TableOptions {
   rows?: number
   columns?: number
@@ -57,16 +140,24 @@ export interface TableOptions {
   order?: 'ascending' | 'descending'
   comparison?: 'text' | 'number'
 }
-const labels = {
-  add_row: 'Add row',
-  add_col: 'Add column',
-  delete_row: 'Delete row',
-  delete_col: 'Delete column',
-  align_col_left: 'Align left',
-  align_col_center: 'Align center',
-  align_col_right: 'Align right',
-  col_drag_handle: 'Move column',
-  row_drag_handle: 'Move row',
+const tableLabels: Record<string, keyof EditorLabels> = {
+  add_row: 'tableAddRow',
+  add_col: 'tableAddColumn',
+  delete_row: 'tableDeleteRow',
+  delete_col: 'tableDeleteColumn',
+  align_col_left: 'tableAlignLeft',
+  align_col_center: 'tableAlignCenter',
+  align_col_right: 'tableAlignRight',
+  col_drag_handle: 'tableMoveColumn',
+  row_drag_handle: 'tableMoveRow',
+}
+
+function tableButton(label: string): string {
+  const span = document.createElement('span')
+  span.setAttribute('role', 'img')
+  span.setAttribute('aria-label', label)
+  span.textContent = label
+  return span.outerHTML
 }
 export const tablePlugins = [
   moveRowCommand,
@@ -76,7 +167,7 @@ export const tablePlugins = [
     ctx.update(tableBlockConfig.key, (config) => ({
       ...config,
       renderButton: (type) =>
-        `<span role="img" aria-label="${labels[type]}">${labels[type]}</span>`,
+        tableButton(editorLabels(ctx)[tableLabels[type]!]),
     }))
   },
   tableBlock,

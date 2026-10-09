@@ -1,6 +1,9 @@
 export { InkKitEditor } from './editor'
 export type {
   EditorEvents,
+  EditorOptions,
+  TextInputPreferences,
+  CommandState,
   EditingMode,
   CaretState,
   Mark,
@@ -27,3 +30,5 @@ export type {
   PrintableDocument,
   PrintableWarning,
 } from './types'
+
+export type { EditorLabels } from './labels'

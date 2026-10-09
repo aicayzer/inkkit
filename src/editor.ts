@@ -1,5 +1,7 @@
 import {
   Editor,
+  commandsCtx,
+  type CmdKey,
   defaultValueCtx,
   editorViewCtx,
   parserCtx,
@@ -15,7 +17,7 @@ import {
   clipboardContent,
 } from './clipboard'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
-import { history } from '@milkdown/kit/plugin/history'
+import { history, historyKeymap } from '@milkdown/kit/plugin/history'
 import {
   closeHistory,
   undo as undoHistory,
@@ -48,6 +50,7 @@ import {
 } from '@milkdown/kit/preset/commonmark'
 import {
   strikethroughKeymap,
+  tableKeymap,
   toggleStrikethroughCommand,
 } from '@milkdown/kit/preset/gfm'
 import {
@@ -59,6 +62,7 @@ import {
   type ResolvedPos,
 } from '@milkdown/kit/prose/model'
 import { keydownHandler, keymap } from '@milkdown/kit/prose/keymap'
+import { goToNextCell } from '@milkdown/kit/prose/tables'
 import { liftListItem } from '@milkdown/kit/prose/schema-list'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { findWrapping, liftTarget } from '@milkdown/kit/prose/transform'
@@ -80,6 +84,7 @@ import {
   type $UserKeymap,
 } from '@milkdown/kit/utils'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
+import { labelsCtx, defaultLabels, type EditorLabels } from './labels'
 import { createDialect, stringifyOptions } from './dialect'
 import { Preservation } from './preserve'
 import {
@@ -107,6 +112,9 @@ import { imageView } from './images'
 import {
   tablePlugins,
   tableCommand,
+  tableCommands,
+  tableAvailability,
+  tableContext,
   configureTableMovement,
   type TableCommand,
   type TableOptions,
@@ -184,13 +192,16 @@ export type FormatCommand =
   | 'taskList'
   | 'link'
 
-/** The bindings the app sets, by shortcut name; each runs a format command. */
+/** Host bindings by documented formatting, history or table shortcut name. */
 export type Keymap = Record<string, string[]>
 
 const shortcutCommands: Record<string, [FormatCommand, number?]> = {
   heading1: ['heading', 1],
   heading2: ['heading', 2],
   heading3: ['heading', 3],
+  heading4: ['heading', 4],
+  heading5: ['heading', 5],
+  heading6: ['heading', 6],
   paragraph: ['paragraph'],
   bold: ['bold'],
   italic: ['italic'],
@@ -204,9 +215,51 @@ const shortcutCommands: Record<string, [FormatCommand, number?]> = {
   taskList: ['taskList'],
 }
 
+export interface TextInputPreferences {
+  spellcheck?: boolean
+  autocorrect?: boolean
+  autocapitalize?: 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters'
+}
+
+export interface EditorOptions {
+  images?: ImageAdapter
+  editable?: boolean
+  textInput?: TextInputPreferences
+  labels?: Partial<EditorLabels>
+  keymap?: Keymap
+}
+
+export interface CommandState {
+  documentId: string
+  generation: number
+  revision: number
+  format: 'md' | 'txt'
+  mode: EditingMode
+  editable: boolean
+  composing: boolean
+  pending: boolean
+  caret: CaretState
+  table?: { row: number; column: number; rows: number; columns: number }
+  commands: {
+    undo: boolean
+    redo: boolean
+    insertText: boolean
+    paste: boolean
+    replace: boolean
+    replaceSource: boolean
+    insertImages: boolean
+    insertPaths: boolean
+    insertFootnote: boolean
+    editReferenceDefinition: boolean
+    format: Record<FormatCommand, boolean>
+    table: Record<TableCommand, boolean>
+  }
+}
+
 export interface EditorEvents {
   changed(markdown: string, generation: number): void
   stateChanged(state: CaretState): void
+  commandStateChanged?(state: CommandState): void
   openLink(href: string): void
   copy(text: string): void
   error?(error: Error): void
@@ -471,12 +524,22 @@ export class InkKitEditor {
   private pasteController!: PasteController
   private plain!: HTMLTextAreaElement
   private root!: HTMLElement
+  private ownsRootClass = false
   private clickHandler?: (event: MouseEvent) => void
   private footnoteKeyHandler?: (event: KeyboardEvent) => void
   private copyHandler?: (event: ClipboardEvent) => void
   private originalSource = ''
   private generation = 0
+  private reportingSuppressed = false
   private loading = false
+  private writable = true
+  private inputPreferences: TextInputPreferences = {}
+  private policyEpoch = 0
+  private literalKeys: (view: EditorView, event: KeyboardEvent) => boolean =
+    () => false
+  private configuredKeys: Keymap = {}
+  private readOnlyKeys: (view: EditorView, event: KeyboardEvent) => boolean =
+    () => false
   private changePlugin = $prose(
     () =>
       new Plugin({
@@ -522,8 +585,11 @@ export class InkKitEditor {
 
   private constructor(
     private readonly events: EditorEvents,
-    private readonly options: { images?: ImageAdapter },
-  ) {}
+    private readonly options: EditorOptions,
+  ) {
+    this.writable = options.editable ?? true
+    this.inputPreferences = { ...options.textInput }
+  }
 
   private context(): DocumentContext {
     return {
@@ -556,6 +622,244 @@ export class InkKitEditor {
         'An image import is in progress',
       )
   }
+
+  private assertMutation(generation = this.generation): void {
+    this.assertCurrent(generation)
+    if (!this.writable)
+      throw new InkKitError('read-only', 'The editor is read-only')
+  }
+
+  private get composing(): boolean {
+    return this.literalSurface
+      ? this.plainComposing
+      : this.editor.ctx.get(editorViewCtx).composing
+  }
+
+  get editable(): boolean {
+    this.assertAlive()
+    return this.writable
+  }
+
+  setEditable(editable: boolean): void {
+    this.assertAlive()
+    if (this.composing)
+      throw new InkKitError('composition', 'Text composition is in progress')
+    if (this.writable === editable) return
+    const suppressed = this.reportingSuppressed
+    this.reportingSuppressed = true
+    try {
+      this.writable = editable
+      this.policyEpoch += 1
+      if (!editable) this.pasteController.cancelPending()
+      this.editor.ctx
+        .get(editorViewCtx)
+        .dom.dispatchEvent(new Event('inkkit-cancel-resize'))
+      this.applyInputPolicy()
+    } finally {
+      this.reportingSuppressed = suppressed
+    }
+    this.publishCommandState()
+  }
+
+  setTextInputPreferences(preferences: TextInputPreferences): void {
+    this.assertAlive()
+    if (this.composing)
+      throw new InkKitError('composition', 'Text composition is in progress')
+    const suppressed = this.reportingSuppressed
+    this.reportingSuppressed = true
+    try {
+      this.inputPreferences = { ...preferences }
+      this.applyInputPolicy()
+    } finally {
+      this.reportingSuppressed = suppressed
+    }
+    this.publishCommandState()
+  }
+
+  private applyInputPolicy(): void {
+    const view = this.editor.ctx.get(editorViewCtx)
+    const attributes =
+      typeof view.props.attributes === 'function'
+        ? view.props.attributes(view.state)
+        : view.props.attributes
+    view.setProps({
+      editable: () => this.writable && !this.literalSurface,
+      attributes: {
+        ...attributes,
+        role: 'textbox',
+        'aria-multiline': 'true',
+        'aria-label':
+          this.options.labels?.formattedEditor ?? defaultLabels.formattedEditor,
+      },
+    })
+    this.plain.readOnly = !this.writable
+    for (const surface of [view.dom, this.plain]) {
+      for (const name of [
+        'spellcheck',
+        'autocorrect',
+        'autocapitalize',
+      ] as const) {
+        const value = this.inputPreferences[name]
+        if (value == null) surface.removeAttribute(name)
+        else
+          surface.setAttribute(
+            name,
+            name === 'autocorrect' ? (value ? 'on' : 'off') : String(value),
+          )
+      }
+    }
+  }
+
+  private publishCommandState(): void {
+    if (
+      !this.ready ||
+      this.loading ||
+      this.reportingSuppressed ||
+      this.destroyed
+    )
+      return
+    this.events.commandStateChanged?.(this.commandState())
+  }
+
+  commandState(expectedGeneration = this.generation): CommandState {
+    this.assertAlive()
+    if (!this.ready)
+      throw new InkKitError('not-ready', 'No document has been loaded')
+    if (expectedGeneration !== this.generation)
+      throw new InkKitError('stale-document', 'Document changed')
+    const view = this.editor.ctx.get(editorViewCtx)
+    const { state } = view
+    const mutable =
+      this.writable && !this.composing && !this.pasteController.pending
+    const formatted = mutable && !this.literalSurface
+    const manager = this.editor.ctx.get(commandsCtx)
+    const check = <T>(key: CmdKey<T>, payload?: T): boolean =>
+      formatted && manager.get(key)(payload)(state)
+    const format: Record<FormatCommand, boolean> = {
+      heading:
+        check(wrapInHeadingCommand.key, 1) || check(turnIntoTextCommand.key),
+      paragraph: check(turnIntoTextCommand.key),
+      bold: check(toggleStrongCommand.key),
+      italic: check(toggleEmphasisCommand.key),
+      strikethrough: check(toggleStrikethroughCommand.key),
+      highlight: check(toggleHighlightCommand.key),
+      code:
+        formatted &&
+        (state.selection.empty
+          ? state.selection.$from.parent.inlineContent &&
+            state.selection.$from.parent.type.allowsMarkType(
+              inlineCodeSchema.type(this.editor.ctx),
+            )
+          : check(toggleInlineCodeCommand.key)),
+      codeBlock:
+        check(createCodeBlockCommand.key, '') || check(turnIntoTextCommand.key),
+      quote: formatted && this.canQuote(state),
+      bulletList:
+        formatted &&
+        (innermostListDepth(textBounds(state).$from) != null ||
+          check(wrapInBulletListCommand.key)),
+      orderedList:
+        formatted &&
+        (innermostListDepth(textBounds(state).$from) != null ||
+          check(wrapInOrderedListCommand.key)),
+      taskList:
+        formatted &&
+        (innermostListDepth(textBounds(state).$from) != null ||
+          check(wrapInBulletListCommand.key)),
+      link: check(toggleLinkCommand.key, {}),
+    }
+    const tables = formatted
+      ? tableAvailability(this.editor.ctx)
+      : (Object.fromEntries(
+          tableCommands.map((name) => [name, false]),
+        ) as Record<TableCommand, boolean>)
+    return {
+      documentId: this.documentId,
+      generation: this.generation,
+      revision: this.revision,
+      format: this.formatType,
+      mode: this.editingMode,
+      editable: this.writable,
+      composing: this.composing,
+      pending: this.pasteController.pending,
+      caret: this.literalSurface
+        ? { marks: [], block: { type: 'paragraph' }, quoted: false }
+        : caretState(state),
+      table: this.literalSurface ? undefined : tableContext(state),
+      commands: {
+        undo: mutable && undoHistory(state),
+        redo: mutable && redoHistory(state),
+        insertText: mutable,
+        paste: mutable,
+        replace: mutable,
+        replaceSource: mutable,
+        insertImages: formatted && !!this.options.images,
+        insertPaths: mutable,
+        insertFootnote: formatted,
+        editReferenceDefinition:
+          formatted && referenceDefinitions(state.doc).size > 0,
+        format,
+        table: tables,
+      },
+    }
+  }
+
+  private canQuote(state: EditorState): boolean {
+    const { $from, $to } = textBounds(state)
+    if (quoted($from, $to)) {
+      const range = $from.blockRange(
+        $to,
+        (node) => node.type.name === 'blockquote',
+      )
+      return !!range && liftTarget(range) != null
+    }
+    const type = blockquoteSchema.type(this.editor.ctx)
+    let range = $from.blockRange($to)
+    if (range && findWrapping(range, type)) return true
+    const depth = outermostListDepth($from)
+    if (depth == null) return false
+    range = new NodeRange(
+      state.doc.resolve($from.before(depth)),
+      state.doc.resolve($from.after(depth)),
+      depth - 1,
+    )
+    return !!findWrapping(range, type)
+  }
+
+  private policyPlugin = $prose(
+    () =>
+      new Plugin({
+        key: new PluginKey('inkkitInputPolicy'),
+        filterTransaction: (tr) =>
+          this.loading ||
+          this.writable ||
+          (!tr.docChanged && !tr.storedMarksSet),
+        props: {
+          editable: () => this.writable && !this.literalSurface,
+          handleDOMEvents: {
+            compositionstart: () => {
+              queueMicrotask(() => this.publishCommandState())
+              return false
+            },
+            compositionend: () => {
+              queueMicrotask(() => this.publishCommandState())
+              return false
+            },
+            beforeinput: (_view, event) => {
+              if (this.writable) return false
+              event.preventDefault()
+              return true
+            },
+            drop: (_view, event) => {
+              if (this.writable) return false
+              event.preventDefault()
+              return true
+            },
+          },
+        },
+        view: () => ({ update: () => this.publishCommandState() }),
+      }),
+  )
 
   private get literalSurface(): boolean {
     return this.formatType === 'txt' || this.mode === 'source'
@@ -600,27 +904,38 @@ export class InkKitEditor {
         this.plain.value.length,
       )
     }
-    this.updateSurface()
+    const suppressed = this.reportingSuppressed
+    this.reportingSuppressed = true
+    try {
+      this.updateSurface()
+    } finally {
+      this.reportingSuppressed = suppressed
+    }
     this.events.stateChanged(
       this.literalSurface
         ? { marks: [], block: { type: 'paragraph' }, quoted: false }
         : caretState(this.editor.ctx.get(editorViewCtx).state),
     )
+    this.publishCommandState()
     return true
   }
 
   private updateSurface(): void {
     this.plain.hidden = !this.literalSurface
+    this.applyInputPolicy()
     this.plain.setAttribute(
       'aria-label',
-      this.formatType === 'txt' ? 'Plain text editor' : 'Markdown source',
+      this.formatType === 'txt'
+        ? (this.options.labels?.plainTextEditor ??
+            defaultLabels.plainTextEditor)
+        : (this.options.labels?.sourceEditor ?? defaultLabels.sourceEditor),
     )
     this.editor.ctx.get(editorViewCtx).dom.parentElement!.hidden =
       this.literalSurface
   }
 
   replaceSource(text: string, expectedGeneration?: number): boolean {
-    this.assertCurrent(expectedGeneration)
+    this.assertMutation(expectedGeneration)
     return this.applySource(text, true)
   }
 
@@ -630,6 +945,8 @@ export class InkKitEditor {
     from?: number,
     to?: number,
   ): boolean {
+    if (!this.writable)
+      throw new InkKitError('read-only', 'The editor is read-only')
     if (typeof text !== 'string') throw new TypeError('Source must be a string')
     if (text === this.currentText()) return false
     const view = this.editor.ctx.get(editorViewCtx)
@@ -694,13 +1011,13 @@ export class InkKitEditor {
   }
 
   undo(expectedGeneration?: number): boolean {
-    this.assertCurrent(expectedGeneration)
+    this.assertMutation(expectedGeneration)
     const view = this.editor.ctx.get(editorViewCtx)
     return undoHistory(view.state, view.dispatch)
   }
 
   redo(expectedGeneration?: number): boolean {
-    this.assertCurrent(expectedGeneration)
+    this.assertMutation(expectedGeneration)
     const view = this.editor.ctx.get(editorViewCtx)
     return redoHistory(view.state, view.dispatch)
   }
@@ -924,7 +1241,7 @@ export class InkKitEditor {
   }
 
   async paste(input: ClipboardInput): Promise<void> {
-    this.assertCurrent()
+    this.assertMutation()
     if (this.literalSurface || input.plainText) {
       this.pasteAsPlainText(
         this.mode === 'source' && this.formatType === 'md'
@@ -942,7 +1259,7 @@ export class InkKitEditor {
   }
 
   pasteAsPlainText(text: string): void {
-    this.assertCurrent()
+    this.assertMutation()
     if (this.literalSurface) {
       this.replaceLiteralSelection(text, true, this.formatType === 'md')
     } else {
@@ -986,7 +1303,7 @@ export class InkKitEditor {
   }
 
   table(command: TableCommand, options?: TableOptions): boolean {
-    this.assertCurrent()
+    this.assertMutation()
     if (this.literalSurface) return false
     return tableCommand(this.editor.ctx, command, options)
   }
@@ -1006,6 +1323,7 @@ export class InkKitEditor {
     }
     this.plain.remove()
     await this.editor.destroy()
+    if (this.ownsRootClass) this.root.classList.remove('inkkit-root')
   }
 
   // The app's bindings, replaced whole whenever they change; the plugin stays.
@@ -1039,7 +1357,8 @@ export class InkKitEditor {
       parsed.descendants((node) => {
         if (node.type.name === 'image' || isMermaid(node)) portable = true
       })
-      const cut = event.type === 'cut'
+      const cut = event.type === 'cut' && this.writable
+      const policyEpoch = this.policyEpoch
       const epoch = this.documentEpoch
       if (portable && this.events.clipboard) {
         void this.clipboardSnapshot(false)
@@ -1055,9 +1374,10 @@ export class InkKitEditor {
               )
             await this.events.clipboard!(content)
             if (cut) {
-              this.assertCurrent(snapshot.generation)
+              this.assertMutation(snapshot.generation)
               if (
                 epoch !== this.documentEpoch ||
+                policyEpoch !== this.policyEpoch ||
                 snapshot.revision !== this.revision
               )
                 throw new InkKitError(
@@ -1095,10 +1415,12 @@ export class InkKitEditor {
   static async mount(
     root: HTMLElement,
     events: EditorEvents,
-    options: { images?: ImageAdapter } = {},
+    options: EditorOptions = {},
   ): Promise<InkKitEditor> {
     const instance = new InkKitEditor(events, options)
     instance.root = root
+    instance.ownsRootClass = !root.classList.contains('inkkit-root')
+    root.classList.add('inkkit-root')
     instance.pasteController = new PasteController({
       ctx: () => instance.editor.ctx,
       context: () => instance.context(),
@@ -1108,11 +1430,16 @@ export class InkKitEditor {
           error instanceof Error ? error : new Error(String(error)),
         ),
       literalText: () => instance.literalSurface,
-      editable: () => !instance.literalSurface,
+      editable: () => instance.writable && !instance.literalSurface,
+      onPendingChanged: () => instance.publishCommandState(),
     })
     instance.editor = await Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, root)
+        ctx.update(labelsCtx.key, () => ({
+          ...defaultLabels,
+          ...options.labels,
+        }))
         ctx.set(defaultValueCtx, '')
         ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
         // The preset also binds Mod-[ and Mod-] here; the app uses those for back and forward.
@@ -1134,6 +1461,8 @@ export class InkKitEditor {
             }
             return cleared
           })
+        unbind(tableKeymap, ['NextCell', 'PrevCell'])
+        unbind(historyKeymap)
         unbind(strongKeymap)
         unbind(emphasisKeymap)
         unbind(inlineCodeKeymap)
@@ -1152,7 +1481,13 @@ export class InkKitEditor {
           scrollMargin: { top: 8, right: 0, bottom: 24, left: 0 },
         }))
       })
-      .use(caretStatePlugin(events, () => !instance.literalSurface))
+      .use(labelsCtx)
+      .use(
+        caretStatePlugin(
+          events,
+          () => !instance.loading && !instance.literalSurface,
+        ),
+      )
       .use(instance.pasteController.plugin)
       .use(visibleClipboard)
       .use(instance.keymapPlugin)
@@ -1173,12 +1508,13 @@ export class InkKitEditor {
       .use(mermaidPreview((error) => events.error?.(error)))
       .use(selectionPlugin)
       .use($prose(() => search()))
+      .use(instance.policyPlugin)
       .use(options.images ? imageView(options.images) : [])
       .create()
     configureTableMovement(instance.editor.ctx, () => {
       try {
         instance.assertCurrent()
-        return !instance.literalSurface
+        return instance.writable && !instance.literalSurface
       } catch {
         return false
       }
@@ -1188,7 +1524,11 @@ export class InkKitEditor {
     instance.plain.setAttribute('aria-label', 'Plain text editor')
     instance.plain.hidden = true
     root.append(instance.plain)
-    instance.plain.addEventListener('beforeinput', () => {
+    instance.plain.addEventListener('beforeinput', (event) => {
+      if (!instance.writable) {
+        event.preventDefault()
+        return
+      }
       if (instance.ready && instance.literalSurface)
         instance.beforePlainInput = {
           from: instance.plain.selectionStart,
@@ -1197,6 +1537,10 @@ export class InkKitEditor {
     })
     instance.plain.addEventListener('input', () => {
       if (!instance.ready || !instance.literalSurface) return
+      if (!instance.writable) {
+        instance.plain.value = instance.currentText()
+        return
+      }
       try {
         instance.applySource(
           editedPlainSource(instance.currentText(), instance.plain.value),
@@ -1213,20 +1557,19 @@ export class InkKitEditor {
       }
     })
     instance.plain.addEventListener('keydown', (event) => {
-      if (instance.plainComposing || !(event.metaKey || event.ctrlKey)) return
-      if (event.key.toLowerCase() !== 'z' && event.key.toLowerCase() !== 'y')
-        return
-      event.preventDefault()
-      try {
-        if (event.key.toLowerCase() === 'y' || event.shiftKey) instance.redo()
-        else instance.undo()
-      } catch (error) {
-        events.error?.(
-          error instanceof Error ? error : new Error(String(error)),
-        )
-      }
+      if (instance.plainComposing) return
+      if (instance.literalKeys(instance.editor.ctx.get(editorViewCtx), event))
+        event.preventDefault()
     })
+    for (const event of ['select', 'keyup', 'click'])
+      instance.plain.addEventListener(event, () =>
+        instance.publishCommandState(),
+      )
     instance.plain.addEventListener('paste', (event) => {
+      if (!instance.writable) {
+        event.preventDefault()
+        return
+      }
       if (!event.clipboardData) return
       event.preventDefault()
       void instance
@@ -1238,9 +1581,11 @@ export class InkKitEditor {
     })
     instance.plain.addEventListener('compositionstart', () => {
       instance.plainComposing = true
+      instance.publishCommandState()
     })
     instance.plain.addEventListener('compositionend', () => {
       instance.plainComposing = false
+      instance.publishCommandState()
     })
     const activateFootnote = (event: MouseEvent | KeyboardEvent): boolean => {
       const element = (event.target as HTMLElement).closest(
@@ -1339,7 +1684,7 @@ export class InkKitEditor {
               ? withReferenceMetadata(output.html, metadata)
               : output.html,
           )
-          if (event.type === 'cut')
+          if (event.type === 'cut' && instance.writable)
             view.dispatch(view.state.tr.deleteSelection().scrollIntoView())
         } catch (error) {
           events.error?.(
@@ -1354,7 +1699,8 @@ export class InkKitEditor {
         const epoch = instance.documentEpoch,
           revision = instance.revision
         const { from, to } = view.state.selection
-        const cut = event.type === 'cut'
+        const cut = event.type === 'cut' && instance.writable
+        const policyEpoch = instance.policyEpoch
         void instance
           .clipboardSnapshot(false)
           .then(async (content) => {
@@ -1369,9 +1715,10 @@ export class InkKitEditor {
               )
             await events.clipboard!(content)
             if (cut) {
-              instance.assertCurrent()
+              instance.assertMutation()
               if (
                 epoch !== instance.documentEpoch ||
+                policyEpoch !== instance.policyEpoch ||
                 revision !== instance.revision
               )
                 throw new InkKitError(
@@ -1403,11 +1750,14 @@ export class InkKitEditor {
     }
     root.addEventListener('copy', instance.copyHandler, true)
     root.addEventListener('cut', instance.copyHandler, true)
+    instance.applyInputPolicy()
+    instance.setKeymap(options.keymap ?? {})
     return instance
   }
 
   loadDocument(input: DocumentInput): void {
     this.assertAlive()
+    this.ready = false
     this.pasteController.cancelPending()
     this.documentEpoch += 1
     this.outlineEpoch += 1
@@ -1424,8 +1774,14 @@ export class InkKitEditor {
     this.load(input.format === 'txt' ? '' : input.text, input.generation)
     this.originalSource = input.text
     this.lastMarkdown = input.text
-    this.ready = true
     this.updateSurface()
+    this.ready = true
+    this.events.stateChanged(
+      this.literalSurface
+        ? { marks: [], block: { type: 'paragraph' }, quoted: false }
+        : caretState(this.editor.ctx.get(editorViewCtx).state),
+    )
+    this.publishCommandState()
   }
 
   reloadDocument(input: DocumentInput): void {
@@ -1441,30 +1797,36 @@ export class InkKitEditor {
     const top = this.root.scrollTop
     const plainTop = this.plain.scrollTop,
       plainLeft = this.plain.scrollLeft
-    this.loadDocument(input)
-    if (
-      previousFormat === 'md' &&
-      input.format === 'md' &&
-      previousMode === 'source'
-    )
-      this.setEditingMode('source', input.generation)
-    if (this.literalSurface)
-      this.plain.setSelectionRange(
-        Math.min(at, this.plain.value.length),
-        Math.min(end, this.plain.value.length),
+    this.reportingSuppressed = true
+    try {
+      this.loadDocument(input)
+      if (
+        previousFormat === 'md' &&
+        input.format === 'md' &&
+        previousMode === 'source'
       )
-    else
-      view.dispatch(
-        view.state.tr.setSelection(
-          Selection.near(
-            view.state.doc.resolve(Math.min(at, view.state.doc.content.size)),
+        this.setEditingMode('source', input.generation)
+      if (this.literalSurface)
+        this.plain.setSelectionRange(
+          Math.min(at, this.plain.value.length),
+          Math.min(end, this.plain.value.length),
+        )
+      else
+        view.dispatch(
+          view.state.tr.setSelection(
+            Selection.near(
+              view.state.doc.resolve(Math.min(at, view.state.doc.content.size)),
+            ),
           ),
-        ),
-      )
-    this.root.scrollTop = top
-    if (wasLiteral && this.literalSurface) {
-      this.plain.scrollTop = plainTop
-      this.plain.scrollLeft = plainLeft
+        )
+      this.root.scrollTop = top
+      if (wasLiteral && this.literalSurface) {
+        this.plain.scrollTop = plainTop
+        this.plain.scrollLeft = plainLeft
+      }
+    } finally {
+      this.reportingSuppressed = false
+      this.publishCommandState()
     }
   }
 
@@ -1493,7 +1855,6 @@ export class InkKitEditor {
         new SearchQuery({ search: '' }),
       ),
     )
-    this.events.stateChanged(caretState(view.state))
   }
 
   find(text: string, expectedGeneration?: number): void {
@@ -1540,7 +1901,7 @@ export class InkKitEditor {
     replacement: string,
     expectedGeneration?: number,
   ): boolean {
-    this.assertCurrent(expectedGeneration)
+    this.assertMutation(expectedGeneration)
     return this.replaceMatches(search, replacement, false) > 0
   }
 
@@ -1549,7 +1910,7 @@ export class InkKitEditor {
     replacement: string,
     expectedGeneration?: number,
   ): number {
-    this.assertCurrent(expectedGeneration)
+    this.assertMutation(expectedGeneration)
     return this.replaceMatches(search, replacement, true)
   }
 
@@ -1663,7 +2024,7 @@ export class InkKitEditor {
       generation === this.generation
     )
       return false
-    this.assertCurrent(generation)
+    this.assertMutation(generation)
     if (this.literalSurface) {
       this.replaceLiteralSelection(text, false)
       return true
@@ -1701,11 +2062,42 @@ export class InkKitEditor {
     )
       return false
     this.assertCurrent(generation)
+    const configuredEvent = new KeyboardEvent('keydown', {
+      key,
+      code,
+      metaKey,
+      ctrlKey,
+      altKey,
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    })
+    if (!this.literalSurface && altKey && key === 'Enter')
+      return this.navigateFootnote(shiftKey ? 'reference' : 'definition')
+    if (
+      !this.writable &&
+      !this.literalSurface &&
+      key === 'Tab' &&
+      !metaKey &&
+      !ctrlKey &&
+      !altKey
+    ) {
+      const view = this.editor.ctx.get(editorViewCtx)
+      return goToNextCell(shiftKey ? -1 : 1)(view.state, view.dispatch)
+    }
+    if (!this.writable) {
+      if (['Enter', 'Tab', 'Backspace', 'Delete'].includes(key))
+        this.assertMutation(generation)
+      this.readOnlyKeys(this.editor.ctx.get(editorViewCtx), configuredEvent)
+    }
     if (this.literalSurface) {
-      if ((metaKey || ctrlKey) && key.toLowerCase() === 'z')
-        return shiftKey ? this.redo(generation) : this.undo(generation)
-      if ((metaKey || ctrlKey) && key.toLowerCase() === 'y')
-        return this.redo(generation)
+      if (this.literalKeys(this.editor.ctx.get(editorViewCtx), configuredEvent))
+        return true
+      if (
+        !this.writable &&
+        ['Enter', 'Tab', 'Backspace', 'Delete'].includes(key)
+      )
+        throw new InkKitError('read-only', 'The editor is read-only')
       if (metaKey || ctrlKey || altKey) return false
       if (key === 'Enter' || key === 'Tab') {
         this.replaceLiteralSelection(key === 'Enter' ? '\n' : '\t', false)
@@ -1761,22 +2153,64 @@ export class InkKitEditor {
    *  order, so a key given to two shortcuts lands the same way every time. */
   setKeymap(keymap: Keymap): void {
     this.assertAlive()
+    this.configuredKeys = {
+      undo: ['Mod-z'],
+      redo: ['Mod-y', 'Shift-Mod-z'],
+      tableExit: ['Mod-Enter', 'Enter'],
+      ...keymap,
+    }
     const bindings: Record<string, Command> = {}
+    // Consuming unbound history keys prevents the browser's separate undo stack
+    // from changing source/TXT outside the shared document history.
+    const historyBindings: Record<string, Command> = Object.fromEntries(
+      ['Mod-z', 'Mod-y', 'Shift-Mod-z'].map((key) => [key, () => true]),
+    )
+    for (const name of ['undo', 'redo'] as const) {
+      for (const key of this.configuredKeys[name] ?? []) {
+        historyBindings[key] = () => {
+          if (!this.ready || !this.commandState().commands[name]) return true
+          return this[name]()
+        }
+      }
+    }
+    Object.assign(bindings, historyBindings)
     for (const [name, command] of Object.entries(shortcutCommands)) {
       for (const key of keymap[name] ?? []) {
         bindings[key] = () => {
+          if (!this.ready || !this.commandState().commands.format[command[0]])
+            return true
           this.format(...command)
           return true
         }
       }
     }
+    for (const command of tableCommands) {
+      const name = 'table' + command[0]!.toUpperCase() + command.slice(1)
+      for (const key of this.configuredKeys[name] ?? [])
+        bindings[key] = () => {
+          if (!this.ready || !this.commandState().commands.table[command])
+            return false
+          return this.table(command)
+        }
+    }
+    this.readOnlyKeys = keydownHandler(
+      Object.fromEntries(
+        Object.keys(bindings).map((key) => [
+          key,
+          () => {
+            throw new InkKitError('read-only', 'The editor is read-only')
+          },
+        ]),
+      ),
+    )
     this.keys = keydownHandler(bindings)
+    this.literalKeys = keydownHandler(historyBindings)
   }
 
   /** Dropped files land as one paragraph per path at the drop point: in place of an empty block, after
    *  the top-level block otherwise, so a list or quote is not opened up by them. */
   insertPaths(paths: string[], x: number, y: number): void {
-    this.assertCurrent()
+    this.assertMutation()
     if (paths.length === 0) return
     if (this.literalSurface) {
       this.pasteAsPlainText(paths.join('\n\n'))
@@ -1797,7 +2231,7 @@ export class InkKitEditor {
     x?: number,
     y?: number,
   ): void {
-    this.assertCurrent()
+    this.assertMutation()
     if (!images.length) return
     if (!this.options.images || this.literalSurface)
       throw new InkKitError(
@@ -1980,7 +2414,7 @@ export class InkKitEditor {
   }
 
   format(command: FormatCommand, arg?: string | number): void {
-    this.assertCurrent()
+    this.assertMutation()
     if (this.literalSurface) return
     const run = (cmd: Parameters<typeof callCommand>[0], payload?: unknown) =>
       this.editor.action(callCommand(cmd, payload))
@@ -2061,7 +2495,7 @@ export class InkKitEditor {
     destination: string,
     title?: string,
   ): boolean {
-    this.assertCurrent()
+    this.assertMutation()
     if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
     const definitions = referenceDefinitions(view.state.doc)
@@ -2083,7 +2517,7 @@ export class InkKitEditor {
   }
 
   insertFootnote(label?: string): void {
-    this.assertCurrent()
+    this.assertMutation()
     if (this.literalSurface) return
     const view = this.editor.ctx.get(editorViewCtx)
     const definitions = footnoteDefinitions(view.state.doc)

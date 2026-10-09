@@ -27,6 +27,7 @@ export interface PasteControllerOptions {
   context: () => DocumentContext
   adapter?: ImageAdapter
   onError?: (error: unknown) => void
+  onPendingChanged?: () => void
   editable?: () => boolean
   literalText?: () => boolean
 }
@@ -110,6 +111,7 @@ export class PasteController {
   }
   cancelPending(): void {
     this.active = undefined
+    this.options.onPendingChanged?.()
   }
   destroy(): void {
     this.dead = true
@@ -151,6 +153,7 @@ export class PasteController {
       to: view.state.selection.to,
     }
     this.active = operation
+    this.options.onPendingChanged?.()
     try {
       const images = [...(input.images ?? [])]
       for (const file of files)
@@ -575,7 +578,10 @@ export class PasteController {
             .scrollIntoView(),
         )
     } finally {
-      if (this.active === operation) this.active = undefined
+      if (this.active === operation) {
+        this.active = undefined
+        this.options.onPendingChanged?.()
+      }
     }
   }
 }

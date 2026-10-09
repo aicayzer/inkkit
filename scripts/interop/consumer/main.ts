@@ -1,72 +1,40 @@
 import { InkKitEditor } from '@aicayzer/inkkit'
 import '@aicayzer/inkkit/style.css'
-const imageData =
-  'iVBORw0KGgoAAAANSUhEUgAAAFAAAAAoCAYAAABpYH0BAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAUKADAAQAAAABAAAAKAAAAADbisV7AAAAlUlEQVRoBe3SMQ0AIQAEQR4X6MC/Nj5BAtvO9dtM7jtrn2HPAvO5FF4BgPEIAAFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPjIA/2VgCmiePpoIAAAAASUVORK5CYII='
-const bytes = Uint8Array.from(atob(imageData), (c) => c.charCodeAt(0))
-const importedImages = new Map<
-  string,
-  { bytes: Uint8Array; mimeType: string }
->()
+import { ControlledImages, imageBytes, fixtures } from './fixtures'
+const images = new ControlledImages()
+const bytes = imageBytes()
+const importedImages = images.imported
 let currentCaretState
-let imageExportMode = 'normal'
-let imageExportStarted = false
-let releaseImageExport
-let imageExportGate
-let imageImportStarted = false
-let releaseImageImport
-let imageImportGate
+let currentCommandState
 let pendingPaste
 let pendingPrintable
-const editor = await InkKitEditor.mount(
-  document.querySelector('#editor'),
-  {
-    changed() {},
-    stateChanged(state) {
-      currentCaretState = state
-    },
-    copy() {},
-    openLink() {},
-    error(error) {
-      window.lastError = error.message
-      window.lastErrorCode = error.code ?? null
-      ;(window.interopErrors ??= []).push({
-        code: error.code ?? null,
-        message: error.message,
-      })
-    },
-  },
-  {
-    images: {
-      presentation(reference) {
-        const imported = importedImages.get(reference)
-        return {
-          url: imported
-            ? `data:${imported.mimeType};base64,${btoa(String.fromCharCode(...imported.bytes))}`
-            : `data:image/png;base64,${imageData}`,
-        }
+const mountEditor = (configuration = 'rich') =>
+  InkKitEditor.mount(
+    document.querySelector('#editor'),
+    {
+      changed() {},
+      stateChanged(state) {
+        currentCaretState = state
       },
-      async importImage(input) {
-        imageImportStarted = true
-        if (imageImportGate) await imageImportGate
-        const reference = `images/imported-${importedImages.size}.png`
-        importedImages.set(reference, {
-          bytes: input.bytes.slice(),
-          mimeType: input.mimeType,
+      commandStateChanged(state) {
+        currentCommandState = state
+      },
+      copy() {},
+      openLink() {},
+      error(error) {
+        window.lastError = error.message
+        window.lastErrorCode = error.code ?? null
+        ;(window.interopErrors ??= []).push({
+          code: error.code ?? null,
+          message: error.message,
         })
-        return { reference }
-      },
-      async exportImage(reference) {
-        imageExportStarted = true
-        if (imageExportGate) await imageExportGate
-        if (imageExportMode === 'reject')
-          throw Error('Fixture image unavailable')
-        if (imageExportMode === 'corrupt')
-          return { bytes: bytes.subarray(0, 24), mimeType: 'image/png' }
-        return importedImages.get(reference) ?? { bytes, mimeType: 'image/png' }
       },
     },
-  },
-)
+    {
+      images: configuration === 'rich' ? images.adapter : undefined,
+    },
+  )
+let editor = await mountEditor()
 let generation = 0
 let documentId = 'interop'
 let documentFormat = 'md'
@@ -88,6 +56,10 @@ const capture = () => ({
   selection: selectedText(),
   editingMode: editor.editingMode,
   caretState: currentCaretState ?? null,
+  commandState: editor.commandState(),
+  commandStateEvent: currentCommandState ?? null,
+  editable: editor.editable,
+  adapterEvents: [...images.events],
   error: window.lastError ?? null,
   errorCode: window.lastErrorCode ?? null,
   diagnostics: window.interopErrors ?? [],
@@ -220,6 +192,21 @@ const inspectDOM = (selector) => {
       hidden: node.hidden,
       display: getComputedStyle(node).display,
       visibility: getComputedStyle(node).visibility,
+      ...(node.matches('li[data-item-type="task"]')
+        ? (() => {
+            const before = getComputedStyle(node, '::before')
+            const after = getComputedStyle(node, '::after')
+            const left = Number.parseFloat(before.left)
+            const width = Number.parseFloat(before.width)
+            const tickLeft = Number.parseFloat(after.left)
+            const tickWidth = Number.parseFloat(after.width)
+            return {
+              markerInGutter: left + width < 0,
+              tickInsideMarker:
+                tickLeft > left && tickLeft + tickWidth < left + width,
+            }
+          })()
+        : {}),
     })),
   }
 }
@@ -257,9 +244,18 @@ window.interop = {
   },
   get: capture,
   async run(input) {
+    if (input.configuration) {
+      if (!['minimal', 'rich'].includes(input.configuration))
+        throw Error(`Unknown configuration: ${input.configuration}`)
+      await editor.destroy()
+      images.dispose()
+      editor = await mountEditor(input.configuration)
+    }
+    if (input.fixture && !fixtures[input.fixture])
+      throw Error(`Unknown fixture: ${input.fixture}`)
     load(
-      input.source ?? '',
-      input.format ?? 'md',
+      input.source ?? fixtures[input.fixture ?? 'everyday'].text,
+      input.format ?? fixtures[input.fixture ?? 'everyday'].format,
       input.documentId ?? 'interop',
     )
     const results = {}
@@ -373,14 +369,7 @@ window.interop = {
             break
           }
           case 'imageExport':
-            imageExportMode = operation.mode ?? 'normal'
-            imageExportStarted = false
-            imageExportGate =
-              imageExportMode === 'hold'
-                ? new Promise((resolve) => {
-                    releaseImageExport = resolve
-                  })
-                : undefined
+            images.setMode('export', operation.mode ?? 'normal')
             result = true
             break
           case 'startPrintable':
@@ -388,15 +377,14 @@ window.interop = {
               (value) => ({ value }),
               (error) => ({ error }),
             )
-            for (let count = 0; count < 100 && !imageExportStarted; count++)
+            for (let count = 0; count < 100 && !images.started.export; count++)
               await settle()
-            if (!imageExportStarted)
+            if (!images.started.export)
               throw Error('Held image export did not start')
             result = { pending: true }
             break
           case 'finishPrintable': {
-            releaseImageExport?.()
-            imageExportGate = undefined
+            images.release('export')
             if (!pendingPrintable)
               throw Error('No printable capture is pending')
             const completed = await pendingPrintable
@@ -406,28 +394,50 @@ window.interop = {
             break
           }
           case 'startImagePaste':
-            imageImportStarted = false
-            imageImportGate = new Promise((resolve) => {
-              releaseImageImport = resolve
-            })
+            images.setMode('import', 'hold')
             pendingPaste = editor.paste({
               text: '',
               images: [{ bytes, mimeType: 'image/png', filename: 'held.png' }],
             })
-            for (let count = 0; count < 100 && !imageImportStarted; count++)
+            for (let count = 0; count < 100 && !images.started.import; count++)
               await settle()
-            if (!imageImportStarted)
+            if (!images.started.import)
               throw Error('Held image import did not start')
             result = { pending: true }
             break
           case 'finishImagePaste':
-            releaseImageImport?.()
-            imageImportGate = undefined
+            images.release('import')
             if (!pendingPaste) throw Error('No image paste is pending')
             await pendingPaste
             pendingPaste = undefined
             result = capture()
             break
+          case 'editable':
+            result = editor.setEditable(operation.editable)
+            break
+          case 'textInput':
+            result = editor.setTextInputPreferences(operation.preferences ?? {})
+            break
+          case 'commandState':
+            result = JSON.parse(
+              JSON.stringify(editor.commandState(operation.generation)),
+            )
+            break
+          case 'inputAttributes': {
+            const surface = activeEditor()
+            result = {
+              spellcheck: surface.getAttribute('spellcheck'),
+              autocorrect: surface.getAttribute('autocorrect'),
+              autocapitalize: surface.getAttribute('autocapitalize'),
+              readOnly:
+                surface instanceof HTMLTextAreaElement
+                  ? surface.readOnly
+                  : null,
+              contenteditable: surface.getAttribute('contenteditable'),
+              focused: document.activeElement === surface,
+            }
+            break
+          }
           case 'composition':
             activeEditor().dispatchEvent(
               new CompositionEvent(

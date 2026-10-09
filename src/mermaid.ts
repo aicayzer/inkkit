@@ -1,3 +1,4 @@
+import { editorLabels } from './labels'
 import mermaid from 'mermaid'
 import DOMPurify from 'dompurify'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -200,7 +201,7 @@ export async function diagramImage(source: string): Promise<PortableImage> {
 
 export function mermaidPreview(onError: (error: Error) => void) {
   return $prose(
-    () =>
+    (ctx) =>
       new Plugin({
         key: new PluginKey('mermaidPreview'),
         props: {
@@ -216,7 +217,9 @@ export function mermaidPreview(onError: (error: Error) => void) {
                     const preview = document.createElement('div')
                     preview.className = 'inkkit-mermaid-preview'
                     preview.contentEditable = 'false'
-                    preview.textContent = 'Rendering diagram…'
+                    preview.textContent = editorLabels(ctx).diagramRendering
+                    preview.setAttribute('role', 'status')
+                    preview.setAttribute('aria-live', 'polite')
                     let active = true
                     ;(preview as HTMLElement & { cancel?: () => void }).cancel =
                       () => {
@@ -235,7 +238,7 @@ export function mermaidPreview(onError: (error: Error) => void) {
                           error instanceof Error
                             ? error.message
                             : 'The diagram could not be rendered.'
-                        preview.textContent = `Diagram unavailable: ${message}`
+                        preview.textContent = `${editorLabels(ctx).diagramUnavailable} ${message}`
                         preview.dataset.state = 'error'
                         onError(new InkKitError('diagram-unavailable', message))
                       },

@@ -1,4 +1,5 @@
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
+import { editorLabels } from './labels'
 import { remarkCtx } from '@milkdown/kit/core'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -303,7 +304,7 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
 }))
 
 export const calloutView = $prose(
-  () =>
+  (ctx) =>
     new Plugin({
       key: new PluginKey('inkkitCalloutView'),
       props: {
@@ -334,9 +335,11 @@ export const calloutView = $prose(
               button.setAttribute('aria-expanded', String(!folded))
               button.setAttribute(
                 'aria-label',
-                `${folded ? 'Expand' : 'Collapse'} ${title.textContent}`,
+                `${folded ? editorLabels(ctx).expandCallout : editorLabels(ctx).collapseCallout} ${title.textContent}`,
               )
-              button.textContent = folded ? 'Expand' : 'Collapse'
+              button.textContent = folded
+                ? editorLabels(ctx).expandCallout
+                : editorLabels(ctx).collapseCallout
             }
             const toggle = () => {
               folded = !folded

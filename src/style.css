@@ -1,140 +1,217 @@
-@import '@milkdown/kit/prose/tables/style/tables.css';
-
-:root {
-  /* The document's text size, which the app sets; every text metric below is in rem, so they scale with it. */
-  font-size: 15px;
-  --accent: #0a84ff;
-  --text: CanvasText;
-  --muted: color-mix(in srgb, CanvasText 55%, transparent);
-  --rule: color-mix(in srgb, CanvasText 14%, transparent);
-  --code-bg: color-mix(in srgb, CanvasText 8%, transparent);
-  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
-  color-scheme: light dark;
+/* Scoped ProseMirror table styles; attribution and licence are in NOTICE. */
+.inkkit-root .ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+.inkkit-root .ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+}
+.inkkit-root .ProseMirror td,
+.inkkit-root .ProseMirror th {
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
 }
 
-.inkkit-plain {
+.inkkit-root .ProseMirror td:not([data-colwidth]):not(.column-resize-dragging),
+.inkkit-root .ProseMirror th:not([data-colwidth]):not(.column-resize-dragging) {
+  /* Scoped equivalent of the upstream ProseMirror table sizing rules. */
+  min-width: var(--default-cell-min-width);
+}
+
+.inkkit-root .ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  z-index: 20;
+  background-color: var(--_inkkit-accent);
+  pointer-events: none;
+}
+.inkkit-root .ProseMirror.resize-cursor {
+  cursor: ew-resize;
+  cursor: col-resize;
+}
+
+.inkkit-root .ProseMirror .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: '';
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--_inkkit-accent) 25%, transparent);
+  pointer-events: none;
+}
+
+.inkkit-root {
+  box-sizing: border-box;
+  color-scheme: var(--inkkit-color-scheme, light dark);
+  color: var(--inkkit-text-color, var(--text, CanvasText));
+  font-family: var(
+    --inkkit-font-family,
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif
+  );
+  font-size: var(--inkkit-font-size, 15px);
+  line-height: var(--inkkit-line-height, normal);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: none;
+  --_inkkit-accent: var(--inkkit-accent-color, var(--accent, #0a84ff));
+  --_inkkit-text: var(--inkkit-text-color, var(--text, CanvasText));
+  --_inkkit-muted: var(
+    --inkkit-muted-color,
+    var(--muted, color-mix(in srgb, CanvasText 55%, transparent))
+  );
+  --_inkkit-rule: var(
+    --inkkit-rule-color,
+    var(--rule, color-mix(in srgb, CanvasText 14%, transparent))
+  );
+  --_inkkit-code-bg: var(
+    --inkkit-code-background,
+    var(--code-bg, color-mix(in srgb, CanvasText 8%, transparent))
+  );
+  --_inkkit-mono: var(
+    --inkkit-monospace-font,
+    var(--mono, ui-monospace, 'SF Mono', Menlo, monospace)
+  );
+}
+
+.inkkit-root .inkkit-plain {
   box-sizing: border-box;
   width: 100%;
-  min-height: 100%;
+  min-height: var(--inkkit-min-height, 100%);
   border: 0;
   resize: none;
   outline: none;
-  padding: 10px 16px 48px;
+  padding: var(--inkkit-padding-top, 10px) var(--inkkit-padding-inline, 16px)
+    var(--inkkit-padding-bottom, 48px);
   background: transparent;
-  color: var(--text);
-  font: 1rem/1.5 var(--mono);
+  color: var(--_inkkit-text);
+  font: calc(var(--inkkit-font-size, 15px) * 1)/var(--inkkit-line-height, 1.5)
+    var(--_inkkit-mono);
 }
 
-.inkkit-plain[hidden] {
+.inkkit-root .inkkit-plain[hidden] {
   display: none;
 }
 
-.milkdown-table-block {
+.inkkit-root .milkdown-table-block {
   position: relative;
-  margin: 1.5rem 0;
+  margin: calc(var(--inkkit-font-size, 15px) * 1.5) 0;
 }
-.milkdown-table-block .table-wrapper {
+.inkkit-root .milkdown-table-block .table-wrapper {
   overflow-x: auto;
 }
-.milkdown-table-block table {
+.inkkit-root .milkdown-table-block table {
   border-collapse: collapse;
 }
-.milkdown-table-block th,
-.milkdown-table-block td {
-  border: 1px solid var(--rule);
-  min-width: 3rem;
-  padding: 0.4rem 0.6rem;
+.inkkit-root .milkdown-table-block th,
+.inkkit-root .milkdown-table-block td {
+  border: 1px solid var(--_inkkit-rule);
+  min-width: calc(var(--inkkit-font-size, 15px) * 3);
+  padding: calc(var(--inkkit-font-size, 15px) * 0.4)
+    calc(var(--inkkit-font-size, 15px) * 0.6);
   vertical-align: top;
 }
-.milkdown-table-block th {
-  background: var(--code-bg);
+.inkkit-root .milkdown-table-block th {
+  background: var(--_inkkit-code-bg);
 }
-.milkdown-table-block th p,
-.milkdown-table-block td p {
+.inkkit-root .milkdown-table-block th p,
+.inkkit-root .milkdown-table-block td p {
   margin: 0;
 }
-.milkdown-table-block .handle,
-.milkdown-table-block .button-group,
-.milkdown-table-block .drag-preview {
+.inkkit-root .milkdown-table-block .handle,
+.inkkit-root .milkdown-table-block .button-group,
+.inkkit-root .milkdown-table-block .drag-preview {
   position: absolute;
   z-index: 20;
 }
-.milkdown-table-block [data-show='false'],
-.milkdown-table-block .button-group[data-show='false'],
-.milkdown-table-block.readonly .handle {
+.inkkit-root .milkdown-table-block [data-show='false'],
+.inkkit-root .milkdown-table-block .button-group[data-show='false'],
+.inkkit-root .milkdown-table-block.readonly .handle {
   display: none;
 }
-.milkdown-table-block .cell-handle {
+.inkkit-root .milkdown-table-block .cell-handle {
   cursor: grab;
-  font-size: 0.75rem;
+  font-size: calc(var(--inkkit-font-size, 15px) * 0.75);
   padding: 2px 5px;
   border-radius: 5px;
   background: Canvas;
-  color: var(--muted);
-  box-shadow: 0 0 0 1px var(--rule);
+  color: var(--_inkkit-muted);
+  box-shadow: 0 0 0 1px var(--_inkkit-rule);
 }
-.milkdown-table-block .button-group {
+.inkkit-root .milkdown-table-block .button-group {
   display: flex;
   gap: 3px;
   padding: 4px;
   border-radius: 6px;
   background: Canvas;
-  box-shadow: 0 0 0 1px var(--rule);
+  box-shadow: 0 0 0 1px var(--_inkkit-rule);
 }
-.milkdown-table-block button {
-  color: var(--text);
+.inkkit-root .milkdown-table-block button {
+  color: var(--_inkkit-text);
   background: Canvas;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--_inkkit-rule);
   border-radius: 4px;
   padding: 4px 6px;
   cursor: pointer;
   white-space: nowrap;
 }
-.milkdown-table-block button:hover {
-  background: var(--code-bg);
+.inkkit-root .milkdown-table-block button:hover {
+  background: var(--_inkkit-code-bg);
 }
-.milkdown-table-block .line-handle {
-  background: var(--accent);
+.inkkit-root .milkdown-table-block .line-handle {
+  background: var(--_inkkit-accent);
   min-width: 1px;
   min-height: 1px;
 }
-.milkdown-table-block .add-button {
+.inkkit-root .milkdown-table-block .add-button {
   position: absolute;
   padding: 2px 5px;
   transform: translate(-50%, -50%);
   background: Canvas;
-  color: var(--text);
-  border: 1px solid var(--rule);
+  color: var(--_inkkit-text);
+  border: 1px solid var(--_inkkit-rule);
   border-radius: 4px;
   white-space: nowrap;
   cursor: pointer;
 }
-.milkdown-table-block .line-handle[data-display-type='indicator'] .add-button {
+.inkkit-root
+  .milkdown-table-block
+  .line-handle[data-display-type='indicator']
+  .add-button {
   display: none;
 }
-.milkdown-table-block .drag-preview {
+.inkkit-root .milkdown-table-block .drag-preview {
   opacity: 0.6;
   background: Canvas;
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--_inkkit-accent);
 }
 
-.ProseMirror .image {
+.inkkit-root .ProseMirror .image {
   position: relative;
   display: inline-block;
   max-width: 100%;
   vertical-align: bottom;
 }
-.ProseMirror .image img {
+.inkkit-root .ProseMirror .image img {
   display: block;
   max-width: 100%;
   height: auto;
   border-radius: 6px;
 }
-.ProseMirror .image-absent {
-  color: var(--muted);
+.inkkit-root .ProseMirror .image-absent {
+  color: var(--_inkkit-muted);
   font-style: italic;
 }
-.ProseMirror .image-handle {
+.inkkit-root .ProseMirror .image-handle {
   position: absolute;
   right: -3px;
   top: 0;
@@ -143,11 +220,11 @@
   cursor: col-resize;
   opacity: 0;
 }
-.ProseMirror .image:hover .image-handle,
-.ProseMirror .image-handle:active {
+.inkkit-root .ProseMirror .image:hover .image-handle,
+.inkkit-root .ProseMirror .image-handle:active {
   opacity: 1;
 }
-.ProseMirror .image-handle::after {
+.inkkit-root .ProseMirror .image-handle::after {
   content: '';
   position: absolute;
   right: 3px;
@@ -155,166 +232,152 @@
   height: 50%;
   width: 4px;
   border-radius: 2px;
-  background: var(--accent);
+  background: var(--_inkkit-accent);
 }
 
-html,
-body {
-  height: 100%;
-  margin: 0;
-  overflow: hidden;
-  background: transparent;
-}
-
-body {
-  color: var(--text);
-  /* WebKit paints the native caret using this line box; extra leading stretches it above the text. */
-  font:
-    1rem/normal -apple-system,
-    BlinkMacSystemFont,
-    system-ui,
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -webkit-text-size-adjust: none;
-}
-
-/* The page scrolls inside #editor so the fade under the formatting bar stays put. */
-#editor {
-  height: 100%;
-  overflow-y: auto;
-}
-
-.ProseMirror {
+.inkkit-root .ProseMirror {
   /* The viewport, not the wrapper Milkdown adds, so a click below the text still places the caret. */
-  min-height: 100vh;
+  min-height: var(--inkkit-min-height, 100%);
   box-sizing: border-box;
   /* Scroll the final line above the floating footer without reserving a solid row. */
   /* Keep the editor full-width for hit testing; center only the writing column. */
-  padding: 10px max(16px, calc((100% - var(--reading-width, 100%)) / 2 + 16px))
-    48px;
+  padding: var(--inkkit-padding-top, 10px)
+    max(
+      var(--inkkit-padding-inline, 16px),
+      calc(
+        (100% - var(--inkkit-reading-width, var(--reading-width, 100%))) / 2 +
+          var(--inkkit-padding-inline, 16px)
+      )
+    )
+    var(--inkkit-padding-bottom, 48px);
   outline: none;
   white-space: pre-wrap;
   word-wrap: break-word;
-  caret-color: var(--accent);
+  caret-color: var(--_inkkit-accent);
   cursor: text;
 }
 
-.ProseMirror .empty {
+.inkkit-root .ProseMirror .empty {
   position: relative;
 }
 
-.ProseMirror .empty::before {
+.inkkit-root .ProseMirror .empty::before {
   content: attr(data-placeholder);
   position: absolute;
-  color: var(--muted);
+  color: var(--_inkkit-muted);
   pointer-events: none;
 }
 
 /* The selection plugin draws the selection over the text alone; the engine's own fills the margins too. */
-.ProseMirror ::selection {
+.inkkit-root .ProseMirror ::selection {
   background: transparent;
 }
 
-::highlight(selection) {
-  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+.inkkit-root ::highlight(inkkit-selection) {
+  background-color: color-mix(in srgb, var(--_inkkit-accent) 30%, transparent);
 }
 
-.ProseMirror > :first-child {
+.inkkit-root .ProseMirror > :first-child {
   margin-top: 0;
 }
 
-.ProseMirror p {
-  margin: 0 0 0.667rem;
+.inkkit-root .ProseMirror p {
+  margin: 0 0
+    var(--inkkit-paragraph-spacing, calc(var(--inkkit-font-size, 15px) * 0.667));
 }
 
-.ProseMirror h1,
-.ProseMirror h2,
-.ProseMirror h3 {
+.inkkit-root .ProseMirror h1,
+.inkkit-root .ProseMirror h2,
+.inkkit-root .ProseMirror h3 {
   line-height: 1.25;
   letter-spacing: -0.01em;
-  margin: 1.867rem 0 0.533rem;
+  margin: calc(var(--inkkit-font-size, 15px) * 1.867) 0
+    calc(var(--inkkit-font-size, 15px) * 0.533);
 }
 
-.ProseMirror h1 {
-  font-size: 1.733rem;
+.inkkit-root .ProseMirror h1 {
+  font-size: calc(var(--inkkit-font-size, 15px) * 1.733);
   font-weight: 700;
 }
 
-.ProseMirror h2 {
-  font-size: 1.4rem;
+.inkkit-root .ProseMirror h2 {
+  font-size: calc(var(--inkkit-font-size, 15px) * 1.4);
   font-weight: 700;
 }
 
-.ProseMirror h3 {
-  font-size: 1.133rem;
+.inkkit-root .ProseMirror h3 {
+  font-size: calc(var(--inkkit-font-size, 15px) * 1.133);
   font-weight: 600;
 }
 
-.ProseMirror h4,
-.ProseMirror h5,
-.ProseMirror h6 {
-  font-size: 1rem;
+.inkkit-root .ProseMirror h4,
+.inkkit-root .ProseMirror h5,
+.inkkit-root .ProseMirror h6 {
+  font-size: calc(var(--inkkit-font-size, 15px) * 1);
   font-weight: 600;
-  margin: 1.333rem 0 0.4rem;
+  margin: calc(var(--inkkit-font-size, 15px) * 1.333) 0
+    calc(var(--inkkit-font-size, 15px) * 0.4);
 }
 
-.ProseMirror strong {
+.inkkit-root .ProseMirror strong {
   font-weight: 700;
 }
 
-.ProseMirror a {
-  color: var(--accent);
+.inkkit-root .ProseMirror a {
+  color: var(--_inkkit-accent);
   text-decoration: none;
   text-underline-offset: 2px;
 }
 
-.ProseMirror a:hover {
+.inkkit-root .ProseMirror a:hover {
   text-decoration: underline;
 }
 
-.meta .ProseMirror a {
+.meta .inkkit-root .ProseMirror a {
   cursor: pointer;
 }
 
-.ProseMirror code {
-  font-family: var(--mono);
+.inkkit-root .ProseMirror code {
+  font-family: var(--_inkkit-mono);
   font-size: 0.88em;
-  background: var(--code-bg);
+  background: var(--_inkkit-code-bg);
   border-radius: 5px;
-  padding: 0.067rem 0.333rem;
+  padding: calc(var(--inkkit-font-size, 15px) * 0.067)
+    calc(var(--inkkit-font-size, 15px) * 0.333);
 }
 
-.ProseMirror pre {
+.inkkit-root .ProseMirror pre {
   position: relative;
-  font-family: var(--mono);
-  font-size: 0.867rem;
+  font-family: var(--_inkkit-mono);
+  font-size: calc(var(--inkkit-font-size, 15px) * 0.867);
   line-height: 1.5;
-  background: var(--code-bg);
+  background: var(--_inkkit-code-bg);
   border-radius: 8px;
-  padding: 0.8rem 0.933rem;
-  margin: 0 0 0.8rem;
+  padding: calc(var(--inkkit-font-size, 15px) * 0.8)
+    calc(var(--inkkit-font-size, 15px) * 0.933);
+  margin: 0 0 calc(var(--inkkit-font-size, 15px) * 0.8);
   overflow-x: auto;
 }
 
-.ProseMirror pre[data-language] {
-  padding-top: max(2rem, 30px);
+.inkkit-root .ProseMirror pre[data-language] {
+  padding-top: max(calc(var(--inkkit-font-size, 15px) * 2), 30px);
 }
 
-.ProseMirror pre[data-language]::before {
+.inkkit-root .ProseMirror pre[data-language]::before {
   content: attr(data-language);
   position: absolute;
-  top: 0.533rem;
-  left: 0.933rem;
+  top: calc(var(--inkkit-font-size, 15px) * 0.533);
+  left: calc(var(--inkkit-font-size, 15px) * 0.933);
   font:
-    0.733rem/1 -apple-system,
+    calc(var(--inkkit-font-size, 15px) * 0.733)/1 -apple-system,
     system-ui,
     sans-serif;
-  color: var(--muted);
+  color: var(--_inkkit-muted);
   text-transform: lowercase;
   user-select: none;
 }
 
-.ProseMirror pre .copy {
+.inkkit-root .ProseMirror pre .copy {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -325,346 +388,361 @@ body {
   border: 0;
   border-radius: 6px;
   background: color-mix(in srgb, CanvasText 10%, transparent);
-  color: var(--muted);
+  color: var(--_inkkit-muted);
   cursor: pointer;
   opacity: 0;
   transition: opacity 120ms;
   user-select: none;
 }
 
-.ProseMirror pre:hover .copy,
-.ProseMirror pre .copy[data-copied] {
+.inkkit-root .ProseMirror pre:hover .copy,
+.inkkit-root .ProseMirror pre .copy[data-copied] {
   opacity: 1;
 }
 
-.ProseMirror pre .copy:hover {
-  color: var(--text);
+.inkkit-root .ProseMirror pre .copy:hover {
+  color: var(--_inkkit-text);
 }
 
-.ProseMirror pre code {
+.inkkit-root .ProseMirror pre code {
   background: none;
   padding: 0;
   font-size: inherit;
 }
 
-.ProseMirror blockquote {
-  margin: 0 0 0.8rem;
-  padding: 2px 0 2px 0.8rem;
-  border-left: 2px solid var(--accent);
+.inkkit-root .ProseMirror blockquote {
+  margin: 0 0 calc(var(--inkkit-font-size, 15px) * 0.8);
+  padding: 2px 0 2px calc(var(--inkkit-font-size, 15px) * 0.8);
+  border-left: 2px solid var(--_inkkit-accent);
 }
 
-.ProseMirror blockquote > :first-child {
+.inkkit-root .ProseMirror blockquote > :first-child {
   margin-top: 0;
 }
 
-.ProseMirror blockquote > :last-child {
+.inkkit-root .ProseMirror blockquote > :last-child {
   margin-bottom: 0;
 }
 
-.ProseMirror hr {
+.inkkit-root .ProseMirror hr {
   border: 0;
-  border-top: 1px solid var(--rule);
-  margin: 1.333rem 0;
+  border-top: 1px solid var(--_inkkit-rule);
+  margin: calc(var(--inkkit-font-size, 15px) * 1.333) 0;
 }
 
-.ProseMirror ul,
-.ProseMirror ol {
-  margin: 0 0 0.667rem;
-  padding-left: 1.733rem;
+.inkkit-root .ProseMirror ul,
+.inkkit-root .ProseMirror ol {
+  margin: 0 0
+    var(--inkkit-paragraph-spacing, calc(var(--inkkit-font-size, 15px) * 0.667));
+  padding-left: calc(var(--inkkit-font-size, 15px) * 1.733);
 }
 
-.ProseMirror li {
-  margin: 0 0 0.267rem;
+.inkkit-root .ProseMirror li {
+  margin: 0 0 calc(var(--inkkit-font-size, 15px) * 0.267);
 }
 
-.ProseMirror li > p {
+.inkkit-root .ProseMirror li > p {
   margin: 0;
 }
 
-.ProseMirror li ul,
-.ProseMirror li ol {
-  margin-top: 0.267rem;
+.inkkit-root .ProseMirror li ul,
+.inkkit-root .ProseMirror li ol {
+  margin-top: calc(var(--inkkit-font-size, 15px) * 0.267);
   margin-bottom: 0;
 }
 
-.ProseMirror ul > li::marker,
-.ProseMirror ol > li::marker {
-  color: var(--accent);
+.inkkit-root .ProseMirror ul > li::marker,
+.inkkit-root .ProseMirror ol > li::marker {
+  color: var(--_inkkit-accent);
 }
 
-.ProseMirror li[data-item-type='task'] {
+.inkkit-root .ProseMirror li[data-item-type='task'] {
   list-style: none;
   position: relative;
 }
 
-.ProseMirror li[data-item-type='task']::before {
+.inkkit-root .ProseMirror li[data-item-type='task']::before {
   content: '';
   position: absolute;
-  left: -1.667rem;
+  left: calc(var(--inkkit-font-size, 15px) * -1.667);
   top: 0.32em;
-  width: 0.933rem;
-  height: 0.933rem;
+  width: calc(var(--inkkit-font-size, 15px) * 0.933);
+  height: calc(var(--inkkit-font-size, 15px) * 0.933);
   box-sizing: border-box;
   border: 1.5px solid color-mix(in srgb, CanvasText 35%, transparent);
   border-radius: 4px;
   cursor: pointer;
 }
 
-.ProseMirror li[data-item-type='task'][data-checked='true']::before {
-  border-color: var(--accent);
-  background: var(--accent);
+.inkkit-root
+  .ProseMirror
+  li[data-item-type='task'][data-checked='true']::before {
+  border-color: var(--_inkkit-accent);
+  background: var(--_inkkit-accent);
 }
 
-.ProseMirror li[data-item-type='task'][data-checked='true']::after {
+.inkkit-root
+  .ProseMirror
+  li[data-item-type='task'][data-checked='true']::after {
   content: '';
   position: absolute;
-  left: -1.333rem;
+  left: calc(var(--inkkit-font-size, 15px) * -1.333);
   top: 0.32em;
-  margin-top: 0.133rem;
-  width: 0.2rem;
-  height: 0.467rem;
+  margin-top: calc(var(--inkkit-font-size, 15px) * 0.133);
+  width: calc(var(--inkkit-font-size, 15px) * 0.2);
+  height: calc(var(--inkkit-font-size, 15px) * 0.467);
   border: solid Canvas;
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
   pointer-events: none;
 }
 
-.ProseMirror li[data-item-type='task'][data-checked='true'] > p {
-  color: var(--muted);
+.inkkit-root .ProseMirror li[data-item-type='task'][data-checked='true'] > p {
+  color: var(--_inkkit-muted);
 }
 
-.ProseMirror del {
-  color: var(--muted);
+.inkkit-root .ProseMirror del {
+  color: var(--_inkkit-muted);
 }
 
-.ProseMirror .ProseMirror-selectednode {
-  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+.inkkit-root .ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid color-mix(in srgb, var(--_inkkit-accent) 60%, transparent);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
 /* Syntax colors: One Dark and One Light, without the blues. */
-:root {
-  --code-comment: var(--muted);
-  --code-keyword: #a626a4;
-  --code-string: #50a14f;
-  --code-number: #986801;
-  --code-title: #c18401;
-  --code-attr: #e45649;
+.inkkit-root {
+  --_inkkit-code-comment: var(--_inkkit-muted);
+  --_inkkit-code-keyword: #a626a4;
+  --_inkkit-code-string: #50a14f;
+  --_inkkit-code-number: #986801;
+  --_inkkit-code-title: #c18401;
+  --_inkkit-code-attr: #e45649;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --code-keyword: #c678dd;
-    --code-string: #98c379;
-    --code-number: #d19a66;
-    --code-title: #e5c07b;
-    --code-attr: #e06c75;
+  .inkkit-root {
+    --_inkkit-code-keyword: #c678dd;
+    --_inkkit-code-string: #98c379;
+    --_inkkit-code-number: #d19a66;
+    --_inkkit-code-title: #e5c07b;
+    --_inkkit-code-attr: #e06c75;
   }
 }
 
-.hljs-comment,
-.hljs-quote {
-  color: var(--code-comment);
+.inkkit-root .hljs-comment,
+.inkkit-root .hljs-quote {
+  color: var(--inkkit-code-comment, var(--_inkkit-code-comment));
   font-style: italic;
 }
 
-.hljs-keyword,
-.hljs-literal,
-.hljs-built_in,
-.hljs-type,
-.hljs-selector-tag,
-.hljs-doctag {
-  color: var(--code-keyword);
+.inkkit-root .hljs-keyword,
+.inkkit-root .hljs-literal,
+.inkkit-root .hljs-built_in,
+.inkkit-root .hljs-type,
+.inkkit-root .hljs-selector-tag,
+.inkkit-root .hljs-doctag {
+  color: var(--inkkit-code-keyword, var(--_inkkit-code-keyword));
 }
 
-.hljs-string,
-.hljs-regexp,
-.hljs-addition,
-.hljs-template-tag {
-  color: var(--code-string);
+.inkkit-root .hljs-string,
+.inkkit-root .hljs-regexp,
+.inkkit-root .hljs-addition,
+.inkkit-root .hljs-template-tag {
+  color: var(--inkkit-code-string, var(--_inkkit-code-string));
 }
 
-.hljs-number,
-.hljs-symbol,
-.hljs-bullet,
-.hljs-link,
-.hljs-meta {
-  color: var(--code-number);
+.inkkit-root .hljs-number,
+.inkkit-root .hljs-symbol,
+.inkkit-root .hljs-bullet,
+.inkkit-root .hljs-link,
+.inkkit-root .hljs-meta {
+  color: var(--inkkit-code-number, var(--_inkkit-code-number));
 }
 
-.hljs-title,
-.hljs-section,
-.hljs-name,
-.hljs-selector-id,
-.hljs-selector-class {
-  color: var(--code-title);
+.inkkit-root .hljs-title,
+.inkkit-root .hljs-section,
+.inkkit-root .hljs-name,
+.inkkit-root .hljs-selector-id,
+.inkkit-root .hljs-selector-class {
+  color: var(--inkkit-code-title, var(--_inkkit-code-title));
 }
 
-.hljs-attr,
-.hljs-attribute,
-.hljs-property,
-.hljs-variable,
-.hljs-template-variable,
-.hljs-tag,
-.hljs-deletion {
-  color: var(--code-attr);
+.inkkit-root .hljs-attr,
+.inkkit-root .hljs-attribute,
+.inkkit-root .hljs-property,
+.inkkit-root .hljs-variable,
+.inkkit-root .hljs-template-variable,
+.inkkit-root .hljs-tag,
+.inkkit-root .hljs-deletion {
+  color: var(--inkkit-code-attr, var(--_inkkit-code-attr));
 }
 
-.hljs-emphasis {
+.inkkit-root .hljs-emphasis {
   font-style: italic;
 }
 
-.hljs-strong {
+.inkkit-root .hljs-strong {
   font-weight: 700;
 }
 
-[hidden] {
+.inkkit-root [hidden] {
   display: none !important;
 }
-.ProseMirror-search-match {
-  background: color-mix(in srgb, var(--accent) 25%, transparent);
+.inkkit-root .ProseMirror-search-match {
+  background: color-mix(in srgb, var(--_inkkit-accent) 25%, transparent);
 }
 
-.ProseMirror-active-search-match {
-  background: color-mix(in srgb, var(--accent) 55%, transparent);
+.inkkit-root .ProseMirror-active-search-match {
+  background: color-mix(in srgb, var(--_inkkit-accent) 55%, transparent);
 }
 
-.ProseMirror .literal-markdown {
+.inkkit-root .ProseMirror .literal-markdown {
   white-space: pre-wrap;
-  font-family: var(--mono);
-  font-size: 0.9rem;
+  font-family: var(--_inkkit-mono);
+  font-size: calc(var(--inkkit-font-size, 15px) * 0.9);
 }
 
-.inkkit-footnote-reference {
+.inkkit-root .inkkit-footnote-reference {
   cursor: pointer;
-  color: var(--accent, currentColor);
-  font-size: 0.75em;
+  color: var(--_inkkit-accent, currentColor);
+  font-size: calc(var(--inkkit-font-size, 15px) * 0.75);
 }
 
-.inkkit-footnote-reference:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
+.inkkit-root .inkkit-footnote-reference:focus-visible {
+  outline: var(--inkkit-focus-width, 2px) solid
+    var(--inkkit-focus-color, currentColor);
+  outline-offset: var(--inkkit-focus-offset, 2px);
 }
 
-.inkkit-footnote-definition {
-  border-inline-start: 2px solid var(--muted, currentColor);
-  padding-inline-start: 1rem;
+.inkkit-root .inkkit-footnote-definition {
+  border-inline-start: 2px solid var(--_inkkit-muted, currentColor);
+  padding-inline-start: calc(var(--inkkit-font-size, 15px) * 1);
 }
 
-.inkkit-footnote-definition::before {
+.inkkit-root .inkkit-footnote-definition::before {
   content: '[' attr(data-inkkit-label) ']';
-  font-size: 0.8em;
+  font-size: calc(var(--inkkit-font-size, 15px) * 0.8);
 }
 
-.inkkit-reference-definition {
+.inkkit-root .inkkit-reference-definition {
   font-family: ui-monospace, monospace;
-  font-size: 0.8em;
+  font-size: calc(var(--inkkit-font-size, 15px) * 0.8);
   opacity: 0.7;
 }
 
-.ProseMirror mark {
+.inkkit-root .ProseMirror mark {
   background: color-mix(in srgb, #e5c041 38%, transparent);
   color: inherit;
 }
 
-.ProseMirror .inkkit-callout {
-  --callout-color: var(--accent);
+.inkkit-root .ProseMirror .inkkit-callout {
+  --callout-color: var(--_inkkit-accent);
   border-inline-start: 3px solid var(--callout-color);
-  padding: 0.65rem 1rem;
+  padding: calc(var(--inkkit-font-size, 15px) * 0.65)
+    calc(var(--inkkit-font-size, 15px) * 1);
   background: color-mix(in srgb, var(--callout-color) 7%, transparent);
 }
 
-.ProseMirror [data-inkkit-callout='TIP'] {
+.inkkit-root .ProseMirror [data-inkkit-callout='TIP'] {
   --callout-color: #30a46c;
 }
-.ProseMirror [data-inkkit-callout='IMPORTANT'] {
+.inkkit-root .ProseMirror [data-inkkit-callout='IMPORTANT'] {
   --callout-color: #8e4ec6;
 }
-.ProseMirror [data-inkkit-callout='WARNING'] {
+.inkkit-root .ProseMirror [data-inkkit-callout='WARNING'] {
   --callout-color: #d28b00;
 }
-.ProseMirror [data-inkkit-callout='CAUTION'] {
+.inkkit-root .ProseMirror [data-inkkit-callout='CAUTION'] {
   --callout-color: #e5484d;
 }
 
-.inkkit-callout-header {
+.inkkit-root .inkkit-callout-header {
   display: flex;
   align-items: baseline;
-  gap: 0.75rem;
+  gap: calc(var(--inkkit-font-size, 15px) * 0.75);
 }
 
-[data-inkkit-callout-toggle] {
-  color: var(--muted);
+.inkkit-root [data-inkkit-callout-toggle] {
+  color: var(--_inkkit-muted);
   background: transparent;
   border: 0;
-  padding: 0.25rem;
+  padding: calc(var(--inkkit-font-size, 15px) * 0.25);
   cursor: pointer;
 }
 
-.inkkit-callout[data-inkkit-folded='true'] > .inkkit-callout-body {
+.inkkit-root .inkkit-callout[data-inkkit-folded='true'] > .inkkit-callout-body {
   display: none;
 }
 
-.inkkit-comment {
+.inkkit-root .inkkit-comment {
   display: none;
 }
 
-[data-inkkit-comments-visible='true'] .inkkit-comment {
+.inkkit-root[data-inkkit-comments-visible='true'] .inkkit-comment {
   display: inline;
   white-space: pre-wrap;
-  font-family: var(--mono);
-  color: var(--muted);
-  background: var(--code-bg);
+  font-family: var(--_inkkit-mono);
+  color: var(--_inkkit-muted);
+  background: var(--_inkkit-code-bg);
 }
 
-[data-inkkit-comments-visible='true'] .inkkit-comment-block {
+.inkkit-root[data-inkkit-comments-visible='true'] .inkkit-comment-block {
   display: block;
-  padding: 0.5rem;
+  padding: calc(var(--inkkit-font-size, 15px) * 0.5);
 }
 
 @media print {
-  html,
-  body,
-  #editor,
-  .ProseMirror {
+  .inkkit-root,
+  .inkkit-root .ProseMirror {
     height: auto;
     min-height: 0;
     overflow: visible;
   }
 
-  .milkdown-table-block .table-wrapper,
-  .ProseMirror pre {
+  .inkkit-root .milkdown-table-block .table-wrapper,
+  .inkkit-root .ProseMirror pre {
     overflow: visible;
   }
 
-  .inkkit-comment,
-  [data-inkkit-comments-visible='true'] .inkkit-comment,
-  [data-inkkit-callout-toggle],
-  .ProseMirror pre .copy,
-  .milkdown-table-block .handle,
-  .milkdown-table-block .button-group,
-  .milkdown-table-block .line-handle {
+  .inkkit-root .inkkit-comment,
+  .inkkit-root[data-inkkit-comments-visible='true'] .inkkit-comment,
+  .inkkit-root [data-inkkit-callout-toggle],
+  .inkkit-root .ProseMirror pre .copy,
+  .inkkit-root .milkdown-table-block .handle,
+  .inkkit-root .milkdown-table-block .button-group,
+  .inkkit-root .milkdown-table-block .line-handle {
     display: none !important;
   }
 
-  .inkkit-callout[data-inkkit-folded='true'] > .inkkit-callout-body {
+  .inkkit-root
+    .inkkit-callout[data-inkkit-folded='true']
+    > .inkkit-callout-body {
     display: block !important;
   }
 }
 /* Diagram previews are presentation; the authored code remains editable. */
-.inkkit-mermaid-preview {
+.inkkit-root .inkkit-mermaid-preview {
   padding: 16px;
   overflow: auto;
   background: #fff;
   color: #222;
 }
-.inkkit-mermaid-preview svg {
+.inkkit-root .inkkit-mermaid-preview svg {
   display: block;
   max-width: 100%;
   height: auto;
 }
-.inkkit-mermaid-preview[data-state='error'] {
+.inkkit-root .inkkit-mermaid-preview[data-state='error'] {
   color: #9b2424;
-  font-size: 0.9em;
+  font-size: calc(var(--inkkit-font-size, 15px) * 0.9);
+}
+
+.inkkit-root .ProseMirror:focus-visible,
+.inkkit-root .inkkit-plain:focus-visible,
+.inkkit-root button:focus-visible {
+  outline: var(--inkkit-focus-width, 2px) solid
+    var(--inkkit-focus-color, var(--_inkkit-accent));
+  outline-offset: var(--inkkit-focus-offset, -2px);
 }

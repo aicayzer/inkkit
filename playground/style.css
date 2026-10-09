@@ -1,0 +1,76 @@
+html {
+  color-scheme: light dark;
+}
+body {
+  margin: 0;
+  padding: 1rem;
+  font:
+    16px/1.5 system-ui,
+    sans-serif;
+  background: Canvas;
+  color: CanvasText;
+}
+header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+header p {
+  margin: 0.5rem 0;
+}
+#toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-block: 0.5rem;
+  align-items: center;
+}
+button,
+select,
+input,
+textarea {
+  font: inherit;
+}
+button,
+select,
+input {
+  padding: 0.3rem;
+}
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 2px solid Highlight;
+  outline-offset: 2px;
+}
+#editors {
+  display: flex;
+  gap: 1rem;
+}
+#editor,
+#second-editor {
+  flex: 1;
+  min-width: 0;
+  height: 26rem;
+  overflow: auto;
+  border: 1px solid GrayText;
+}
+#second-editor[hidden] {
+  display: none;
+}
+#host-content {
+  padding-block: 0.5rem;
+}
+#host-content p {
+  margin: 0;
+}
+#status {
+  display: block;
+  padding-block: 0.5rem;
+}
+pre {
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+}
