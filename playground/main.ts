@@ -74,10 +74,17 @@ function record(error: unknown) {
   element<HTMLOutputElement>('status').value = entry.message
 }
 function selectedText() {
-  const plain = element('editor').querySelector('textarea')
-  return plain instanceof HTMLTextAreaElement
-    ? plain.value.slice(plain.selectionStart, plain.selectionEnd)
-    : (getSelection()?.toString() ?? '')
+  const root = element('editor')
+  const plain = root.querySelector('textarea')
+  if (editor.editingMode === 'source' && plain instanceof HTMLTextAreaElement)
+    return plain.value.slice(plain.selectionStart, plain.selectionEnd)
+  const selection = getSelection()
+  return selection?.anchorNode &&
+    selection.focusNode &&
+    root.contains(selection.anchorNode) &&
+    root.contains(selection.focusNode)
+    ? selection.toString()
+    : ''
 }
 function observe() {
   let snapshot, snapshotError
@@ -197,7 +204,10 @@ async function reset(
   images.setMode('import', adapterMode)
   images.setMode('export', adapterMode)
   const update = () => {
-    if (epoch === mountEpoch) queueMicrotask(updateControls)
+    if (epoch === mountEpoch)
+      queueMicrotask(() => {
+        if (epoch === mountEpoch) updateControls()
+      })
   }
   editor = await InkKitEditor.mount(
     element('editor'),
@@ -254,6 +264,7 @@ async function reset(
   return observe()
 }
 async function operation(name: string, args: Record<string, unknown> = {}) {
+  const operationEpoch = mountEpoch
   let result: unknown
   try {
     switch (name) {
@@ -371,9 +382,9 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
       default:
         throw Error(`Unknown public operation: ${name}`)
     }
-    lastResult = result ?? null
+    if (operationEpoch === mountEpoch) lastResult = result ?? null
   } catch (error) {
-    record(error)
+    if (operationEpoch === mountEpoch) record(error)
     throw error
   } finally {
     updateControls()
