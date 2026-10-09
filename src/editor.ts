@@ -62,6 +62,7 @@ import {
   type ResolvedPos,
 } from '@milkdown/kit/prose/model'
 import { keydownHandler, keymap } from '@milkdown/kit/prose/keymap'
+import { goToNextCell } from '@milkdown/kit/prose/tables'
 import { liftListItem } from '@milkdown/kit/prose/schema-list'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { findWrapping, liftTarget } from '@milkdown/kit/prose/transform'
@@ -644,13 +645,19 @@ export class InkKitEditor {
     if (this.composing)
       throw new InkKitError('composition', 'Text composition is in progress')
     if (this.writable === editable) return
-    this.writable = editable
-    this.policyEpoch += 1
-    if (!editable) this.pasteController.cancelPending()
-    this.editor.ctx
-      .get(editorViewCtx)
-      .dom.dispatchEvent(new Event('inkkit-cancel-resize'))
-    this.applyInputPolicy()
+    const suppressed = this.reportingSuppressed
+    this.reportingSuppressed = true
+    try {
+      this.writable = editable
+      this.policyEpoch += 1
+      if (!editable) this.pasteController.cancelPending()
+      this.editor.ctx
+        .get(editorViewCtx)
+        .dom.dispatchEvent(new Event('inkkit-cancel-resize'))
+      this.applyInputPolicy()
+    } finally {
+      this.reportingSuppressed = suppressed
+    }
     this.publishCommandState()
   }
 
@@ -658,8 +665,14 @@ export class InkKitEditor {
     this.assertAlive()
     if (this.composing)
       throw new InkKitError('composition', 'Text composition is in progress')
-    this.inputPreferences = { ...preferences }
-    this.applyInputPolicy()
+    const suppressed = this.reportingSuppressed
+    this.reportingSuppressed = true
+    try {
+      this.inputPreferences = { ...preferences }
+      this.applyInputPolicy()
+    } finally {
+      this.reportingSuppressed = suppressed
+    }
     this.publishCommandState()
   }
 
@@ -2061,6 +2074,17 @@ export class InkKitEditor {
     })
     if (!this.literalSurface && altKey && key === 'Enter')
       return this.navigateFootnote(shiftKey ? 'reference' : 'definition')
+    if (
+      !this.writable &&
+      !this.literalSurface &&
+      key === 'Tab' &&
+      !metaKey &&
+      !ctrlKey &&
+      !altKey
+    ) {
+      const view = this.editor.ctx.get(editorViewCtx)
+      return goToNextCell(shiftKey ? -1 : 1)(view.state, view.dispatch)
+    }
     if (!this.writable) {
       if (['Enter', 'Tab', 'Backspace', 'Delete'].includes(key))
         this.assertMutation(generation)

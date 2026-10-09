@@ -543,3 +543,90 @@ test('table exit defaults can be disabled without blocking ordinary formatted En
     expect(editor.keyDown('Enter', '', true, false, false, false, 8)).toBe(true)
     expect(editor.snapshot().text).not.toBe(before.text)
   }))
+
+test('policy events publish only after both DOM surfaces receive the completed presentation change', async () => {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const observations: {
+    editable: boolean
+    readOnly: boolean
+    contentEditable: string | null
+    spelling: (string | null)[]
+  }[] = []
+  const editor = await InkKitEditor.mount(root, {
+    changed() {},
+    stateChanged() {},
+    openLink() {},
+    copy() {},
+    commandStateChanged: (state) => {
+      observations.push({
+        editable: state.editable,
+        readOnly: root.querySelector('textarea')!.readOnly,
+        contentEditable: root
+          .querySelector('.ProseMirror')!
+          .getAttribute('contenteditable'),
+        spelling: [
+          root.querySelector('textarea')!.getAttribute('spellcheck'),
+          root.querySelector('.ProseMirror')!.getAttribute('spellcheck'),
+        ],
+      })
+    },
+  })
+  try {
+    editor.loadDocument(input)
+    observations.length = 0
+    editor.setEditable(false)
+    expect(observations).toEqual([
+      {
+        editable: false,
+        readOnly: true,
+        contentEditable: 'false',
+        spelling: [null, null],
+      },
+    ])
+    observations.length = 0
+    editor.setTextInputPreferences({ spellcheck: false })
+    expect(observations).toEqual([
+      {
+        editable: false,
+        readOnly: true,
+        contentEditable: 'false',
+        spelling: ['false', 'false'],
+      },
+    ])
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+})
+
+test('read-only buffered table Tab permits navigation without editing or adding rows', () =>
+  run((editor, _root, ctx) => {
+    editor.loadDocument({
+      ...input,
+      text: '| A | B |\n| --- | --- |\n| C | D |\n',
+    })
+    const view = ctx.get(editorViewCtx)
+    const cells: number[] = []
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'table_header' || node.type.name === 'table_cell')
+        cells.push(pos + 2)
+    })
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, cells[0]!),
+      ),
+    )
+    editor.setEditable(false)
+    const before = editor.snapshot()
+    expect(editor.keyDown('Tab', '', false, false, false, false, 8)).toBe(true)
+    expect(view.state.selection.from).toBe(cells[1])
+    expect(editor.snapshot()).toEqual(before)
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, cells.at(-1)!),
+      ),
+    )
+    expect(editor.keyDown('Tab', '', false, false, false, false, 8)).toBe(false)
+    expect(editor.snapshot()).toEqual(before)
+  }))
