@@ -605,7 +605,6 @@ function unsupportedClipboardTable(table: HTMLTableElement): boolean {
     'SPAN',
     'SUP',
     'FONT',
-    'BR',
     'IMG',
   ])
   return (
@@ -615,8 +614,19 @@ function unsupportedClipboardTable(table: HTMLTableElement): boolean {
     [...table.querySelectorAll('*')].some(
       (element) => !supported.has(element.tagName),
     ) ||
+    [...table.querySelectorAll('p')].some((paragraph) => {
+      const cell = paragraph.parentElement
+      return (
+        !cell ||
+        !['TH', 'TD'].includes(cell.tagName) ||
+        cell.children.length !== 1 ||
+        [...cell.childNodes].some(
+          (node) => node !== paragraph && !!node.textContent?.trim(),
+        )
+      )
+    }) ||
     !!table.querySelector(
-      '[rowspan]:not([rowspan="1"]),[colspan]:not([colspan="1"]),td > p ~ p,th > p ~ p',
+      '[rowspan]:not([rowspan="1"]),[colspan]:not([colspan="1"])',
     )
   )
 }

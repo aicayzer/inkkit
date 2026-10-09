@@ -162,6 +162,13 @@ test.each([
   '<table><tr><th colspan="2">merged</th></tr><tr><td>first</td><td>second</td></tr></table>',
   '<table><tr><th>head</th></tr><tr><td><table><tr><td>nested</td></tr></table></td></tr></table>',
   '<table><tr><th>head</th></tr><tr><td><custom>unsupported</custom></td></tr></table>',
+  '<table><tr><th>head</th></tr><tr><td><span><p>first</p><p>second</p></span></td></tr></table>',
+  '<table><tr><th>head</th></tr><tr><td><strong><p>first</p><p>second</p></strong></td></tr></table>',
+  '<table><tr><th>head</th></tr><tr><td>before<p>body</p>after</td></tr></table>',
+  '<table><tr><th>head</th></tr><tr><td>first<br>second</td></tr></table>',
+  '<table><tr><th>head</th></tr><tr><td><br></td></tr></table>',
+  '<table><tr><th>first<br>second</th></tr><tr><td>cell</td></tr></table>',
+  '<table><tr><th>head</th></tr><tr><td><p>first<br>second</p></td></tr></table>',
   '<table><caption><!--PRIVATE-->CAPTION</caption><tr><th>head</th></tr><tr><td><img src="image:opaque" alt="IMAGE"></td></tr></table>',
 ])(
   'mixed clipboard preserves unsupported table source and private comments: %s',
