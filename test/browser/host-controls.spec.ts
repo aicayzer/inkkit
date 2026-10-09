@@ -157,3 +157,45 @@ test('availability observation stays clean and rejects a replaced generation @ho
   ).rejects.toThrow('Document changed')
   expect((await observe(page)).commandState!.commands.undo).toBe(false)
 })
+
+for (const mode of ['source', 'formatted'] as const) {
+  test(`history keymap blocks native defaults and honours a replacement on ${mode} @host-controls`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture()
+    await page.evaluate(() =>
+      window.inkkitPlayground.replaceDocument(
+        'Original text',
+        'md',
+        'history-keymap',
+      ),
+    )
+    await operation(page, 'editingMode', { mode })
+    const surface = page.getByRole('textbox', {
+      name:
+        mode === 'source'
+          ? 'Markdown source editor'
+          : 'Formatted Markdown editor',
+      exact: true,
+    })
+    await surface.focus()
+    await surface.press('ControlOrMeta+a')
+    await surface.pressSequentially('Changed text')
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toBe('Changed text')
+    await operation(page, 'keymap', { keymap: { undo: [], redo: [] } })
+    await surface.press('ControlOrMeta+z')
+    expect((await observe(page)).snapshot!.text).toBe('Changed text')
+    await surface.press('ControlOrMeta+Shift+z')
+    expect((await observe(page)).snapshot!.text).toBe('Changed text')
+    await operation(page, 'keymap', { keymap: { undo: ['Mod-u'], redo: [] } })
+    await surface.press('ControlOrMeta+z')
+    expect((await observe(page)).snapshot!.text).toBe('Changed text')
+    await surface.press('ControlOrMeta+u')
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toBe('Original text')
+  })
+}
