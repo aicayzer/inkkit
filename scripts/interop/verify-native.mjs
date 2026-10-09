@@ -1102,6 +1102,51 @@ if (releaseAtLeast('0.0.6')) {
         same('snapshot.text', 'original', 'text'),
       ],
     },
+    'table-mixed-unsupported-comment': {
+      source: '',
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        {
+          op: 'paste',
+          input: {
+            text: 'Before head cell After',
+            html: '<p>Before</p><table><!--PRIVATE_TABLE_COMMENT--><tr><th>head</th></tr><tr><td>cell</td></tr></table><p>After</p>',
+          },
+        },
+        contains('snapshot.text', '<table><!--PRIVATE_TABLE_COMMENT-->'),
+        contains('snapshot.text', '<td>cell</td>'),
+        contains('snapshot.text', 'Before'),
+        contains('snapshot.text', 'After'),
+        { op: 'export', name: 'copied' },
+        contains('markdown', '<!--PRIVATE_TABLE_COMMENT-->', 'copied'),
+        excludes('text', 'PRIVATE_TABLE_COMMENT', 'copied'),
+        excludes('html', 'PRIVATE_TABLE_COMMENT', 'copied'),
+        contains('text', 'head', 'copied'),
+        contains('text', 'cell', 'copied'),
+        { op: 'save', name: 'saved' },
+        undo,
+        same('snapshot.text', 'original', 'text'),
+        { op: 'reopen' },
+        same('snapshot.text', 'saved', 'text'),
+        { op: 'export', name: 'reopened' },
+        excludes('text', 'PRIVATE_TABLE_COMMENT', 'reopened'),
+        excludes('html', 'PRIVATE_TABLE_COMMENT', 'reopened'),
+        { op: 'load', source: '' },
+        {
+          op: 'domPaste',
+          types: {
+            'text/plain': 'Before head cell After',
+            'text/html':
+              '<p>Before</p><table><!--PRIVATE_TABLE_COMMENT--><tr><th>head</th></tr><tr><td>cell</td></tr></table><p>After</p>',
+          },
+          name: 'event',
+        },
+        assert('prevented', true, 'event'),
+        contains('snapshot.text', '<!--PRIVATE_TABLE_COMMENT-->'),
+        undo,
+        assert('snapshot.text', ''),
+      ],
+    },
     'table-sort-invalid-number': {
       source: '| Key | Value |\n| --- | --- |\n| one | 1 |\n| bad | 2x |\n',
       operations: [

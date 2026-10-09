@@ -34,9 +34,10 @@ async function run(
     view.state.doc.descendants((node, position) => {
       if (first < 0 && node.type.name === 'table_cell') first = position + 2
     })
-    view.dispatch(
-      view.state.tr.setSelection(TextSelection.create(view.state.doc, first)),
-    )
+    if (first >= 0)
+      view.dispatch(
+        view.state.tr.setSelection(TextSelection.create(view.state.doc, first)),
+      )
     await body(editor, ctx)
   } finally {
     await editor.destroy()
@@ -150,3 +151,49 @@ test('movement retains distinct managed image references with identical alt text
     images,
   )
 })
+
+test.each([
+  '<table><!--PRIVATE--><tr><th>head</th></tr><tr><td>cell</td></tr></table>',
+  '<table><tbody><!--PRIVATE--><tr><th>head</th></tr><tr><td>cell</td></tr></tbody></table>',
+  '<table><tr><!--PRIVATE--><th>head</th></tr><tr><td>cell</td></tr></table>',
+  '<table><tr><th>head<!--PRIVATE--></th></tr><tr><td>cell</td></tr></table>',
+  '<table>\n<!--\nPRIVATE\n-->\n<tr><th>head</th></tr><tr><td>cell</td></tr>\n</table>',
+  '<table><caption>CAPTION</caption><colgroup><col span="2"></colgroup><tr><th>head</th><th>other</th></tr><tr><td>cell</td><td>second</td></tr></table>',
+  '<table><tr><th colspan="2">merged</th></tr><tr><td>first</td><td>second</td></tr></table>',
+  '<table><tr><th>head</th></tr><tr><td><table><tr><td>nested</td></tr></table></td></tr></table>',
+  '<table><tr><th>head</th></tr><tr><td><custom>unsupported</custom></td></tr></table>',
+  '<table><caption><!--PRIVATE-->CAPTION</caption><tr><th>head</th></tr><tr><td><img src="image:opaque" alt="IMAGE"></td></tr></table>',
+])(
+  'mixed clipboard preserves unsupported table source and private comments: %s',
+  (table) =>
+    run('', async (editor, ctx) => {
+      const html = `<p>Before</p>${table}<p>After</p>`
+      const template = document.createElement('template')
+      template.innerHTML = table
+      const captured = template.content.querySelector('table')!.outerHTML
+      await editor.paste({ text: 'Before\nhead\ncell\nAfter', html })
+      const view = ctx.get(editorViewCtx)
+      const saved = editor.snapshot().text
+      const pasted = view.state.doc.toJSON()
+      expect(saved).toContain(captured)
+      expect(view.state.doc.firstChild!.textContent).toBe('Before')
+      expect(view.state.doc.lastChild!.textContent).toBe('After')
+      const copy = await editor.clipboardSnapshot()
+      expect(copy.markdown).toBe(saved)
+      expect(copy.text).not.toContain('PRIVATE')
+      expect(copy.html).not.toContain('PRIVATE')
+      editor.setCommentsVisible(true)
+      expect((await editor.clipboardSnapshot()).text).not.toContain('PRIVATE')
+      expect(editor.snapshot().text).toBe(saved)
+      expect(undo(view.state, view.dispatch)).toBe(true)
+      expect(editor.snapshot().text).toBe('')
+      editor.loadDocument({
+        documentId: 'table',
+        generation: 2,
+        format: 'md',
+        text: saved,
+      })
+      expect(editor.snapshot().text).toBe(saved)
+      expect(view.state.doc.toJSON()).toEqual(pasted)
+    }),
+)

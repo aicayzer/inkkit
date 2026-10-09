@@ -2,6 +2,7 @@ import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
   DOMParser as ProseParser,
+  DOMSerializer,
   Fragment,
   Slice,
   type Node as ProseNode,
@@ -199,6 +200,18 @@ export class PasteController {
         const template = document.createElement('template')
         template.innerHTML = input.html
         const container = template.content
+        // Preserve whole unsupported tables before rewriting their descendants,
+        // so comments retain their source and ordinary-copy privacy.
+        for (const table of [...container.querySelectorAll('table')]) {
+          if (table.parentElement?.closest('table')) continue
+          if (schema.nodes.table && !unsupportedClipboardTable(table)) continue
+          const preserved = ctx.get(parserCtx)(table.outerHTML)
+          table.replaceWith(
+            DOMSerializer.fromSchema(schema).serializeFragment(
+              preserved.content,
+            ),
+          )
+        }
         for (const warning of container.querySelectorAll(
           '[data-inkkit-diagram-error]',
         ))
@@ -333,16 +346,8 @@ export class PasteController {
         for (const table of [...container.querySelectorAll('table')]) {
           if (table.parentElement?.closest('table')) continue
           const rows = [...table.querySelectorAll('tr')]
-          const widths = rows.map(
-            (row) => row.querySelectorAll(':scope > th,:scope > td').length,
-          )
           const unsupported =
-            !schema.nodes.table ||
-            widths.length === 0 ||
-            widths.some((width) => !width || width !== widths[0]) ||
-            table.querySelector(
-              'table,[rowspan]:not([rowspan="1"]),[colspan]:not([colspan="1"]),td > p ~ p,th > p ~ p,td > div,th > div,td > ul,td > ol,td > pre,td > blockquote,th > ul,th > ol,th > pre,th > blockquote',
-            )
+            !schema.nodes.table || unsupportedClipboardTable(table)
           if (!unsupported && !table.querySelector('th')) {
             for (const cell of rows[0]?.querySelectorAll(':scope > td') ?? []) {
               const heading = document.createElement('th')
@@ -573,6 +578,47 @@ export class PasteController {
       if (this.active === operation) this.active = undefined
     }
   }
+}
+function unsupportedClipboardTable(table: HTMLTableElement): boolean {
+  const rows = [...table.querySelectorAll('tr')]
+  const widths = rows.map(
+    (row) => row.querySelectorAll(':scope > th,:scope > td').length,
+  )
+  const supported = new Set([
+    'THEAD',
+    'TBODY',
+    'TFOOT',
+    'TR',
+    'TH',
+    'TD',
+    'P',
+    'STRONG',
+    'B',
+    'EM',
+    'I',
+    'S',
+    'DEL',
+    'STRIKE',
+    'CODE',
+    'A',
+    'MARK',
+    'SPAN',
+    'SUP',
+    'FONT',
+    'BR',
+    'IMG',
+  ])
+  return (
+    widths.length === 0 ||
+    widths.some((width) => !width || width !== widths[0]) ||
+    !!document.createTreeWalker(table, NodeFilter.SHOW_COMMENT).nextNode() ||
+    [...table.querySelectorAll('*')].some(
+      (element) => !supported.has(element.tagName),
+    ) ||
+    !!table.querySelector(
+      '[rowspan]:not([rowspan="1"]),[colspan]:not([colspan="1"]),td > p ~ p,th > p ~ p',
+    )
+  )
 }
 function dataImage(source: string): CapturedImage | undefined {
   const match =
