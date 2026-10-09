@@ -94,7 +94,8 @@
     var(--inkkit-padding-bottom, 48px);
   background: transparent;
   color: var(--_inkkit-text);
-  font: calc(var(--inkkit-font-size, 15px) * 1)/1.5 var(--_inkkit-mono);
+  font: calc(var(--inkkit-font-size, 15px) * 1)/var(--inkkit-line-height, 1.5)
+    var(--_inkkit-mono);
 }
 
 .inkkit-root .inkkit-plain[hidden] {
@@ -610,8 +611,9 @@
 }
 
 .inkkit-root .inkkit-footnote-reference:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
+  outline: var(--inkkit-focus-width, 2px) solid
+    var(--inkkit-focus-color, currentColor);
+  outline-offset: var(--inkkit-focus-offset, 2px);
 }
 
 .inkkit-root .inkkit-footnote-definition {
