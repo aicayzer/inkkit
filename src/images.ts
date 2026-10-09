@@ -35,6 +35,7 @@ class ImageView implements NodeView {
   ) {
     this.dom = document.createElement('span')
     this.dom.className = 'image'
+    this.view.dom.addEventListener('inkkit-cancel-resize', this.cancelResize)
     this.render()
   }
 
@@ -57,7 +58,14 @@ class ImageView implements NodeView {
     return true
   }
 
+  private cancelResize = (): void => {
+    this.stopResize?.()
+    this.stopResize = undefined
+    this.render()
+  }
+
   destroy(): void {
+    this.view.dom.removeEventListener('inkkit-cancel-resize', this.cancelResize)
     this.stopResize?.()
     this.stopResize = undefined
   }
@@ -100,6 +108,10 @@ class ImageView implements NodeView {
     const limit = this.view.dom.clientWidth
     handle.setPointerCapture?.(event.pointerId)
     const move = (moved: PointerEvent) => {
+      if (!this.view.editable) {
+        this.cancelResize()
+        return
+      }
       const next = Math.round(
         Math.min(
           limit,

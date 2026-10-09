@@ -18,6 +18,7 @@ export type EditorErrorCode =
   | 'not-ready'
   | 'stale-document'
   | 'composition'
+  | 'read-only'
   | 'operation-pending'
   | 'destroyed'
   | 'preservation'
