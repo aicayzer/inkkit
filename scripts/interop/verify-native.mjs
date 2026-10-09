@@ -1851,7 +1851,7 @@ if (releaseAtLeast('0.0.8')) {
         assert('pending', true, 'pending'),
         { op: 'editable', editable: false },
         { op: 'editable', editable: true },
-        { op: 'finishImagePaste' },
+        { op: 'finishImagePaste', expectedError: 'stale-document' },
         assert('snapshot.text', 'Before import'),
         { op: 'commandState', name: 'after' },
         assert('pending', false, 'after'),
