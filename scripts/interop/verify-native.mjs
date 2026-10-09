@@ -2127,7 +2127,7 @@ if (releaseAtLeast('0.0.10')) {
       files: true,
       fixture: 'linked-files',
       operations: [
-        { op: 'fileState', name: 'files' },
+        { op: 'fileState', ready: true, name: 'files' },
         contains('kinds', 'audio', 'files'),
         contains('kinds', 'video', 'files'),
         contains('kinds', 'pdf', 'files'),
@@ -2155,7 +2155,7 @@ if (releaseAtLeast('0.0.10')) {
       source:
         '![[Voice#t=0,0.5]]\n\n![[Movie#t=0,0.5]]\n\n![[Document#page=1]]\n',
       operations: [
-        { op: 'fileState', name: 'ready' },
+        { op: 'fileState', ready: true, name: 'ready' },
         assert('media.0.controls', true, 'ready'),
         assert('media.1.controls', true, 'ready'),
         assert('media.0.autoplay', false, 'ready'),
@@ -2169,7 +2169,7 @@ if (releaseAtLeast('0.0.10')) {
         { op: 'fileState', name: 'hidden' },
         assert('media.length', 0, 'hidden'),
         { op: 'editingMode', mode: 'formatted' },
-        { op: 'fileState', name: 'restored' },
+        { op: 'fileState', ready: true, name: 'restored' },
         assert('media.0.source', true, 'restored'),
         assert('pdfFallback', true, 'restored'),
         { op: 'fileMode', mode: 'hold' },
@@ -2212,9 +2212,7 @@ if (releaseAtLeast('0.0.10')) {
           expectedError: 'invalid-range',
         },
         {
-          op: 'selectBlocks',
-          fromSelector: ':scope > h1',
-          toSelector: ':scope > p:last-child',
+          op: 'domSelectAll',
         },
         { op: 'domCopy', name: 'domCopy' },
         contains('text', '[Audio:', 'domCopy'),

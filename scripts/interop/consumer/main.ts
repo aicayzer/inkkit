@@ -455,6 +455,18 @@ window.interop = {
             result = selection.toString()
             break
           }
+          case 'domSelectAll': {
+            editor.focus()
+            const range = document.createRange()
+            range.selectNodeContents(view())
+            const selection = getSelection()
+            selection.removeAllRanges()
+            selection.addRange(range)
+            document.dispatchEvent(new Event('selectionchange'))
+            await settle()
+            result = selection.toString()
+            break
+          }
           case 'selectBlocks': {
             editor.focus()
             const first = view().querySelectorAll(operation.fromSelector)[
@@ -521,6 +533,15 @@ window.interop = {
             break
           }
           case 'fileState': {
+            if (operation.ready) {
+              for (
+                let count = 0;
+                count < 50 &&
+                view().querySelector('[data-inkkit-file-state="loading"]');
+                count++
+              )
+                await settle()
+            }
             const nodes = [
               ...view().querySelectorAll('[data-inkkit-file-kind]'),
             ]
