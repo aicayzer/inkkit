@@ -67,10 +67,21 @@ let documentId = 'interop'
 let documentFormat = 'md'
 const settle = () => new Promise((resolve) => setTimeout(resolve, 100))
 const view = () => document.querySelector('.ProseMirror')
+const activeEditor = () =>
+  editor.editingMode === 'source' || documentFormat === 'txt'
+    ? document.querySelector('textarea.inkkit-plain')
+    : view()
+const selectedText = () => {
+  const active = activeEditor()
+  return active instanceof HTMLTextAreaElement
+    ? active.value.slice(active.selectionStart, active.selectionEnd)
+    : (getSelection()?.toString() ?? '')
+}
 const capture = () => ({
   snapshot: editor.snapshot(),
-  html: view().innerHTML,
-  selection: getSelection()?.toString() ?? '',
+  html: view()?.innerHTML ?? '',
+  selection: selectedText(),
+  editingMode: editor.editingMode,
   caretState: currentCaretState ?? null,
   error: window.lastError ?? null,
 })
@@ -137,7 +148,7 @@ const printableOutput = async (generation) => {
 const selectText = async ({ text, occurrence = 0, from = 0, to, selector }) => {
   editor.focus()
   const plain = document.querySelector('textarea')
-  if (documentFormat === 'txt') {
+  if (documentFormat === 'txt' || editor.editingMode === 'source') {
     const start = findOccurrence(plain.value, text, occurrence)
     plain.setSelectionRange(start + from, start + (to ?? text.length))
     return plain.value.slice(plain.selectionStart, plain.selectionEnd)
@@ -409,10 +420,7 @@ window.interop = {
             result = capture()
             break
           case 'composition':
-            ;(documentFormat === 'txt'
-              ? document.querySelector('textarea')
-              : view()
-            ).dispatchEvent(
+            activeEditor().dispatchEvent(
               new CompositionEvent(
                 operation.active ? 'compositionstart' : 'compositionend',
                 { bubbles: true },
@@ -474,9 +482,115 @@ window.interop = {
             result = capture()
             break
           case 'find':
-            editor.find(operation.text)
+            editor.find(operation.text, operation.generation)
             await settle()
-            result = getSelection()?.toString() ?? ''
+            result = selectedText()
+            break
+          case 'editingMode':
+            result = editor.setEditingMode(operation.mode, operation.generation)
+            break
+          case 'replaceSource':
+            result = editor.replaceSource(
+              operation.text ??
+                valueAt(results[operation.sourceName], operation.path),
+              operation.generation,
+            )
+            break
+          case 'sourceInput': {
+            const target = activeEditor()
+            if (!(target instanceof HTMLTextAreaElement))
+              throw Error('Source input requires the source textarea')
+            target.focus()
+            if (operation.value !== undefined) target.value = operation.value
+            else
+              target.setRangeText(
+                operation.text,
+                target.selectionStart,
+                target.selectionEnd,
+                'end',
+              )
+            target.dispatchEvent(
+              new InputEvent('input', {
+                bubbles: true,
+                inputType: operation.inputType ?? 'insertText',
+                data: operation.text ?? null,
+                isComposing: operation.composing ?? false,
+              }),
+            )
+            result = true
+            break
+          }
+          case 'sourceState': {
+            const target = activeEditor()
+            if (!(target instanceof HTMLTextAreaElement))
+              throw Error('Source state requires the source textarea')
+            result = {
+              text: target.value,
+              start: target.selectionStart,
+              end: target.selectionEnd,
+              focused: document.activeElement === target,
+            }
+            break
+          }
+          case 'surface': {
+            const source = document.querySelector('textarea.inkkit-plain')
+            const formatted = view()?.parentElement
+            result = {
+              sourceHidden: source?.hidden,
+              sourceDisplay: source ? getComputedStyle(source).display : null,
+              formattedHidden: formatted?.hidden,
+              formattedDisplay: formatted
+                ? getComputedStyle(formatted).display
+                : null,
+            }
+            break
+          }
+          case 'activeKeyDown': {
+            const event = new KeyboardEvent('keydown', {
+              key: operation.key,
+              code: operation.code ?? '',
+              metaKey: operation.metaKey ?? false,
+              ctrlKey: operation.ctrlKey ?? false,
+              shiftKey: operation.shiftKey ?? false,
+              bubbles: true,
+              cancelable: true,
+            })
+            activeEditor().dispatchEvent(event)
+            result = { prevented: event.defaultPrevented }
+            break
+          }
+          case 'undo':
+            result = editor.undo(operation.generation)
+            break
+          case 'redo':
+            result = editor.redo(operation.generation)
+            break
+          case 'replace':
+            result = editor.replace(
+              operation.search,
+              operation.replacement,
+              operation.generation,
+            )
+            break
+          case 'replaceAll':
+            result = editor.replaceAll(
+              operation.search,
+              operation.replacement,
+              operation.generation,
+            )
+            break
+          case 'headings':
+            result = editor.headings(operation.generation)
+            break
+          case 'navigateHeading':
+            result = editor.navigateHeading(
+              operation.entry ??
+                JSON.parse(
+                  JSON.stringify(
+                    results[operation.sourceName]?.[operation.index ?? 0],
+                  ),
+                ),
+            )
             break
           case 'insertText':
             result = editor.insertText(
@@ -510,7 +624,7 @@ window.interop = {
               bubbles: true,
               cancelable: true,
             })
-            view().dispatchEvent(event)
+            activeEditor().dispatchEvent(event)
             await settle()
             result = { prevented: event.defaultPrevented, ...capture() }
             break
