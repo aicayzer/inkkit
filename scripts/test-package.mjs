@@ -66,7 +66,7 @@ export async function checkConsumer(packageSpec, version) {
     )
     await writeFile(
       join(temp, 'main.ts'),
-      `import {InkKitEditor, InkKitError, type DocumentSnapshot, type ImageAdapter} from '@aicayzer/inkkit';\nimport '@aicayzer/inkkit/style.css';\nconst editor = await InkKitEditor.mount(document.querySelector<HTMLElement>('#editor')!, {changed(){},stateChanged(){},copy(){},openLink(){}});\neditor.loadDocument({documentId:'consumer',generation:1,format:'md',text:'# Consumer\\n'});\nconst snapshot: DocumentSnapshot = editor.snapshot(1);\nwindow.editor = editor; window.snapshot = snapshot; void InkKitError;\ndeclare global {interface Window {editor:typeof editor;snapshot:DocumentSnapshot}}\n`,
+      `import {InkKitEditor, InkKitError, type DocumentSnapshot, type ImageAdapter, type PrintableDocument, type PrintableWarning} from '@aicayzer/inkkit';\nimport '@aicayzer/inkkit/style.css';\nconst editor = await InkKitEditor.mount(document.querySelector<HTMLElement>('#editor')!, {changed(){},stateChanged(){},copy(){},openLink(){}});\neditor.loadDocument({documentId:'consumer',generation:1,format:'md',text:'# Consumer\\n'});\nconst snapshot: DocumentSnapshot = editor.snapshot(1);\nconst printable: PrintableDocument = await editor.printableSnapshot(1);\nconst styles: string = printable.styles; const warnings: readonly PrintableWarning[] = printable.warnings; void styles; void warnings;\nwindow.editor = editor; window.snapshot = snapshot; void InkKitError;\ndeclare global {interface Window {editor:typeof editor;snapshot:DocumentSnapshot}}\n`,
     )
     await writeFile(
       join(temp, 'tsconfig.json'),

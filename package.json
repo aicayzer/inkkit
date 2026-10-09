@@ -1,6 +1,6 @@
 {
   "name": "@aicayzer/inkkit",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "A preserving Markdown editor for offline web views and the web",
   "license": "MIT",
   "type": "module",

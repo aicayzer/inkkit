@@ -21,6 +21,10 @@ declare module 'mdast' {
 
 const unsupported = new Set(['html', 'image', 'imageReference'])
 
+export function sourceFrontmatter(source: string): string | undefined {
+  return /^(---|\+\+\+)\r?\n[\s\S]*?\r?\n\1(?:\r?\n|$)/.exec(source)?.[0]
+}
+
 function restoreInlineBreaks(node: Nodes): void {
   if (
     (node.type === 'paragraph' || node.type === 'heading') &&
@@ -97,10 +101,8 @@ export function createLiteralPreservation(images: boolean) {
       restoreInlineBreaks(tree)
       // Micromark's positions exclude an initial byte-order mark.
       const source = String(file.value).replace(/^\uFEFF/, '')
-      const frontmatter = /^(---|\+\+\+)\r?\n[\s\S]*?\r?\n\1(?:\r?\n|$)/.exec(
-        source,
-      )
-      const frontmatterEnd = frontmatter?.[0].length ?? 0
+      const frontmatter = sourceFrontmatter(source)
+      const frontmatterEnd = frontmatter?.length ?? 0
       const preserveBlock = <T extends RootContent>(
         node: T,
         depth = 0,
@@ -135,13 +137,13 @@ export function createLiteralPreservation(images: boolean) {
       if (frontmatter)
         blocks.push({
           type: 'inkkitLiteral',
-          value: frontmatter[0].trimEnd(),
+          value: frontmatter.trimEnd(),
           position: {
             start: { line: 1, column: 1, offset: 0 },
             end: {
               line: 1,
               column: 1,
-              offset: frontmatter[0].trimEnd().length,
+              offset: frontmatter.trimEnd().length,
             },
           },
         })

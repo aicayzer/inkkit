@@ -1,18 +1,171 @@
 import AppKit
+import CoreGraphics
 import Foundation
 import PDFKit
 import WebKit
+
+final class PDFImages {
+    var records: [[String: Any]] = []
+
+    func collect(_ resources: CGPDFDictionaryRef?, page: Int, depth: Int = 0) {
+        guard let resources, depth < 16 else { return }
+        var objects: CGPDFDictionaryRef?
+        guard CGPDFDictionaryGetDictionary(resources, "XObject", &objects), let objects else { return }
+        CGPDFDictionaryApplyBlock(objects, { key, object, _ in
+            var stream: CGPDFStreamRef?
+            guard CGPDFObjectGetValue(object, .stream, &stream), let stream,
+                  let dictionary = CGPDFStreamGetDictionary(stream) else { return true }
+            var subtype: UnsafePointer<CChar>?
+            guard CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype else { return true }
+            if String(cString: subtype) == "Image" {
+                var width: CGPDFInteger = 0
+                var height: CGPDFInteger = 0
+                var mask: CGPDFBoolean = 0
+                _ = CGPDFDictionaryGetBoolean(dictionary, "ImageMask", &mask)
+                guard mask == 0,
+                      CGPDFDictionaryGetInteger(dictionary, "Width", &width),
+                      CGPDFDictionaryGetInteger(dictionary, "Height", &height) else { return true }
+                var format = CGPDFDataFormat.raw
+                let data = CGPDFStreamCopyData(stream, &format)
+                self.records.append(["page": page, "name": String(cString: key), "width": width, "height": height, "streamBytes": data.map(CFDataGetLength) ?? 0])
+            } else if String(cString: subtype) == "Form" {
+                var nested: CGPDFDictionaryRef?
+                if CGPDFDictionaryGetDictionary(dictionary, "Resources", &nested) {
+                    self.collect(nested, page: page, depth: depth + 1)
+                }
+            }
+            return true
+        }, nil)
+    }
+}
+
+final class PDFImagePlacement {
+    var records: [[String: Any]] = []
+    var transform = CGAffineTransform.identity
+    var saved: [CGAffineTransform] = []
+    let page: Int
+    let bounds: CGRect
+    let depth: Int
+
+    init(page: Int, bounds: CGRect, transform: CGAffineTransform = .identity, depth: Int = 0) {
+        self.page = page
+        self.bounds = bounds
+        self.transform = transform
+        self.depth = depth
+    }
+
+    func scan(_ content: CGPDFContentStreamRef) {
+        guard depth < 16, let table = CGPDFOperatorTableCreate() else { return }
+        CGPDFOperatorTableSetCallback(table, "q", { _, info in
+            guard let info else { return }
+            let state = Unmanaged<PDFImagePlacement>.fromOpaque(info).takeUnretainedValue()
+            state.saved.append(state.transform)
+        })
+        CGPDFOperatorTableSetCallback(table, "Q", { _, info in
+            guard let info else { return }
+            let state = Unmanaged<PDFImagePlacement>.fromOpaque(info).takeUnretainedValue()
+            if let previous = state.saved.popLast() { state.transform = previous }
+        })
+        CGPDFOperatorTableSetCallback(table, "cm", { scanner, info in
+            guard let info else { return }
+            let state = Unmanaged<PDFImagePlacement>.fromOpaque(info).takeUnretainedValue()
+            var numbers = [CGPDFReal](repeating: 0, count: 6)
+            for index in (0..<6).reversed() {
+                guard CGPDFScannerPopNumber(scanner, &numbers[index]) else { return }
+            }
+            let next = CGAffineTransform(a: numbers[0], b: numbers[1], c: numbers[2], d: numbers[3], tx: numbers[4], ty: numbers[5])
+            state.transform = next.concatenating(state.transform)
+        })
+        CGPDFOperatorTableSetCallback(table, "Do", { scanner, info in
+            guard let info else { return }
+            Unmanaged<PDFImagePlacement>.fromOpaque(info).takeUnretainedValue().draw(scanner)
+        })
+        let scanner = CGPDFScannerCreate(content, table, Unmanaged.passUnretained(self).toOpaque())
+        _ = CGPDFScannerScan(scanner)
+    }
+
+    func draw(_ scanner: CGPDFScannerRef) {
+        var name: UnsafePointer<CChar>?
+        guard CGPDFScannerPopName(scanner, &name), let name else { return }
+        let content = CGPDFScannerGetContentStream(scanner)
+        guard let object = CGPDFContentStreamGetResource(content, "XObject", name) else { return }
+        var stream: CGPDFStreamRef?
+        guard CGPDFObjectGetValue(object, .stream, &stream), let stream,
+              let dictionary = CGPDFStreamGetDictionary(stream) else { return }
+        var subtype: UnsafePointer<CChar>?
+        guard CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype else { return }
+        if String(cString: subtype) == "Image" {
+            var width: CGPDFInteger = 0
+            var height: CGPDFInteger = 0
+            guard CGPDFDictionaryGetInteger(dictionary, "Width", &width),
+                  CGPDFDictionaryGetInteger(dictionary, "Height", &height) else { return }
+            let drawn = CGRect(x: 0, y: 0, width: 1, height: 1).applying(transform).standardized
+            let visible = drawn.intersection(bounds)
+            let area = drawn.width * drawn.height
+            records.append(["page": page, "name": String(cString: name), "width": width, "height": height,
+                            "x": drawn.minX, "y": drawn.minY, "drawnWidth": drawn.width, "drawnHeight": drawn.height,
+                            "mediaBoxFraction": area > 0 && !visible.isNull ? visible.width * visible.height / area : 0])
+        } else if String(cString: subtype) == "Form" {
+            var resources: CGPDFDictionaryRef?
+            guard CGPDFDictionaryGetDictionary(dictionary, "Resources", &resources), let resources else { return }
+            var matrix: CGPDFArrayRef?
+            var next = transform
+            if CGPDFDictionaryGetArray(dictionary, "Matrix", &matrix), let matrix, CGPDFArrayGetCount(matrix) == 6 {
+                var values = [CGPDFReal](repeating: 0, count: 6)
+                for index in 0..<6 { _ = CGPDFArrayGetNumber(matrix, index, &values[index]) }
+                next = CGAffineTransform(a: values[0], b: values[1], c: values[2], d: values[3], tx: values[4], ty: values[5]).concatenating(transform)
+            }
+            let nested = PDFImagePlacement(page: page, bounds: bounds, transform: next, depth: depth + 1)
+            nested.scan(CGPDFContentStreamCreateWithStream(stream, resources, content))
+            records.append(contentsOf: nested.records)
+        }
+    }
+}
+
+func portraitRasterProof(_ page: CGPDFPage, region: CGRect) -> [String: Any] {
+    let bounds = page.getBoxRect(.mediaBox)
+    let width = Int(ceil(bounds.width))
+    let height = Int(ceil(bounds.height))
+    var pixels = [UInt8](repeating: 255, count: width * height * 4)
+    let rendered = pixels.withUnsafeMutableBytes { buffer -> Bool in
+        guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.translateBy(x: -bounds.minX, y: -bounds.minY)
+        context.drawPDFPage(page)
+        return true
+    }
+    let colours: [[Int]] = [[240, 32, 32], [32, 192, 64], [32, 64, 240]]
+    var counts = [Int](repeating: 0, count: 3)
+    let left = max(0, Int(floor(region.minX - bounds.minX)))
+    let right = min(width, Int(ceil(region.maxX - bounds.minX)))
+    let bottom = max(0, Int(floor(region.minY - bounds.minY)))
+    let top = min(height, Int(ceil(region.maxY - bounds.minY)))
+    if left < right && bottom < top {
+        for y in bottom..<top {
+            for x in left..<right {
+                let offset = ((height - 1 - y) * width + x) * 4
+                for (index, colour) in colours.enumerated() {
+                    if (0..<3).allSatisfy({ abs(Int(pixels[offset + $0]) - colour[$0]) <= 8 }) { counts[index] += 1 }
+                }
+            }
+        }
+    }
+    return ["rendered": rendered, "dpi": 72, "width": width, "height": height, "region": ["x": region.minX, "y": region.minY, "width": region.width, "height": region.height], "red": counts[0], "green": counts[1], "blue": counts[2], "colourPixels": counts.reduce(0, +)]
+}
 
 @MainActor
 final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     var web: WKWebView!
     var window: NSWindow!
     let args = CommandLine.arguments
+    var printWeb: WKWebView?
+    var printNavigation: CheckedContinuation<Void, Error>?
     var printContinuation: CheckedContinuation<Bool, Never>?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         guard args.count == 5 else {
-            fputs("Usage: webkit-host BUNDLE export|partial|paste|scenario|print INPUT OUTPUT\n", stderr)
+            fputs("Usage: webkit-host BUNDLE export|partial|paste|scenario|print|printable INPUT OUTPUT\n", stderr)
             exit(1)
         }
         let configuration = WKWebViewConfiguration()
@@ -38,18 +191,28 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        fputs("WKWebView navigation: \(error)\n", stderr)
-        exit(1)
+        if webView === printWeb {
+            printNavigation?.resume(throwing: error)
+            printNavigation = nil
+        } else {
+            fputs("WKWebView navigation: \(error)\n", stderr)
+            exit(1)
+        }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        Task { await execute() }
+        if webView === printWeb {
+            printNavigation?.resume()
+            printNavigation = nil
+        } else {
+            Task { await execute() }
+        }
     }
 
-    func js(_ body: String, _ arguments: [String: Any] = [:]) async throws -> Any {
+    func js(_ body: String, _ arguments: [String: Any] = [:], in target: WKWebView? = nil) async throws -> Any {
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Any, Error>) in
-            web.callAsyncJavaScript(body, arguments: arguments, in: nil, in: .page) {
+            (target ?? web).callAsyncJavaScript(body, arguments: arguments, in: nil, in: .page) {
                 result in continuation.resume(with: result)
             }
         }
@@ -64,6 +227,101 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         }
     }
 
+    func frozenPrintView(_ html: String) async throws -> (WKWebView, NSWindow, Any) {
+        let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        let frozen = WKWebView(frame: NSRect(x: 0, y: 0, width: 720, height: 640), configuration: configuration)
+        printWeb = frozen
+        frozen.navigationDelegate = self
+        let panel = NSWindow(contentRect: frozen.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        panel.title = "InkKit disposable printable fixture"
+        panel.contentView = frozen
+        panel.orderFront(nil)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            printNavigation = continuation
+            frozen.loadHTMLString(html, baseURL: nil)
+        }
+        let geometry = try await js("""
+            const images = [...document.images];
+            const timeout = new Promise((_, reject) => setTimeout(() => reject(Error('Printable image decoding timed out')), 15000));
+            await Promise.race([Promise.all(images.map(async image => {
+              if (!image.src.startsWith('data:image/')) throw Error('Printable image is not portable');
+              await image.decode();
+              if (!image.complete || image.naturalWidth < 1 || image.naturalHeight < 1) throw Error('Printable image failed to decode');
+            })), timeout]);
+            await document.fonts.ready;
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            return {
+              viewportHeight: innerHeight,
+              documentScrollHeight: document.documentElement.scrollHeight,
+              editorComponents: document.querySelectorAll('.ProseMirror,textarea,button,input,select,[contenteditable],.inkkit-mermaid-preview').length,
+              activeElements: document.querySelectorAll('script,iframe,object,embed').length,
+              externalResources: performance.getEntriesByType('resource').filter(entry => /^https?:/i.test(entry.name)).map(entry => entry.name),
+              images: images.map(image => ({width:image.naturalWidth,height:image.naturalHeight,complete:image.complete,renderedWidth:image.getBoundingClientRect().width,renderedHeight:image.getBoundingClientRect().height})),
+            };
+            """, in: frozen)
+        return (frozen, panel, geometry)
+    }
+
+    func nativePrint(_ target: WKWebView, panel: NSWindow, geometry: Any, frozen: Bool) async throws -> [String: Any] {
+        panel.makeKeyAndOrderFront(nil)
+        target.layoutSubtreeIfNeeded()
+        let pdfURL = URL(fileURLWithPath: args[4]).appendingPathExtension("pdf")
+        let info = NSPrintInfo()
+        // Fixed page geometry makes verification independent of printer defaults.
+        info.paperSize = NSSize(width: 595.28, height: 841.89)
+        info.topMargin = 36
+        info.bottomMargin = 36
+        info.leftMargin = 36
+        info.rightMargin = 36
+        info.horizontalPagination = .fit
+        info.verticalPagination = .automatic
+        info.dictionary()[NSPrintInfo.AttributeKey.jobDisposition] = NSPrintInfo.JobDisposition.save.rawValue
+        info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = pdfURL as NSURL
+        let operation = target.printOperation(with: info)
+        operation.showsPrintPanel = false
+        operation.showsProgressPanel = false
+        // WebKit pagination needs the main run loop free to receive page rectangles.
+        operation.canSpawnSeparateThread = true
+        let printed = await withCheckedContinuation { continuation in
+            printContinuation = continuation
+            operation.runModal(for: panel, delegate: self, didRun: #selector(printDidRun(_:success:contextInfo:)), contextInfo: nil)
+        }
+        guard printed, let pdf = PDFDocument(url: pdfURL) else {
+            throw NSError(domain: "Interop", code: 2, userInfo: [NSLocalizedDescriptionKey: "WKWebView print did not produce a PDF"])
+        }
+        let images = PDFImages()
+        var pages: [[String: Any]] = []
+        var placements: [[String: Any]] = []
+        var rasters: [[String: Any]] = []
+        for index in 0..<pdf.pageCount {
+            guard let page = pdf.page(at: index) else { continue }
+            let bounds = page.bounds(for: .mediaBox)
+            pages.append(["page": index + 1, "width": bounds.width, "height": bounds.height])
+            if let reference = page.pageRef {
+                let placement = PDFImagePlacement(page: index + 1, bounds: bounds)
+                placement.scan(CGPDFContentStreamCreateWithPage(reference))
+                placements.append(contentsOf: placement.records)
+                for image in placement.records where image["width"] as? Int == 120 && image["height"] as? Int == 2400 {
+                    let region = CGRect(x: image["x"] as? CGFloat ?? 0, y: image["y"] as? CGFloat ?? 0, width: image["drawnWidth"] as? CGFloat ?? 0, height: image["drawnHeight"] as? CGFloat ?? 0)
+                    rasters.append(["page": index + 1, "image": image["name"] ?? "", "portrait": portraitRasterProof(reference, region: region)])
+                }
+            }
+            var resources: CGPDFDictionaryRef?
+            if let dictionary = page.pageRef?.dictionary,
+               CGPDFDictionaryGetDictionary(dictionary, "Resources", &resources) {
+                images.collect(resources, page: index + 1)
+            }
+        }
+        return [
+            "pdf": pdfURL.path, "pages": pdf.pageCount, "text": pdf.string ?? "",
+            "paperWidth": Double(info.paperSize.width), "paperHeight": Double(info.paperSize.height),
+            "printableWidth": Double(info.imageablePageBounds.width), "printableHeight": Double(info.imageablePageBounds.height),
+            "screenGeometry": geometry, "frozenDocument": frozen,
+            "imageXObjects": images.records, "imagePlacements": placements, "pageRasters": rasters, "pageGeometry": pages,
+        ]
+    }
+
     func execute() async {
         do {
             _ = try await js("""
@@ -75,48 +333,24 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
             let input = try JSONSerialization.jsonObject(
                 with: Data(contentsOf: URL(fileURLWithPath: args[3]))) as! [String: Any]
             let result: Any
-            if args[2] == "scenario" || args[2] == "print" {
+            if ["scenario", "print", "printable"].contains(args[2]) {
                 let scenario = try await js("return await window.interop.run(input)", ["input": input])
-                if args[2] == "print" {
-                    window.makeKeyAndOrderFront(nil)
-                    web.layoutSubtreeIfNeeded()
+                var output = scenario as? [String: Any] ?? [:]
+                if output["passed"] as? Bool != false && args[2] == "printable" {
+                    let name = input["printableName"] as? String ?? "printable"
+                    guard let results = output["results"] as? [String: Any],
+                          let captured = results[name] as? [String: Any],
+                          let html = captured["html"] as? String else {
+                        throw NSError(domain: "Interop", code: 3, userInfo: [NSLocalizedDescriptionKey: "Printable mode requires a named public printableSnapshot result"])
+                    }
+                    let (frozen, panel, geometry) = try await frozenPrintView(html)
+                    output["print"] = try await nativePrint(frozen, panel: panel, geometry: geometry, frozen: true)
+                } else if args[2] == "print" {
                     _ = try await js("await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return true")
-                    let screenGeometry = try await js("return { viewportHeight: innerHeight, documentScrollHeight: document.documentElement.scrollHeight, editorScrollHeight: document.querySelector('.ProseMirror')?.scrollHeight ?? null, foldedCallouts: document.querySelectorAll('[data-inkkit-folded=\"true\"]').length, commentsVisible: document.querySelector('.ProseMirror')?.getAttribute('data-inkkit-comments-visible') ?? null }")
-                    let pdfURL = URL(fileURLWithPath: args[4]).appendingPathExtension("pdf")
-                    let info = NSPrintInfo()
-                    // Fixed page geometry makes verification independent of printer defaults.
-                    info.paperSize = NSSize(width: 595.28, height: 841.89)
-                    info.topMargin = 36
-                    info.bottomMargin = 36
-                    info.leftMargin = 36
-                    info.rightMargin = 36
-                    info.horizontalPagination = .fit
-                    info.verticalPagination = .automatic
-                    info.dictionary()[NSPrintInfo.AttributeKey.jobDisposition] = NSPrintInfo.JobDisposition.save.rawValue
-                    info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = pdfURL as NSURL
-                    let operation = web.printOperation(with: info)
-                    operation.showsPrintPanel = false
-                    operation.showsProgressPanel = false
-                    // WebKit pagination needs the main run loop free to receive page rectangles.
-                    operation.canSpawnSeparateThread = true
-                    let printed = await withCheckedContinuation { continuation in
-                        printContinuation = continuation
-                        operation.runModal(for: window, delegate: self, didRun: #selector(printDidRun(_:success:contextInfo:)), contextInfo: nil)
-                    }
-                    guard printed, let pdf = PDFDocument(url: pdfURL) else {
-                        throw NSError(domain: "Interop", code: 2, userInfo: [NSLocalizedDescriptionKey: "WKWebView print did not produce a PDF"])
-                    }
-                    var output = scenario as? [String: Any] ?? [:]
-                    output["print"] = [
-                        "pdf": pdfURL.path, "pages": pdf.pageCount, "text": pdf.string ?? "",
-                        "paperWidth": Double(info.paperSize.width), "paperHeight": Double(info.paperSize.height),
-                        "printableWidth": Double(info.imageablePageBounds.width), "printableHeight": Double(info.imageablePageBounds.height),
-                        "screenGeometry": screenGeometry,
-                    ]
-                    result = output
-                } else {
-                    result = scenario
+                    let geometry = try await js("return { viewportHeight: innerHeight, documentScrollHeight: document.documentElement.scrollHeight, editorScrollHeight: document.querySelector('.ProseMirror')?.scrollHeight ?? null, foldedCallouts: document.querySelectorAll('[data-inkkit-folded=\"true\"]').length, commentsVisible: document.querySelector('.ProseMirror')?.getAttribute('data-inkkit-comments-visible') ?? null }")
+                    output["print"] = try await nativePrint(web, panel: window, geometry: geometry, frozen: false)
                 }
+                result = output
             } else {
                 _ = try await js("return window.interop.load(source, format)", [
                     "source": input["source"] as? String ?? "",

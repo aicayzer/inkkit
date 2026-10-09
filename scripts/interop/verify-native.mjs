@@ -4,8 +4,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 
 const version = process.argv[5] ?? '0.0.2'
-if (!['0.0.2', '0.0.3', '0.0.4'].includes(version))
-  throw Error('Native fixture version must be 0.0.2, 0.0.3 or 0.0.4')
+if (!['0.0.2', '0.0.3', '0.0.4', '0.0.5'].includes(version))
+  throw Error('Native fixture version must be 0.0.2, 0.0.3, 0.0.4 or 0.0.5')
 const bundle = resolve(
   process.argv[2] ?? '_local/interop/consumer/dist/index.html',
 )
@@ -195,7 +195,7 @@ const calloutSource =
   '> [!NOTE] Native &#13; title\n> Native note body.\n>  Indented &amp; native source.\n\n> [!TIP]+ Native &#10; title\n> Native tip body.\n\n> [!IMPORTANT]\n> Native important body.\n\n> [!WARNING]- Native folded title\n> Native folded body.\n\n- > [!CAUTION] Native nested title\n  > Native caution body.\n\n> [!TODO]\n> Unsupported native callout.\n\n> [!NOTE] + Spaced fold stays literal\n> Unsupported native fold.\n'
 const commentSource =
   'Public [link][Shared] <!--INLINE_SECRET <script>window.commentExecuted=true</script>--> beside %%OBSIDIAN_SECRET%% text.\n\n<!--\nBLOCK_SECRET\n-->\n\n%%\nOBSIDIAN_BLOCK_SECRET\n%%\n\n[Shared]: https://example.com/shared\n'
-if (version === '0.0.3' || version === '0.0.4')
+if (['0.0.3', '0.0.4', '0.0.5'].includes(version))
   Object.assign(scenarios, {
     'callout-lifecycle': {
       source: calloutSource,
@@ -505,7 +505,7 @@ if (version === '0.0.3' || version === '0.0.4')
       ],
     },
   })
-if (version === '0.0.4') {
+if (['0.0.4', '0.0.5'].includes(version)) {
   const flowchart = 'flowchart TD\n    A[Start] --> B[Finish]'
   const authored = `\uFEFFBefore **bold**.\r\n\r\n~~~~mermaid\r\n${flowchart.replaceAll('\n', '\r\n')}\r\n~~~~\r\n\r\nAfter &amp; preserved.\r\n`
   const editedSurrounding = authored.replace('Before', 'Changed')
@@ -657,6 +657,237 @@ if (version === '0.0.4') {
     }
   }
 }
+if (version === '0.0.5') {
+  const imageData =
+    'iVBORw0KGgoAAAANSUhEUgAAAFAAAAAoCAYAAABpYH0BAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAUKADAAQAAAABAAAAKAAAAADbisV7AAAAlUlEQVRoBe3SMQ0AIQAEQR4X6MC/Nj5BAtvO9dtM7jtrn2HPAvO5FF4BgPEIAAFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPjIA/2VgCmiePpoIAAAAASUVORK5CYII='
+  const imageSource =
+    'Before image.\n\n![Authored](images/fixture.png)\n\nAfter image.\n'
+  const longBody = Array.from(
+    { length: 65 },
+    (_, index) =>
+      `> Folded paragraph ${index + 1}: Full printed body spans pages and retains the authored source even when its editor presentation is collapsed.\n>\n`,
+  ).join('')
+  const unbroken =
+    'UNBROKEN_START_' + '0123456789abcdef'.repeat(50) + '_UNBROKEN_END'
+  const markdown = `# Frozen print heading\n\nBefore latest edit with [Reference][Shared], footnote[^Note] and ==PRINT_HIGHLIGHT==. <!--PRINT_PRIVATE_HTML--> %%PRINT_PRIVATE_OBSIDIAN%%\n\n![Authored](images/fixture.png)\n\n![Portrait](images/portrait.png)\n\n\`\`\`mermaid\nflowchart TD\nA[Printed start] --> B[Printed finish]\n\`\`\`\n\n> [!WARNING]- PRINT_FOLDED_TITLE\n${longBody}> PRINT_FOLDED_LAST\n\n| Column | Content |\n| --- | --- |\n| PRINT_TABLE | ${unbroken} |\n\n\`\`\`text\n${unbroken}\n\`\`\`\n\nPRINT_FINAL_SENTINEL\n\n[Shared]: https://example.com/printed "Printed reference"\n\n[^Note]: PRINT_FOOTNOTE_BODY with **formatting**.\n\n    PRINT_FOOTNOTE_CONTINUATION\n`
+  Object.assign(scenarios, {
+    'printable-frozen-multipage': {
+      printPortrait: { width: 120, height: 2400 },
+      source: markdown,
+      mode: 'printable',
+      printMinPages: 4,
+      printMinImages: 3,
+      printIncludes: [
+        'Frozen print heading',
+        'Latest captured edit',
+        'Reference',
+        'PRINT_HIGHLIGHT',
+        'PRINT_FOLDED_TITLE',
+        'Folded paragraph 1:',
+        'Folded paragraph 65:',
+        'PRINT_FOLDED_LAST',
+        'PRINT_TABLE',
+        'UNBROKEN_START_',
+        '_UNBROKEN_END',
+        'PRINT_FOOTNOTE_BODY',
+        'PRINT_FOOTNOTE_CONTINUATION',
+        'PRINT_FINAL_SENTINEL',
+      ],
+      printExcludes: [
+        'PRINT_PRIVATE_HTML',
+        'PRINT_PRIVATE_OBSIDIAN',
+        'LIVE_EDITOR_REPLACEMENT_NOT_IN_PDF',
+        'Expand callout',
+        'Collapse callout',
+      ],
+      operations: [
+        {
+          op: 'imageFixture',
+          reference: 'images/portrait.png',
+          width: 120,
+          height: 2400,
+          name: 'portrait',
+        },
+        { op: 'setCommentsVisible', visible: true },
+        { op: 'dom', selector: '[data-inkkit-callout-toggle]', name: 'folded' },
+        assert('nodes.0.attributes.aria-expanded', 'false', 'folded'),
+        { op: 'select', text: 'Before latest edit' },
+        {
+          op: 'insertPrintable',
+          text: 'Latest captured edit',
+          name: 'printable',
+        },
+        assert('documentId', 'interop', 'printable'),
+        assert('format', 'md', 'printable'),
+        same(
+          'generation',
+          'printable',
+          'sourceSnapshot.generation',
+          'printable',
+        ),
+        same('revision', 'printable', 'sourceSnapshot.revision', 'printable'),
+        assert('sourceSnapshot.dirty', true, 'printable'),
+        contains('sourceSnapshot.text', 'Latest captured edit', 'printable'),
+        contains('html', '<!DOCTYPE html>', 'printable'),
+        contains('html', '<style>', 'printable'),
+        contains('html', '<mark>PRINT_HIGHLIGHT</mark>', 'printable'),
+        contains('html', '<table>', 'printable'),
+        contains('html', 'https://example.com/printed', 'printable'),
+        contains('html', 'Folded paragraph 65:', 'printable'),
+        ...[
+          'PRINT_PRIVATE_HTML',
+          'PRINT_PRIVATE_OBSIDIAN',
+          'contenteditable',
+          '<button',
+          '.ProseMirror',
+          'memo-image:',
+          '<svg',
+          'data-inkkit-callout-toggle',
+        ].map((value) => excludes('html', value, 'printable')),
+        assert('warnings.length', 0, 'printable'),
+        assert('assets.length', 3, 'printable'),
+        assert('htmlImageCount', 3, 'printable'),
+        assert('assets.0.bytesBase64', imageData, 'printable'),
+        assert('assetGeometry.0.width', 80, 'printable'),
+        assert('assetGeometry.0.height', 40, 'printable'),
+        same('assets.1.bytesBase64', 'portrait', 'bytesBase64', 'printable'),
+        assert('assetGeometry.1.width', 120, 'printable'),
+        assert('assetGeometry.1.height', 2400, 'printable'),
+        ...[0, 1, 2].flatMap((index) => [
+          assert(`assets.${index}.mimeType`, 'image/png', 'printable'),
+          assert(`assetGeometry.${index}.htmlBytesMatch`, true, 'printable'),
+        ]),
+        {
+          op: 'assert',
+          path: 'assetGeometry.2.width',
+          truthy: true,
+          name: 'printable',
+        },
+        {
+          op: 'assert',
+          path: 'assetGeometry.2.height',
+          truthy: true,
+          name: 'printable',
+        },
+        { op: 'load', source: 'LIVE_EDITOR_REPLACEMENT_NOT_IN_PDF' },
+        assert('snapshot.text', 'LIVE_EDITOR_REPLACEMENT_NOT_IN_PDF'),
+      ],
+    },
+    'printable-invalid-diagram': {
+      source:
+        'Before fallback.\n\n```mermaid\nflowchart TD\nA[Unclosed\n```\n\nAfter fallback.\n',
+      mode: 'printable',
+      printIncludes: [
+        'Before fallback.',
+        'flowchart TD',
+        'A[Unclosed',
+        'After fallback.',
+      ],
+      operations: [
+        { op: 'printable', name: 'printable' },
+        assert('warnings.length', 1, 'printable'),
+        assert('warnings.0.code', 'diagram-unavailable', 'printable'),
+        {
+          op: 'assert',
+          path: 'warnings.0.message',
+          truthy: true,
+          name: 'printable',
+        },
+        assert('assets.length', 0, 'printable'),
+        contains('html', 'A[Unclosed', 'printable'),
+        { op: 'load', source: 'Safe replacement' },
+      ],
+    },
+    'printable-literal-txt': {
+      source:
+        '\uFEFF# Literal **Markdown**\r\n<script>PRINT_LITERAL_SCRIPT</script>\r\n%%PRINT_LITERAL_COMMENT%%\r\nPRINT_TXT_FINAL\r\n',
+      format: 'txt',
+      mode: 'printable',
+      printIncludes: [
+        '# Literal **Markdown**',
+        '<script>PRINT_LITERAL_SCRIPT</script>',
+        '%%PRINT_LITERAL_COMMENT%%',
+        'PRINT_TXT_FINAL',
+      ],
+      operations: [
+        { op: 'snapshot', name: 'source' },
+        { op: 'printable', name: 'printable' },
+        assert('format', 'txt', 'printable'),
+        same('generation', 'source', 'generation', 'printable'),
+        same('revision', 'source', 'revision', 'printable'),
+        assert('assets.length', 0, 'printable'),
+        assert('warnings.length', 0, 'printable'),
+        contains(
+          'html',
+          '&lt;script&gt;PRINT_LITERAL_SCRIPT&lt;/script&gt;',
+          'printable',
+        ),
+        excludes('html', '<script>', 'printable'),
+        { op: 'load', source: 'Live TXT replacement' },
+      ],
+    },
+    'printable-lifecycle-failures': {
+      source: 'Printable lifecycle text',
+      operations: [
+        { op: 'printable', generation: 0, expectedError: 'stale-document' },
+        { op: 'composition', active: true },
+        { op: 'printable', expectedError: 'composition' },
+        { op: 'composition', active: false },
+        { op: 'printable', name: 'afterComposition' },
+        contains('html', 'Printable lifecycle text', 'afterComposition'),
+        { op: 'startImagePaste' },
+        { op: 'printable', expectedError: 'operation-pending' },
+        { op: 'finishImagePaste' },
+        { op: 'printable', name: 'afterPaste' },
+        assert('assets.length', 1, 'afterPaste'),
+      ],
+    },
+    'printable-image-failures': {
+      source: imageSource,
+      operations: [
+        { op: 'imageExport', mode: 'reject' },
+        { op: 'printable', expectedError: 'image-unavailable' },
+        { op: 'imageExport', mode: 'corrupt' },
+        { op: 'printable', expectedError: 'image-unavailable' },
+        { op: 'imageExport', mode: 'normal' },
+        { op: 'printable', name: 'recovered' },
+        assert('assets.length', 1, 'recovered'),
+        assert('assetGeometry.0.width', 80, 'recovered'),
+        { op: 'load', source: 'Safe replacement' },
+      ],
+    },
+    'printable-revision-race': {
+      source: imageSource,
+      operations: [
+        { op: 'imageExport', mode: 'hold' },
+        { op: 'startPrintable' },
+        { op: 'select', text: 'Before image.' },
+        { op: 'insertText', text: 'Changed during export.' },
+        { op: 'finishPrintable', expectedError: 'stale-document' },
+        { op: 'imageExport', mode: 'normal' },
+        { op: 'printable', name: 'current' },
+        contains('html', 'Changed during export.', 'current'),
+      ],
+    },
+    'printable-generation-race': {
+      source: imageSource,
+      operations: [
+        { op: 'imageExport', mode: 'hold' },
+        { op: 'startPrintable' },
+        {
+          op: 'load',
+          source: 'Replacement during export.',
+          documentId: 'replacement',
+        },
+        { op: 'finishPrintable', expectedError: 'stale-document' },
+        { op: 'imageExport', mode: 'normal' },
+        { op: 'printable', name: 'current' },
+        assert('documentId', 'replacement', 'current'),
+        contains('html', 'Replacement during export.', 'current'),
+      ],
+    },
+  })
+}
 const evidence = {
   version,
   bundle,
@@ -678,7 +909,7 @@ for (const [name, fixture] of Object.entries(scenarios)) {
     host,
     [bundle, fixture.mode ?? 'scenario', input, output],
     {
-      timeout: fixture.mode === 'print' ? 20_000 : 120_000,
+      timeout: 120_000,
       encoding: 'utf8',
     },
   )
@@ -686,22 +917,97 @@ for (const [name, fixture] of Object.entries(scenarios)) {
   try {
     result = JSON.parse(await readFile(output, 'utf8'))
   } catch {}
-  const printFailures =
-    fixture.mode === 'print'
-      ? [
-          ...(result?.print?.pages >= (fixture.printMinPages ?? 1)
-            ? []
-            : [
-                `Printed PDF has fewer than ${fixture.printMinPages ?? 1} pages`,
-              ]),
-          ...(fixture.printIncludes ?? [])
-            .filter((value) => !result?.print?.text?.includes(value))
-            .map((value) => `Printed PDF omitted ${value}`),
-          ...(fixture.printExcludes ?? [])
-            .filter((value) => result?.print?.text?.includes(value))
-            .map((value) => `Printed PDF included ${value}`),
-        ]
-      : []
+  const printFailures = ['print', 'printable'].includes(fixture.mode)
+    ? [
+        ...(result?.print?.pages >= (fixture.printMinPages ?? 1)
+          ? []
+          : [`Printed PDF has fewer than ${fixture.printMinPages ?? 1} pages`]),
+        ...(fixture.printIncludes ?? [])
+          .filter((value) => !result?.print?.text?.includes(value))
+          .map((value) => `Printed PDF omitted ${value}`),
+        ...(fixture.printExcludes ?? [])
+          .filter((value) => result?.print?.text?.includes(value))
+          .map((value) => `Printed PDF included ${value}`),
+        ...(fixture.mode === 'printable' &&
+        result?.print?.frozenDocument !== true
+          ? ['Print did not use the captured standalone HTML']
+          : []),
+        ...(fixture.mode === 'printable' &&
+        (result?.print?.screenGeometry?.editorComponents !== 0 ||
+          result?.print?.screenGeometry?.activeElements !== 0 ||
+          result?.print?.screenGeometry?.externalResources?.length !== 0)
+          ? [
+              'Frozen print document contains editor controls, active elements or external resources',
+            ]
+          : []),
+        ...(fixture.mode === 'printable' &&
+        !result?.print?.pageGeometry?.every(
+          (page) =>
+            Math.abs(page.width - 595.28) < 1 &&
+            Math.abs(page.height - 841.89) < 1,
+        )
+          ? ['Printed pages have unexpected geometry']
+          : []),
+        ...(fixture.printMinImages &&
+        !(
+          result?.print?.imageXObjects?.filter(
+            (image) =>
+              image.width > 0 && image.height > 0 && image.streamBytes > 0,
+          ).length >= fixture.printMinImages
+        )
+          ? ['Printed PDF omitted embedded image streams']
+          : []),
+        ...(fixture.mode === 'printable'
+          ? (
+              result?.results?.[fixture.printableName ?? 'printable']
+                ?.assetGeometry ?? []
+            ).flatMap((asset) =>
+              result?.print?.imagePlacements?.some(
+                (image) =>
+                  image.width === asset.width &&
+                  image.height === asset.height &&
+                  image.mediaBoxFraction > 0.999 &&
+                  image.drawnWidth > 0 &&
+                  image.drawnHeight > 0,
+              )
+                ? []
+                : [
+                    `Printed PDF has no complete page-contained image placement for ${asset.width}x${asset.height}`,
+                  ],
+            )
+          : []),
+        ...(fixture.printPortrait &&
+        !result?.print?.imagePlacements?.some((image) => {
+          if (
+            image.width !== fixture.printPortrait.width ||
+            image.height !== fixture.printPortrait.height ||
+            image.mediaBoxFraction < 0.999
+          )
+            return false
+          const raster = result?.print?.pageRasters?.find(
+            (page) => page.page === image.page && page.image === image.name,
+          )?.portrait
+          const bands = [
+            raster?.red ?? 0,
+            raster?.green ?? 0,
+            raster?.blue ?? 0,
+          ]
+          const coverage =
+            (raster?.colourPixels ?? 0) / (image.drawnWidth * image.drawnHeight)
+          return (
+            raster?.rendered === true &&
+            Math.min(...bands) > 100 &&
+            Math.max(...bands) / Math.min(...bands) < 1.06 &&
+            coverage > 0.95 &&
+            coverage < 1.05
+          )
+        })
+          ? [
+              'Native PDF raster does not show all equal portrait bands covering the complete drawn image area',
+            ]
+          : []),
+      ]
+    : []
   evidence.scenarios.push({
     name,
     passed:
@@ -711,7 +1017,7 @@ for (const [name, fixture] of Object.entries(scenarios)) {
     input,
     output,
     steps: result?.steps.length ?? 0,
-    ...(fixture.mode === 'print'
+    ...(['print', 'printable'].includes(fixture.mode)
       ? { print: result?.print, printFailures }
       : {}),
   })
