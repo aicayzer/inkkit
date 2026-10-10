@@ -65,7 +65,9 @@ test('unsupported multiline table input rejects before mutation @consolidation',
   })
   await operation(page, 'find', { text: 'Original' })
   const before = (await observe(page)).snapshot
-  await operation(page, 'insertText', { text: 'one\r\ntwo\n' })
+  await expect(
+    operation(page, 'insertText', { text: 'one\r\ntwo\n' }),
+  ).rejects.toThrow('The edited Markdown cannot be reopened')
   const failed = await observe(page)
   expect(failed.snapshot).toEqual(before)
   expect(failed.diagnostics).toContainEqual(
