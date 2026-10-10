@@ -14,20 +14,20 @@ The everyday fixture is a short document with formatting and tasks. The large fi
 
 ## Atlas measurements, 10 October 2026
 
-The retained 0.0.10 baseline and initial 0.0.11 comparison use the same measurement harness. Median values are milliseconds; edit medians use all 30 insertions per configuration/document. The release evidence contains final clean-candidate measurements and their hashes.
+The retained 0.0.10 baseline and clean 0.0.11 candidate comparison use the same measurement harness. Median values are milliseconds; edit medians use all 30 insertions per configuration/document. The release evidence contains all clean-candidate measurements and their hashes.
 
 | Configuration/document | Ready 0.0.10 / 0.0.11 | Load 0.0.10 / 0.0.11 | Edit 0.0.10 / 0.0.11 | Snapshot 0.0.10 / 0.0.11 |
 | ---------------------- | --------------------: | -------------------: | -------------------: | -----------------------: |
-| Minimal/everyday       |             189 / 174 |              12 / 13 |            2.1 / 1.3 |               0.6 / <0.1 |
-| Minimal/large          |             184 / 172 |            277 / 272 |             175 / 89 |                85 / <0.1 |
-| Minimal/mixed          |             192 / 182 |            245 / 239 |             146 / 73 |                68 / <0.1 |
-| Rich/everyday          |             194 / 195 |              13 / 15 |            2.2 / 1.5 |               0.8 / <0.1 |
-| Rich/large             |             194 / 191 |            279 / 284 |             176 / 91 |                86 / <0.1 |
-| Rich/mixed             |             190 / 186 |            245 / 250 |             146 / 76 |                68 / <0.1 |
+| Minimal/everyday       |             203 / 193 |              14 / 14 |            2.2 / 1.6 |               0.7 / <0.1 |
+| Minimal/large          |             189 / 193 |            273 / 293 |             176 / 92 |                85 / <0.1 |
+| Minimal/mixed          |             198 / 190 |            262 / 250 |             150 / 75 |                72 / <0.1 |
+| Rich/everyday          |             200 / 191 |              14 / 14 |            2.4 / 1.5 |               1.1 / <0.1 |
+| Rich/large             |             200 / 192 |            297 / 286 |             184 / 92 |                89 / <0.1 |
+| Rich/mixed             |             205 / 186 |            261 / 247 |             151 / 75 |                70 / <0.1 |
 
-Minimal mixed render waiting fell from 54 ms to the timer floor when preview work was disabled; rich mixed remained about 62–67 ms. Small startup differences are within machine/run variation and do not establish a general startup improvement.
+Minimal mixed render waiting fell from 60 ms to the timer floor when preview work was disabled; rich mixed remained about 63 ms before and 64 ms after. Small startup differences are within machine/run variation and do not establish a general startup improvement.
 
-The all-in-one measurement page was 6,085,945 bytes (gzip 1,720,432) for the baseline and 6,095,095 (gzip 1,724,429) for the initial candidate. Both configurations use the same bundled page. The page includes the test bridge, fixture assets and measurement code, so these are consumer sizes, not the package tarball size. Rendered module attribution is before final minification and cannot be added directly to compressed bytes; Mermaid alone accounts for about 3 MB at that stage, with further layout dependencies elsewhere.
+The all-in-one measurement page was 6,086,749 bytes (gzip 1,720,663) for the baseline and 6,095,767 (gzip 1,724,624) for the clean candidate. Both configurations use the same bundled page. The page includes the test bridge, fixture assets and measurement code, so these are consumer sizes, not the package tarball size. Rendered module attribution is before final minification and cannot be added directly to compressed bytes; Mermaid alone accounts for about 3 MB at that stage, with further layout dependencies elsewhere.
 
 ## Decisions
 
