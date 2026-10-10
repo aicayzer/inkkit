@@ -114,6 +114,12 @@ export function mountUI(api: Playground) {
       if (matchesQuery) matches++
     }
     element('fixture-empty').hidden = matches > 0
+    text(
+      'fixture-count',
+      query
+        ? `${matches}/${description.fixtures.length}`
+        : String(description.fixtures.length),
+    )
   })
   for (const command of tableCommands) {
     element('table-action').append(new Option(command, command))
@@ -125,9 +131,10 @@ export function mountUI(api: Playground) {
     const operation = description.operations.find(
       (entry) => entry.name === value('operation-name'),
     )
+    text('operation-description', operation?.description ?? '')
     text(
-      'operation-description',
-      operation ? `${operation.description} ${operation.args}` : '',
+      'operation-signature',
+      operation?.args === 'none' ? '' : (operation?.args ?? ''),
     )
     element<HTMLTextAreaElement>('operation-args').value = json(
       operation?.example ?? {},
@@ -173,25 +180,37 @@ export function mountUI(api: Playground) {
       const {
         operations: _operations,
         outputs: _outputs,
+        lifecycle,
+        snapshot,
         ...state
       } = observation
       text(
         'observations',
         json({
+          lifecycle,
+          snapshot: textMetadata(snapshot),
           ...state,
-          snapshot: textMetadata(state.snapshot),
           textSnapshot: textMetadata(state.textSnapshot),
           secondTextSnapshot: textMetadata(state.secondTextSnapshot),
           lastResult: compact(state.lastResult),
         }),
       )
     } else if (activeTab === 'operations') {
+      const count = observation.operations.length
+      const summary = count
+        ? `${count} operation${count === 1 ? '' : 's'}`
+        : 'No operations'
+      const dropped = observation.droppedOperations
+        ? `; ${observation.droppedOperations} dropped`
+        : ''
       text('operation-history', json(compact(observation.operations)))
-      text(
-        'history-count',
-        `${observation.operations.length} operations recorded; ${observation.droppedOperations} older entries dropped.`,
-      )
+      element('operation-history').hidden = count === 0
+      text('history-count', summary + dropped)
     } else if (activeTab === 'adapters') {
+      const hasEvents =
+        observation.adapterEvents.length + observation.fileEvents.length > 0
+      element('adapter-empty').hidden = hasEvents
+      element('adapter-events').hidden = !hasEvents
       text(
         'adapter-events',
         json({
@@ -230,6 +249,18 @@ export function mountUI(api: Playground) {
     })
   }
   element('inspector').addEventListener('toggle', renderInspector)
+  const configurationPanel = element<HTMLDetailsElement>('configuration-panel')
+  const dismissConfiguration = (event: PointerEvent) => {
+    if (!configurationPanel.contains(event.target as Node))
+      configurationPanel.open = false
+  }
+  document.addEventListener('pointerdown', dismissConfiguration)
+  configurationPanel.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !configurationPanel.open) return
+    event.preventDefault()
+    configurationPanel.open = false
+    configurationPanel.querySelector('summary')?.focus()
+  })
   function renderSource() {
     if (!element<HTMLInputElement>('show-source').checked) return
     const snapshot = observation.snapshot
@@ -345,11 +376,12 @@ export function mountUI(api: Playground) {
     const identity = snapshot
       ? `${snapshot.documentId} · generation ${snapshot.generation} · revision ${snapshot.revision} · ${snapshot.dirty ? 'Modified' : 'Unchanged'}`
       : 'Document unavailable'
+    text('status', `${observation.lifecycle} · ${identity}`)
     text(
-      'status',
-      `${observation.lifecycle} · ${identity}${failure ? ` · ${typeof failure === 'string' ? failure : failure.message}` : ''}`,
+      'failure',
+      failure ? (typeof failure === 'string' ? failure : failure.message) : '',
     )
-    element('status').dataset.error = String(Boolean(failure))
+    element('failure').hidden = !failure
     renderSource()
     renderInspector()
   }
@@ -528,5 +560,26 @@ export function mountUI(api: Playground) {
     notice('Evidence downloaded')
   })
   render()
-  return api.subscribe(render)
+  const unsubscribe = api.subscribe(render)
+  let geometryFrame: number | undefined
+  const refreshGeometry = () => {
+    if (geometryFrame !== undefined) return
+    geometryFrame = requestAnimationFrame(() => {
+      geometryFrame = undefined
+      render()
+    })
+  }
+  const editorRoot = element('editor')
+  const resizeObserver = new ResizeObserver(refreshGeometry)
+  resizeObserver.observe(editorRoot)
+  editorRoot.addEventListener('scroll', refreshGeometry, { passive: true })
+  window.addEventListener('scroll', refreshGeometry, { passive: true })
+  return () => {
+    unsubscribe()
+    resizeObserver.disconnect()
+    editorRoot.removeEventListener('scroll', refreshGeometry)
+    window.removeEventListener('scroll', refreshGeometry)
+    document.removeEventListener('pointerdown', dismissConfiguration)
+    if (geometryFrame !== undefined) cancelAnimationFrame(geometryFrame)
+  }
 }

@@ -456,6 +456,22 @@ for (const viewport of [
       exact: true,
     })
     const header = page.locator('.workspace-header')
+    const source = (await observe(page)).snapshot
+    const fixtureLabels = await page
+      .getByRole('navigation', { name: 'Fixtures', exact: true })
+      .getByRole('button')
+      .evaluateAll((buttons) =>
+        buttons.map((button) => ({
+          text: button.textContent,
+          width: button.clientWidth,
+          contentWidth: button.scrollWidth,
+        })),
+      )
+    for (const label of fixtureLabels)
+      expect(
+        label.contentWidth,
+        label.text ?? 'Fixture label',
+      ).toBeLessThanOrEqual(label.width)
     for (const name of ['Operations', 'Adapters', 'Output', 'State']) {
       const tab = page.getByRole('tab', { name, exact: true })
       await tab.click()
@@ -464,8 +480,108 @@ for (const viewport of [
       await expect(editor).toBeInViewport({ ratio: 1 })
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
     }
+    await page.setViewportSize({
+      width: viewport.width - 80,
+      height: viewport.height - 60,
+    })
+    await expect
+      .poll(async () => {
+        const visible = JSON.parse(
+          (await page.locator('#observations').textContent())!,
+        )
+        return visible.viewport.rect.width
+      })
+      .toBe((await observe(page)).viewport!.rect.width)
+    await page.locator('#editor').evaluate((element) => {
+      element.scrollTop = 150
+    })
+    await expect
+      .poll(
+        async () =>
+          JSON.parse((await page.locator('#observations').textContent())!)
+            .viewport.scrollTop,
+      )
+      .toBe(150)
+    expect((await observe(page)).snapshot).toEqual(source)
   })
 }
+
+test('fixture filtering and configuration dismissal leave the document untouched @playground', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture('untidy')
+  const before = await observe(page)
+  const search = page.getByRole('searchbox', { name: 'Search fixtures' })
+  const fixtures = page.getByRole('navigation', {
+    name: 'Fixtures',
+    exact: true,
+  })
+  await search.fill('linked')
+  await expect(fixtures.getByRole('button')).toHaveCount(1)
+  await expect(page.locator('#fixture-count')).toHaveText('1/10')
+  await search.fill('no-such-fixture')
+  await expect(
+    page.getByText('No matching fixtures.', { exact: true }),
+  ).toBeVisible()
+  await search.fill('')
+  await expect(fixtures.getByRole('button')).toHaveCount(10)
+  const toggle = page.locator('#configuration-panel > summary')
+  await toggle.click()
+  const preset = page.getByRole('combobox', {
+    name: 'Configuration',
+    exact: true,
+  })
+  await expect(preset).toBeVisible()
+  await preset.press('Escape')
+  await expect(preset).toBeHidden()
+  await expect(toggle).toBeFocused()
+  await toggle.click()
+  await page.getByRole('tab', { name: 'Adapters', exact: true }).click()
+  await expect(preset).toBeHidden()
+  expect((await observe(page)).snapshot).toEqual(before.snapshot)
+  expect((await observe(page)).operations).toEqual(before.operations)
+})
+
+test('empty inspectors stay concise and long failures preserve usable workspace @playground', async ({
+  page,
+  openFixture,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await openFixture('everyday')
+  await page.getByRole('tab', { name: 'Adapters', exact: true }).click()
+  await expect(
+    page.getByText('No adapter events', { exact: true }),
+  ).toBeVisible()
+  await expect(page.locator('#adapter-events')).toBeHidden()
+  await page.getByRole('tab', { name: 'Operations', exact: true }).click()
+  await expect(page.getByText('No operations', { exact: true })).toBeVisible()
+  await expect(page.locator('#operation-history')).toBeHidden()
+  const name = 'unknown-' + 'long-diagnostic-'.repeat(200)
+  await expect(operation(page, name)).rejects.toThrow(
+    'Unknown public operation',
+  )
+  await expect(page.locator('#failure')).toHaveText(
+    `Unknown public operation: ${name}`,
+  )
+  await expect(page.locator('#status')).toContainText('ready')
+  await expect(page.locator('.workspace-header')).toBeInViewport({ ratio: 1 })
+  await expect(
+    page.getByRole('region', { name: 'Editor workspace', exact: true }),
+  ).toBeInViewport({ ratio: 1 })
+  await expect(page.locator('#operation-history')).toBeVisible()
+  await expect(page.locator('#operation-history')).toContainText(
+    '"status": "error"',
+  )
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBe(true)
+  await page.getByRole('button', { name: 'Reset fixture', exact: true }).click()
+  await expect(page.locator('#failure')).toBeHidden()
+  await expect(page.getByText('No operations', { exact: true })).toBeVisible()
+})
 
 for (const appearance of [
   {

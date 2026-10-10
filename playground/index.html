@@ -8,8 +8,11 @@
   <body>
     <div class="playground-shell">
       <aside class="fixture-rail" aria-label="Fixture catalogue">
-        <div class="brand"><strong>InkKit</strong><span>Playground</span></div>
-        <label class="search-label" for="fixture-search">Fixtures</label>
+        <div class="brand"><strong>InkKit</strong></div>
+        <div class="rail-heading">
+          <label class="search-label" for="fixture-search">Fixtures</label
+          ><span id="fixture-count"></span>
+        </div>
         <input
           id="fixture-search"
           type="search"
@@ -18,9 +21,6 @@
         />
         <nav id="fixture-list" aria-label="Fixtures"></nav>
         <p id="fixture-empty" hidden>No matching fixtures.</p>
-        <div class="rail-footer">
-          Local fixtures <span id="fixture-count"></span>
-        </div>
       </aside>
       <main class="workspace">
         <header class="workspace-header">
@@ -33,10 +33,7 @@
             <details id="configuration-panel" class="configuration-panel">
               <summary>Configuration</summary>
               <div class="configuration-content">
-                <p class="hint">
-                  Configuration, linked files and editor count recreate the
-                  editor.
-                </p>
+                <p class="hint">Changes recreate the editor.</p>
                 <label
                   >Configuration<select id="configuration">
                     <option value="minimal">Minimal</option>
@@ -47,9 +44,11 @@
                   ><input id="files" type="checkbox" />Linked file
                   adapters</label
                 >
-                <label class="check"
-                  ><input id="two-editors" type="checkbox" />Second editor and
-                  host probes</label
+                <label
+                  class="check"
+                  title="Second editor and unrelated host content"
+                  ><input id="two-editors" type="checkbox" />Isolation
+                  probes</label
                 >
               </div>
             </details>
@@ -71,8 +70,12 @@
             ><button id="read-only">Make read-only</button>
           </div>
           <label class="check source-toggle"
-            ><input id="show-source" type="checkbox" checked />Show source
-            snapshot</label
+            ><input
+              id="show-source"
+              type="checkbox"
+              checked
+              aria-label="Show source snapshot"
+            />Source snapshot</label
           >
         </nav>
         <details class="tools-panel" id="tools-panel">
@@ -191,8 +194,11 @@
             <div class="pane-heading">
               <h2>Source snapshot</h2>
               <label class="check"
-                ><input id="escaped-source" type="checkbox" />Escaped
-                source</label
+                ><input
+                  id="escaped-source"
+                  type="checkbox"
+                  aria-label="Escaped source"
+                />Escaped</label
               >
             </div>
             <pre
@@ -206,6 +212,13 @@
         <div class="status-strip">
           <output id="status" role="status">Initialising</output
           ><span id="action-status" aria-live="polite"></span>
+          <output
+            id="failure"
+            class="error"
+            role="status"
+            tabindex="0"
+            hidden
+          ></output>
         </div>
         <details id="inspector" class="inspector" open>
           <summary>Inspector</summary>
@@ -260,11 +273,15 @@
             hidden
           >
             <div class="operation-runner">
-              <label>Operation<select id="operation-name"></select></label>
-              <p id="operation-description" class="hint"></p>
-              <label
-                >Arguments (JSON object)<textarea
+              <div class="operation-choice">
+                <label>Operation<select id="operation-name"></select></label>
+                <p id="operation-description" class="hint"></p>
+                <p id="operation-signature" class="hint"></p>
+              </div>
+              <label class="operation-arguments"
+                >Arguments<textarea
                   id="operation-args"
+                  aria-label="Arguments (JSON object)"
                   rows="3"
                   spellcheck="false"
                 ></textarea></label
@@ -286,45 +303,52 @@
             <div class="adapter-grid">
               <fieldset>
                 <legend>Image import</legend>
-                <label
-                  >Image import<select id="image-import">
-                    <option value="normal">Success</option>
-                    <option value="reject">Reject</option>
-                    <option value="hold">Hold</option>
-                  </select></label
-                >
+                <select id="image-import" aria-label="Image import">
+                  <option value="normal">Success</option>
+                  <option value="reject">Reject</option>
+                  <option value="hold">Hold</option>
+                </select>
                 <div class="actions">
                   <button id="import-image">Import fixture image</button
-                  ><button id="release-import">Release image import</button>
+                  ><button
+                    id="release-import"
+                    aria-label="Release image import"
+                  >
+                    Release image import
+                  </button>
                 </div>
               </fieldset>
               <fieldset>
                 <legend>Image export</legend>
-                <label
-                  >Image export<select id="image-export">
-                    <option value="normal">Success</option>
-                    <option value="reject">Reject</option>
-                    <option value="hold">Hold</option>
-                    <option value="corrupt">Corrupt bytes</option>
-                  </select></label
-                ><button id="release-export">Release image export</button>
+                <select id="image-export" aria-label="Image export">
+                  <option value="normal">Success</option>
+                  <option value="reject">Reject</option>
+                  <option value="hold">Hold</option>
+                  <option value="corrupt">Corrupt bytes</option>
+                </select>
+                <div class="actions">
+                  <button id="release-export">Release image export</button>
+                </div>
               </fieldset>
               <fieldset>
                 <legend>Files</legend>
-                <label
-                  >File adapter<select id="file-adapter">
-                    <option value="normal">Success</option>
-                    <option value="reject">Reject</option>
-                    <option value="hold">Hold</option>
-                    <option value="corrupt">Corrupt bytes</option>
-                  </select></label
-                ><button id="release-file">Release file operations</button>
+                <select id="file-adapter" aria-label="File adapter">
+                  <option value="normal">Success</option>
+                  <option value="reject">Reject</option>
+                  <option value="hold">Hold</option>
+                  <option value="corrupt">Corrupt bytes</option>
+                </select>
+                <div class="actions">
+                  <button id="release-file">Release file operations</button>
+                </div>
               </fieldset>
             </div>
+            <p id="adapter-empty" class="hint">No adapter events</p>
             <pre
               id="adapter-events"
               tabindex="0"
               aria-label="Adapter events"
+              hidden
             ></pre>
           </section>
           <section
@@ -334,12 +358,17 @@
             hidden
           >
             <div class="actions output-actions">
-              <button id="capture-clipboard">Capture clipboard output</button
-              ><button id="printable">Capture printable output</button
+              <button
+                id="capture-clipboard"
+                aria-label="Capture clipboard output"
+              >
+                Capture clipboard</button
+              ><button id="printable" aria-label="Capture printable output">
+                Capture print</button
               ><button id="source">Copy as Markdown</button
               ><button id="copy-readable">Copy readable content</button>
             </div>
-            <p id="output-empty" class="hint">Capture output to inspect it.</p>
+            <p id="output-empty" class="hint">No captured output</p>
             <div id="captured-output"></div>
           </section>
         </details>
