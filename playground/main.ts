@@ -58,6 +58,7 @@ for (const command of tableCommands) {
   element<HTMLSelectElement>('table-action').append(option)
 }
 let editor: InkKitEditor
+let mounting = true
 let secondEditor: InkKitEditor | undefined
 let images = new ControlledImages()
 let files = new ControlledFiles()
@@ -79,6 +80,7 @@ function record(error: unknown) {
   element<HTMLOutputElement>('status').value = entry.message
 }
 function selectedText() {
+  if (mounting) return ''
   const root = element('editor')
   const plain = root.querySelector('textarea')
   if (editor.editingMode === 'source' && plain instanceof HTMLTextAreaElement)
@@ -94,7 +96,7 @@ function selectedText() {
 function observe() {
   let snapshot, snapshotError
   try {
-    snapshot = editor.snapshot(generation)
+    if (!mounting) snapshot = editor.snapshot(generation)
   } catch (error) {
     snapshotError = {
       message: String(error),
@@ -103,13 +105,13 @@ function observe() {
   }
   let commandState, commandStateError
   try {
-    commandState = editor.commandState(generation)
+    if (!mounting) commandState = editor.commandState(generation)
   } catch (error) {
     commandStateError = String(error)
   }
   let textSnapshot, textSnapshotError
   try {
-    textSnapshot = editor.textSnapshot()
+    if (!mounting) textSnapshot = editor.textSnapshot()
   } catch (error) {
     textSnapshotError = String(error)
   }
@@ -120,14 +122,16 @@ function observe() {
     snapshot: snapshot ?? null,
     snapshotError: snapshotError ?? null,
     selectedText: selectedText(),
-    mode: editor.editingMode,
-    editable: editor.editable,
+    mode: mounting ? null : editor.editingMode,
+    editable: mounting ? null : editor.editable,
     commandState: commandState ?? null,
     commandStateError: commandStateError ?? null,
     textSnapshot: textSnapshot ?? null,
     textSnapshotError: textSnapshotError ?? null,
-    viewport: editor.viewport(),
-    secondTextSnapshot: secondEditor?.textSnapshot() ?? null,
+    viewport: mounting ? null : editor.viewport(),
+    secondTextSnapshot: mounting
+      ? null
+      : (secondEditor?.textSnapshot() ?? null),
     adapterEvents: [...images.events],
     fileEvents: [...files.events],
     diagnostics: [...diagnostics],
@@ -135,7 +139,7 @@ function observe() {
   }
 }
 function updateControls() {
-  if (!editor) return
+  if (!editor || mounting) return
   const observation = observe()
   element('observations').textContent = JSON.stringify(observation, null, 2)
   element('editing-mode').textContent =
@@ -205,6 +209,7 @@ async function reset(
   )
     throw Error(`Unknown configuration: ${nextConfiguration}`)
   const epoch = ++mountEpoch
+  mounting = true
   if (editor) await editor.destroy()
   if (secondEditor) {
     await secondEditor.destroy()
@@ -253,6 +258,10 @@ async function reset(
     },
     {
       images: configuration === 'rich' ? images.adapter : undefined,
+      rendering:
+        configuration === 'minimal'
+          ? { codeHighlighting: false, diagramPreview: false }
+          : undefined,
       files:
         configuration === 'rich' &&
         (fixtureId === 'linked-files' || params.get('files') === 'true')
@@ -292,6 +301,7 @@ async function reset(
       text: '# Independent fixture\n\nIndependent content.\n',
     })
   }
+  mounting = false
   updateControls()
   return observe()
 }
@@ -386,6 +396,9 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         break
       case 'focus':
         editor.focus()
+        break
+      case 'commentsVisible':
+        result = editor.setCommentsVisible(Boolean(args.visible))
         break
       case 'insertText':
         result = editor.insertText(String(args.text), generation)
@@ -663,5 +676,5 @@ declare global {
     inkkitPlayground: typeof playground
   }
 }
-window.inkkitPlayground = playground
 await reset()
+window.inkkitPlayground = playground

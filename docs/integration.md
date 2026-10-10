@@ -15,6 +15,7 @@ import '@aicayzer/inkkit/style.css'
 async function mountWritingTool(root: HTMLElement, events: EditorEvents) {
   const editor = await InkKitEditor.mount(root, events, {
     textInput: { spellcheck: true },
+    rendering: { codeHighlighting: false, diagramPreview: false },
   })
   editor.loadDocument({
     documentId: 'draft',
@@ -29,6 +30,8 @@ async function mountWritingTool(root: HTMLElement, events: EditorEvents) {
 Capture `editor.snapshot(1)` when saving. Persist its complete `text` only after capture succeeds; a composition, pending operation or stale generation error is not an unchanged document. Keep the document open on failure. The `changed` event can prompt save scheduling, but it does not replace a fresh snapshot at the save boundary.
 
 Without an image adapter, image references remain literal Markdown. TXT documents use `format: 'txt'` and remain literal on both screen and export. The host can offer formatted/source switching through `setEditingMode()` without replacing the document or its history.
+
+The example's optional presentation switches require 0.0.11. Omit them to retain highlighting and diagram previews. Explicit clipboard and printable diagram exports still render when previews are disabled. The generic isolated native consumer and its selectable `integration` group exercise assembled minimal/rich interactions; these fixture hosts establish engine contracts without proving app storage, permissions or opening actions. See [measured costs](performance.md) and the [native runner](../scripts/interop/README.md).
 
 ## A richer document app
 

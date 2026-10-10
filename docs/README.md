@@ -10,6 +10,7 @@ These guides describe InkKit’s public contracts. Host editability, text-input 
 | [Preservation and clipboard](preservation.md)   | Understand source fidelity, sharing, literal fallback and failed-operation handling.                       |
 | [Development playground](playground.md)         | Select fixtures, reset controlled state and inspect facade observations.                                   |
 | [Development](development.md)                   | Run bounded package/browser/native checks and follow the GitHub workflow.                                  |
+| [Performance](performance.md)                   | Reproduce minimal/rich offline size, startup and editing measurements.                                     |
 | [Releases](releasing.md)                        | Verify the actual package and record publication evidence.                                                 |
 | [Historical verification](verification.md)      | Read retained evidence for earlier releases.                                                               |
 

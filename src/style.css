@@ -719,7 +719,7 @@
   display: none;
 }
 
-.inkkit-root[data-inkkit-comments-visible='true'] .inkkit-comment {
+.inkkit-root [data-inkkit-comments-visible='true'] .inkkit-comment {
   display: inline;
   white-space: pre-wrap;
   font-family: var(--_inkkit-mono);
@@ -727,7 +727,7 @@
   background: var(--_inkkit-code-bg);
 }
 
-.inkkit-root[data-inkkit-comments-visible='true'] .inkkit-comment-block {
+.inkkit-root [data-inkkit-comments-visible='true'] .inkkit-comment-block {
   display: block;
   padding: calc(var(--inkkit-font-size, 15px) * 0.5);
 }
@@ -746,7 +746,6 @@
   }
 
   .inkkit-root .inkkit-comment,
-  .inkkit-root[data-inkkit-comments-visible='true'] .inkkit-comment,
   .inkkit-root [data-inkkit-callout-toggle],
   .inkkit-root .ProseMirror pre .copy,
   .inkkit-root .milkdown-table-block .handle,

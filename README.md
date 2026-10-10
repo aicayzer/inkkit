@@ -39,12 +39,14 @@ editor.loadDocument({
 const snapshot = editor.snapshot(1)
 ```
 
-InkKit runs on the web and in offline web views. Hosts use its public TypeScript facade and own toolbars, menus, persistence, clipboard bridges, Print/PDF actions and image storage. Images require an adapter; private references stay opaque. TXT stays literal. RTF files and richer media are outside current support.
+InkKit runs on the web and in offline web views. Hosts use its public TypeScript facade and own toolbars, menus, persistence, clipboard bridges, Print/PDF actions and image storage. Images require an adapter; private references stay opaque. TXT stays literal. RTF document editing is outside current support.
 
 Start with the [feature guide](docs/supported-syntax.md) and [simple and rich integration examples](docs/integration.md). The [documentation index](docs/README.md) links to precise API, preservation, playground, verification and publication guidance.
 
-Scope and release status live in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [version milestones](https://github.com/aicayzer/inkkit/milestones). Optional media extensions are tracked there. Only documented, released features form the supported package contract.
+Scope and release status live in the [InkKit Project](https://github.com/users/aicayzer/projects/3) and [version milestones](https://github.com/aicayzer/inkkit/milestones). Only documented, released features form the supported package contract.
 
 MIT licensed. InkKit builds on the public PadPad and Memos editors; see [NOTICE](NOTICE).
 
 Optional wiki links and a host-owned asynchronous file adapter support named/path images, audio, video, PDFs and file cards. Authored source and sizing are preserved; portable copy/print uses validated images or documented descriptive fallbacks. See [linked syntax](docs/supported-syntax.md#linked-syntax) and [adapter contracts](docs/api.md#optional-wiki-links-and-files).
+
+From 0.0.11, minimal hosts can mount with `rendering: { codeHighlighting: false, diagramPreview: false }` to skip optional presentation work. Source, shared history and explicit portable exports retain their contracts. Mermaid loads on first actual render. Single-file offline bundles still contain the rendering code; see [performance measurements](docs/performance.md).

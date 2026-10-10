@@ -47,9 +47,16 @@ const mountEditor = (configuration = 'rich', linked = false) =>
       images: configuration === 'rich' ? images.adapter : undefined,
       files: configuration === 'rich' && linked ? files.adapter : undefined,
       wikiLinks: configuration === 'rich' && linked ? files.wiki : undefined,
+      rendering:
+        configuration === 'minimal'
+          ? { codeHighlighting: false, diagramPreview: false }
+          : undefined,
     },
   )
-let editor = await mountEditor()
+let editor = await mountEditor(
+  new URL(location.href).searchParams.get('configuration') ?? 'rich',
+)
+const initialReadyMs = performance.now()
 let generation = 0
 let documentId = 'interop'
 let documentFormat = 'md'
@@ -412,9 +419,21 @@ window.interop = {
               documentId: 'second',
               generation: 1,
               format: 'md',
-              text: 'Independent 😀 text.',
+              text: operation.source ?? 'Independent 😀 text.',
             })
             result = secondEditor.textSnapshot()
+            break
+          }
+          case 'secondState': {
+            const comment = document.querySelector(
+              '#second-editor .inkkit-comment',
+            )
+            result = {
+              snapshot: secondEditor.snapshot(),
+              commentDisplay: comment
+                ? getComputedStyle(comment).display
+                : null,
+            }
             break
           }
           case 'awaitDOM': {
@@ -616,6 +635,12 @@ window.interop = {
           case 'fileEvents':
             result = [...files.events]
             break
+          case 'fileAbortCount':
+            result = {
+              aborted: files.events.filter((event) => event.phase === 'aborted')
+                .length,
+            }
+            break
           case 'startFileOutput':
             pendingFileOutput = (
               operation.kind === 'print' ? printableOutput() : exportClipboard()
@@ -624,6 +649,8 @@ window.interop = {
               (error) => ({ error }),
             )
             await settle()
+            if (!files.started.resolve && !files.started.export)
+              throw Error('Held file output did not start')
             result = { pending: true }
             break
           case 'finishFileOutput': {
@@ -1224,5 +1251,96 @@ window.interop = {
       final,
     }
   },
+}
+window.interop.measure = async (
+  configuration,
+  document,
+  minimalPreviewsDisabled = true,
+) => {
+  await editor.destroy()
+  images.dispose()
+  files.dispose()
+  const start = performance.now()
+  editor = await mountEditor(configuration, true)
+  const mounted = performance.now()
+  const text =
+    document === 'large'
+      ? '# Large\n\n' +
+        Array.from(
+          { length: 1000 },
+          (_, i) =>
+            `Paragraph ${i}: A😀B é 中文 ${'ordinary text '.repeat(8)}\n\n`,
+        ).join('') +
+        'Final sentinel.\n'
+      : document === 'mixed'
+        ? '# Mixed\n\n' +
+          Array.from(
+            { length: 120 },
+            (_, i) =>
+              `## Section ${i}\n\nBody ${i} **bold** [link][shared].\n\n\x60\x60\x60typescript\nconst value${i} = ${i};\n\x60\x60\x60\n\n| Key | Value |\n| --- | --- |\n| item | ${i} |\n\n${i < 4 ? `\x60\x60\x60mermaid\nflowchart LR\nA${i} --> B${i}\n\x60\x60\x60\n\n` : ''}${i < 8 ? '![[Photo|80]]\n\n' : ''}`,
+          ).join('') +
+          '[shared]: https://example.com\n\nFinal sentinel.\n'
+        : fixtures.everyday.text
+  load(text)
+  const loaded = performance.now()
+  for (
+    let i = 0;
+    i < 300 &&
+    view().querySelector('.inkkit-mermaid-preview:not([data-state])');
+    i++
+  )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  if (view().querySelector('.inkkit-mermaid-preview:not([data-state])'))
+    throw Error('Performance diagrams did not settle')
+  const previews = [...view().querySelectorAll('.inkkit-mermaid-preview')]
+  const expectedPreviews =
+    document === 'mixed' &&
+    (configuration === 'rich' || !minimalPreviewsDisabled)
+      ? 4
+      : 0
+  if (
+    previews.length !== expectedPreviews ||
+    previews.some((preview) => preview.dataset.state !== 'ready')
+  )
+    throw Error('Performance preview count or readiness is incorrect')
+  await new Promise(requestAnimationFrame)
+  const settled = performance.now()
+  const readable = editor.textSnapshot()
+  const range = { snapshotId: readable.snapshotId, from: 2, to: 2 }
+  editor.selectTextRange(range, { focus: false, reveal: false })
+  const edits = []
+  for (let i = 0; i < 10; i++) {
+    const began = performance.now()
+    editor.insertText('x', generation)
+    edits.push(performance.now() - began)
+  }
+  const captureStart = performance.now()
+  const snapshot = editor.snapshot()
+  const snapshotMs = performance.now() - captureStart
+  if (snapshot.text !== text.replace(/^# (.{2})/, '# $1' + 'x'.repeat(10)))
+    throw Error('Performance editing changed unrelated authored source')
+  if (document !== 'everyday' && !snapshot.text.includes('Final sentinel.'))
+    throw Error('Performance document lost its final sentinel')
+  if (document === 'mixed' && !snapshot.text.includes('const value119 = 119;'))
+    throw Error('Performance document lost authored code')
+  const result = {
+    initialReadyMs,
+    mountMs: mounted - start,
+    loadMs: loaded - mounted,
+    renderReadyMs: settled - loaded,
+    editMs: edits,
+    snapshotMs,
+    sourceBytes: new TextEncoder().encode(text).length,
+    errors: window.interopErrors ?? [],
+    diagramCount: view().querySelectorAll('.inkkit-mermaid-preview').length,
+  }
+  if (result.errors.length)
+    throw Error(
+      `Performance consumer reported errors: ${JSON.stringify(result.errors)}`,
+    )
+  await editor.destroy()
+  files.dispose()
+  images.dispose()
+  return result
 }
 window.ready = true

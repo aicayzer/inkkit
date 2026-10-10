@@ -32,6 +32,7 @@ const versions = [
   '0.0.8',
   '0.0.9',
   '0.0.10',
+  '0.0.11',
 ]
 if (!versions.includes(version))
   throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
@@ -2243,6 +2244,162 @@ if (releaseAtLeast('0.0.10')) {
     },
   })
 }
+if (releaseAtLeast('0.0.11')) {
+  scenarios['integration-minimal-print'] = {
+    mode: 'printable',
+    configuration: 'minimal',
+    source:
+      '# Frozen minimal\n\n```mermaid\nflowchart LR\nStart --> Finish\n```\n\n> [!NOTE]- Folded\n> Complete folded body.\n\n<!-- private comment -->\n\nFinal sentinel.\n',
+    printIncludes: [
+      'Frozen minimal',
+      'Complete folded body.',
+      'Final sentinel.',
+    ],
+    printExcludes: ['private comment', 'Replacement live document'],
+    printMinImages: 1,
+    operations: [
+      { op: 'dom', selector: '.inkkit-mermaid-preview', name: 'preview' },
+      assert('count', 0, 'preview'),
+      { op: 'printable', name: 'printable' },
+      assert('assets.length', 1, 'printable'),
+      { op: 'export', name: 'copy' },
+      assert('diagrams.length', 1, 'copy'),
+      { op: 'load', source: 'Replacement live document' },
+    ],
+  }
+  for (const configuration of ['minimal', 'rich']) {
+    scenarios[`integration-${configuration}-assembled`] = {
+      configuration,
+      files: true,
+      fixture: 'untidy',
+      operations: [
+        { op: 'snapshot', name: 'original' },
+        { op: 'textSnapshot', name: 'scope' },
+        { op: 'setViewport', insets: { top: 16, bottom: 8 } },
+        { op: 'editingMode', mode: 'source' },
+        {
+          op: 'selectTextRange',
+          sourceName: 'scope',
+          text: 'Before',
+          expectedError: 'stale-document',
+        },
+        { op: 'selectSourceRange', from: 0 },
+        { op: 'insertText', text: 'Intro\r\n' },
+        { op: 'editingMode', mode: 'formatted' },
+        { op: 'editable', editable: false },
+        { op: 'undo', expectedError: 'read-only' },
+        { op: 'find', text: 'Before' },
+        assert('selection', 'Before'),
+        { op: 'editable', editable: true },
+        { op: 'undo' },
+        {
+          op: 'assert',
+          path: 'snapshot.text',
+          equalsFrom: { name: 'original', path: 'text' },
+        },
+        { op: 'editingMode', mode: 'source' },
+        { op: 'composition', active: true },
+        { op: 'snapshot', expectedError: 'composition' },
+        { op: 'composition', active: false },
+        {
+          op: 'reload',
+          source: '__Reload__\r\n\r\n![[Photo|80]]\r\n',
+          sameGeneration: true,
+        },
+        assert('editingMode', 'source'),
+        { op: 'editingMode', mode: 'formatted' },
+        { op: 'snapshot', name: 'reload' },
+        assert('dirty', false, 'reload'),
+        { op: 'export', name: 'clip' },
+        assert('markdown', '__Reload__\r\n\r\n![[Photo|80]]\r\n', 'clip'),
+        {
+          op: 'load',
+          format: 'txt',
+          source: '\uFEFF# TXT\r\n**raw** ![[Photo]]\r\n',
+        },
+        { op: 'snapshot', name: 'txt' },
+        { op: 'export', name: 'txtCopy' },
+        {
+          op: 'assert',
+          name: 'txtCopy',
+          path: 'text',
+          equalsFrom: { name: 'txt', path: 'text' },
+        },
+        { op: 'printable', name: 'txtPrint' },
+        contains('html', '# TXT', 'txtPrint'),
+        { op: 'load', format: 'md', source: '__Original__\n' },
+        { op: 'insertText', text: 'one\r\ntwo\rthree\n' },
+        { op: 'snapshot', name: 'multiline' },
+        { op: 'export', name: 'multilineCopy' },
+        contains('text', 'one\ntwo\nthree\n', 'multilineCopy'),
+        { op: 'undo' },
+        assert('snapshot.text', '__Original__\n'),
+        { op: 'load', source: '| Head |\n| --- |\n| Original |\n' },
+        { op: 'snapshot', name: 'tableBefore' },
+        {
+          op: 'insertText',
+          text: 'one\r\ntwo\n',
+          expectedError: 'preservation',
+        },
+        {
+          op: 'assert',
+          path: 'snapshot.text',
+          equalsFrom: { name: 'tableBefore', path: 'text' },
+        },
+        assert('snapshot.revision', 0),
+        { op: 'commandState', name: 'tableState' },
+        assert('commands.undo', false, 'tableState'),
+      ],
+    }
+  }
+  scenarios['integration-delayed-reload-and-output'] = {
+    configuration: 'rich',
+    files: true,
+    source: 'Before import',
+    operations: [
+      { op: 'startImagePaste' },
+      { op: 'reload', source: 'Replacement', sameGeneration: true },
+      { op: 'finishImagePaste', expectedError: 'stale-document' },
+      assert('snapshot.text', 'Replacement'),
+      { op: 'fileMode', mode: 'hold' },
+      { op: 'load', source: '![[Photo]]\n' },
+      { op: 'editingMode', mode: 'source' },
+      { op: 'fileAbortCount', name: 'cancelled' },
+      { op: 'assert', name: 'cancelled', path: 'aborted', truthy: true },
+      { op: 'fileRelease' },
+      { op: 'fileMode', mode: 'normal' },
+      { op: 'editingMode', mode: 'formatted' },
+      { op: 'fileMode', mode: 'hold' },
+      { op: 'startFileOutput', kind: 'print' },
+      { op: 'load', format: 'txt', source: 'New literal' },
+      { op: 'finishFileOutput', expectedError: 'stale-document' },
+      assert('snapshot.text', 'New literal'),
+      { op: 'commandState', name: 'state' },
+      assert('pending', false, 'state'),
+    ],
+  }
+  scenarios['integration-comments-instance-privacy'] = {
+    source: 'Visible <!-- inline private --> body\n\n<!-- block private -->\n',
+    operations: [
+      { op: 'mountSecond', source: '<!-- second private -->\n' },
+      { op: 'setCommentsVisible', visible: true },
+      { op: 'dom', selector: '.inkkit-comment-inline', name: 'inline' },
+      assert('nodes.0.display', 'inline', 'inline'),
+      { op: 'dom', selector: '.inkkit-comment-block', name: 'block' },
+      assert('nodes.0.display', 'block', 'block'),
+      { op: 'secondState', name: 'second' },
+      assert('commentDisplay', 'none', 'second'),
+      { op: 'export', name: 'copy' },
+      { op: 'assert', name: 'copy', path: 'text', excludes: 'private' },
+      { op: 'assert', name: 'copy', path: 'html', excludes: 'private' },
+      { op: 'printable', name: 'print' },
+      { op: 'assert', name: 'print', path: 'html', excludes: 'private' },
+      { op: 'setCommentsVisible', visible: false },
+      { op: 'dom', selector: '.inkkit-comment', name: 'hidden' },
+      assert('nodes.0.display', 'none', 'hidden'),
+    ],
+  }
+}
 const names = Object.keys(scenarios)
 const groups = {
   core: [
@@ -2260,6 +2417,7 @@ const groups = {
   media: names.filter((name) => name.startsWith('media-')),
   'portable-files': names.filter((name) => name.startsWith('portable-files-')),
   layout: names.filter((name) => name.startsWith('native-layout-')),
+  integration: names.filter((name) => name.startsWith('integration-')),
   legacy: names.filter(
     (name) =>
       !name.startsWith('host-') &&
