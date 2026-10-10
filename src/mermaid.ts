@@ -1,5 +1,4 @@
 import { editorLabels } from './labels'
-import mermaid from 'mermaid'
 import DOMPurify from 'dompurify'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
@@ -79,6 +78,7 @@ export function renderDiagram(source: string): Promise<string> {
   const previous = cache.get(source)
   if (previous) return previous
   const rendered = queue.then(async () => {
+    const { default: mermaid } = await import('mermaid')
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: 'strict',

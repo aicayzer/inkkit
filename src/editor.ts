@@ -150,7 +150,6 @@ import {
   textRect,
   type TextProjection,
 } from './text-ranges'
-import { highlightPlugin } from './highlight'
 import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
 import { commentSelectionContent, setCommentVisibility } from './comments'
 import { PasteController } from './paste'
@@ -251,6 +250,10 @@ export interface EditorOptions {
   textInput?: TextInputPreferences
   labels?: Partial<EditorLabels>
   keymap?: Keymap
+  rendering?: {
+    codeHighlighting?: boolean
+    diagramPreview?: boolean
+  }
 }
 
 export interface CommandState {
@@ -544,6 +547,7 @@ export class InkKitEditor {
   private beforePlainInput?: { from: number; to: number }
   private mode: EditingMode = 'formatted'
   private sourcePreservations = new WeakMap<SourceProvenance, Preservation>()
+  private sourceTexts = new WeakMap<ProseNode, string>()
   private outlineEpoch = 0
   private ready = false
   private destroyed = false
@@ -954,6 +958,8 @@ export class InkKitEditor {
   private currentText(
     doc = this.editor.ctx.get(editorViewCtx).state.doc,
   ): string {
+    const cached = this.sourceTexts.get(doc)
+    if (cached !== undefined) return cached
     const provenance = doc.attrs[sourceAttribute] as SourceProvenance | null
     if (this.formatType === 'txt')
       return provenance?.text ?? this.originalSource
@@ -965,7 +971,9 @@ export class InkKitEditor {
         this.sourcePreservations.set(provenance, preservation)
       }
     }
-    return preservation!.serialize(cleanSourceDoc(doc))
+    const text = preservation!.serialize(cleanSourceDoc(doc))
+    this.sourceTexts.set(doc, text)
+    return text
   }
 
   setEditingMode(mode: EditingMode, expectedGeneration?: number): boolean {
@@ -1361,32 +1369,50 @@ export class InkKitEditor {
         )
       } else {
         const { schema } = view.state
+        const marks =
+          view.state.storedMarks ??
+          (view.state.selection.empty
+            ? view.state.selection.$from.marks()
+            : view.state.selection.$from.marksAcross(
+                view.state.selection.$to,
+              )) ??
+          []
         const children: ProseNode[] = []
-        text
-          .replace(/\r\n?/g, '\n')
-          .split('\n')
-          .forEach((line, index) => {
-            if (index)
-              children.push(
-                schema.nodes.hardbreak!.create({
-                  isHTML:
-                    index ===
-                      text.replace(/\r\n?/g, '\n').split('\n').length - 1 &&
-                    line === '',
-                }),
-              )
-            if (line) children.push(schema.text(line))
-          })
+        const lines = text.replace(/\r\n?/g, '\n').split('\n')
+        lines.forEach((line, index) => {
+          const finalBreak = index === lines.length - 1 && line === ''
+          if (index)
+            children.push(
+              schema.nodes.hardbreak!.create(
+                {
+                  isHTML: finalBreak,
+                },
+                null,
+                // A terminal HTML spacer must remain outside emphasis to reopen as a break.
+                finalBreak ? [] : marks,
+              ),
+            )
+          if (line) children.push(schema.text(line, marks))
+        })
         if (!children.length) {
           view.dispatch(view.state.tr.deleteSelection())
           return
         }
         const paragraph = schema.nodes.paragraph!.create(null, children)
-        view.dispatch(
-          view.state.tr
-            .replaceSelection(new Slice(Fragment.from(paragraph), 1, 1))
-            .scrollIntoView(),
-        )
+        const transaction = view.state.tr
+          .replaceSelection(new Slice(Fragment.from(paragraph), 1, 1))
+          .scrollIntoView()
+        try {
+          this.currentText(transaction.doc)
+        } catch (error) {
+          throw new InkKitError(
+            'preservation',
+            error instanceof Error
+              ? error.message
+              : 'Cannot preserve inserted text',
+          )
+        }
+        view.dispatch(transaction)
       }
     }
   }
@@ -1603,8 +1629,16 @@ export class InkKitEditor {
       .use(dropControlCharacters)
       .use(codeCopyPlugin((text) => events.copy(text)))
       .use(placeholderPlugin)
-      .use(highlightPlugin)
-      .use(mermaidPreview((error) => events.error?.(error)))
+      .use(
+        options.rendering?.codeHighlighting === false
+          ? []
+          : (await import('./highlight')).highlightPlugin,
+      )
+      .use(
+        options.rendering?.diagramPreview === false
+          ? []
+          : mermaidPreview((error) => events.error?.(error)),
+      )
       .use(selectionPlugin)
       .use($prose(() => search()))
       .use(instance.policyPlugin)
@@ -1930,6 +1964,7 @@ export class InkKitEditor {
     this.documentEpoch += 1
     this.outlineEpoch += 1
     this.sourcePreservations = new WeakMap()
+    this.sourceTexts = new WeakMap()
     this.mode = 'formatted'
     this.plainComposing = false
     this.beforePlainInput = undefined
@@ -2648,6 +2683,10 @@ export class InkKitEditor {
     this.assertMutation(generation)
     if (this.literalSurface) {
       this.replaceLiteralSelection(text, false)
+      return true
+    }
+    if (/[\r\n]/.test(text)) {
+      this.pasteAsPlainText(text)
       return true
     }
     const view = this.editor.ctx.get(editorViewCtx)
