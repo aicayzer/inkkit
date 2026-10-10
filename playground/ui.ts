@@ -307,8 +307,7 @@ export function mountUI(api: Playground) {
       redo: state?.commands.redo,
       replace: state?.commands.replace,
       'replace-all': state?.commands.replace,
-      'import-image':
-        state?.commands.insertImages && setup.configuration === 'rich',
+      'import-image': state?.commands.paste && setup.configuration === 'rich',
       plain: state?.commands.paste,
       'apply-table':
         state?.commands.table[value('table-action') as TableCommand],

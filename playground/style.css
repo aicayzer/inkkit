@@ -87,6 +87,8 @@ body {
   padding: 9px 10px;
   width: 100%;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 #fixture-list button[aria-current='true'] {
   background: var(--pg-hover);
@@ -367,7 +369,7 @@ body {
   display: flex;
   gap: 16px;
 }
-.playground-shell [role='tab'] {
+.playground-shell button[role='tab']:not(.inkkit-root *) {
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
@@ -375,7 +377,7 @@ body {
   padding: 10px 0;
   color: var(--pg-muted);
 }
-.playground-shell [role='tab'][aria-selected='true'] {
+.playground-shell button[role='tab'][aria-selected='true']:not(.inkkit-root *) {
   border-bottom-color: var(--pg-text);
   color: var(--pg-text);
 }
@@ -456,14 +458,66 @@ body {
   height: 32px;
   max-width: 100%;
 }
-.workspace:has(#probes:not([hidden])) #editor,
-.workspace:has(#probes:not([hidden])) #source-snapshot {
-  height: clamp(260px, calc(100dvh - 430px), 480px);
-}
-@media (min-width: 1500px) {
+@media (min-width: 761px) {
+  .playground-shell {
+    height: 100dvh;
+    min-height: 0;
+  }
+  .fixture-rail {
+    overflow: auto;
+    min-height: 0;
+  }
+  .workspace {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+  }
+  .workspace > :not(.workbench) {
+    flex-shrink: 0;
+  }
+  .workspace-header {
+    padding-block: 15px;
+    min-height: 64px;
+  }
+  .editor-toolbar {
+    padding-block: 9px;
+  }
+  .tools-panel {
+    max-height: 30dvh;
+    overflow: auto;
+  }
+  .workbench {
+    flex: 1;
+    min-height: 0;
+  }
+  .editor-pane,
+  .source-pane {
+    display: grid;
+    grid-template-rows: 43px minmax(0, 1fr) auto;
+    min-height: 0;
+  }
   #editor,
   #source-snapshot {
-    height: 560px;
+    height: 100%;
+    min-height: 0;
+  }
+  .inspector {
+    max-height: 34dvh;
+    overflow: hidden;
+  }
+  .inspector[open] [role='tabpanel'] {
+    height: calc(34dvh - 76px);
+    max-height: none;
+  }
+  .workspace:has(#probes:not([hidden])) .inspector[open] [role='tabpanel'] {
+    height: 70px;
+  }
+  .probes {
+    padding-block: 8px;
+  }
+  #second-editor {
+    height: 80px;
   }
 }
 @media (max-width: 1100px) {
@@ -498,6 +552,7 @@ body {
   }
   #fixture-list button {
     width: auto;
+    flex: 0 0 auto;
   }
   .rail-footer,
   .search-label {

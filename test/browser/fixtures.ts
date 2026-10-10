@@ -1,20 +1,88 @@
-import { test as base, expect, type Page } from '@playwright/test'
-import type { playground } from '../../playground/main'
+import {
+  test as base,
+  expect,
+  type ConsoleMessage,
+  type Page,
+} from '@playwright/test'
+import type { Playground } from '../../playground/controller'
 
-type Playground = typeof playground
 export const test = base.extend<{
   openFixture: (fixture?: string, query?: string) => Promise<void>
+  failureEvidence: void
 }>({
+  failureEvidence: [
+    async ({ page }, use, testInfo) => {
+      const errors: { kind: string; message: string; location?: unknown }[] = []
+      let droppedErrors = 0
+      const record = (entry: (typeof errors)[number]) => {
+        if (errors.length === 200) {
+          errors.shift()
+          droppedErrors++
+        }
+        errors.push(entry)
+      }
+      const pageError = (error: Error) =>
+        record({ kind: 'pageerror', message: error.stack ?? error.message })
+      const consoleError = (message: ConsoleMessage) => {
+        if (message.type() === 'error')
+          record({
+            kind: 'console',
+            message: message.text(),
+            location: message.location(),
+          })
+      }
+      page.on('pageerror', pageError)
+      page.on('console', consoleError)
+      await use()
+      if (testInfo.status !== testInfo.expectedStatus) {
+        await testInfo.attach('browser-context', {
+          body: JSON.stringify(
+            { url: page.url(), errors, droppedErrors },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        })
+        for (const [name, capture] of [
+          ['observations', () => observe(page)],
+          [
+            'playground-evidence',
+            () =>
+              page.evaluate(() => window.inkkitPlayground.captureEvidence()),
+          ],
+        ] as const) {
+          try {
+            await testInfo.attach(name, {
+              body: JSON.stringify(await capture(), null, 2),
+              contentType: 'application/json',
+            })
+          } catch (error) {
+            await testInfo.attach(`${name}-error`, {
+              body: String(error),
+              contentType: 'text/plain',
+            })
+          }
+        }
+      }
+      page.off('pageerror', pageError)
+      page.off('console', consoleError)
+    },
+    { auto: true },
+  ],
   openFixture: async ({ page }, use) => {
     await use(async (fixture = 'everyday', query = '') => {
       await page.goto(`/?fixture=${fixture}&configuration=rich${query}`)
       await expect
         .poll(() =>
-          page.evaluate(
-            () => window.inkkitPlayground?.observe().snapshot?.documentId,
-          ),
+          page.evaluate(() => {
+            const state = window.inkkitPlayground?.observe()
+            return {
+              lifecycle: state?.lifecycle,
+              documentId: state?.snapshot?.documentId,
+            }
+          }),
         )
-        .toBe(`fixture:${fixture}`)
+        .toEqual({ lifecycle: 'ready', documentId: `fixture:${fixture}` })
     })
   },
 })
@@ -41,18 +109,3 @@ declare global {
     inkkitPlayground: Playground
   }
 }
-test.afterEach(async ({ page }, testInfo) => {
-  if (testInfo.status !== testInfo.expectedStatus) {
-    try {
-      await testInfo.attach('observations', {
-        body: JSON.stringify(await observe(page), null, 2),
-        contentType: 'application/json',
-      })
-    } catch (error) {
-      await testInfo.attach('observation-error', {
-        body: String(error),
-        contentType: 'text/plain',
-      })
-    }
-  }
-})

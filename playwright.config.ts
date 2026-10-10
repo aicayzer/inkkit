@@ -1,12 +1,15 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const intentionalFailure = process.env.INKKIT_INTENTIONAL_FAILURE === '1'
+
 export default defineConfig({
   testDir: './test/browser',
   forbidOnly: Boolean(process.env.CI),
   workers: 1,
   retries: 0,
   timeout: 30_000,
-  grepInvert: /@intentional-failure/,
+  grep: intentionalFailure ? /@intentional-failure/ : undefined,
+  grepInvert: intentionalFailure ? undefined : /@intentional-failure/,
   outputDir: '_local/playwright/results',
   reporter: [
     ['list'],
