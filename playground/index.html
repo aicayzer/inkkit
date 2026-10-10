@@ -2,111 +2,349 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>InkKit playground</title>
   </head>
   <body>
-    <header>
-      <h1>InkKit development playground</h1>
-      <p>
-        Disposable fixtures. Clipboard permissions depend on your browser.
-        Browser checks do not prove native clipboard or IME compatibility.
-      </p>
-    </header>
-    <nav id="toolbar" aria-label="Editor controls">
-      <label
-        >Fixture
-        <select id="fixture"></select
-      ></label>
-      <label
-        >Configuration
-        <select id="configuration">
-          <option>minimal</option>
-          <option>rich</option>
-        </select></label
-      >
-      <label
-        >Image adapter
-        <select id="adapter">
-          <option value="normal">Success</option>
-          <option value="reject">Reject</option>
-          <option value="hold">Manual release</option>
-        </select></label
-      >
-      <button id="reset">Reset fixture</button>
-      <button id="replace-document">Replace document</button>
-      <button id="read-only">Make read-only</button>
-      <button id="release">Release image operations</button>
-      <button id="import-image">Import fixture image</button>
-      <button id="bold">Bold</button><button id="table">Insert table</button>
-      <button id="plain">Paste as Plain Text</button>
-      <button id="source">Copy as Markdown</button>
-      <button id="copy-readable">Copy readable content</button>
-      <button id="printable">Capture printable output</button>
-      <button id="mode">Load as TXT</button>
-      <button id="editing-mode">Edit source</button>
-      <button id="undo">Undo</button><button id="redo">Redo</button>
-      <label
-        >Table operation
-        <select id="table-action"></select
-      ></label>
-      <label
-        >Sort comparison
-        <select id="comparison">
-          <option value="text">Text</option>
-          <option value="number">Number</option>
-        </select></label
-      >
-      <label
-        >Sort order
-        <select id="sort-order">
-          <option value="ascending">Ascending</option>
-          <option value="descending">Descending</option>
-        </select></label
-      >
-      <button id="apply-table">Apply to table</button>
-      <input id="query" aria-label="Find text" placeholder="Find text" />
-      <input
-        id="replacement"
-        aria-label="Replacement text"
-        placeholder="Replace with"
-      />
-      <button id="find">Find next</button><button id="replace">Replace</button
-      ><button id="replace-all">Replace all</button>
-      <button id="capture-text">Capture search text</button>
-      <button id="select-range">Select captured range</button>
-      <button id="replace-range">Replace captured range</button>
-      <button id="range-rects">Inspect range rectangles</button>
-      <label
-        >Top inset <input id="inset-top" type="number" min="0" value="0"
-      /></label>
-      <label
-        >Bottom inset <input id="inset-bottom" type="number" min="0" value="0"
-      /></label>
-      <button id="viewport-insets">Apply viewport insets</button>
-      <select id="headings" aria-label="Document heading"></select
-      ><button id="navigate-heading">Go to heading</button>
-    </nav>
-    <aside id="host-content">
-      <p class="ProseMirror">Unrelated host paragraph</p>
-      <table class="milkdown-table-block">
-        <tbody>
-          <tr>
-            <td>Host table cell</td>
-          </tr>
-        </tbody>
-      </table>
-      <textarea aria-label="Host text">Host text</textarea>
-    </aside>
-    <main id="editors">
-      <div id="editor" aria-label="Fixture editor"></div>
-      <div id="second-editor" hidden aria-label="Second fixture editor"></div>
-    </main>
-    <output id="status" role="status"></output>
-    <details open>
-      <summary>Structured observations</summary>
-      <pre id="observations" aria-label="Structured observations"></pre>
-    </details>
+    <div class="playground-shell">
+      <aside class="fixture-rail" aria-label="Fixture catalogue">
+        <div class="brand"><strong>InkKit</strong><span>Playground</span></div>
+        <label class="search-label" for="fixture-search">Fixtures</label>
+        <input
+          id="fixture-search"
+          type="search"
+          placeholder="Search fixtures…"
+          aria-label="Search fixtures"
+        />
+        <nav id="fixture-list" aria-label="Fixtures"></nav>
+        <p id="fixture-empty" hidden>No matching fixtures.</p>
+        <div class="rail-footer">
+          Local fixtures <span id="fixture-count"></span>
+        </div>
+      </aside>
+      <main class="workspace">
+        <header class="workspace-header">
+          <div class="document-title">
+            <h1 id="fixture-title">InkKit playground</h1>
+            <span id="fixture-format" class="badge"></span>
+          </div>
+          <div class="header-actions">
+            <button id="copy-setup">Copy setup link</button>
+            <details id="configuration-panel" class="configuration-panel">
+              <summary>Configuration</summary>
+              <div class="configuration-content">
+                <p class="hint">
+                  Configuration, linked files and editor count recreate the
+                  editor.
+                </p>
+                <label
+                  >Configuration<select id="configuration">
+                    <option value="minimal">Minimal</option>
+                    <option value="rich">Rich</option>
+                  </select></label
+                >
+                <label class="check"
+                  ><input id="files" type="checkbox" />Linked file
+                  adapters</label
+                >
+                <label class="check"
+                  ><input id="two-editors" type="checkbox" />Second editor and
+                  host probes</label
+                >
+              </div>
+            </details>
+            <button id="reset" class="primary">Reset fixture</button>
+          </div>
+        </header>
+        <nav id="toolbar" class="editor-toolbar" aria-label="Editor controls">
+          <div class="button-group">
+            <button id="undo">Undo</button><button id="redo">Redo</button>
+          </div>
+          <div class="button-group">
+            <button id="bold" data-preserve-selection>Bold</button
+            ><button id="italic" data-preserve-selection>Italic</button
+            ><button id="table" data-preserve-selection>Insert table</button>
+          </div>
+          <div class="button-group">
+            <button id="editing-mode">Edit source</button
+            ><button id="replace-document">Replace document</button
+            ><button id="read-only">Make read-only</button>
+          </div>
+          <label class="check source-toggle"
+            ><input id="show-source" type="checkbox" checked />Show source
+            snapshot</label
+          >
+        </nav>
+        <details class="tools-panel" id="tools-panel">
+          <summary>Editor tools</summary>
+          <div class="tool-grid">
+            <fieldset>
+              <legend>Find and replace</legend>
+              <label>Find text<input id="query" /></label
+              ><label>Replacement text<input id="replacement" /></label>
+              <div class="actions">
+                <button id="find">Find next</button
+                ><button id="replace">Replace</button
+                ><button id="replace-all">Replace all</button>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>Tables</legend>
+              <label>Table operation<select id="table-action"></select></label>
+              <div class="field-row">
+                <label
+                  >Sort comparison<select id="comparison">
+                    <option value="text">Text</option>
+                    <option value="number">Number</option>
+                  </select></label
+                ><label
+                  >Sort order<select id="sort-order">
+                    <option value="ascending">Ascending</option>
+                    <option value="descending">Descending</option>
+                  </select></label
+                >
+              </div>
+              <button id="apply-table">Apply to table</button>
+            </fieldset>
+            <fieldset>
+              <legend>Document</legend>
+              <label>Document heading<select id="headings"></select></label>
+              <div class="actions">
+                <button id="navigate-heading">Go to heading</button
+                ><button id="reload">Reload document</button
+                ><button id="mode">Load as TXT</button>
+              </div>
+              <label
+                >Plain text to insert<textarea
+                  id="plain-text"
+                  rows="2"
+                ></textarea></label
+              ><button id="plain">Paste as Plain Text</button>
+            </fieldset>
+            <fieldset>
+              <legend>Text ranges and viewport</legend>
+              <div class="actions">
+                <button id="capture-text">Capture search text</button
+                ><button id="select-range">Select captured range</button
+                ><button id="replace-range">Replace captured range</button
+                ><button id="range-rects">Inspect range rectangles</button>
+              </div>
+              <div class="field-row">
+                <label
+                  >Top inset<input
+                    id="inset-top"
+                    type="number"
+                    min="0"
+                    value="0" /></label
+                ><label
+                  >Bottom inset<input
+                    id="inset-bottom"
+                    type="number"
+                    min="0"
+                    value="0"
+                /></label>
+              </div>
+              <button id="viewport-insets">Apply viewport insets</button>
+            </fieldset>
+          </div>
+        </details>
+        <section
+          id="probes"
+          class="probes"
+          hidden
+          aria-label="Isolation probes"
+        >
+          <section>
+            <h2>Independent editor</h2>
+            <div
+              id="second-editor"
+              hidden
+              aria-label="Second fixture editor"
+            ></div>
+          </section>
+          <aside id="host-content">
+            <h2>Host content</h2>
+            <p class="ProseMirror">Unrelated host paragraph</p>
+            <table class="milkdown-table-block">
+              <tbody>
+                <tr>
+                  <td>Host table cell</td>
+                </tr>
+              </tbody>
+            </table>
+            <textarea aria-label="Host text">Host text</textarea>
+          </aside>
+        </section>
+        <div class="workbench" id="workbench">
+          <section class="editor-pane" aria-label="Editor workspace">
+            <div class="pane-heading">
+              <h2>Editor</h2>
+              <span id="command-reason" class="hint"></span>
+            </div>
+            <div id="editor" aria-label="Fixture editor"></div>
+          </section>
+          <section
+            class="source-pane"
+            id="source-pane"
+            aria-label="Source snapshot"
+          >
+            <div class="pane-heading">
+              <h2>Source snapshot</h2>
+              <label class="check"
+                ><input id="escaped-source" type="checkbox" />Escaped
+                source</label
+              >
+            </div>
+            <pre
+              id="source-snapshot"
+              tabindex="0"
+              aria-label="Exact source snapshot"
+            ></pre>
+            <p id="source-error" class="error" hidden></p>
+          </section>
+        </div>
+        <div class="status-strip">
+          <output id="status" role="status">Initialising</output
+          ><span id="action-status" aria-live="polite"></span>
+        </div>
+        <details id="inspector" class="inspector" open>
+          <summary>Inspector</summary>
+          <div class="inspector-header">
+            <div role="tablist" aria-label="Inspector views">
+              <button
+                role="tab"
+                id="tab-state"
+                aria-controls="panel-state"
+                aria-selected="true"
+              >
+                State</button
+              ><button
+                role="tab"
+                id="tab-operations"
+                aria-controls="panel-operations"
+                aria-selected="false"
+                tabindex="-1"
+              >
+                Operations</button
+              ><button
+                role="tab"
+                id="tab-adapters"
+                aria-controls="panel-adapters"
+                aria-selected="false"
+                tabindex="-1"
+              >
+                Adapters</button
+              ><button
+                role="tab"
+                id="tab-output"
+                aria-controls="panel-output"
+                aria-selected="false"
+                tabindex="-1"
+              >
+                Output
+              </button>
+            </div>
+            <button id="capture-evidence">Download evidence</button>
+          </div>
+          <section role="tabpanel" id="panel-state" aria-labelledby="tab-state">
+            <pre
+              id="observations"
+              tabindex="0"
+              aria-label="Structured observations"
+            ></pre>
+          </section>
+          <section
+            role="tabpanel"
+            id="panel-operations"
+            aria-labelledby="tab-operations"
+            hidden
+          >
+            <div class="operation-runner">
+              <label>Operation<select id="operation-name"></select></label>
+              <p id="operation-description" class="hint"></p>
+              <label
+                >Arguments (JSON object)<textarea
+                  id="operation-args"
+                  rows="3"
+                  spellcheck="false"
+                ></textarea></label
+              ><button id="run-operation">Run operation</button>
+            </div>
+            <p id="history-count" class="hint"></p>
+            <pre
+              id="operation-history"
+              tabindex="0"
+              aria-label="Operation history"
+            ></pre>
+          </section>
+          <section
+            role="tabpanel"
+            id="panel-adapters"
+            aria-labelledby="tab-adapters"
+            hidden
+          >
+            <div class="adapter-grid">
+              <fieldset>
+                <legend>Image import</legend>
+                <label
+                  >Image import<select id="image-import">
+                    <option value="normal">Success</option>
+                    <option value="reject">Reject</option>
+                    <option value="hold">Hold</option>
+                  </select></label
+                >
+                <div class="actions">
+                  <button id="import-image">Import fixture image</button
+                  ><button id="release-import">Release image import</button>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>Image export</legend>
+                <label
+                  >Image export<select id="image-export">
+                    <option value="normal">Success</option>
+                    <option value="reject">Reject</option>
+                    <option value="hold">Hold</option>
+                    <option value="corrupt">Corrupt bytes</option>
+                  </select></label
+                ><button id="release-export">Release image export</button>
+              </fieldset>
+              <fieldset>
+                <legend>Files</legend>
+                <label
+                  >File adapter<select id="file-adapter">
+                    <option value="normal">Success</option>
+                    <option value="reject">Reject</option>
+                    <option value="hold">Hold</option>
+                    <option value="corrupt">Corrupt bytes</option>
+                  </select></label
+                ><button id="release-file">Release file operations</button>
+              </fieldset>
+            </div>
+            <pre
+              id="adapter-events"
+              tabindex="0"
+              aria-label="Adapter events"
+            ></pre>
+          </section>
+          <section
+            role="tabpanel"
+            id="panel-output"
+            aria-labelledby="tab-output"
+            hidden
+          >
+            <div class="actions output-actions">
+              <button id="capture-clipboard">Capture clipboard output</button
+              ><button id="printable">Capture printable output</button
+              ><button id="source">Copy as Markdown</button
+              ><button id="copy-readable">Copy readable content</button>
+            </div>
+            <p id="output-empty" class="hint">Capture output to inspect it.</p>
+            <div id="captured-output"></div>
+          </section>
+        </details>
+      </main>
+    </div>
     <script type="module" src="/main.ts"></script>
   </body>
 </html>

@@ -1,4 +1,5 @@
-import { InkKitEditor, type Heading } from '../src/index'
+import { InkKitEditor } from '../src/index'
+import { observeAdapter } from './adapters'
 import {
   fixtures,
   configurations,
@@ -28,6 +29,7 @@ type PendingOutput = {
 }
 export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
   let setup = readSetup('')
+  let desiredSetup = setup
   let editor: InkKitEditor | undefined
   let secondEditor: InkKitEditor | undefined
   let lifecycle: Lifecycle = 'initialising'
@@ -38,6 +40,8 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
   let images = new ControlledImages()
   let files = new ControlledFiles()
   let pendingImage: Promise<void> | undefined
+  let imageRecord: OperationRecord | undefined
+  let outputRecord: OperationRecord | undefined
   let pendingOutput: PendingOutput | undefined
   let diagnostics: Diagnostic[] = []
   let lastResult: unknown = null
@@ -96,6 +100,7 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
       configuration: setup.configuration,
       adapterMode: setup.adapterMode,
       setup: { ...setup },
+      desiredSetup: { ...desiredSetup },
       lifecycle,
       lifecycleError,
       snapshot: snapshot.value,
@@ -168,17 +173,33 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
     for (const record of records)
       if (record.status === 'pending') record.status = 'cancelled'
   }
+  function setEditable(value: boolean) {
+    requireEditor().setEditable(value)
+    setup = { ...setup, editable: value }
+    desiredSetup = { ...desiredSetup, editable: value }
+    syncURL()
+  }
   function changeAdapter(kind: 'import' | 'export', mode: AdapterMode) {
-    setup = validateSetup({
-      ...setup,
-      [kind === 'import' ? 'imageImport' : 'imageExport']: mode,
-    })
+    const key = kind === 'import' ? 'imageImport' : 'imageExport'
+    const next = validateSetup({ ...desiredSetup, [key]: mode })
+    if (lifecycle !== 'ready') {
+      void schedule(next).catch(reportError)
+      return
+    }
+    setup = next
+    desiredSetup = next
     images.setMode(kind, mode)
     syncURL()
     notify()
   }
   function changeFileMode(mode: AdapterMode) {
-    setup = validateSetup({ ...setup, fileAdapter: mode })
+    const next = validateSetup({ ...desiredSetup, fileAdapter: mode })
+    if (lifecycle !== 'ready') {
+      void schedule(next).catch(reportError)
+      return
+    }
+    setup = next
+    desiredSetup = next
     files.setMode(mode)
     syncURL()
     notify()
@@ -200,6 +221,8 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
       images.setMode('export', setup.imageExport)
       files.setMode(setup.fileAdapter)
       pendingImage = undefined
+      imageRecord = undefined
+      outputRecord = undefined
       pendingOutput = undefined
       diagnostics = []
       lastResult = null
@@ -209,6 +232,16 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
       sequence = 0
       const update = () => {
         if (ticket === epoch) notify()
+      }
+      const sessionImages = images
+      const sessionFiles = files
+      const adapterChanged = () => {
+        if (ticket === epoch) notify()
+        else {
+          // A fixture may finish resolving after its host stopped using it.
+          sessionImages.dispose()
+          sessionFiles.dispose()
+        }
       }
       const candidate = await InkKitEditor.mount(
         root,
@@ -232,7 +265,10 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
           },
         },
         {
-          images: setup.configuration === 'rich' ? images.adapter : undefined,
+          images:
+            setup.configuration === 'rich'
+              ? observeAdapter(sessionImages.adapter, adapterChanged)
+              : undefined,
           rendering:
             setup.configuration === 'minimal'
               ? { codeHighlighting: false, diagramPreview: false }
@@ -240,12 +276,12 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
           files:
             setup.configuration === 'rich' &&
             (setup.fixture === 'linked-files' || setup.files)
-              ? files.adapter
+              ? observeAdapter(sessionFiles.adapter, adapterChanged)
               : undefined,
           wikiLinks:
             setup.configuration === 'rich' &&
             (setup.fixture === 'linked-files' || setup.files)
-              ? files.wiki
+              ? observeAdapter(sessionFiles.wiki, adapterChanged)
               : undefined,
           editable: setup.editable,
           textInput:
@@ -296,6 +332,7 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
     }
   }
   function schedule(next: Setup) {
+    desiredSetup = next
     const ticket = ++epoch
     lifecycle = 'resetting'
     lifecycleError = null
@@ -306,30 +343,65 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
     return result
   }
   async function reset(
-    nextFixture = setup.fixture,
-    nextConfiguration: string = setup.configuration,
+    nextFixture = desiredSetup.fixture,
+    nextConfiguration: string = desiredSetup.configuration,
   ) {
     return schedule(
       validateSetup({
-        ...setup,
+        ...desiredSetup,
         fixture: nextFixture,
         configuration: nextConfiguration as Setup['configuration'],
       }),
     )
   }
   async function configure(patch: Partial<Setup>) {
-    const next = validateSetup({ ...setup, ...patch })
-    return schedule(next)
+    const next = validateSetup({
+      ...desiredSetup,
+      ...(patch.adapterMode
+        ? {
+            imageImport: patch.adapterMode,
+            imageExport: patch.adapterMode,
+            fileAdapter: patch.adapterMode,
+          }
+        : {}),
+      ...patch,
+    })
+    if (
+      lifecycle !== 'ready' ||
+      (['fixture', 'configuration', 'files', 'editors'] as const).some(
+        (key) => next[key] !== setup[key],
+      )
+    )
+      return schedule(next)
+    const record = addRecord('configure', patch)
+    try {
+      if (next.editable !== setup.editable) setEditable(next.editable)
+      if (next.imageImport !== setup.imageImport)
+        images.setMode('import', next.imageImport)
+      if (next.imageExport !== setup.imageExport)
+        images.setMode('export', next.imageExport)
+      if (next.fileAdapter !== setup.fileAdapter)
+        files.setMode(next.fileAdapter)
+      setup = desiredSetup = next
+      syncURL()
+      complete(record, epoch, null)
+      return observe()
+    } catch (error) {
+      complete(record, epoch, null, error)
+      throw error
+    }
   }
   async function initialise() {
+    let initial: Setup
     try {
-      return await schedule(readSetup(location.search))
+      initial = readSetup(location.search)
     } catch (error) {
       lifecycle = 'error'
       lifecycleError = diagnostic(error)
       reportError(error)
       return observe()
     }
+    return schedule(initial).catch(() => observe())
   }
   function replaceDocument(
     text: string,
@@ -382,20 +454,17 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
           })
           if (target === current) generation = nextGeneration
         },
-        editable: (value) => {
-          current.setEditable(value)
-          setup = { ...setup, editable: value }
-          syncURL()
-        },
+        editable: setEditable,
         fileMode: changeFileMode,
         fileRelease: () => files.release(),
         fileEvents: () => [...files.events],
         startImagePaste: () => {
-          if (pendingImage)
+          if (imageRecord?.status === 'pending')
             throw Error(
               'An image paste is already started; finish it before starting another',
             )
           deferred = true
+          imageRecord = record
           pendingImage = current
             .paste({
               text: '',
@@ -422,11 +491,12 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
             pendingImage = undefined
         },
         startOutput: (kind) => {
-          if (pendingOutput)
+          if (outputRecord?.status === 'pending')
             throw Error(
               'An output is already started; finish it before starting another',
             )
           deferred = true
+          outputRecord = record
           const promise = (
             kind === 'print'
               ? current.printableSnapshot()
@@ -488,6 +558,12 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
         format: fixture.format,
       })),
       configurations,
+      defaults: readSetup(''),
+      adapterModes: {
+        imageImport: ['normal', 'reject', 'hold'],
+        imageExport: ['normal', 'reject', 'hold', 'corrupt'],
+        fileAdapter: ['normal', 'reject', 'hold', 'corrupt'],
+      },
       operations: describeOperations(),
     }),
     subscribe: (listener: () => void) => {
@@ -502,6 +578,7 @@ export function createPlayground(root: HTMLElement, secondRoot: HTMLElement) {
         version: 1,
         url: location.href,
         setup: { ...setup },
+        desiredSetup: { ...desiredSetup },
         observations: observe(),
         operations: records,
         droppedOperations,
