@@ -59,6 +59,12 @@ function nodes(
 
 test.each([
   ['[[Note]]', 'Note', null, 'Note'],
+  [
+    '[[  Two word note # Section name  |Exact alias  ]]',
+    '  Two word note ',
+    ' Section name  ',
+    'Exact alias  ',
+  ],
   ['[[Note#Heading|Readable alias]]', 'Note', 'Heading', 'Readable alias'],
   ['[[#Local heading]]', '', 'Local heading', '#Local heading'],
   [
@@ -98,6 +104,122 @@ test.each([
 ])('unsupported/untidy syntax stays outside supported grammar: %s', (raw) => {
   expect(parseLinkedSyntax(raw)).toBeUndefined()
 })
+
+test.each([
+  '![[ photo.png | 00400x00300 ]]',
+  '![[photo.png|00400x00300]]',
+  '![[photo.png| 00400 ]]',
+  '![[\tphoto.png # page=2\t|\t00400x00300\t]]',
+])(
+  'named dimensions retain source and expose only positive width: %s',
+  (raw) => {
+    expect(parseLinkedSyntax(raw)).toMatchObject({
+      raw,
+      target: 'photo.png',
+      width: 400,
+      embed: true,
+    })
+  },
+)
+
+test.each([
+  '![[photo.png|0x300]]',
+  '![[photo.png|400x0]]',
+  '![[photo.png|400x100000]]',
+  '![[photo.png|400x]]',
+  '![[photo.png|400X300]]',
+  '![[photo.png|400 x 300]]',
+  '![[photo.png|400x300|200]]',
+  '![[photo.png|+400x300]]',
+  '![[photo.png|400x300\n]]',
+])('malformed dimensions remain unsupported: %s', (raw) => {
+  expect(parseLinkedSyntax(raw)).toBeUndefined()
+})
+
+test('escaped dimension pipe belongs to the target, not size metadata', () =>
+  run(
+    String.raw`![[ Two word file\|400x300.png ]]` + '\n',
+    (editor, preservation) => {
+      const named = nodes(editor, 'image')[0]!.node
+      expect(fileReference(named)).toEqual({
+        reference: 'Two word file|400x300.png',
+        kind: 'wiki',
+        label: 'Two word file|400x300.png',
+      })
+      expect(
+        preservation.serialize(editor.ctx.get(editorViewCtx).state.doc),
+      ).toBe(String.raw`![[ Two word file\|400x300.png ]]` + '\n')
+    },
+  ))
+
+test('tabbed named dimensions retain exact source through edited-block serialization and reopen', () => {
+  const raw = '![[\tphoto.png # page=2\t|\t00400x00300\t]]'
+  const source = `Before ${raw} after.\r\n`
+  return run(source, (editor, preservation) => {
+    const view = editor.ctx.get(editorViewCtx)
+    const named = nodes(editor, 'image')[0]!
+    expect(fileReference(named.node)).toEqual({
+      reference: 'photo.png#page=2',
+      kind: 'wiki',
+      fragment: 'page=2',
+      label: 'photo.png#page=2',
+      width: 400,
+    })
+    expect(namedFileMarkdown(named.node)).toBe(raw)
+    view.dispatch(
+      view.state.tr.insertText('!', view.state.doc.content.size - 1),
+    )
+    const edited = preservation.serialize(view.state.doc)
+    expect(edited).toBe(`Before ${raw} after.!\r\n`)
+    const reopened = editor.ctx.get(remarkCtx).parse(edited)
+    expect(JSON.stringify(reopened)).toContain('00400x00300')
+    expect(serialize(editor.ctx)).toContain(raw)
+  })
+})
+
+test.each([false, true])(
+  'dimension spelling survives adjacent edits, resize and undo (table=%s)',
+  (table) => {
+    const raw = String.raw`![[ A\|B.png # page=2 | 00400x00300 ]]`
+    const tableRaw = String.raw`![[ A\\\|B.png # page=2 \| 00400x00300 ]]`
+    const source = table
+      ? `| File |\r\n| --- |\r\n| ${tableRaw} |\r\n`
+      : `Before ${raw} after.\r\n`
+    return run(source, (editor, preservation) => {
+      const view = editor.ctx.get(editorViewCtx)
+      const named = nodes(editor, 'image')[0]!
+      expect(fileReference(named.node)).toMatchObject({
+        reference: 'A|B.png#page=2',
+        width: 400,
+      })
+      expect(preservation.serialize(view.state.doc)).toBe(source)
+      view.dispatch(closeHistory(view.state.tr.insertText('!', named.position)))
+      const adjacent = preservation.serialize(view.state.doc)
+      expect(adjacent).toContain(table ? tableRaw : raw)
+      const editedNode = nodes(editor, 'image')[0]!
+      view.dispatch(
+        closeHistory(
+          view.state.tr.setNodeMarkup(editedNode.position, undefined, {
+            ...named.node.attrs,
+            alt: 'A|B.png#page=2|380',
+          }),
+        ),
+      )
+      view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
+      const changed = preservation.serialize(view.state.doc)
+      expect(changed).toContain(
+        table
+          ? String.raw`![[ A\\\|B.png # page=2 \|380]]`
+          : String.raw`![[ A\|B.png # page=2 |380]]`,
+      )
+      expect(changed).not.toContain('00300')
+      expect(undo(view.state, view.dispatch)).toBe(true)
+      expect(preservation.serialize(view.state.doc)).toBe(adjacent)
+      expect(redo(view.state, view.dispatch)).toBe(true)
+      expect(preservation.serialize(view.state.doc)).toBe(changed)
+    })
+  },
+)
 
 test('wiki atoms retain exact source through adjacent edit, source reopen and history', () =>
   run('Before [[Note#Heading|Alias]] after.\r\n', (editor, preservation) => {

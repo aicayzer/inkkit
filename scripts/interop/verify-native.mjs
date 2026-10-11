@@ -33,6 +33,7 @@ const versions = [
   '0.0.9',
   '0.0.10',
   '0.0.11',
+  '0.0.12',
 ]
 if (!versions.includes(version))
   throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
@@ -2397,6 +2398,29 @@ if (releaseAtLeast('0.0.11')) {
       { op: 'setCommentsVisible', visible: false },
       { op: 'dom', selector: '.inkkit-comment', name: 'hidden' },
       assert('nodes.0.display', 'none', 'hidden'),
+    ],
+  }
+}
+if (releaseAtLeast('0.0.12')) {
+  const authored = 'Before ![[\tPhoto # page=2\t|\t00140x00090\t]] after.\r\n'
+  scenarios['linked-files-authored-dimensions'] = {
+    files: true,
+    source: authored,
+    operations: [
+      { op: 'fileState', ready: true, name: 'resolved' },
+      contains('kinds', 'image', 'resolved'),
+      assert('widths.0', 140, 'resolved'),
+      assert('snapshot.text', authored),
+      { op: 'fileResize', width: 180 },
+      contains('snapshot.text', '![[\tPhoto # page=2\t|180]]'),
+      { op: 'keyDown', key: 'z', code: 'KeyZ', metaKey: true },
+      assert('snapshot.text', authored),
+      { op: 'select', text: 'after.' },
+      { op: 'insertText', text: 'edited.' },
+      contains('snapshot.text', '![[\tPhoto # page=2\t|\t00140x00090\t]]'),
+      { op: 'save' },
+      { op: 'reopen' },
+      contains('snapshot.text', '![[\tPhoto # page=2\t|\t00140x00090\t]]'),
     ],
   }
 }

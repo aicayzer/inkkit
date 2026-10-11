@@ -176,7 +176,7 @@ test('named and path sizing isolate undo and reject read-only/composition mutati
   await openFixture('linked-files')
   await page.evaluate(() =>
     window.inkkitPlayground.replaceDocument(
-      'Before\n\n![[Photo|140]]\n\n![Path|120](images/native.png)\n',
+      'Before\n\n![[ Photo | 00140x00090 ]]\n\n![Path|120](images/native.png)\n',
       'md',
     ),
   )
@@ -197,10 +197,10 @@ test('named and path sizing isolate undo and reject read-only/composition mutati
     await page.mouse.up()
   }
   await resize(0, 40)
-  expect((await observe(page)).snapshot!.text).toContain('![[Photo|180]]')
+  expect((await observe(page)).snapshot!.text).toContain('![[ Photo |180]]')
   await operation(page, 'undo')
   expect((await observe(page)).snapshot!.text).toBe(
-    'Adjacent\n\n![[Photo|140]]\n\n![Path|120](images/native.png)\n',
+    'Adjacent\n\n![[ Photo | 00140x00090 ]]\n\n![Path|120](images/native.png)\n',
   )
   await operation(page, 'redo')
   await resize(1, 30)

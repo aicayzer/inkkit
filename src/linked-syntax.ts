@@ -88,7 +88,7 @@ export function parseLinkedSyntax(
     } else {
       if (
         '[]'.includes(character) ||
-        character.charCodeAt(0) < 32 ||
+        (character.charCodeAt(0) < 32 && character !== '\t') ||
         character === '\u007f'
       )
         return undefined
@@ -103,21 +103,31 @@ export function parseLinkedSyntax(
     parts.fragment.trimStart().startsWith('^')
   )
     return undefined
+  const size = /^[ \t]*(\d{1,5})(?:x(\d{1,5}))?[ \t]*$/.exec(parts.alias)
   if (
     embed &&
     (!parts.target.trim() ||
-      (hasAlias && (!/^\d{1,5}$/.test(parts.alias) || Number(parts.alias) < 1)))
+      (hasAlias &&
+        (!size ||
+          Number(size[1]) < 1 ||
+          (size[2] != null && Number(size[2]) < 1))))
   )
     return undefined
+  const target = embed ? parts.target.trim() : parts.target
+  const fragment = hasFragment
+    ? embed
+      ? parts.fragment.trim()
+      : parts.fragment
+    : null
   return {
     raw,
-    target: parts.target,
-    fragment: hasFragment ? parts.fragment : null,
+    target,
+    fragment,
     label:
       !embed && hasAlias
         ? parts.alias
-        : parts.target + (hasFragment ? `#${parts.fragment}` : ''),
-    width: embed && hasAlias ? Number(parts.alias) : null,
+        : target + (fragment != null ? `#${fragment}` : ''),
+    width: embed && hasAlias ? Number(size![1]) : null,
     embed,
     inTable,
   }
@@ -130,7 +140,7 @@ function linkedTokenizer(embed: boolean): Tokenizer {
       raw = ''
     return opening
     function consume(code: Exclude<Code, null>) {
-      raw += String.fromCodePoint(code)
+      raw += code === -2 ? '\t' : code === -1 ? ' ' : String.fromCodePoint(code)
       effects.consume(code)
     }
     function opening(code: Code): State | undefined {
@@ -141,7 +151,12 @@ function linkedTokenizer(embed: boolean): Tokenizer {
       return index === prefix.length ? body : opening
     }
     function body(code: Code): State | undefined {
-      if (code === null || code < 32 || code === 91) return nok(code)
+      if (
+        code === null ||
+        (code < 32 && code !== -2 && code !== -1 && code !== 9) ||
+        code === 91
+      )
+        return nok(code)
       consume(code)
       if (code === 92) return escaped
       return code === 93 ? closing : body
@@ -227,7 +242,8 @@ export function namedFileMarkdown(
   const original = node.attrs.inkkitFileWidth ?? null
   if (width !== original) {
     if (authoredInTable) raw = fromTable(raw)
-    if (original != null) raw = raw.replace(/\|\d{1,5}\]\]$/, ']]')
+    if (original != null)
+      raw = raw.replace(/\|[ \t]*\d{1,5}(?:x\d{1,5})?[ \t]*\]\]$/, ']]')
     if (width != null) raw = `${raw.slice(0, -2)}|${width}]]`
     return inTable ? toTable(raw) : raw
   }
