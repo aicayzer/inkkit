@@ -1954,9 +1954,12 @@ export class InkKitEditor {
     const container = this.viewportContainer ?? this.root
     const top = container.scrollTop,
       left = container.scrollLeft
-    const focused = this.literalSurface
-      ? this.plain.ownerDocument.activeElement === this.plain
-      : this.editor.ctx.get(editorViewCtx).hasFocus()
+    const active = this.root.ownerDocument.activeElement
+    if (
+      active === this.plain ||
+      active === this.editor.ctx.get(editorViewCtx).dom
+    )
+      (active as HTMLElement).blur()
     this.ready = false
     this.cancelExports()
     this.mediaPolicy()
@@ -1984,10 +1987,6 @@ export class InkKitEditor {
     this.updateSurface()
     this.ready = true
     this.mediaPolicy()
-    if (focused) {
-      if (this.literalSurface) this.plain.focus({ preventScroll: true })
-      else this.editor.ctx.get(editorViewCtx).focus()
-    }
     container.scrollTop = top
     container.scrollLeft = left
     this.events.stateChanged(

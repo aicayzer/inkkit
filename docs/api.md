@@ -56,7 +56,7 @@ Reloads, document replacements, revisions and mode changes invalidate old snapsh
 
 `setViewport({ scrollContainer?, insets? })` identifies the host-owned scroll container and overlapping chrome insets. The mounted root is the default scroll container. Insets are non-negative CSS pixels on each edge of its visible viewport; `viewport()` reports the resulting visible rectangle, insets and combined scroll offsets. Rectangle fields are `left`, `top`, `right`, `bottom`, `width` and `height`. Source/TXT retain the textarea’s internal scrolling. Explicit range reveal, find and heading navigation share this viewport contract. Layout and headers stay in the host.
 
-Loading does not focus the editor or reveal a saved caret. External reloads preserve valid selection, focus and scroll positions without jumping a browsing host. Explicit focus/navigation may reveal the caret. Each editor retains its own text identities, viewport and layout state.
+Loading releases focus from the editor's active text surface and does not reveal a saved caret. It leaves other host controls focused. Call `focus()` after loading only when editing should start immediately. External reloads preserve valid selection, focus and scroll positions without jumping a browsing host. Explicit focus/navigation may reveal the caret. Each editor retains its own text identities, viewport and layout state.
 
 ## Footnotes and reference links
 

@@ -2424,6 +2424,35 @@ if (releaseAtLeast('0.0.12')) {
     ],
   }
 }
+for (const mode of ['formatted', 'source', 'txt']) {
+  scenarios[`host-document-load-releases-${mode}-focus`] = {
+    source: '# Reading\n\nText to edit.\n',
+    format: mode === 'txt' ? 'txt' : 'md',
+    operations: [
+      { op: 'inputAttributes', name: 'initial' },
+      assert('focused', false, 'initial'),
+      ...(mode === 'source' ? [{ op: 'editingMode', mode: 'source' }] : []),
+      { op: 'select', text: 'Text' },
+      { op: 'inputAttributes', name: 'editing' },
+      assert('focused', true, 'editing'),
+      { op: 'reload', source: '# Reading\n\nText to edit.\n' },
+      { op: 'inputAttributes', name: 'reloaded' },
+      assert('focused', true, 'reloaded'),
+      { op: 'load', source: '# Next\n\nNext text.\n', documentId: 'next' },
+      { op: 'inputAttributes', name: 'reading' },
+      assert('focused', false, 'reading'),
+      { op: 'hostFocus' },
+      { op: 'load', source: '# Third\n\nThird text.\n', documentId: 'third' },
+      { op: 'viewportState', name: 'host' },
+      assert('hostFocused', true, 'host'),
+      { op: 'select', text: 'Third text' },
+      { op: 'inputAttributes', name: 'compose' },
+      assert('focused', true, 'compose'),
+      { op: 'insertText', text: 'Written' },
+      contains('snapshot.text', 'Written'),
+    ],
+  }
+}
 const names = Object.keys(scenarios)
 const groups = {
   core: [
