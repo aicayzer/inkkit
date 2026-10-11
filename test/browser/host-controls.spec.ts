@@ -1,5 +1,44 @@
 import { test, expect, observe, operation } from './fixtures'
 
+test('document replacement leaves reading focus and explicit composition still works @host-controls', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture('untidy')
+  const formatted = page.getByRole('textbox', {
+    name: 'Formatted Markdown editor',
+    exact: true,
+  })
+  await expect(formatted).not.toBeFocused()
+  await formatted.click()
+  await expect(formatted).toBeFocused()
+  await operation(page, 'reload')
+  await expect(formatted).toBeFocused()
+  await page.evaluate(() =>
+    window.inkkitPlayground.replaceDocument('# Next\n\nReading text.\n', 'md'),
+  )
+  await expect(formatted).not.toBeFocused()
+  await formatted.click()
+  await page.keyboard.type('Typed')
+  expect((await observe(page)).snapshot!.text).toContain('Typed')
+  await operation(page, 'editingMode', { mode: 'source' })
+  const source = page.getByRole('textbox', { name: 'Markdown source editor' })
+  await expect(source).toBeFocused()
+  await page.evaluate(() =>
+    window.inkkitPlayground.replaceDocument('Next literal', 'txt'),
+  )
+  const literal = page.getByRole('textbox', { name: 'Plain text editor' })
+  await expect(literal).not.toBeFocused()
+  await operation(page, 'focus')
+  await expect(literal).toBeFocused()
+  await operation(page, 'reload')
+  await expect(literal).toBeFocused()
+  await page.evaluate(() =>
+    window.inkkitPlayground.replaceDocument('Next literal', 'txt'),
+  )
+  await expect(literal).not.toBeFocused()
+})
+
 test('read-only transitions preserve source and shared history @host-controls', async ({
   page,
   openFixture,

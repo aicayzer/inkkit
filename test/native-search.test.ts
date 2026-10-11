@@ -195,6 +195,32 @@ test('formatted code replacement remains literal and has one coherent undo', () 
     expect(editor.snapshot().text).toBe(text)
   }))
 
+test.each(['md', 'txt'] as const)(
+  'loading a document releases only its own %s editing focus',
+  (format) =>
+    run((editor, root) => {
+      const document = { ...input, format }
+      editor.loadDocument(document)
+      editor.focus()
+      expect(root.contains(globalThis.document.activeElement)).toBe(true)
+      editor.reloadDocument(document)
+      expect(root.contains(globalThis.document.activeElement)).toBe(true)
+      editor.loadDocument({ ...document, documentId: 'next' })
+      expect(root.contains(globalThis.document.activeElement)).toBe(false)
+      const host = globalThis.document.createElement('input')
+      globalThis.document.body.append(host)
+      try {
+        host.focus()
+        editor.loadDocument(document)
+        expect(globalThis.document.activeElement).toBe(host)
+        editor.focus()
+        expect(root.contains(globalThis.document.activeElement)).toBe(true)
+      } finally {
+        host.remove()
+      }
+    }),
+)
+
 test('reload retains backward formatted/source selections and browsing host focus', () =>
   run((editor, root, ctx) => {
     const host = document.createElement('input')
