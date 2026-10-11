@@ -175,7 +175,7 @@ Linked syntax and controlled file views require 0.0.10 or later. `EditorOptions.
 
 `FileAdapter` provides:
 
-- `resolve(reference, context): Promise<FilePresentation>`: resolves an opaque `FileReference`. `reference.reference` retains the path or decoded named reference, including its fragment; `kind` is `path` or `wiki`. Optional `fragment`, authored `label` and `width` describe the captured request. The host identifies the actual file kind; InkKit does not infer it from an extension.
+- `resolve(reference, context): Promise<FilePresentation>`: resolves an opaque `FileReference`. `reference.reference` retains the opaque path or decoded named reference, including its fragment; named references trim leading and trailing target/fragment whitespace while preserving internal spaces and authored source; `kind` is `path` or `wiki`. Optional `fragment`, authored `label` and `width` describe the captured request. The host identifies the actual file kind; InkKit does not infer it from an extension.
 - Optional `exportImage(reference, context): Promise<PortableImage>`: supplies portable image bytes for copy and print. If omitted, a configured legacy `ImageAdapter` can export path images. Named images require this callback for portable image output. Image import remains with `ImageAdapter.importImage`; no file storage/import API is added.
 - Optional `open(reference, context)` and `contextMenu(reference, { clientX, clientY }, context)`: target the authored reference for host actions. Context-menu coordinates are client CSS pixels. The host owns permissions, Open/Reveal UI and error handling for asynchronous native actions.
 
