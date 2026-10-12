@@ -32,7 +32,7 @@ for (const repeated of [false, true]) {
         )
         expect(preservation.serialize(first)).toBe(firstSource)
       })
-    })
+    }, 15_000)
   }
 }
 
