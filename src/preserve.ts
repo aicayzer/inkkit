@@ -486,8 +486,8 @@ function tooManyBlocks(): PreservationError {
   )
 }
 
-// Blocks that occur exactly once on each side, in the longest run whose order
-// the two sides share. A repeated block is never an anchor: which copy it
+// Blocks that occur exactly once on each side, in the longest subsequence whose
+// order the two sides share. A repeated block is never an anchor: which copy it
 // belongs to is not known until its neighbours are placed.
 function uniqueAnchors(
   before: string[],
@@ -510,7 +510,7 @@ function uniqueAnchors(
     if (match != null && match >= 0 && afterAt.get(after[i]!) === i)
       pairs.push({ b: match, a: i })
   }
-  // Patience sorting: tails[k] ends the best increasing run of length k + 1.
+  // Patience sorting: tails[k] ends the best increasing subsequence of length k + 1.
   const tails: number[] = []
   const previous: number[] = new Array(pairs.length)
   for (const [index, pair] of pairs.entries()) {
