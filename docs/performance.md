@@ -57,7 +57,7 @@ To repeat the comparison, install dependencies in both checkouts and run from th
 node scripts/measure-preservation.mjs /path/to/baseline-checkout
 ```
 
-The script starts Vite on ports 4194 and 4195, uses fixed paragraph, code, marked-text and heading fixtures, verifies that all ten inputs reached the snapshot, and records samples in `_local/preservation-performance.json`. Run one comparison at a time with those ports free. A single run does not establish a cross-machine latency guarantee.
+The script starts Vite on ports 4194 and 4195, uses fixed paragraph, code, marked-text, heading and highlighted-code fixtures, verifies that all ten inputs reached the snapshot, and records samples in `_local/preservation-performance.json`. Run one comparison at a time with those ports free. A single run does not establish a cross-machine latency guarantee.
 
 Independent paragraph and heading edits retain their surrounding source bytes and reparse only the changed blocks. This requires unchanged block structure and blank-line separation from neighboring blocks. Text may contain emphasis, bold and inline-code marks. Reference brackets, HTML/comment forms, inline atoms and ambiguous block moves use the complete document path because their meaning can depend on other blocks. Each reconstructed block must parse to the intended node, with only Milkdown's derived heading DOM ID excluded. Cached validation belongs to immutable node identity and its original block position.
 
@@ -68,3 +68,17 @@ Loading and rendering are not optimized by this change; the 1,000-paragraph load
 Block correspondence uses banded edit distance with a shared one-million-cell work budget across widening attempts. Its cost depends on edit distance rather than the rectangular span between two distant changes; repeated paragraphs do not require unique anchors. Large unmatched rewrites can still fail closed. Ordinary keyboard regression cases cover first/last edits across 1,000 paragraphs, authored and unsupported source, history, mode changes and reload.
 
 Formatted changes are validated after dialect normalization and before the final state reaches the view. A rejected change reports a preservation error, restores the current visible document and leaves the snapshot, revision and undo history unchanged. Browser tests exercise rejected DOM input and synthetic composition recovery; these do not establish every operating-system IME behavior.
+
+## Code highlighting measurements, October 12, 2026
+
+Code highlighting colors blocks with `lowlight` and previously ran it over every code block on each document change. It now highlights only the blocks a transaction touched; decorations of other blocks are mapped to their new positions. These measurements use the same script, machine, browser (Chrome 154) and method as the text-block table, comparing `main` at `e3e3687` (0.0.15) with the candidate. Diagram previews are disabled and code highlighting is enabled, except in the last row. Each row is the mean of ten `keyboard.insertText('x')` inputs. Two runs of each side agreed within 4 ms for the baseline rows.
+
+The 500 code blocks are five-line TypeScript blocks (164,511 characters, 20,000 decorations). The heading edit is outside every code block. The end edit is inside the last block.
+
+| Document and edit                              | Input before / after (ms) |
+| ---------------------------------------------- | ------------------------: |
+| 500 code blocks, heading edit                  |               89.5 / 10.2 |
+| 500 code blocks, edit in the last block        |              103.9 / 64.4 |
+| 500 code blocks, heading edit, no highlighting |                 1.8 / 1.9 |
+
+For the end edit, preservation (about 48 ms per input, unchanged) is now most of the cost. For the heading edit, about 8 ms above the no-highlighting floor remains; it was not profiled. The regression tests in `test/code-highlighting.test.ts` count `lowlight.highlight` calls and compare the decorations with an independent full recompute after edits, language changes, block deletion and undo, and a seeded sequence of random edits. Loading a document highlights every block, as before.
