@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
-import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
+import { editorViewCtx, parserCtx, remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import type { Root } from 'mdast'
+import { TextSelection } from '@milkdown/kit/prose/state'
 import { InkKitEditor } from '../src/index'
 import { correspondence, Preservation } from '../src/preserve'
 import { withEditor } from './harness'
@@ -162,6 +164,56 @@ test('deleting the first block and adding one at the end keeps the unchanged blo
       '__Intro__ text\n\n_Kept_ [l](/k)\n',
       '_Kept_ [l](/k)\n\nAdded\n',
     )
+    // Repeated blocks cannot anchor, so only the alignment keeps them apart.
+    saveAs(
+      editor.ctx,
+      '__Intro__ text\n\n_Same_\n\n_Same_\n',
+      '_Same_\n\n_Same_\n\nAdded\n',
+    )
+  }))
+
+test('typing in a block keeps its own source when a neighbour was deleted', () =>
+  mount('start\n\n+ one\n+ two\n\n__bold__ para\n\nend\n', (editor, ctx) => {
+    const view = ctx.get(editorViewCtx)
+    const list = view.state.doc.child(0).nodeSize
+    const paragraph = list + view.state.doc.child(1).nodeSize
+    view.dispatch(
+      view.state.tr.delete(
+        paragraph,
+        paragraph + view.state.doc.child(2).nodeSize,
+      ),
+    )
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, paragraph - 3),
+      ),
+    )
+    editor.insertText('!', 1)
+    expect(editor.snapshot().text).toBe('start\n\n+ one\n+ two!\n\nend\n')
+  }))
+
+test('an edited block keeps its own source beside inserted and deleted blocks', () =>
+  withEditor('x\n', (editor) => {
+    // The deleted block comes first.
+    saveAs(editor.ctx, '__alpha__ one\n\n__beta__ two\n', '__beta__ two!\n')
+    saveAs(
+      editor.ctx,
+      'start\n\n__bold__ para\n\n+ one\n+ two\n\nend\n',
+      'start\n\n+ one\n+ two!\n\nend\n',
+    )
+    // A new block next to an edited one, with a deletion in the same gap.
+    saveAs(
+      editor.ctx,
+      '# Top\n\n_Note 3_ text [l](/3)\n\n<div>\nhtml\n</div>\n\nend\n',
+      '# Top\n\n_Note 10_ text [l](/10)\n\n_Note 3_ text typed [l](/3)\n\nend\n',
+      '# Top\n\n*Note 10* text [l](/10)\n\n_Note 3_ text typed [l](/3)\n\nend\n',
+    )
+    saveAs(
+      editor.ctx,
+      '* * *\n\nTitle 4\n===\n',
+      'Title 4 typed\n===\n\nTitle 6\n===\n',
+      'Title 4 typed\n===\n\n# Title 6\n',
+    )
   }))
 
 test('moved blocks are rewritten canonically while everything between them keeps its source', () => {
@@ -292,3 +344,140 @@ test('block correspondence pairs unchanged blocks with themselves and never an u
       if (before.includes(block)) expect(before[positions[index]!]).toBe(block)
   }
 })
+
+interface Edited {
+  text: string
+  origin?: number
+  edited?: boolean
+  moved?: boolean
+  edit?: (text: string) => string
+}
+
+const typed = (text: string) => `${text} typed`
+const typedBefore = (marker: string) => (text: string) =>
+  text.slice(0, text.lastIndexOf(marker)) +
+  ' typed' +
+  text.slice(text.lastIndexOf(marker))
+// Each template uses syntax that differs from InkKit's canonical form.
+const distinctBlocks: Array<[(i: number) => string, Edited['edit']]> = [
+  [(i) => `__Bold ${i}__ para`, typed],
+  [(i) => `_Note ${i}_ text [link](/l/${i})`, typedBefore(' [link]')],
+  [(i) => `+ item ${i}\n+ second ${i}`, typed],
+  [(i) => `1) first ${i}\n2) second ${i}`, typed],
+  [(i) => `Title ${i}\n===`, typedBefore('\n===')],
+  [(i) => `> __Quote ${i}__ said`, typed],
+  [(i) => `~~~\ncode ${i}\n~~~`, typedBefore('\n~~~')],
+  [(i) => `<div>\nhtml ${i}\n</div>`, typedBefore('\n</div>')],
+  [(i) => `Plain ${i} words`, typed],
+]
+const repeatedBlocks: Array<[() => string, Edited['edit']]> = [
+  [() => '_Same_', typed],
+  [() => '__Twin__ copy', typed],
+  [() => '* * *', undefined],
+  [() => '> _echo_', typed],
+]
+
+// Deletions beside edits, inserts, moves and repeated blocks, with either line ending.
+function randomEdit(seed: number) {
+  const random = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32
+  const pick = <T>(list: T[]) => list[Math.floor(random() * list.length)]!
+  const ending = random() < 0.5 ? '\n' : '\r\n'
+  const repeats = pick([0, 0.3, 0.7])
+  let id = 0
+  const fresh = (): Edited => {
+    const [make, edit] =
+      random() < repeats ? pick(repeatedBlocks) : pick(distinctBlocks)
+    return { text: make(id++), edit }
+  }
+  const before = Array.from({ length: 2 + Math.floor(random() * 28) }, fresh)
+  if (random() < 0.15)
+    before.unshift({
+      text: '---\ntitle: front\n---',
+      edit: typedBefore('\n---'),
+    })
+  const after: Edited[] = before.map((block, origin) => ({ ...block, origin }))
+  const edit = (index: number) => {
+    const block = after[index]
+    if (block?.edit)
+      after[index] = { ...block, text: block.edit(block.text), edited: true }
+  }
+  for (let step = 1 + Math.floor(random() * 4); step && after.length; step--) {
+    const index = Math.floor(random() * after.length)
+    const kind = pick(['delete', 'edit', 'insert', 'move', 'beside', 'beside'])
+    if (kind === 'delete') after.splice(index, 1)
+    else if (kind === 'edit') edit(index)
+    else if (kind === 'insert')
+      after.splice(index + Math.floor(random() * 2), 0, fresh())
+    else if (kind === 'move') {
+      const [block] = after.splice(index, 1)
+      after.splice(Math.floor(random() * (after.length + 1)), 0, {
+        ...block!,
+        moved: block!.origin !== undefined,
+      })
+    } else {
+      const neighbour = index + (random() < 0.5 ? -1 : 1)
+      if (neighbour < 0 || neighbour >= after.length) continue
+      edit(neighbour)
+      after.splice(index, 1)
+    }
+  }
+  const markdown = (blocks: Edited[]) =>
+    blocks
+      .map((block) => block.text.replaceAll('\n', ending))
+      .join(ending + ending) + ending
+  return { before, after, source: markdown(before), edited: markdown(after) }
+}
+
+test(
+  'random edits keep every unchanged block and the authored syntax of edited ones',
+  () =>
+    withEditor('x\n', (editor) => {
+      const parse = editor.ctx.get(parserCtx)
+      const processor = editor.ctx.get(remarkCtx)
+      const blocks = (text: string) =>
+        (processor.runSync(processor.parse(text), { value: text }) as Root)
+          .children
+      let checked = 0
+      for (let seed = 1; seed <= 800; seed++) {
+        const { before, after, source, edited } = randomEdit(seed)
+        // Adjacent lists of one kind merge into one block; skip those documents.
+        if (
+          blocks(source).length !== before.length ||
+          blocks(edited).length !== after.length
+        )
+          continue
+        checked++
+        const saved = new Preservation(editor.ctx, source).serialize(
+          parse(edited),
+        )
+        const nodes = blocks(saved)
+        expect(nodes).toHaveLength(after.length)
+        const ending = source.includes('\r\n') ? '\r\n' : '\n'
+        // Which copy of a repeated block was kept, inserted or moved is ambiguous,
+        // and a moved block is rewritten by design.
+        const ambiguous = after.some(
+          (block) =>
+            block.moved ||
+            (block.origin === undefined &&
+              before.some((original) => original.text === block.text)) ||
+            (block.edited &&
+              before.filter(
+                (original) => original.text === before[block.origin!]?.text,
+              ).length > 1),
+        )
+        const inserted = after.some((block) => block.origin === undefined)
+        after.forEach((block, index) => {
+          if (ambiguous || block.origin === undefined) return
+          // A new block that resembles a deleted one can take its place.
+          if (block.edited && inserted) return
+          const node = nodes[index]!.position!
+          expect(
+            saved.slice(node.start.offset, node.end.offset),
+            `seed ${seed}`,
+          ).toBe(block.text.replaceAll('\n', ending))
+        })
+      }
+      expect(checked).toBeGreaterThan(500)
+    }),
+  60_000,
+)

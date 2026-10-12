@@ -450,6 +450,7 @@ function withoutHeadingId(node: ProseNode): ProseNode {
 }
 
 const MATCHING_BUDGET = 1_000_000
+const SIMILARITY_BUDGET = 4_000_000
 
 interface Anchor {
   b: number
@@ -463,7 +464,7 @@ export function correspondence(
   after: string[],
 ): Array<number | undefined> {
   const result: Array<number | undefined> = new Array(after.length)
-  const work = { budget: MATCHING_BUDGET }
+  const work = { budget: MATCHING_BUDGET, similarity: SIMILARITY_BUDGET }
   const spans = [{ b: 0, a: 0, bEnd: before.length, aEnd: after.length }]
   for (let span = spans.pop(); span; span = spans.pop()) {
     let { b, a, bEnd, aEnd } = span
@@ -542,8 +543,12 @@ function uniqueAnchors(
   return anchors.reverse()
 }
 
-// Edit distance distinguishes replacements from insertions, so replacing a block
-// retains its surrounding whitespace without assigning it a neighbour's source.
+// Replacing a block costs more than inserting or deleting one, so an unchanged
+// block keeps its own copy rather than pairing with a deleted neighbour, and
+// less than both, so an edited block still keeps its surrounding whitespace.
+const INDEL = 2
+const REPLACE = 3
+
 function align(
   before: string[],
   after: string[],
@@ -552,17 +557,18 @@ function align(
   a: number,
   aEnd: number,
   result: Array<number | undefined>,
-  work: { budget: number },
+  work: { budget: number; similarity: number },
 ): void {
   const rows = bEnd - b + 1
   const columns = aEnd - a + 1
-  let width = Math.max(1, Math.abs(rows - columns))
+  const offset = Math.abs(rows - columns)
+  let width = Math.max(1, offset)
   for (;;) {
     const costs: Uint32Array[] = []
     const get = (i: number, j: number): number =>
       i < 0 || j < 0 || Math.abs(i - j) > width
-        ? width + 1
-        : (costs[i]?.[j - Math.max(0, i - width)] ?? width + 1)
+        ? Infinity
+        : (costs[i]?.[j - Math.max(0, i - width)] ?? Infinity)
     for (let i = 0; i < rows; i++) {
       const from = Math.max(0, i - width)
       const to = Math.min(columns - 1, i + width)
@@ -571,38 +577,126 @@ function align(
       const row = new Uint32Array(to - from + 1)
       costs.push(row)
       for (let j = from; j <= to; j++) {
-        const change = before[b + i - 1] === after[a + j - 1] ? 0 : 1
+        const change = before[b + i - 1] === after[a + j - 1] ? 0 : REPLACE
         row[j - from] =
           i === 0
-            ? j
+            ? j * INDEL
             : j === 0
-              ? i
+              ? i * INDEL
               : Math.min(
-                  get(i - 1, j) + 1,
-                  get(i, j - 1) + 1,
+                  get(i - 1, j) + INDEL,
+                  get(i, j - 1) + INDEL,
                   get(i - 1, j - 1) + change,
                 )
       }
     }
-    // A path with at most width edits cannot leave this diagonal band.
-    // Widen only when needed, charging every attempt to the same work budget.
-    if (get(rows - 1, columns - 1) > width) {
+    // A path that leaves the band takes at least width + 1 insertions or
+    // deletions away from the diagonal and width + 1 - offset back to its end,
+    // so a path inside the band that costs no more is optimal. Widen only when
+    // needed, charging every attempt to the same work budget.
+    if (
+      width < Math.max(rows, columns) - 1 &&
+      get(rows - 1, columns - 1) > INDEL * (2 * (width + 1) - offset)
+    ) {
       width *= 2
       continue
     }
+    const unchanged: Anchor[] = []
     let i = rows - 1
     let j = columns - 1
     while (i || j) {
-      const change = i && j && before[b + i - 1] === after[a + j - 1] ? 0 : 1
-      if (i && j && get(i, j) === get(i - 1, j - 1) + change) {
+      const same = i && j && before[b + i - 1] === after[a + j - 1]
+      if (i && j && get(i, j) === get(i - 1, j - 1) + (same ? 0 : REPLACE)) {
         result[a + j - 1] = b + i - 1
+        if (same) unchanged.push({ b: b + i - 1, a: a + j - 1 })
         i--
         j--
-      } else if (i && get(i, j) === get(i - 1, j) + 1) i--
+      } else if (i && get(i, j) === get(i - 1, j) + INDEL) i--
       else j--
     }
+    unchanged.push({ b: b - 1, a: a - 1 })
+    unchanged.reverse().push({ b: bEnd, a: aEnd })
+    for (let index = 1; index < unchanged.length; index++)
+      pairSimilar(
+        before,
+        after,
+        unchanged[index - 1]!.b + 1,
+        unchanged[index]!.b,
+        unchanged[index - 1]!.a + 1,
+        unchanged[index]!.a,
+        result,
+        work,
+      )
     return
   }
+}
+
+// Between unchanged blocks, edit distance prices every replacement alike, so
+// it cannot tell which original an edited block came from. Pair each with the
+// original it most resembles, keeping their order: typing in a block then keeps
+// its own source even when a neighbour was inserted or deleted beside it.
+function pairSimilar(
+  before: string[],
+  after: string[],
+  b: number,
+  bEnd: number,
+  a: number,
+  aEnd: number,
+  result: Array<number | undefined>,
+  work: { similarity: number },
+): void {
+  const removed = bEnd - b
+  const added = aEnd - a
+  if (!removed || !added || (removed === 1 && added === 1)) return
+  // Resemblance decides; among equally resembling pairings, more pairs keep
+  // more replaced blocks in place with their surrounding whitespace.
+  const bonus = 1 / (Math.min(removed, added) + 1)
+  // This is a refinement with its own budget of characters compared. When it
+  // runs out, the alignment's pairing stands rather than the edit failing.
+  if (removed * added > work.similarity) return
+  const weights = new Float64Array(removed * added)
+  for (let x = 0; x < removed; x++)
+    for (let y = 0; y < added; y++) {
+      const shared = similarity(before[b + x]!, after[a + y]!)
+      work.similarity -= shared + 1
+      if (work.similarity < 0) return
+      weights[x * added + y] = shared + bonus
+    }
+  const best = Array.from(
+    { length: removed + 1 },
+    () => new Float64Array(added + 1),
+  )
+  for (let x = 1; x <= removed; x++)
+    for (let y = 1; y <= added; y++)
+      best[x]![y] = Math.max(
+        best[x - 1]![y]!,
+        best[x]![y - 1]!,
+        best[x - 1]![y - 1]! + weights[(x - 1) * added + y - 1]!,
+      )
+  for (let index = a; index < aEnd; index++) result[index] = undefined
+  for (let x = removed, y = added; x && y;) {
+    if (
+      best[x]![y] ===
+      best[x - 1]![y - 1]! + weights[(x - 1) * added + y - 1]!
+    ) {
+      result[a + --y] = b + --x
+    } else if (best[x]![y] === best[x - 1]![y]) x--
+    else y--
+  }
+}
+
+// Characters an edit left in place at the start and end of a block.
+function similarity(left: string, right: string): number {
+  const limit = Math.min(left.length, right.length)
+  let prefix = 0
+  while (prefix < limit && left[prefix] === right[prefix]) prefix++
+  let suffix = 0
+  while (
+    suffix < limit - prefix &&
+    left[left.length - 1 - suffix] === right[right.length - 1 - suffix]
+  )
+    suffix++
+  return prefix + suffix
 }
 
 /** Retains the loaded source of blocks the edit leaves alone. */
