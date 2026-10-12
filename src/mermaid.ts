@@ -13,19 +13,25 @@ export function isMermaid(node: ProseNode): boolean {
 export function validateDiagram(source: string): void {
   if (source.length > 30000)
     throw new Error('The diagram exceeds the 30,000 character rendering limit.')
-  if (
-    !/^\s*(?:%%[^\n]*\n\s*)*(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|pie)\b/.test(
+  const header =
+    /^\s*(?:%%[^\n]*\n\s*)*(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|pie)\b/.exec(
       source,
     )
-  )
+  if (!header)
     throw new Error(
       'This diagram type is not supported. The source is retained.',
     )
   // Mermaid can load image bytes before sanitising its result. Reject resource
   // and configuration syntax before calling the renderer, including entities.
+  // Action and styling directives are refused only where a statement can start,
+  // so the same words stay usable in labels. Resource values in a directive
+  // (URLs, url(), @import, escapes) are refused wherever they appear.
   if (
-    /%%\{|^\s*---|<\s*[a-z!/?]|&(?:#\w+|[a-z]+);|@\{|\$\$|(?:https?|data|file|javascript|vbscript|blob):|\/\/|\b(?:click|callback|href|link|image|icon|fontawesome|style|classDef|linkStyle)\b|url\s*\(|@import|\\/im.test(
+    /%%\{|^\s*---|<\s*[a-z!/?]|&(?:#\w+|[a-z]+);|@\{|\$\$|(?:https?|data|file|javascript|vbscript|blob):|\/\/|url\s*\(|@import|\\/im.test(
       source,
+    ) ||
+    /(?:^|[;}])\s*(?:end\s+)?(?:click|callback|href|link|image|icon|fontawesome|style|classDef|linkStyle)\b/im.test(
+      source.slice(header[0].length),
     )
   )
     throw new Error(

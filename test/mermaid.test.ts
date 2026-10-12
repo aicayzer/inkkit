@@ -125,7 +125,84 @@ for (const diagram of [
     expect(() => validateDiagram(diagram)).not.toThrow()
   })
 
+for (const label of [
+  'flowchart TD\nA[Click to upload image] --> B',
+  'flowchart TD\nA[Style guide] --> B[Link icon]',
+  'graph TD\nA[icon] --> B[href] --> C[callback]',
+  'flowchart TD\nA["classDef and linkStyle"] --> B',
+  'flowchart TD\nA -- click here --> B',
+  'flowchart TD\nA -->|Click me| B',
+  'flowchart TD\nA{Link broken?} --> B{{Image}}',
+  'flowchart TD\nsubgraph Style guide\nA --> B\nend',
+  'flowchart TD\nA["Fontawesome icons"] --> B\n%% click the link, style it',
+  'sequenceDiagram\nA->>B: Send link',
+  'sequenceDiagram\nparticipant A as Image service\nNote over A,B: click the style icon',
+  'classDiagram\nclass Account {\n+String icon\n+String link\n}\nAccount --> Account : click',
+  'stateDiagram-v2\nstate "Click to start" as S\nS --> T : style guide\nS : image icon href',
+  'erDiagram\nA ||--|| B : "Click link"\nA {\nstring link\nstring style\n}',
+  'pie title Style guide\n"click" : 1\n"link" : 2\n"image" : 3',
+  'flowchart TD\nA[CLICK] --> B[LINKSTYLE]',
+])
+  test(`accepts directive words as plain label text: ${label.replace(/\n/g, ' | ')}`, () => {
+    expect(() => validateDiagram(label)).not.toThrow()
+  })
+
+const directives = [
+  'click',
+  'callback',
+  'href',
+  'link',
+  'image',
+  'icon',
+  'fontawesome',
+  'style',
+  'classDef',
+  'linkStyle',
+]
+const mixedCase = (word: string) =>
+  [...word].map((c, i) => (i % 2 ? c.toUpperCase() : c.toLowerCase())).join('')
+
+for (const directive of directives)
+  for (const [position, build] of [
+    ['at the start of a line', (d: string) => `flowchart TD\nA --> B\n${d}`],
+    ['after a quoted label', (d: string) => `flowchart TD\nA["Click"]\n${d}`],
+    ['after spaces', (d: string) => `flowchart TD\nA --> B\n   ${d}`],
+    ['after a tab', (d: string) => `flowchart TD\nA --> B\n\t${d}`],
+    ['after a semicolon', (d: string) => `flowchart TD\nA --> B;${d}`],
+    [
+      'after a spaced semicolon',
+      (d: string) => `flowchart TD\nA --> B ;  ${d}`,
+    ],
+    ['after a label and semicolon', (d: string) => `graph TD\nA[Link]; ${d}`],
+    ['on the header line', (d: string) => `sequenceDiagram ${d}`],
+    ['after the header semicolon', (d: string) => `flowchart TD;${d}`],
+    ['after a carriage return', (d: string) => `flowchart TD\r\nA --> B\r${d}`],
+    ['after a closing brace', (d: string) => `erDiagram\nA {\n} ${d}`],
+    [
+      'after a subgraph end',
+      (d: string) => `flowchart TD\nsubgraph s\nend ${d}`,
+    ],
+    [
+      'after a comment line',
+      (d: string) => `%% note\nflowchart TD\n%% x\n${d}`,
+    ],
+  ] as const)
+    for (const word of [
+      directive,
+      mixedCase(directive),
+      directive.toUpperCase(),
+    ])
+      test(`refuses the ${word} directive ${position}`, async () => {
+        const diagram = build(`${word} A cb`)
+        expect(() => validateDiagram(diagram)).toThrow(/actions, resources/)
+        await expect(renderDiagram(diagram)).rejects.toThrow()
+        expect(renderer.render).not.toHaveBeenCalled()
+      })
+
 for (const attack of [
+  '%%{init: {"securityLevel":"loose"}}%%\nflowchart LR\nA[Click]-->B',
+  'flowchart LR\nA[Click]-->B\n%%{init: {"securityLevel":"loose"}}%%',
+  'flowchart LR\nA[Click]-->B;  %%{init: {}}%%',
   '%%{init: {"securityLevel":"loose"}}%%\nflowchart LR\nA-->B',
   '---\nconfig:\n  securityLevel: loose\n---\nflowchart LR\nA-->B',
   'flowchart LR\nA[<img src="https://example.com/a.png">]',
