@@ -12,6 +12,12 @@ import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
 import { isImage } from './image-blocks'
 import {
+  collapseClipboardWhitespace,
+  isRewrittenElement,
+  isRichElement,
+  normalizeClipboardHTML,
+} from './paste-html'
+import {
   avoidReferenceCollisions,
   markdownFromHTML,
 } from './reference-clipboard'
@@ -220,7 +226,26 @@ export class PasteController {
         // so comments retain their source and ordinary-copy privacy.
         for (const table of [...container.querySelectorAll('table')]) {
           if (table.parentElement?.closest('table')) continue
-          if (schema.nodes.table && !unsupportedClipboardTable(table)) continue
+          // Inside an element that stays literal source, the whole element is
+          // kept as written, so its tables are not rewritten or judged here.
+          if (!insideRewrittenContent(table)) continue
+          if (schema.nodes.table) {
+            // Judge the table as it will import, so wrappers such as `u` or
+            // `label` in a cell do not make it literal. A table that is still
+            // unsupported keeps its original source. An input in a cell would
+            // be dropped with its state, so that table stays source too.
+            const trial = table.cloneNode(true) as HTMLTableElement
+            const holder = table.ownerDocument.createDocumentFragment()
+            holder.append(trial)
+            normalizeClipboardHTML(holder)
+            if (
+              !table.querySelector('td input,th input') &&
+              !unsupportedClipboardTable(trial)
+            ) {
+              table.replaceWith(trial)
+              continue
+            }
+          }
           const preserved = ctx.get(parserCtx)(table.outerHTML)
           table.replaceWith(
             DOMSerializer.fromSchema(schema).serializeFragment(
@@ -264,10 +289,10 @@ export class PasteController {
               element.removeAttribute(name)
           }
         }
-        // Native HTML clipboards add encoding metadata. Obsidian's reading
-        // view also copies its title and collapse controls with document HTML.
-        for (const metadata of container.querySelectorAll('meta[charset]'))
-          metadata.remove()
+        // Native HTML clipboards add encoding metadata and fragment markers.
+        normalizeClipboardHTML(container)
+        // Obsidian's reading view also copies its title and collapse controls
+        // with document HTML.
         for (const control of container.querySelectorAll(
           'div.mod-header.mod-ui,div.mod-footer.mod-ui',
         )) {
@@ -296,52 +321,8 @@ export class PasteController {
         )) {
           if (control.querySelector('svg.svg-icon')) control.remove()
         }
-        const supported = new Set([
-          'P',
-          'H1',
-          'H2',
-          'H3',
-          'H4',
-          'H5',
-          'H6',
-          'STRONG',
-          'MARK',
-          'B',
-          'EM',
-          'I',
-          'S',
-          'DEL',
-          'STRIKE',
-          'CODE',
-          'PRE',
-          'BLOCKQUOTE',
-          'A',
-          'BR',
-          'HR',
-          'UL',
-          'OL',
-          'LI',
-          'TABLE',
-          'THEAD',
-          'TBODY',
-          'TFOOT',
-          'TR',
-          'TH',
-          'TD',
-          'IMG',
-          'SPAN',
-          'SUP',
-          'DIV',
-          'FONT',
-          'SECTION',
-          'ARTICLE',
-          'MAIN',
-          'HEADER',
-          'FOOTER',
-        ])
         for (const element of [...container.querySelectorAll('*')]) {
-          if (!container.contains(element) || supported.has(element.tagName))
-            continue
+          if (!container.contains(element) || isRichElement(element)) continue
           const literal = document.createElement('pre')
           literal.className = 'literal-markdown'
           literal.textContent = element.outerHTML
@@ -380,6 +361,7 @@ export class PasteController {
             table.replaceWith(literal)
           }
         }
+        collapseClipboardWhitespace(container)
         const imported = new Map<string, string>()
         const elements = [...container.querySelectorAll('img')]
         const uniqueSources = new Set(
@@ -601,6 +583,15 @@ export class PasteController {
       }
     }
   }
+}
+function insideRewrittenContent(element: Element): boolean {
+  for (
+    let parent = element.parentElement;
+    parent;
+    parent = parent.parentElement
+  )
+    if (!isRewrittenElement(parent)) return false
+  return true
 }
 function unsupportedClipboardTable(table: HTMLTableElement): boolean {
   const rows = [...table.querySelectorAll('tr')]
