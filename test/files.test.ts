@@ -227,12 +227,23 @@ test('image preview and footer keep resize and host controls separate', async ()
       expect(preview).not.toBeNull()
       expect(footer).not.toBeNull()
       expect(preview.querySelector('img')).not.toBeNull()
-      expect(preview.querySelector('.image-handle')).not.toBeNull()
       expect(preview.querySelector('button')).toBeNull()
+      // The grip belongs to the whole card, so it centres on the picture and its name together.
+      expect(
+        preview.parentElement!.querySelector(':scope > .image-handle'),
+      ).not.toBeNull()
       expect(footer.querySelector('.inkkit-file-label')?.textContent).toBe(
         'Authored',
       )
-      expect(footer.querySelector('button')?.textContent).toBe('Open')
+      const open = footer.querySelector('.inkkit-file-name button')!
+      expect(open.getAttribute('aria-label')).toBe('Open Authored')
+      expect(open.textContent).toBe('')
+      expect(open.querySelector('svg')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      )
+      expect(open.previousElementSibling).toBe(
+        footer.querySelector('.inkkit-file-label'),
+      )
     },
   )
 })
@@ -292,7 +303,8 @@ test.each(['image', 'audio', 'video', 'pdf', 'file'] as const)(
           }
           editor.setEditable(false)
           const openButton = [...root.querySelectorAll('button')].find(
-            (button) => button.textContent === 'Open',
+            (button) =>
+              button.getAttribute('aria-label')?.startsWith('Open ') ?? false,
           )!
           openButton.click()
           expect(open).toHaveBeenCalledWith(

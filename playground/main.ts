@@ -408,6 +408,13 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
       case 'insertText':
         result = editor.insertText(String(args.text), generation)
         break
+      case 'insertImages':
+        result = editor.insertImages(
+          args.images as Parameters<InkKitEditor['insertImages']>[0],
+          args.x as number | undefined,
+          args.y as number | undefined,
+        )
+        break
       case 'replaceSource':
         result = editor.replaceSource(String(args.text), generation)
         break

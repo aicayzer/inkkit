@@ -108,6 +108,8 @@ import {
   withReferenceMetadata,
 } from './reference-clipboard'
 import { imageView } from './images'
+import { isImage, isImageBlock } from './image-blocks'
+import { GapCursor } from '@milkdown/kit/prose/gapcursor'
 import { wikiLinkView } from './wiki-view'
 import { withFileSignal } from './files'
 import {
@@ -1472,7 +1474,7 @@ export class InkKitEditor {
       const parsed = this.editor.ctx.get(parserCtx)(selected.shareable)
       let portable = false
       parsed.descendants((node) => {
-        if (node.type.name === 'image' || isMermaid(node)) portable = true
+        if (isImage(node) || isMermaid(node)) portable = true
       })
       const cut = event.type === 'cut' && this.writable
       const policyEpoch = this.policyEpoch
@@ -1870,7 +1872,7 @@ export class InkKitEditor {
       const expanded = selectionContent(view.state.doc, fragment)
       let hasImages = false
       expanded.descendants((node) => {
-        if (node.type.name === 'image' || isMermaid(node)) hasImages = true
+        if (isImage(node) || isMermaid(node)) hasImages = true
       })
       if (!hasImages) {
         if (!event.clipboardData || fragment.size === 0) return
@@ -2537,11 +2539,12 @@ export class InkKitEditor {
     const view = this.editor.ctx.get(editorViewCtx)
     // A caret at the end, where writing carries on; at the start it would sit in a first-line heading and
     // show its marks. The last place text can go, so a document ending in a rule takes a caret above it
-    // rather than selecting the rule itself.
+    // rather than selecting the rule itself. After a final image, typing opens a paragraph below it.
     const { doc } = view.state
-    const end =
-      Selection.findFrom(doc.resolve(doc.content.size), -1, true) ??
-      Selection.atEnd(doc)
+    const $end = doc.resolve(doc.content.size)
+    const end = isImageBlock(doc.lastChild)
+      ? new GapCursor($end)
+      : (Selection.findFrom($end, -1, true) ?? Selection.atEnd(doc))
     view.dispatch(
       setSearchState(
         view.state.tr.setSelection(end),
@@ -2938,33 +2941,40 @@ export class InkKitEditor {
       )
     const view = this.editor.ctx.get(editorViewCtx)
     const { schema } = view.state
-    const nodes = images.map((image) =>
-      schema.nodes.image!.create({
-        src: image.path,
-        alt: image.alt,
-        title: image.title ?? '',
-      }),
+    // One paragraph per image: each is read back as a standalone image block where one fits.
+    const blocks = images.map((image) =>
+      schema.nodes.paragraph!.create(
+        null,
+        schema.nodes.image!.create({
+          src: image.path,
+          alt: image.alt,
+          title: image.title ?? '',
+        }),
+      ),
     )
-    if (x != null && y != null)
-      this.insertBlocks(
-        nodes.map((node) => schema.nodes.paragraph!.create(null, node)),
-        x,
-        y,
-      )
-    else
-      view.dispatch(
-        view.state.tr
-          .replaceSelectionWith(schema.nodes.paragraph!.create(null, nodes))
-          .scrollIntoView(),
-      )
+    if (x != null && y != null) {
+      this.insertBlocks(blocks, x, y)
+      return
+    }
+    const tr = view.state.tr.replaceSelection(
+      new Slice(Fragment.fromArray(blocks), 0, 0),
+    )
+    // After the last image, so typing continues below it rather than in the block that follows.
+    const last = blocks.at(-1)!.firstChild
+    let after: number | undefined
+    tr.doc.descendants((node, pos) => {
+      if (node === last) after = pos + node.nodeSize
+      return after == null
+    })
+    if (after != null) tr.setSelection(TextSelection.create(tr.doc, after))
+    view.dispatch(tr.scrollIntoView())
   }
 
   private insertBlocks(blocks: ProseNode[], x: number, y: number): void {
     const view = this.editor.ctx.get(editorViewCtx)
     const { state } = view
-    const $pos = state.doc.resolve(
-      view.posAtCoords({ left: x, top: y })?.pos ?? state.selection.from,
-    )
+    const hit = view.posAtCoords({ left: x, top: y })
+    const $pos = state.doc.resolve(hit?.pos ?? state.selection.from)
     const tr = state.tr
     let at: number
     if (
@@ -2975,7 +2985,17 @@ export class InkKitEditor {
       at = $pos.before(1)
       tr.replaceWith(at, $pos.after(1), blocks)
     } else {
-      at = $pos.depth > 0 ? $pos.after(1) : $pos.pos
+      // A point over a top-level leaf, such as an image, resolves beside it rather than inside.
+      const leaf =
+        $pos.depth === 0 && hit && hit.inside >= 0
+          ? state.doc.resolve(hit.inside)
+          : undefined
+      at =
+        $pos.depth > 0
+          ? $pos.after(1)
+          : leaf?.depth === 0
+            ? hit!.inside + state.doc.nodeAt(hit!.inside)!.nodeSize
+            : $pos.pos
       tr.insert(at, blocks)
     }
     const end = at + blocks.reduce((size, node) => size + node.nodeSize, 0) - 1

@@ -84,6 +84,8 @@ The optional `ImageAdapter` provides:
 - `importImage({ bytes, mimeType, filename?, source? }, context)`: stores captured bytes and returns a reference. `source` associates bytes with an HTML image URL when available.
 - `exportImage(reference, context)`: returns bytes and MIME type for portable clipboard output.
 
+A paragraph that holds only one image behaves as its own block. Text can't be placed on its line: typing, Enter, paste or composition beside it, or with it selected, writes a new paragraph before or after it. Arrow keys select the image on the way past it, and Backspace or Delete next to it selects it before deleting it. A click beside the image card puts the caret after the image. `insertImages()` inserts one block per image and leaves the caret after the last one. An image that shares its paragraph with text, or sits in a table cell or at the start of a list item, stays inline in its paragraph, and its card displays on its own line. Each form keeps its authored Markdown.
+
 The operation context contains document ID, generation and operation ID. Validate it in native callbacks. Alt text, title and the existing `alt|width` convention remain editor metadata. The adapter owns storage, access control and networking. InkKit contains no Marfa types or storage-path assumptions.
 
 Keep imported bytes available while the captured operation is pending and after insertion, including before the host saves its document. Retention and orphan cleanup belong to the host; a sweep based only on saved Markdown can miss an in-flight import or an unsaved edit. Reject stale callbacks without inserting their references into a replacement document.

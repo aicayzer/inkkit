@@ -2,6 +2,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitError, type TextRect } from './types'
 import { fileReference } from './linked-syntax'
+import { imageBlockName } from './image-blocks'
 
 export interface TextSpan {
   from: number
@@ -50,6 +51,16 @@ export function readableProjection(doc: ProseNode): TextProjection {
         'embed',
       )
       return true
+    }
+    if (name === imageBlockName) {
+      block(position)
+      append(
+        fileReference(node).label || 'Image',
+        position,
+        position + node.nodeSize,
+        'embed',
+      )
+      return false
     }
     if (node.isTextblock) {
       block(position + 1)

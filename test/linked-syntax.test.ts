@@ -52,7 +52,11 @@ function nodes(
 ): { node: ProseNode; position: number }[] {
   const matches: { node: ProseNode; position: number }[] = []
   editor.ctx.get(editorViewCtx).state.doc.descendants((node, position) => {
-    if (node.type.name === type) matches.push({ node, position })
+    if (
+      node.type.name === type ||
+      (type === 'image' && node.type.name === 'image_block')
+    )
+      matches.push({ node, position })
   })
   return matches
 }

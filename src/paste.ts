@@ -10,6 +10,7 @@ import {
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
+import { isImage } from './image-blocks'
 import {
   avoidReferenceCollisions,
   markdownFromHTML,
@@ -435,7 +436,7 @@ export class PasteController {
           const parsed = ctx.get(parserCtx)(markdown)
           let imageIndex = 0
           const hydrate = (node: ProseNode): ProseNode => {
-            if (node.type.name === 'image') {
+            if (isImage(node)) {
               const slot = /^inkkit-clipboard-image:(\d+)$/.exec(
                 String(node.attrs.src),
               )
@@ -452,10 +453,14 @@ export class PasteController {
                       ) === position,
                   )
                 : elements[position]
-              if (!element || !container.contains(element))
-                return schema.text(
+              if (!element || !container.contains(element)) {
+                const text = schema.text(
                   `[${node.attrs.alt || 'Image'}: image unavailable]`,
                 )
+                return node.isBlock
+                  ? schema.nodes.paragraph!.create(null, text)
+                  : text
+              }
               return node.type.create(
                 { ...node.attrs, src: element.getAttribute('src') },
                 null,
