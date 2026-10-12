@@ -17,7 +17,11 @@ import {
 import { Preservation } from '../src/preserve'
 import { withEditor } from './harness'
 
-const renderer = vi.hoisted(() => ({ initialize: vi.fn(), render: vi.fn() }))
+const renderer = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn(),
+  mermaidAPI: { getDiagramFromText: vi.fn() },
+}))
 vi.mock('mermaid', () => ({ default: renderer }))
 
 const cleanSVG =
@@ -31,6 +35,9 @@ const imageBytes = new Uint8Array([1, 2, 3])
 beforeEach(() => {
   renderer.initialize.mockReset()
   renderer.render.mockReset().mockResolvedValue({ svg: cleanSVG })
+  renderer.mermaidAPI.getDiagramFromText
+    .mockReset()
+    .mockResolvedValue({ type: 'pie', db: {} })
   vi.stubGlobal(
     'URL',
     class extends originalURL {
@@ -125,18 +132,45 @@ for (const diagram of [
     expect(() => validateDiagram(diagram)).not.toThrow()
   })
 
+for (const label of [
+  'flowchart TD\nA[Click to upload image] --> B',
+  'flowchart TD\nA[Style guide] --> B[Link icon]',
+  'graph TD\nA[icon] --> B[href] --> C[callback]',
+  'flowchart TD\nA["classDef and linkStyle"] --> B',
+  'flowchart TD\nA -- click here --> B',
+  'flowchart TD\nA -->|Click me| B',
+  'flowchart TD\nA{Link broken?} --> B{{Image}}',
+  'flowchart TD\nsubgraph Style guide\nA --> B\nend',
+  'flowchart TD\nA["Fontawesome icons"] --> B\n%% click the link, style it',
+  'sequenceDiagram\nA->>B: Send link',
+  'sequenceDiagram\nparticipant A as Image service\nNote over A,B: click the style icon',
+  'classDiagram\nclass Account {\n+String icon\n+String link\n}\nAccount --> Account : click',
+  'stateDiagram-v2\nstate "Click to start" as S\nS --> T : style guide\nS : image icon href',
+  'erDiagram\nA ||--|| B : "Click link"\nA {\nstring link\nstring style\n}',
+  'pie title Style guide\n"click" : 1\n"link" : 2\n"image" : 3',
+  'flowchart TD\nA[CLICK] --> B[LINKSTYLE]',
+])
+  test(`accepts directive words as plain label text: ${label.replace(/\n/g, ' | ')}`, () => {
+    expect(() => validateDiagram(label)).not.toThrow()
+  })
+
 for (const attack of [
+  '%%{init: {"securityLevel":"loose"}}%%\nflowchart LR\nA[Click]-->B',
+  'flowchart LR\nA[Click]-->B\n%%{init: {"securityLevel":"loose"}}%%',
+  'flowchart LR\nA[Click]-->B;  %%{init: {}}%%',
   '%%{init: {"securityLevel":"loose"}}%%\nflowchart LR\nA-->B',
   '---\nconfig:\n  securityLevel: loose\n---\nflowchart LR\nA-->B',
   'flowchart LR\nA[<img src="https://example.com/a.png">]',
   'flowchart LR\nA[&#x3c;script&#x3e;]',
   'flowchart LR\nA@{ img: "https://example.com/a.png" }',
-  'flowchart LR\nclick A callback',
   'flowchart LR\nclick A "javascript:alert(1)"',
   'flowchart LR\nA[$$x$$]',
   'flowchart LR\nstyle A fill:url(/tracking)',
   'flowchart LR\nclassDef unsafe fill:u\\72l(/tracking)',
-  'flowchart LR\nlinkStyle 0 stroke:#f00',
+  'flowchart LR\nA --> B\nclassDef c mask-image:image-set("/pixel" 1x)',
+  'flowchart LR\nA --> B\nclassDef c mask:-WEBKIT-IMAGE-SET("/pixel" 1x)',
+  'flowchart LR\nA --> B\nclassDef c fill:cross-fade("/a", "/b", 50%)',
+  'flowchart LR\nA[image-set ("/pixel" 1x)] --> B',
   'mindmap\nRoot',
   'flowchart LR\n' + 'x'.repeat(30000),
 ])
@@ -169,6 +203,55 @@ test('safe SVG rejects escaped CSS resources before insertion', () => {
       '<svg viewBox="0 0 100 50"><style>rect{fill:u\\72l(/pixel)}</style><rect width="10" height="10"/></svg>',
     ),
   ).not.toContain('/pixel')
+})
+
+for (const resource of [
+  'image-set("/pixel" 1x)',
+  '-webkit-image-set("/pixel" 1x)',
+  'IMAGE-SET ("/pixel" 1x)',
+  'cross-fade("/pixel", "/other", 50%)',
+  '-webkit-cross-fade("/pixel", "/other", 50%)',
+  'image("/pixel")',
+  'src("/pixel")',
+  'element(#pixel)',
+  '-moz-element(#pixel)',
+])
+  test(`safe SVG removes CSS resource functions: ${resource}`, () => {
+    const result = safeDiagramSVG(
+      `<svg viewBox="0 0 100 50"><style>rect{mask-image:${resource}}</style><rect width="10" height="10" style='mask-image:${resource}'/><rect width="10" height="10" mask='${resource}'/></svg>`,
+    )
+    expect(result).not.toMatch(/pixel/)
+    expect(result).toContain('<rect')
+  })
+
+test('the parse result is checked before Mermaid renders', async () => {
+  renderer.mermaidAPI.getDiagramFromText.mockResolvedValueOnce({
+    type: 'er',
+    db: {
+      getClasses: () => new Map(),
+      getEntities: () => new Map([['A', { cssStyles: ['fill:#f0e'] }]]),
+      getSubGraphs: () => [],
+    },
+  })
+  await expect(renderDiagram(source())).rejects.toThrow(/actions, resources/)
+  expect(renderer.render).not.toHaveBeenCalled()
+})
+
+test('a parse result without the expected accessors is refused', async () => {
+  renderer.mermaidAPI.getDiagramFromText.mockResolvedValueOnce({
+    type: 'er',
+    db: {},
+  })
+  await expect(renderDiagram(source())).rejects.toThrow()
+  expect(renderer.render).not.toHaveBeenCalled()
+})
+
+test('a parse error is reported without rendering', async () => {
+  renderer.mermaidAPI.getDiagramFromText.mockRejectedValueOnce(
+    new Error('Parse error on line 2'),
+  )
+  await expect(renderDiagram(source())).rejects.toThrow('Parse error')
+  expect(renderer.render).not.toHaveBeenCalled()
 })
 
 test('rendering locks safe configuration and removes its temporary DOM', async () => {
