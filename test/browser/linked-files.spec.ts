@@ -213,9 +213,10 @@ test('named and path sizing isolate undo and reject read-only/composition mutati
   )
   const before = (await observe(page)).snapshot!.text
   await operation(page, 'editable', { editable: false })
-  await resize(0, 30)
+  await expect(page.locator('.image-handle').first()).toBeHidden()
   expect((await observe(page)).snapshot!.text).toBe(before)
   await operation(page, 'editable', { editable: true })
+  await expect(page.locator('.image-handle').first()).toBeVisible()
   await page
     .getByRole('textbox', { name: 'Formatted Markdown editor', exact: true })
     .dispatchEvent('compositionstart', { data: '中' })

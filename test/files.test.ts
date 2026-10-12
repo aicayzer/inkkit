@@ -215,6 +215,28 @@ async function mounted(
   }
 }
 
+test('image preview and footer keep resize and host controls separate', async () => {
+  await mounted(
+    { resolve: async () => image, open: vi.fn() },
+    async (_, root) => {
+      await vi.waitFor(() =>
+        expect(root.querySelector('.image img')).not.toBeNull(),
+      )
+      const preview = root.querySelector('.inkkit-image-preview')!
+      const footer = root.querySelector('.inkkit-file-footer')!
+      expect(preview).not.toBeNull()
+      expect(footer).not.toBeNull()
+      expect(preview.querySelector('img')).not.toBeNull()
+      expect(preview.querySelector('.image-handle')).not.toBeNull()
+      expect(preview.querySelector('button')).toBeNull()
+      expect(footer.querySelector('.inkkit-file-label')?.textContent).toBe(
+        'Authored',
+      )
+      expect(footer.querySelector('button')?.textContent).toBe('Open')
+    },
+  )
+})
+
 test.each(['image', 'audio', 'video', 'pdf', 'file'] as const)(
   'controlled %s view retains source and routes host actions in read-only',
   async (kind) => {
@@ -261,8 +283,10 @@ test.each(['image', 'audio', 'video', 'pdf', 'file'] as const)(
               '',
             )
             const fallback = root.querySelector('.inkkit-file-label')!
-            expect(fallback.textContent).toBe(
-              'Useful name: Open to view this PDF',
+            expect(fallback.textContent).toBe('Useful name')
+            expect(fallback.getAttribute('title')).toBe('Useful name')
+            expect(root.querySelector('[role="status"]')?.textContent).toBe(
+              'Open to view this PDF',
             )
             expect(fallback.closest('iframe')).toBeNull()
           }
