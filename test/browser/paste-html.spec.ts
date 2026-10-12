@@ -99,3 +99,34 @@ test('a table kept as source does not load the images in its cells', async ({
   await page.waitForTimeout(500)
   expect(requests).toEqual([])
 })
+
+test('a table inside a literal element keeps its source in the saved document', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  const details =
+    '<details><summary>s</summary><table><tbody><tr><th>Name</th></tr><tr><td><u>x</u> <input type="checkbox"></td></tr></tbody></table></details>'
+  await pasteHTML(page, `<p>Before</p>${details}`)
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(`Before\n\n${details}\n`)
+})
+
+test('a table inside a literal element does not load the images in its cells', async ({
+  page,
+}) => {
+  const requests: string[] = []
+  page.on('request', (request) => {
+    if (request.url().includes('probe.invalid')) requests.push(request.url())
+  })
+  await openEmpty(page)
+  await pasteHTML(
+    page,
+    '<p>Before</p><details><summary>s</summary><table><tbody><tr><th colspan="2">A</th></tr><tr><td><img src="https://probe.invalid/cell.png" alt="cell"></td><td>b</td></tr></tbody></table></details>',
+  )
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toContain('<details>')
+  await page.waitForTimeout(500)
+  expect(requests).toEqual([])
+})

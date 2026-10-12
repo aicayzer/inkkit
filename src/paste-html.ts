@@ -76,6 +76,11 @@ export function isRichElement(element: Element): boolean {
   return rich.has(element.tagName)
 }
 
+/** Whether normalisation enters the element, so its content may be rewritten. */
+export function isRewrittenElement(element: Element): boolean {
+  return rich.has(element.tagName) || handled.has(element.tagName)
+}
+
 /**
  * Rewrites common web-page elements to ones the importer already understands.
  * Elements that will stay literal source are not entered, so their content is

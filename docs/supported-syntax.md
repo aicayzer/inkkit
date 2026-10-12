@@ -75,7 +75,7 @@ Pasting HTML from a web page, notes app or word processor imports readable conte
 - Source whitespace collapses as in a browser: runs become one space, and indentation and line breaks at the edges of blocks add nothing. `pre`, `code` and literal elements keep theirs.
 - Tables beside other content import with these elements in their cells. A table copied on its own follows the spreadsheet paste rules below, which do not accept them.
 
-Custom elements, `iframe`, `script`, `svg`, `math`, `object`, authored comments and other unrecognised elements remain literal source, with their content unchanged. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.
+Custom elements, `iframe`, `script`, `svg`, `math`, `object`, authored comments and other unrecognised elements remain literal source, with their content unchanged, including any table inside them. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.
 
 ## Spreadsheet clipboard
 

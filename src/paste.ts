@@ -13,6 +13,7 @@ import { pasteSpreadsheet } from './spreadsheet'
 import { isImage } from './image-blocks'
 import {
   collapseClipboardWhitespace,
+  isRewrittenElement,
   isRichElement,
   normalizeClipboardHTML,
 } from './paste-html'
@@ -225,6 +226,9 @@ export class PasteController {
         // so comments retain their source and ordinary-copy privacy.
         for (const table of [...container.querySelectorAll('table')]) {
           if (table.parentElement?.closest('table')) continue
+          // Inside an element that stays literal source, the whole element is
+          // kept as written, so its tables are not rewritten or judged here.
+          if (!insideRewrittenContent(table)) continue
           if (schema.nodes.table) {
             // Judge the table as it will import, so wrappers such as `u` or
             // `label` in a cell do not make it literal. A table that is still
@@ -575,6 +579,15 @@ export class PasteController {
       }
     }
   }
+}
+function insideRewrittenContent(element: Element): boolean {
+  for (
+    let parent = element.parentElement;
+    parent;
+    parent = parent.parentElement
+  )
+    if (!isRewrittenElement(parent)) return false
+  return true
 }
 function unsupportedClipboardTable(table: HTMLTableElement): boolean {
   const rows = [...table.querySelectorAll('tr')]

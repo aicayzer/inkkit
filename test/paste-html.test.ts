@@ -306,6 +306,23 @@ test('tables that stay unsupported keep their source untouched', async () => {
   expect(await fromHTML(custom)).toContain(custom)
 })
 
+test('tables inside an element that stays literal keep their source exactly', async () => {
+  const table =
+    '<table><tbody><tr><th>Name</th></tr><tr><td><u>x</u> <input type="checkbox"></td></tr></tbody></table>'
+  const details = `<details><summary>s</summary>${table}</details>`
+  expect(await fromHTML(`<p>Before</p>${details}`)).toContain(details)
+  const custom = `<custom-x>${table}</custom-x>`
+  expect(await fromHTML(`<p>Before</p>${custom}`)).toContain(custom)
+})
+
+test('a table whose ancestors all import is still normalised', async () => {
+  expect(
+    await fromHTML(
+      '<div><section><table><tr><th>Name</th></tr><tr><td><u>Ada</u></td></tr></table></section></div>',
+    ),
+  ).toBe('| Name |\n| ---- |\n| Ada  |\n')
+})
+
 test('indentation inside pretty-printed blocks is not imported as text', async () => {
   expect(await fromHTML('<p>\n  text\n</p>')).toBe('text\n')
   expect(await fromHTML('<ul>\n  <li>\n    item\n  </li>\n</ul>')).toBe(
