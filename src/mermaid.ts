@@ -10,6 +10,14 @@ export function isMermaid(node: ProseNode): boolean {
   return node.type.name === 'code_block' && node.attrs.language === 'mermaid'
 }
 
+const refusal =
+  'HTML, styles, actions, resources and diagram configuration are disabled. The source is retained.'
+
+// CSS functions that can load an image or display another element. Mermaid's
+// own styles use none of them apart from url() for in-document markers.
+const cssResource =
+  /url\s*\(\s*[^#\s]|(?:image-set|cross-fade|image|element|src)\s*\(/i
+
 export function validateDiagram(source: string): void {
   if (source.length > 30000)
     throw new Error('The diagram exceeds the 30,000 character rendering limit.')
@@ -21,16 +29,138 @@ export function validateDiagram(source: string): void {
     throw new Error(
       'This diagram type is not supported. The source is retained.',
     )
-  // Mermaid can load image bytes before sanitising its result. Reject resource
-  // and configuration syntax before calling the renderer, including entities.
+  // Mermaid can load image bytes before sanitising its result, so resource and
+  // configuration syntax is refused anywhere in the source, labels included.
+  // Statements are checked separately, in Mermaid's parse result.
   if (
-    /%%\{|^\s*---|<\s*[a-z!/?]|&(?:#\w+|[a-z]+);|@\{|\$\$|(?:https?|data|file|javascript|vbscript|blob):|\/\/|\b(?:click|callback|href|link|image|icon|fontawesome|style|classDef|linkStyle)\b|url\s*\(|@import|\\/im.test(
+    /%%\{|^\s*---|<\s*[a-z!/?]|&(?:#\w+|[a-z]+);|@\{|\$\$|(?:https?|data|file|javascript|vbscript|blob):|\/\/|url\s*\(|image-set\s*\(|cross-fade\s*\(|@import|\\/im.test(
       source,
     )
   )
-    throw new Error(
-      'HTML, actions, resources and diagram configuration are disabled. The source is retained.',
-    )
+    throw new Error(refusal)
+}
+
+type Entry = Record<string, unknown>
+interface ParsedDiagram {
+  type: string
+  db: unknown
+}
+
+const entries = (value: unknown): Entry[] =>
+  value instanceof Map ? [...value.values()] : Array.isArray(value) ? value : []
+const filled = (value: unknown): boolean =>
+  value instanceof Map
+    ? value.size > 0
+    : Array.isArray(value)
+      ? value.length > 0
+      : typeof value === 'object' && value !== null
+        ? Object.keys(value).length > 0
+        : Boolean(value)
+// In strict mode a flowchart records a click handler only as this class.
+const clickable = (classes: unknown) =>
+  (Array.isArray(classes) ? classes : String(classes ?? '').split(/\s+/))
+    .map(String)
+    .includes('clickable')
+
+function statementIn(
+  node: unknown,
+  kinds: string[],
+  seen = new Set(),
+): boolean {
+  if (typeof node !== 'object' || node === null || seen.has(node)) return false
+  seen.add(node)
+  if (kinds.includes(String((node as Entry).stmt))) return true
+  return Object.values(node).some((value) => statementIn(value, kinds, seen))
+}
+
+// Refuses styles, class definitions, link styles, links, click handlers,
+// tooltips, icons and images wherever the grammar accepted them. The names are
+// those of the pinned Mermaid's diagram databases; if one is missing, the
+// diagram is refused rather than passed unchecked.
+function refuseDirectives({ type, db }: ParsedDiagram): void {
+  const store = db as Entry
+  const field = (name: string): unknown => {
+    if (!(name in store))
+      throw new Error(
+        'The diagram could not be checked. The source is retained.',
+      )
+    return store[name]
+  }
+  const read = (name: string): unknown => {
+    const accessor = field(name)
+    if (typeof accessor !== 'function')
+      throw new Error(
+        'The diagram could not be checked. The source is retained.',
+      )
+    return (accessor as () => unknown).call(db)
+  }
+  let found: boolean
+  switch (type) {
+    case 'flowchart-v2': {
+      const edges = read('getEdges') as Entry[] & Entry
+      found =
+        filled(read('getClasses')) ||
+        filled(field('tooltips')) ||
+        filled(edges.defaultStyle) ||
+        edges.defaultInterpolate !== undefined ||
+        entries(read('getVertices')).some(
+          (vertex) =>
+            filled(vertex.styles) ||
+            Boolean(
+              vertex.link || vertex.haveCallback || vertex.icon || vertex.img,
+            ) ||
+            clickable(vertex.classes),
+        ) ||
+        entries(edges).some(
+          (edge) =>
+            filled(edge.style) ||
+            edge.interpolate !== undefined ||
+            clickable(edge.classes),
+        ) ||
+        entries(read('getSubGraphs')).some((graph) => clickable(graph.classes))
+      break
+    }
+    case 'stateDiagram':
+      found =
+        statementIn(field('rootDoc'), ['style', 'classDef', 'click']) ||
+        filled(read('getClasses')) ||
+        filled(read('getLinks')) ||
+        entries(read('getStates')).some(
+          (state) => filled(state.styles) || filled(state.textStyles),
+        )
+      break
+    case 'classDiagram':
+      found =
+        filled(field('styleClasses')) ||
+        entries(read('getClasses')).some(
+          (node) =>
+            filled(node.styles) ||
+            Boolean(node.link || node.haveCallback || node.tooltip) ||
+            clickable(node.cssClasses),
+        )
+      break
+    case 'er':
+      found =
+        filled(read('getClasses')) ||
+        entries(read('getEntities')).some((entity) =>
+          filled(entity.cssStyles),
+        ) ||
+        entries(read('getSubGraphs')).some((graph) => filled(graph.cssStyles))
+      break
+    case 'sequence':
+      found = entries(read('getActors')).some(
+        (actor) => filled(actor.links) || filled(actor.properties),
+      )
+      break
+    case 'pie':
+      found = false
+      break
+    default:
+      throw new Error(
+        'This diagram type is not supported. The source is retained.',
+      )
+  }
+  if (found) throw new Error(refusal)
 }
 
 let sequence = 0
@@ -51,17 +181,17 @@ export function safeDiagramSVG(svg: string): string {
     for (const attribute of [...element.attributes]) {
       if (
         /^on/i.test(attribute.name) ||
-        /(?:https?|data|file|javascript|blob):|@import|url\s*\(\s*[^#]|\\/i.test(
+        /(?:https?|data|file|javascript|blob):|@import|\\/i.test(
           attribute.value,
-        )
+        ) ||
+        cssResource.test(attribute.value)
       )
         element.removeAttribute(attribute.name)
     }
     if (
       element.tagName.toLowerCase() === 'style' &&
-      /@import|(?:https?|data|file):|url\s*\(\s*[^#]|\\/i.test(
-        element.textContent ?? '',
-      )
+      (/@import|(?:https?|data|file):|\\/i.test(element.textContent ?? '') ||
+        cssResource.test(element.textContent ?? ''))
     )
       element.remove()
   }
@@ -121,6 +251,14 @@ export function renderDiagram(source: string): Promise<string> {
         'suppressErrorRendering',
       ],
     })
+    // getDiagramFromText is the pinned Mermaid's own parser, which render runs
+    // again on the same text; the public parse does not return the diagram. It
+    // skips render's configuration step, so the two parse alike only because
+    // the source check refuses %%{ directives and front matter.
+    refuseDirectives(await mermaid.mermaidAPI.getDiagramFromText(source))
+    // Mermaid measures text while laying out, so the holder must be attached
+    // and rendered. Such a holder can load CSS resources before sanitising,
+    // which is why the source and the parse result are checked first.
     const holder = document.createElement('div')
     holder.style.cssText =
       'position:fixed;left:-100000px;top:0;width:1200px;pointer-events:none'

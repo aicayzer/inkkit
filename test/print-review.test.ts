@@ -11,7 +11,13 @@ import {
 } from '../src/index'
 import { setCommentVisibility } from '../src/comments'
 
-const renderer = vi.hoisted(() => ({ initialize: vi.fn(), render: vi.fn() }))
+const renderer = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn(),
+  mermaidAPI: {
+    getDiagramFromText: vi.fn(async () => ({ type: 'pie', db: {} })),
+  },
+}))
 vi.mock('mermaid', () => ({ default: renderer }))
 const pngBase64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII='
