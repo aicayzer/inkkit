@@ -65,3 +65,18 @@ test('elements that remain opaque are still preserved as source', async ({
       'Before\n\n<custom-widget><u>kept</u></custom-widget>\n\n<svg><title>Icon</title></svg>\n\nAfter\n',
     )
 })
+
+test('pretty-printed page HTML pastes without indentation entities', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  await pasteHTML(
+    page,
+    '<article>\n  <p>\n    Indented   text\n    on two lines.\n  </p>\n  <ul>\n    <li>\n      <input type="checkbox" checked>\n      parent\n      <ul>\n        <li>\n          child\n        </li>\n      </ul>\n    </li>\n  </ul>\n  <pre><code>keep   this\n  as is</code></pre>\n</article>',
+  )
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(
+      'Indented text on two lines.\n\n- [x] parent\n  - child\n\n```\nkeep   this\n  as is\n```\n',
+    )
+})

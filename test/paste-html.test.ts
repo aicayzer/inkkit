@@ -24,6 +24,7 @@ const pixel =
 
 async function pasted(
   input: Partial<ClipboardInput>,
+  images: ImageAdapter = adapter,
 ): Promise<{ markdown: string; dom: HTMLElement }> {
   const root = document.createElement('div')
   document.body.append(root)
@@ -35,7 +36,7 @@ async function pasted(
       generation: 1,
       operationId: 'paste',
     }),
-    adapter,
+    adapter: images,
   })
   editor = await Editor.make()
     .config((ctx) => {
@@ -44,7 +45,7 @@ async function pasted(
       ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
     })
     .use(createDialect(true))
-    .use(imageView(adapter))
+    .use(imageView(images))
     .use(paste.plugin)
     .create()
   try {
@@ -245,4 +246,143 @@ test('plain text and Markdown source paste are not interpreted as HTML', async (
     html: '<p>ignored</p>',
   })
   expect(explicit.markdown).toBe(source)
+})
+
+test('literal elements keep their whitespace inside task items and definitions', async () => {
+  const task = await fromHTML(
+    '<ul><li><input type="checkbox"> a<custom-x>a    b\n c</custom-x></li></ul>',
+  )
+  expect(task).toMatch(/<custom-x>a {4}b\n {3}c<\/custom-x>/)
+  const definition = await fromHTML(
+    '<dl><dd><script>var a   =  1;\n var b</script></dd></dl>',
+  )
+  expect(definition).toContain('<script>var a   =  1;\n var b</script>')
+})
+
+test('pretty-printed task items and definitions leave no trailing space before a nested list', async () => {
+  expect(
+    await fromHTML(
+      '<ul>\n<li><input type="checkbox"> parent\n<ul>\n<li><input type="checkbox" checked> child\n</li>\n</ul>\n</li>\n</ul>',
+    ),
+  ).toBe('- [ ] parent\n  - [x] child\n')
+  expect(
+    await fromHTML('<dl><dd>\n text\n <ul><li>x</li></ul>\n</dd></dl>'),
+  ).toBe('text\n\n- x\n')
+})
+
+test('definition terms with block content become one bold line', async () => {
+  expect(
+    await fromHTML(
+      '<dl><dt><p>Term</p></dt><dd>Def</dd><dt><h3>Head</h3></dt><dd>Second</dd><dt><div><p>Nested</p></div> tail</dt><dd>Third</dd></dl>',
+    ),
+  ).toBe(
+    '**Term**\n\nDef\n\n**Head**\n\nSecond\n\n**Nested**\n\n**tail**\n\nThird\n',
+  )
+})
+
+test('a paragraph emptied by a dropped element adds no blank paragraph', async () => {
+  expect(
+    await fromHTML(
+      '<p><style>a{}</style></p><p><input type="checkbox"></p><p><span><meta charset="utf-8"></span></p><p>Kept</p><p><link rel="x" href="y"> </p>',
+    ),
+  ).toBe('Kept\n')
+})
+
+test('tables beside other content import with common wrappers in their cells', async () => {
+  expect(
+    await fromHTML(
+      '<p>Intro</p><table><tr><th>Name</th><th>When</th></tr><tr><td><u>Ada</u></td><td><time datetime="2026-01-02">2 Jan</time> <abbr title="Coordinated">UTC</abbr></td></tr><tr><td><label><input type="checkbox"> yes</label></td><td><small>s</small><style>td{}</style></td></tr></table>',
+    ),
+  ).toBe(
+    'Intro\n\n| Name | When      |\n| ---- | --------- |\n| Ada  | 2 Jan UTC |\n| yes  | s         |\n',
+  )
+})
+
+test('tables that stay unsupported keep their source untouched', async () => {
+  const merged = '<table><tr><td colspan="2"><u>  a   b </u></td></tr></table>'
+  expect(await fromHTML(merged)).toContain(merged)
+  const custom =
+    '<table><tr><td><custom-x>  a   b </custom-x></td></tr></table>'
+  expect(await fromHTML(custom)).toContain(custom)
+})
+
+test('indentation inside pretty-printed blocks is not imported as text', async () => {
+  expect(await fromHTML('<p>\n  text\n</p>')).toBe('text\n')
+  expect(await fromHTML('<ul>\n  <li>\n    item\n  </li>\n</ul>')).toBe(
+    '- item\n',
+  )
+  expect(
+    await fromHTML(
+      '<ul>\n  <li>\n    one\n  </li>\n  <li>\n    two\n    <ul>\n      <li>\n        nested\n      </li>\n    </ul>\n  </li>\n</ul>',
+    ),
+  ).toBe('- one\n- two\n  - nested\n')
+  expect(await fromHTML('<div>\n  <p>\n    a\n    b   c\n  </p>\n</div>')).toBe(
+    'a b c\n',
+  )
+  expect(await fromHTML('<div>\n  loose   text\n</div>')).toBe('loose text\n')
+})
+
+test('whitespace between inline elements collapses to one space', async () => {
+  expect(await fromHTML('<p><span> a </span> <span> b</span></p>')).toBe(
+    'a b\n',
+  )
+  expect(
+    await fromHTML('<p>Hello <em>there</em> <strong>big</strong>\n world</p>'),
+  ).toBe('Hello *there* **big** world\n')
+  expect(await fromHTML('<p>one<br>\n   two</p>')).not.toMatch(/ {2}\S|&#x20;/)
+  expect(await fromHTML('<p>a&nbsp;&nbsp;b</p>')).toBe('a\u00a0\u00a0b\n')
+})
+
+test('whitespace around emphasis edges stays outside the emphasis', async () => {
+  expect(await fromHTML('<p>Hello <strong> bold </strong> world</p>')).toBe(
+    'Hello **bold** world\n',
+  )
+})
+
+test('code and preformatted whitespace is preserved', async () => {
+  const markdown = await fromHTML(
+    '<p>use <code>a   b</code> now</p><pre><code>x   y\n    z\n</code></pre>',
+  )
+  expect(markdown).toContain('`a   b`')
+  expect(markdown).toContain('x   y\n    z')
+})
+
+test('plain-text paste keeps its spaces', async () => {
+  const { markdown } = await pasted({ text: 'a   b', plainText: true })
+  expect(markdown).toContain('a   b')
+})
+
+const counting = (): ImageAdapter => {
+  let count = 0
+  return {
+    ...adapter,
+    importImage: async () => ({ reference: `images/${++count}.png` }),
+  }
+}
+const pixelTwo = pixel.replace('AAAADUlEQVR4', 'AAAADUlEQVR5')
+const wrapper = (inner: string) =>
+  `<div data-inkkit-markdown="${'![A](inkkit-clipboard-image:0)\n\n![B](inkkit-clipboard-image:1)'.replace(/\n/g, '&#10;')}">${inner}</div>`
+
+test('InkKit Markdown wrapper keeps image order through picture and figure', async () => {
+  const { markdown } = await pasted(
+    {
+      html: wrapper(
+        `<figure><picture><source srcset="a.webp"><img src="${pixel}" alt="A"></picture><figcaption>One</figcaption></figure><p><img src="${pixelTwo}" alt="B"></p>`,
+      ),
+    },
+    counting(),
+  )
+  expect(markdown).toBe('![A](images/1.png)\n\n![B](images/2.png)\n')
+})
+
+test('InkKit Markdown wrapper maps image slots after picture is replaced', async () => {
+  const { markdown } = await pasted(
+    {
+      html: wrapper(
+        `<figure><picture><source srcset="a.webp"><img data-inkkit-image-slot="1" src="${pixelTwo}" alt="B"></picture></figure><p><img data-inkkit-image-slot="0" src="${pixel}" alt="A"></p>`,
+      ),
+    },
+    counting(),
+  )
+  expect(markdown).toBe('![A](images/2.png)\n\n![B](images/1.png)\n')
 })

@@ -94,7 +94,9 @@ export function normalizeClipboardHTML(root: Node): void {
     const tag = element.tagName
     if (!rich.has(tag) && !handled.has(tag)) continue
     if (dropped.has(tag)) {
+      const parent = element.parentElement
       element.remove()
+      if (parent) removeEmptyParagraph(parent)
     } else if (tag === 'PICTURE') {
       const image = element.querySelector('img')
       if (image) element.replaceWith(image)
@@ -104,26 +106,13 @@ export function normalizeClipboardHTML(root: Node): void {
       element.replaceWith(...element.childNodes)
     } else if (tag === 'DT') {
       normalizeClipboardHTML(element)
-      tidy(element)
-      if (!hasContent(element)) element.remove()
-      else {
-        // Markdown has no definition lists. A bold term over its definition
-        // keeps which text names the other.
-        const term = element.ownerDocument.createElement('p')
-        const strong = element.ownerDocument.createElement('strong')
-        strong.append(...element.childNodes)
-        term.append(strong)
-        element.replaceWith(term)
-      }
+      // Markdown has no definition lists. A bold term over its definition
+      // keeps which text names the other.
+      const term = element.ownerDocument.createElement('div')
+      boldInto(term, [...element.childNodes])
+      element.replaceWith(term)
     } else if (blockWrappers.has(tag)) {
       normalizeClipboardHTML(element)
-      if (tag === 'FIGCAPTION' || tag === 'DD') tidy(element)
-      else
-        // Source indentation between a figure's or list's parts would
-        // otherwise join the image's paragraph as stray spaces.
-        for (const child of [...element.childNodes])
-          if (child.nodeType === Node.TEXT_NODE && !child.textContent?.trim())
-            child.remove()
       const block = element.ownerDocument.createElement('div')
       block.append(...element.childNodes)
       element.replaceWith(block)
@@ -134,8 +123,84 @@ export function normalizeClipboardHTML(root: Node): void {
   }
 }
 
-function hasContent(element: Element): boolean {
-  return !!element.textContent?.trim() || !!element.querySelector('img')
+// A paragraph whose only content was a dropped element would otherwise import
+// as a blank paragraph.
+function removeEmptyParagraph(from: Element): void {
+  let node: Element | null = from
+  while (
+    node &&
+    ['SPAN', 'FONT', 'STRONG', 'B', 'EM', 'I'].includes(node.tagName)
+  )
+    node = node.parentElement
+  if (
+    node?.tagName === 'P' &&
+    !node.textContent?.trim() &&
+    !node.querySelector('img,br,hr')
+  )
+    node.remove()
+}
+
+const termBlocks = new Set(['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'])
+const blocks = new Set([
+  ...termBlocks,
+  'BLOCKQUOTE',
+  'PRE',
+  'UL',
+  'OL',
+  'LI',
+  'TABLE',
+  'THEAD',
+  'TBODY',
+  'TFOOT',
+  'TR',
+  'TH',
+  'TD',
+  'SECTION',
+  'ARTICLE',
+  'MAIN',
+  'HEADER',
+  'FOOTER',
+  'HR',
+])
+
+// Bolds the inline content of a term. Paragraphs, headings and divisions
+// inside it each become one bold paragraph; other blocks are kept as they are.
+function boldInto(target: Element, nodes: Node[]): void {
+  const document = target.ownerDocument
+  let run: Element | undefined
+  const paragraph = (content: Node[]) => {
+    if (!content.some((node) => node.textContent?.trim() || isImage(node)))
+      return undefined
+    const block = document.createElement('p')
+    const strong = document.createElement('strong')
+    strong.append(...content)
+    block.append(strong)
+    target.append(block)
+    return strong
+  }
+  for (const node of nodes) {
+    const element =
+      node.nodeType === Node.ELEMENT_NODE ? (node as Element) : null
+    if (element && blocks.has(element.tagName)) {
+      run = undefined
+      if (element.tagName === 'P' || /^H[1-6]$/.test(element.tagName))
+        paragraph([...element.childNodes])
+      else if (element.tagName === 'DIV')
+        boldInto(target, [...element.childNodes])
+      else target.append(element)
+    } else if (run) run.append(node)
+    else if (node.textContent?.trim() || isImage(node)) {
+      run = paragraph([node])
+    }
+  }
+}
+
+function isImage(node: Node): boolean {
+  return (
+    node.nodeType === Node.ELEMENT_NODE &&
+    ((node as Element).tagName === 'IMG' ||
+      !!(node as Element).querySelector('img'))
+  )
 }
 
 // GitHub, Notion and similar pages render a task as a checkbox leading its
@@ -166,43 +231,104 @@ function markTask(item: Element): void {
   item.setAttribute('data-item-type', 'task')
   item.setAttribute('data-checked', String(checkbox.hasAttribute('checked')))
   checkbox.remove()
-  tidy(item)
 }
 
-// Pretty-printed source indents and breaks lines inside elements that the
-// importer would otherwise keep as literal spaces.
-function tidy(element: Element): void {
-  const walker = element.ownerDocument.createTreeWalker(
-    element,
-    NodeFilter.SHOW_TEXT,
-  )
-  while (walker.nextNode()) {
-    const text = walker.currentNode as Text
-    if (!text.parentElement?.closest('pre,code'))
-      text.data = text.data.replace(/[ \t\r\n\f]+/g, ' ')
+const inline = new Set([
+  'STRONG',
+  'MARK',
+  'B',
+  'EM',
+  'I',
+  'S',
+  'DEL',
+  'STRIKE',
+  'A',
+  'SPAN',
+  'SUP',
+  'FONT',
+])
+const space = /[ \t\r\n\f]+/g
+
+/**
+ * Collapses source whitespace the way a browser renders it: runs become one
+ * space, and none remains at the edges of a block or beside a line break.
+ * `pre`, `code` and elements that stay literal source are not entered.
+ */
+export function collapseClipboardWhitespace(root: Node): void {
+  hoistEdgeSpace(root)
+  let trailing: Text | undefined
+  let start = true
+  const trim = () => {
+    if (!trailing) return
+    trailing.data = trailing.data.slice(0, -1)
+    if (!trailing.data) trailing.remove()
+    trailing = undefined
   }
-  trimEdge(element, 'start')
-  trimEdge(element, 'end')
+  const visit = (node: Node): void => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node as Text
+      let data = text.data.replace(space, ' ')
+      if ((start || trailing) && data.startsWith(' ')) data = data.slice(1)
+      if (!data) return text.remove()
+      text.data = data
+      start = false
+      trailing = data.endsWith(' ') ? text : undefined
+      return
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return
+    const element = node as Element
+    const tag = element.tagName
+    if (inline.has(tag)) {
+      for (const child of [...element.childNodes]) visit(child)
+    } else if (tag === 'BR') {
+      trim()
+      start = true
+    } else if (tag === 'CODE' || tag === 'IMG') {
+      trailing = undefined
+      start = false
+    } else {
+      trim()
+      start = true
+      if (blocks.has(tag) && tag !== 'PRE' && tag !== 'HR')
+        for (const child of [...element.childNodes]) visit(child)
+      trim()
+      start = true
+    }
+  }
+  for (const child of [...root.childNodes]) visit(child)
+  trim()
 }
 
-function trimEdge(element: Element, side: 'start' | 'end'): void {
-  for (;;) {
-    const edge = side === 'start' ? element.firstChild : element.lastChild
-    if (!edge) return
-    if (edge.nodeType === Node.TEXT_NODE) {
-      const text = edge as Text
-      text.data = side === 'start' ? text.data.trimStart() : text.data.trimEnd()
-      if (text.data) return
-      text.remove()
-    } else if (
-      edge.nodeType === Node.ELEMENT_NODE &&
-      ['SPAN', 'STRONG', 'EM', 'B', 'I', 'A', 'P', 'LABEL'].includes(
-        (edge as Element).tagName,
-      )
-    ) {
-      trimEdge(edge as Element, side)
-      if ((edge as Element).childNodes.length) return
-      edge.remove()
-    } else return
+// Whitespace inside emphasis, links and similar wrappers cannot be written in
+// Markdown, so it moves outside them.
+function hoistEdgeSpace(node: Node): void {
+  for (const child of [...node.childNodes]) {
+    if (child.nodeType !== Node.ELEMENT_NODE) continue
+    const element = child as Element
+    if (inline.has(element.tagName)) {
+      hoistEdgeSpace(element)
+      const lead = edgeText(element, 'start')
+      const leading = lead?.data.match(/^[ \t\r\n\f]+/)?.[0]
+      if (lead && leading) {
+        lead.data = lead.data.slice(leading.length)
+        element.before(leading)
+      }
+      const tail = edgeText(element, 'end')
+      const trailing = tail?.data.match(/[ \t\r\n\f]+$/)?.[0]
+      if (tail && trailing) {
+        tail.data = tail.data.slice(0, -trailing.length)
+        element.after(trailing)
+      }
+    } else if (blocks.has(element.tagName) && element.tagName !== 'PRE')
+      hoistEdgeSpace(element)
   }
+}
+
+function edgeText(element: Element, side: 'start' | 'end'): Text | undefined {
+  let node = side === 'start' ? element.firstChild : element.lastChild
+  while (node && node.nodeType === Node.ELEMENT_NODE) {
+    if (!inline.has((node as Element).tagName)) return undefined
+    node = side === 'start' ? node.firstChild : node.lastChild
+  }
+  return node?.nodeType === Node.TEXT_NODE ? (node as Text) : undefined
 }

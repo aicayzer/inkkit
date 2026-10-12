@@ -11,7 +11,11 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
 import { isImage } from './image-blocks'
-import { isRichElement, normalizeClipboardHTML } from './paste-html'
+import {
+  collapseClipboardWhitespace,
+  isRichElement,
+  normalizeClipboardHTML,
+} from './paste-html'
 import {
   avoidReferenceCollisions,
   markdownFromHTML,
@@ -221,7 +225,19 @@ export class PasteController {
         // so comments retain their source and ordinary-copy privacy.
         for (const table of [...container.querySelectorAll('table')]) {
           if (table.parentElement?.closest('table')) continue
-          if (schema.nodes.table && !unsupportedClipboardTable(table)) continue
+          if (schema.nodes.table) {
+            // Judge the table as it will import, so wrappers such as `u` or
+            // `label` in a cell do not make it literal. A table that is still
+            // unsupported keeps its original source.
+            const trial = table.cloneNode(true) as HTMLTableElement
+            const holder = document.createDocumentFragment()
+            holder.append(trial)
+            normalizeClipboardHTML(holder)
+            if (!unsupportedClipboardTable(trial)) {
+              table.replaceWith(trial)
+              continue
+            }
+          }
           const preserved = ctx.get(parserCtx)(table.outerHTML)
           table.replaceWith(
             DOMSerializer.fromSchema(schema).serializeFragment(
@@ -337,6 +353,7 @@ export class PasteController {
             table.replaceWith(literal)
           }
         }
+        collapseClipboardWhitespace(container)
         const imported = new Map<string, string>()
         const elements = [...container.querySelectorAll('img')]
         const uniqueSources = new Set(
