@@ -47,9 +47,14 @@ for (const [name, root, port] of [
       [500, 'marked'],
       [500, 'heading'],
       [500, 'mixed'],
+      [500, 'code-heading'],
+      [500, 'code-heading-plain'],
     ]) {
       const setup = await page.evaluate(
         async ({ root, blocks, kind }) => {
+          const leadingHeading =
+            ['heading', 'mixed'].includes(kind) ||
+            kind.startsWith('code-heading')
           if (window.measuredEditor) await window.measuredEditor.destroy()
           const { InkKitEditor } = await import(`/@fs${root}/src/index.ts`)
           const { Preservation } = await import(`/@fs${root}/src/preserve.ts`)
@@ -81,7 +86,12 @@ for (const [name, root, port] of [
               openLink() {},
               copy() {},
             },
-            { rendering: { diagramPreview: false } },
+            {
+              rendering: {
+                diagramPreview: false,
+                codeHighlighting: kind !== 'code-heading-plain',
+              },
+            },
           )
           const paragraph =
             'A paragraph with enough words to cover several lines in this editor. '.repeat(
@@ -94,8 +104,8 @@ for (const [name, root, port] of [
             ) +
             '```\n\n'
           const text =
-            (['heading', 'mixed'].includes(kind) ? '# Heading\n\n' : '') +
-            (kind === 'code'
+            (leadingHeading ? '# Heading\n\n' : '') +
+            (kind === 'code' || kind.startsWith('code-heading')
               ? codeBlock
               : kind === 'marked'
                 ? '__Authored bold__ and _emphasis_. ' + paragraph
@@ -114,7 +124,7 @@ for (const [name, root, port] of [
           const load = performance.now() - start
           window.measuredEditor = editor
           editor.focus()
-          if (['heading', 'mixed'].includes(kind)) {
+          if (leadingHeading) {
             const heading = document.querySelector('#probe h1')
             const selection = window.getSelection()
             selection.collapse(heading.firstChild, heading.textContent.length)
