@@ -33,6 +33,11 @@ export const imageAttrs = {
   inkkitFileInTable: { default: false },
 }
 
+interface MarkdownParagraph {
+  children?: unknown[]
+  value?: unknown
+}
+
 interface MarkdownImage {
   type: string
   url?: unknown
@@ -43,7 +48,6 @@ interface MarkdownImage {
   inkkitFileFragment?: unknown
   inkkitFileWidth?: unknown
   inkkitFileInTable?: unknown
-  children?: MarkdownImage[]
 }
 
 // Remark represents a missing title as null; the image schema accepts strings.
@@ -73,27 +77,48 @@ function accepts(parent: ProseNode, index: number, type: NodeType): boolean {
   return parent.canReplaceWith(index, index + 1, type)
 }
 
-/** Reads a Markdown paragraph holding one image and nothing else as an image block, where the
- *  enclosing block accepts one. Returns false when the paragraph stays a paragraph. */
-export function openImageBlock(
+/** The image a paragraph holds as its only content, without marks, which makes the paragraph a
+ *  standalone image block. A linked or emphasised image stays inline so its marks are kept. */
+export function standaloneImage(
+  children: readonly ProseNode[],
+): ProseNode | undefined {
+  const [image] = children
+  return children.length === 1 &&
+    image!.type.name === 'image' &&
+    !image!.marks.length
+    ? image
+    : undefined
+}
+
+/** Reads a Markdown paragraph, as an image block when it holds a standalone image and the enclosing
+ *  block accepts one. */
+export function readParagraph(
   state: ParserState,
-  node: MarkdownImage,
-): boolean {
+  node: MarkdownParagraph,
+  paragraph: NodeType,
+): void {
+  state.openNode(paragraph)
+  if (node.children) state.next(node.children as never)
+  else state.addText(String(node.value ?? ''))
   const type = state.schema.nodes[imageBlockName]
+  const element = state.top() as { content: ProseNode[] }
+  const image = standaloneImage(element.content)
+  state.close()
   const parent = state.top() as
     { type: NodeType; content: ProseNode[] } | undefined
-  const image = node.children?.length === 1 ? node.children[0] : undefined
   if (
-    !type ||
-    !parent ||
-    image?.type !== 'image' ||
-    !parent.type.contentMatch
+    image &&
+    type &&
+    parent?.type.contentMatch
       .matchFragment(Fragment.fromArray(parent.content))
       ?.matchType(type)
   )
-    return false
-  state.addNode(type, markdownImageAttrs(image))
-  return true
+    state.addNode(type, image.attrs)
+  else {
+    state.openNode(paragraph)
+    for (const child of element.content) state.top()!.push(child)
+    state.closeNode()
+  }
 }
 
 // A standalone image is a block with no inside, so no edit can put text beside it. In Markdown it
@@ -158,10 +183,11 @@ const normalise = $prose(
             Math.max(0, Math.min(to, size)),
             (node, pos, parent, index) => {
               if (!node.isTextblock) return true
+              const children: ProseNode[] = []
+              node.forEach((child) => children.push(child))
               if (
                 node.type.name === 'paragraph' &&
-                node.childCount === 1 &&
-                node.firstChild!.type.name === 'image' &&
+                standaloneImage(children) &&
                 parent &&
                 accepts(parent, index, type)
               )

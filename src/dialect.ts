@@ -60,7 +60,7 @@ import {
   imageAttrs,
   imageBlocks,
   markdownImageAttrs,
-  openImageBlock,
+  readParagraph,
 } from './image-blocks'
 import { references, remarkReferencesPlugin } from './references'
 import { callouts, remarkCalloutsPlugin } from './callouts'
@@ -202,8 +202,7 @@ const preserveSpacerParagraphs = paragraphSchema.extendSchema(
       parseMarkdown: {
         ...schema.parseMarkdown,
         runner(state, node, type) {
-          if (!openImageBlock(state, node))
-            schema.parseMarkdown.runner(state, node, type)
+          readParagraph(state, node, type)
         },
       },
       toMarkdown: {

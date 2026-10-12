@@ -506,3 +506,61 @@ test('readable text gives a standalone image its label as its own line', () =>
       'image_block',
     )
   }))
+
+const markedImages = {
+  linked: '[![Badge](b.png)](https://example.com)',
+  'reference-linked': '[![Badge](b.png)][site]',
+  emphasised: '*![Badge](b.png)*',
+  strong: '**![Badge](b.png)**',
+  struck: '~~![Badge](b.png)~~',
+  highlighted: '==![Badge](b.png)==',
+}
+const markedSource = (image: string) =>
+  `Intro\n\n${image}\n\nEnd\n${image.endsWith('[site]') ? '\n[site]: https://example.com\n' : ''}`
+
+test.each(Object.entries(markedImages))(
+  'a %s sole image stays an inline image and keeps its bytes through edits elsewhere',
+  (_name, image) =>
+    run(markedSource(image), ({ editor, view, text }) => {
+      const source = markedSource(image)
+      expect(text()).toBe(source)
+      expect(blocks(view())).not.toContain('image_block')
+      view().dispatch(view().state.tr.insertText(' edited', 6))
+      expect(text()).toBe(source.replace('Intro', 'Intro edited'))
+      editor.replaceSource(source.replace('Intro', 'Intro again'), 1)
+      expect(text()).toBe(source.replace('Intro', 'Intro again'))
+      expect(blocks(view())).not.toContain('image_block')
+    }),
+)
+
+test('resizing a linked sole image or deleting text beside it keeps the link', () =>
+  run(
+    'Caption [![Badge](b.png)](https://example.com)\n\n[![Logo](l.png)](https://example.org)\n',
+    ({ root, view, text }) => {
+      view().dispatch(view().state.tr.delete(1, 9))
+      expect(text()).toBe(
+        '[![Badge](b.png)](https://example.com)\n\n[![Logo](l.png)](https://example.org)\n',
+      )
+      const card = root.querySelectorAll<HTMLElement>('.image')[1]!
+      card.querySelector('img')!.getBoundingClientRect = () =>
+        new DOMRect(0, 0, 100, 50)
+      Object.defineProperty(
+        root.querySelector('.ProseMirror')!,
+        'clientWidth',
+        {
+          value: 800,
+          configurable: true,
+        },
+      )
+      const handle = card.querySelector('.image-handle')!
+      handle.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, clientX: 100 }),
+      )
+      handle.dispatchEvent(new MouseEvent('pointermove', { clientX: 180 }))
+      handle.dispatchEvent(new MouseEvent('pointerup', { clientX: 180 }))
+      expect(text()).toBe(
+        '[![Badge](b.png)](https://example.com)\n\n[![Logo|180](l.png)](https://example.org)\n',
+      )
+      expect(blocks(view())).not.toContain('image_block')
+    },
+  ))
