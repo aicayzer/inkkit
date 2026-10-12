@@ -59,7 +59,7 @@ function touched(tr: Transaction): [number, number][] {
   const start = tr.before.content.findDiffStart(tr.doc.content)
   if (start != null) {
     const end = tr.before.content.findDiffEnd(tr.doc.content)
-    // The scans meet when inserted text repeats its neighbours.
+    // The scans overlap when inserted or deleted text repeats its neighbours.
     if (end)
       ranges.push([start, end.b + Math.max(0, start - Math.min(end.a, end.b))])
   }
