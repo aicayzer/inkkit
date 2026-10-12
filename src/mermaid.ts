@@ -56,7 +56,7 @@ const filled = (value: unknown): boolean =>
       : typeof value === 'object' && value !== null
         ? Object.keys(value).length > 0
         : Boolean(value)
-// Mermaid records a click handler in strict mode only as this class.
+// In strict mode a flowchart records a click handler only as this class.
 const clickable = (classes: unknown) =>
   (Array.isArray(classes) ? classes : String(classes ?? '').split(/\s+/))
     .map(String)
