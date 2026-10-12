@@ -291,3 +291,25 @@ for (const colorScheme of ['light', 'dark'] as const)
       contentType: 'image/png',
     })
   })
+
+test('the readable range of a standalone image covers its card, not the whole row', async ({
+  page,
+}) => {
+  await open(page, standalone)
+  const snapshot = (await operation(page, 'textSnapshot')) as {
+    snapshotId: string
+    text: string
+  }
+  const from = snapshot.text.indexOf('Fixture')
+  const rects = (await operation(page, 'textRangeRects', {
+    range: { snapshotId: snapshot.snapshotId, from, to: from + 7 },
+  })) as { left: number; width: number }[]
+  const card = (await page
+    .locator('.inkkit-image-block > .image')
+    .boundingBox())!
+  const row = (await page.locator('.inkkit-image-block').boundingBox())!
+  expect(row.width).toBeGreaterThan(card.width + 20)
+  expect(rects).toHaveLength(1)
+  expect(Math.abs(rects[0]!.width - card.width)).toBeLessThan(2)
+  expect(Math.abs(rects[0]!.left - card.x)).toBeLessThan(2)
+})

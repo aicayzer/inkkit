@@ -197,11 +197,14 @@ export function formattedRects(
     if (span.kind === 'embed' || span.kind === 'break') {
       const node = view.nodeDOM(span.start)
       if (node instanceof Element) {
+        // A standalone image's node is its full-width row; the card is what shows.
         const label = node.matches('.inkkit-callout')
           ? (node.querySelector(
               ':scope > .inkkit-callout-header > .inkkit-callout-title',
             ) ?? node)
-          : node
+          : node.matches('.inkkit-image-block')
+            ? (node.firstElementChild ?? node)
+            : node
         rects.push(...Array.from(label.getClientRects(), textRect))
       }
       continue
