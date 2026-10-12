@@ -346,6 +346,11 @@ window.interop = {
           case 'textRangeRects':
             result = editor.textRangeRects(scopedRange(operation, results))
             break
+          case 'textRangesRects':
+            result = editor.textRangesRects(
+              operation.ranges.map((range) => scopedRange(range, results)),
+            )
+            break
           case 'rangeGeometry': {
             const range = scopedRange(operation, results)
             const rects = editor.textRangeRects(range)
