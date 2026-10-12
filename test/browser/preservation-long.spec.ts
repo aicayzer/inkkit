@@ -14,13 +14,25 @@ test('distant ordinary typing remains saveable, undoable and reloadable @preserv
   await operation(page, 'replaceSource', { text: source })
   const paragraphs = page.locator('#editor .ProseMirror > p')
   await paragraphs.nth(1).click()
-  await page.keyboard.press('Home')
+  await paragraphs.nth(1).evaluate((paragraph) => {
+    const range = document.createRange()
+    range.selectNodeContents(paragraph)
+    range.collapse(true)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+  })
   await page.keyboard.type('First ')
   await expect
     .poll(async () => (await observe(page)).snapshot?.text)
     .toContain('First Paragraph 0.')
   await paragraphs.last().click()
-  await page.keyboard.press('End')
+  await paragraphs.last().evaluate((paragraph) => {
+    const range = document.createRange()
+    range.selectNodeContents(paragraph)
+    range.collapse(false)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+  })
   await page.keyboard.type(' Last')
   const expected = source
     .replace('Paragraph 0.', 'First Paragraph 0.')
