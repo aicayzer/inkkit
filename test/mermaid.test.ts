@@ -214,6 +214,10 @@ for (const attack of [
   'flowchart LR\nstyle A fill:url(/tracking)',
   'flowchart LR\nclassDef unsafe fill:u\\72l(/tracking)',
   'flowchart LR\nlinkStyle 0 stroke:#f00',
+  'flowchart LR\nA --> B\nclassDef c mask-image:image-set("/pixel" 1x)',
+  'flowchart LR\nA --> B\nclassDef c mask:-WEBKIT-IMAGE-SET("/pixel" 1x)',
+  'flowchart LR\nA --> B\nclassDef c fill:cross-fade("/a", "/b", 50%)',
+  'flowchart LR\nA[image-set ("/pixel" 1x)] --> B',
   'mindmap\nRoot',
   'flowchart LR\n' + 'x'.repeat(30000),
 ])
@@ -247,6 +251,25 @@ test('safe SVG rejects escaped CSS resources before insertion', () => {
     ),
   ).not.toContain('/pixel')
 })
+
+for (const resource of [
+  'image-set("/pixel" 1x)',
+  '-webkit-image-set("/pixel" 1x)',
+  'IMAGE-SET ("/pixel" 1x)',
+  'cross-fade("/pixel", "/other", 50%)',
+  '-webkit-cross-fade("/pixel", "/other", 50%)',
+  'image("/pixel")',
+  'src("/pixel")',
+  'element(#pixel)',
+  '-moz-element(#pixel)',
+])
+  test(`safe SVG removes CSS resource functions: ${resource}`, () => {
+    const result = safeDiagramSVG(
+      `<svg viewBox="0 0 100 50"><style>rect{mask-image:${resource}}</style><rect width="10" height="10" style='mask-image:${resource}'/><rect width="10" height="10" mask='${resource}'/></svg>`,
+    )
+    expect(result).not.toMatch(/pixel/)
+    expect(result).toContain('<rect')
+  })
 
 test('rendering locks safe configuration and removes its temporary DOM', async () => {
   await renderDiagram(source())

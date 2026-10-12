@@ -10,6 +10,11 @@ export function isMermaid(node: ProseNode): boolean {
   return node.type.name === 'code_block' && node.attrs.language === 'mermaid'
 }
 
+// CSS functions that can load an image or display another element. Mermaid's
+// own styles use none of them apart from url() for in-document markers.
+const cssResource =
+  /url\s*\(\s*[^#\s]|(?:image-set|cross-fade|image|element|src)\s*\(/i
+
 export function validateDiagram(source: string): void {
   if (source.length > 30000)
     throw new Error('The diagram exceeds the 30,000 character rendering limit.')
@@ -25,9 +30,10 @@ export function validateDiagram(source: string): void {
   // and configuration syntax before calling the renderer, including entities.
   // Action and styling directives are refused only where a statement can start,
   // so the same words stay usable in labels. Resource values in a directive
-  // (URLs, url(), @import, escapes) are refused wherever they appear.
+  // (URLs and CSS resource functions, @import, escapes) are refused wherever
+  // they appear.
   if (
-    /%%\{|^\s*---|<\s*[a-z!/?]|&(?:#\w+|[a-z]+);|@\{|\$\$|(?:https?|data|file|javascript|vbscript|blob):|\/\/|url\s*\(|@import|\\/im.test(
+    /%%\{|^\s*---|<\s*[a-z!/?]|&(?:#\w+|[a-z]+);|@\{|\$\$|(?:https?|data|file|javascript|vbscript|blob):|\/\/|url\s*\(|image-set\s*\(|cross-fade\s*\(|@import|\\/im.test(
       source,
     ) ||
     /(?:^|[;}])\s*(?:end\s+)?(?:click|callback|href|link|image|icon|fontawesome|style|classDef|linkStyle)\b/im.test(
@@ -57,17 +63,17 @@ export function safeDiagramSVG(svg: string): string {
     for (const attribute of [...element.attributes]) {
       if (
         /^on/i.test(attribute.name) ||
-        /(?:https?|data|file|javascript|blob):|@import|url\s*\(\s*[^#]|\\/i.test(
+        /(?:https?|data|file|javascript|blob):|@import|\\/i.test(
           attribute.value,
-        )
+        ) ||
+        cssResource.test(attribute.value)
       )
         element.removeAttribute(attribute.name)
     }
     if (
       element.tagName.toLowerCase() === 'style' &&
-      /@import|(?:https?|data|file):|url\s*\(\s*[^#]|\\/i.test(
-        element.textContent ?? '',
-      )
+      (/@import|(?:https?|data|file):|\\/i.test(element.textContent ?? '') ||
+        cssResource.test(element.textContent ?? ''))
     )
       element.remove()
   }
