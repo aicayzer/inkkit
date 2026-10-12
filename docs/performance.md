@@ -57,7 +57,27 @@ To repeat the comparison, install dependencies in both checkouts and run from th
 node scripts/measure-preservation.mjs /path/to/baseline-checkout
 ```
 
-The script starts Vite on ports 4194 and 4195, uses fixed paragraph, code, marked-text, heading and highlighted-code fixtures, verifies that all ten inputs reached the snapshot, and records samples in `_local/preservation-performance.json`. Run one comparison at a time with those ports free. A single run does not establish a cross-machine latency guarantee.
+## Replace All and mid-document input, October 12, 2026
+
+Same machine, Chrome 154 through Playwright and development source as above. The baseline is main at `e3e3687` (0.0.15). The mixed documents cycle through paragraphs with links and authored `__bold__`, lists, quotes, fenced code, tables and footnotes; the changed blocks are spread evenly and contain the searched word. Every successful replacement was checked to equal a plain text replacement of the original source, so unchanged blocks kept their exact bytes. Times are one run each and include first-use warm-up.
+
+| Replace All, blocks changed / total | Baseline                                    | Candidate     |
+| ----------------------------------- | ------------------------------------------- | ------------- |
+| 100 / 300                           | 118 ms                                      | 111 ms        |
+| 300 / 1,000                         | refused after 74 ms (`preservation` error)  | saved, 380 ms |
+| 1,000 / 2,000                       | refused after 167 ms (`preservation` error) | saved, 866 ms |
+
+The baseline also refused 100 changed blocks of 2,000 distinct blocks in a direct test of the matching function. The candidate matched 2,000 distinct blocks with up to 1,900 changed, and 50,000 blocks with 10,000 changed, in under 50 ms each. Once matching succeeds, it is not where the time goes. Saving 1,000 changed blocks spends its time on whole-document serialization and the reopen check, which is linear in document size.
+
+Ten single-character insertions in the middle of a 4,000-block document, mean per input:
+
+| Document                           | Characters | Preservation baseline / candidate (ms) | Input baseline / candidate (ms) |
+| ---------------------------------- | ---------: | -------------------------------------: | ------------------------------: |
+| 4,000 plain paragraphs             |  1,388,000 |                            0.81 / 0.92 |                     4.94 / 4.99 |
+| 4,000 short paragraphs with a link |    169,780 |                              662 / 668 |                       672 / 677 |
+| 4,000 long paragraphs with a link  |  1,464,000 |                          2,573 / 2,603 |                   2,594 / 2,624 |
+
+Matching does not cause the slow rows. An edit inside a paragraph whose source contains `[`, `<` or `%%` (a link, a task item, a reference, HTML) cannot use the independent text-block path, so each keystroke serializes and reopens the complete document. A CPU profile of 2,000 long link paragraphs attributed 1,334 ms per input to `Preservation.serialize`, almost all of it Markdown serialization, parsing and signature comparison across all blocks. Block correspondence did not appear: with one changed block, trimming the equal head and tail leaves one block on each side. The same cost applies to list, table and code edits. A separate probe of a 4,000-item task list measured about 380 ms per input. Reducing it requires validating those blocks locally, which this change does not attempt.
 
 Independent paragraph and heading edits retain their surrounding source bytes and reparse only the changed blocks. This requires unchanged block structure and blank-line separation from neighboring blocks. Text may contain emphasis, bold and inline-code marks. Reference brackets, HTML/comment forms, inline atoms and ambiguous block moves use the complete document path because their meaning can depend on other blocks. Each reconstructed block must parse to the intended node, with only Milkdown's derived heading DOM ID excluded. Cached validation belongs to immutable node identity and its original block position.
 
@@ -65,22 +85,32 @@ The mixed fixture adds a table, fenced code, a reference link and definition, an
 
 Loading and rendering are not optimized by this change; the 1,000-paragraph load remained approximately 0.44 seconds. Code-block input remains materially slower.
 
-Block correspondence uses banded edit distance with a shared one-million-cell work budget across widening attempts. Its cost depends on edit distance rather than the rectangular span between two distant changes; repeated paragraphs do not require unique anchors. Large unmatched rewrites can still fail closed. Ordinary keyboard regression cases cover first/last edits across 1,000 paragraphs, authored and unsupported source, history, mode changes and reload.
+Block correspondence anchors unchanged blocks first. Blocks that occur exactly once on each side, in the longest shared order, are matched to themselves; matching then repeats inside each gap. A gap with no remaining unique block uses banded edit distance with a shared one-million-cell work budget across widening attempts. Edit distance distinguishes a replaced block from an inserted one, so an edited block keeps its surrounding whitespace. Cost follows the size of the gaps between unchanged unique blocks, not the span between two distant changes, so Replace All and other edits that touch many blocks stay saveable. Ordinary keyboard regression cases cover first/last edits across 1,000 paragraphs, authored and unsupported source, history, mode changes and reload.
+
+A rewrite fails closed when it leaves a large gap with nothing to anchor on, such as every block in a long note changing, or hundreds of edits among a few thousand blocks that all repeat the same few texts. In an evenly spread test, 1,000 mutually identical blocks accept up to 256 edits and 2,000 accept 64. A document whose unchanged blocks are mostly distinct reaches the limit only when nearly every block changes. A moved block is rewritten in canonical form because only its new position is known; the blocks around it keep their source.
 
 Formatted changes are validated after dialect normalization and before the final state reaches the view. A rejected change reports a preservation error, restores the current visible document and leaves the snapshot, revision and undo history unchanged. Browser tests exercise rejected DOM input and synthetic composition recovery; these do not establish every operating-system IME behavior.
 
-## Code highlighting measurements, October 12, 2026
+The script starts Vite on ports 4194 and 4195, uses fixed paragraph, code, marked-text, heading and highlighted-code fixtures, verifies that all ten inputs reached the snapshot, and records samples in `_local/preservation-performance.json`. Run one comparison at a time with those ports free. A single run does not establish a cross-machine latency guarantee.
 
-Code highlighting colors blocks with `lowlight` and previously ran it over every code block on each document change. It now highlights only the blocks a transaction touched; decorations of other blocks are mapped to their new positions. These measurements use the same script, machine, browser (Chrome 154) and method as the text-block table, comparing `main` at `e3e3687` (0.0.15) with the candidate. Diagram previews are disabled and code highlighting is enabled, except in the last row. Each row is the mean of ten `keyboard.insertText('x')` inputs. Two runs of each side agreed within 10 ms for the baseline rows.
+## Replace All and mid-document input, October 12, 2026
 
-The 500 code blocks are five-line TypeScript blocks (164,511 characters, 20,000 decorations). The heading edit is outside every code block. The end edit is inside the last block.
+Same machine, Chrome 154 through Playwright and development source as above. The baseline is main at `e3e3687` (0.0.15). The mixed documents cycle through paragraphs with links and authored `__bold__`, lists, quotes, fenced code, tables and footnotes; the changed blocks are spread evenly and contain the searched word. Every successful replacement was checked to equal a plain text replacement of the original source, so unchanged blocks kept their exact bytes. Times are one run each and include first-use warm-up.
 
-| Document and edit                              | Input before / after (ms) |
-| ---------------------------------------------- | ------------------------: |
-| 500 code blocks, heading edit                  |               95.8 / 11.3 |
-| 500 code blocks, edit in the last block        |              108.1 / 67.1 |
-| 500 code blocks, heading edit, no highlighting |                 2.1 / 2.0 |
+| Replace All, blocks changed / total | Baseline                                    | Candidate     |
+| ----------------------------------- | ------------------------------------------- | ------------- |
+| 100 / 300                           | 118 ms                                      | 111 ms        |
+| 300 / 1,000                         | refused after 74 ms (`preservation` error)  | saved, 380 ms |
+| 1,000 / 2,000                       | refused after 167 ms (`preservation` error) | saved, 866 ms |
 
-For the end edit, preservation (about 49 ms per input, unchanged) is now most of the cost. An edit that touches 256 or fewer existing decorations removes them from the mapped set; one that touches more, as in a large block, rebuilds the set instead, because removal is quadratic in the decorations removed. For the heading edit, about 9 ms above the no-highlighting floor remains; it was not profiled. The regression tests in `test/code-highlighting.test.ts` count `lowlight.highlight` calls and compare the decorations with an independent full recompute after edits, language changes, block deletion and undo, and a seeded sequence of random edits. Loading a document highlights every block, as before.
+The baseline also refused 100 changed blocks of 2,000 distinct blocks in a direct test of the matching function. The candidate matched 2,000 distinct blocks with up to 1,900 changed, and 50,000 blocks with 10,000 changed, in under 50 ms each. Once matching succeeds, it is not where the time goes. Saving 1,000 changed blocks spends its time on whole-document serialization and the reopen check, which is linear in document size.
 
-A single `insertText` in one TypeScript block of 3,000, 12,000 and 30,000 lines (`const a = 1; // c`, jsdom, no browser) takes 22, 89 and 233 ms on `main` and 26, 97 and 251 ms with this change, so the cost of an edit inside a block still grows linearly with that block.
+Ten single-character insertions in the middle of a 4,000-block document, mean per input:
+
+| Document                           | Characters | Preservation baseline / candidate (ms) | Input baseline / candidate (ms) |
+| ---------------------------------- | ---------: | -------------------------------------: | ------------------------------: |
+| 4,000 plain paragraphs             |  1,388,000 |                            0.81 / 0.92 |                     4.94 / 4.99 |
+| 4,000 short paragraphs with a link |    169,780 |                              662 / 668 |                       672 / 677 |
+| 4,000 long paragraphs with a link  |  1,464,000 |                          2,573 / 2,603 |                   2,594 / 2,624 |
+
+Matching does not cause the slow rows. An edit inside a paragraph whose source contains `[`, `<` or `%%` (a link, a task item, a reference, HTML) cannot use the independent text-block path, so each keystroke serializes and reopens the complete document. A CPU profile of 2,000 long link paragraphs attributed 1,334 ms per input to `Preservation.serialize`, almost all of it Markdown serialization, parsing and signature comparison across all blocks. Block correspondence did not appear: with one changed block, trimming the equal head and tail leaves one block on each side. The same cost applies to list, table and code edits. A separate probe of a 4,000-item task list measured about 380 ms per input. Reducing it requires validating those blocks locally, which this change does not attempt.

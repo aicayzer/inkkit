@@ -49,6 +49,9 @@ for (const [name, root, port] of [
       [500, 'mixed'],
       [500, 'code-heading'],
       [500, 'code-heading-plain'],
+      [4000, 'middle'],
+      [4000, 'middle-link'],
+      [4000, 'middle-short-link'],
     ]) {
       const setup = await page.evaluate(
         async ({ root, blocks, kind }) => {
@@ -103,17 +106,29 @@ for (const [name, root, port] of [
               5,
             ) +
             '```\n\n'
+          const linked =
+            'A paragraph with a [link](/target) and enough words to cover several lines in this editor. '.repeat(
+              4,
+            ) + '\n\n'
+          const shortLinks = Array.from(
+            { length: blocks },
+            (_, i) => `See [link ${i}](/t/${i}) for the details.\n\n`,
+          ).join('')
           const text =
-            (leadingHeading ? '# Heading\n\n' : '') +
-            (kind === 'code' || kind.startsWith('code-heading')
-              ? codeBlock
-              : kind === 'marked'
-                ? '__Authored bold__ and _emphasis_. ' + paragraph
-                : paragraph
-            ).repeat(blocks) +
-            (kind === 'mixed'
-              ? '| A | B |\n| - | - |\n| one | two |\n\n```ts\nconst x = 1;\n```\n\n[Retained][ref]\n\n[ref]: /target\n\n<section>unsupported</section>\n'
-              : '')
+            kind === 'middle-short-link'
+              ? shortLinks
+              : (leadingHeading ? '# Heading\n\n' : '') +
+                (kind === 'code' || kind.startsWith('code-heading')
+                  ? codeBlock
+                  : kind === 'marked'
+                    ? '__Authored bold__ and _emphasis_. ' + paragraph
+                    : kind === 'middle-link'
+                      ? linked
+                      : paragraph
+                ).repeat(blocks) +
+                (kind === 'mixed'
+                  ? '| A | B |\n| - | - |\n| one | two |\n\n```ts\nconst x = 1;\n```\n\n[Retained][ref]\n\n[ref]: /target\n\n<section>unsupported</section>\n'
+                  : '')
           const start = performance.now()
           editor.loadDocument({
             documentId: 'performance',
@@ -128,6 +143,19 @@ for (const [name, root, port] of [
             const heading = document.querySelector('#probe h1')
             const selection = window.getSelection()
             selection.collapse(heading.firstChild, heading.textContent.length)
+          }
+          if (kind.startsWith('middle')) {
+            const middle = document.querySelectorAll('#probe .ProseMirror > p')[
+              blocks / 2
+            ]
+            const walker = document.createTreeWalker(
+              middle,
+              NodeFilter.SHOW_TEXT,
+            )
+            let last
+            for (let node = walker.nextNode(); node; node = walker.nextNode())
+              last = node
+            window.getSelection().collapse(last, last.length)
           }
           document
             .querySelector('.ProseMirror')
@@ -163,6 +191,62 @@ for (const [name, root, port] of [
         ...setup,
         ...times,
       })
+      console.log(JSON.stringify(results.at(-1)))
+    }
+    for (const [blocks, changed] of [
+      [300, 100],
+      [1000, 300],
+      [2000, 1000],
+    ]) {
+      const outcome = await page.evaluate(
+        async ({ root, blocks, changed }) => {
+          if (window.measuredEditor) await window.measuredEditor.destroy()
+          const { InkKitEditor } = await import(`/@fs${root}/src/index.ts`)
+          document.body.innerHTML =
+            '<main id="probe" style="width:800px;height:600px;overflow:auto"></main>'
+          const editor = await InkKitEditor.mount(
+            document.querySelector('#probe'),
+            { changed() {}, stateChanged() {}, openLink() {}, copy() {} },
+            { rendering: { diagramPreview: false } },
+          )
+          window.measuredEditor = editor
+          const kinds = [
+            (i, w) => `__Kept ${i}__ [link ${i}](/k/${i}) ${w} here.`,
+            (i, w) => `* first ${i} ${w}\n* second ${i}`,
+            (i, w) => `> quoted ${i} ${w}`,
+            (i, w) => '```ts\nconst a' + i + ` = "${w}";\n` + '```',
+            (i, w) => `| A | B |\n| - | - |\n| ${w} ${i} | x |`,
+            (i, w) => `Note ${i} ${w}[^n${i}]\n\n[^n${i}]: Footnote ${i}.`,
+            (i, w) => `# Heading ${i} ${w}`,
+          ]
+          const every = blocks / changed
+          const text =
+            Array.from({ length: blocks }, (_, i) => {
+              const edit = Math.floor((i + 1) / every) > Math.floor(i / every)
+              return kinds[i % kinds.length](i, edit ? 'word' : 'plain')
+            }).join('\n\n') + '\n'
+          editor.loadDocument({
+            documentId: 'replace',
+            generation: 1,
+            format: 'md',
+            text,
+          })
+          const start = performance.now()
+          let count, error
+          try {
+            count = editor.replaceAll('word', 'term')
+          } catch (cause) {
+            error = String(cause.message)
+          }
+          const milliseconds = performance.now() - start
+          const saved = error
+            ? undefined
+            : editor.snapshot().text === text.replaceAll('word', 'term')
+          return { milliseconds, count, error, savedExactly: saved }
+        },
+        { root, blocks, changed },
+      )
+      results.push({ name, kind: 'replace-all', blocks, changed, ...outcome })
       console.log(JSON.stringify(results.at(-1)))
     }
   } finally {
