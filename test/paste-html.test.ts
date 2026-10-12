@@ -354,7 +354,6 @@ test('white-space values are read as CSS, not matched as text', async () => {
     'WHITE-SPACE:PRE',
     'color: red;white-space :  pre !important',
     'white-space: break-spaces;',
-    'white-space: pre-line',
     'white-space-collapse: preserve',
     '/* code */ white-space: pre',
     'white-space: pre !important; white-space: normal',
@@ -367,6 +366,8 @@ test('white-space values are read as CSS, not matched as text', async () => {
   for (const style of [
     'white-space: normal',
     'white-space: nowrap',
+    'white-space: pre-line',
+    'white-space-collapse: preserve-breaks',
     'white-space: pre; white-space: normal',
     'content: "white-space: pre"',
     '--note: white-space: pre',
@@ -378,6 +379,21 @@ test('white-space values are read as CSS, not matched as text', async () => {
       style,
     ).toBe('a b\n')
   }
+})
+
+test('code and images styled to keep whitespace keep the spaces beside them', async () => {
+  // Chrome puts GitHub's `white-space: break-spaces` on each copied code element.
+  const code = 'style="white-space: break-spaces"'
+  expect(
+    await fromHTML(
+      `<p>Run the <code ${code}>pnpm check</code> command and <a href="https://x.test"><code ${code}>link</code></a> here.</p>`,
+    ),
+  ).toBe('Run the `pnpm check` command and [`link`](https://x.test) here.\n')
+  expect(
+    await fromHTML(
+      '<p>See <img style="white-space: pre" src="i.png" alt="i"> now</p>',
+    ),
+  ).toMatch(/^See \S.*\S now\n$/)
 })
 
 test('indentation inside pretty-printed blocks is not imported as text', async () => {

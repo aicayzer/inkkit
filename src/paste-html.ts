@@ -82,14 +82,13 @@ export function isRewrittenElement(element: Element): boolean {
 }
 
 // `white-space` and its longhand `white-space-collapse` keep source spaces with
-// these keywords; `pre-line` keeps line breaks, so it is left alone too.
+// these keywords. `pre-line` and `preserve-breaks` collapse spaces, so they are
+// collapsed here too.
 const keepingWhitespace = new Set([
   'pre',
   'pre-wrap',
-  'pre-line',
   'break-spaces',
   'preserve',
-  'preserve-breaks',
   'preserve-spaces',
 ])
 
@@ -360,7 +359,7 @@ export function collapseClipboardWhitespace(root: Node): void {
     const tag = element.tagName
     if (keepsWhitespace(element)) {
       // Treated like `code` inside a line and like `pre` as a block.
-      if (inline.has(tag)) {
+      if (inline.has(tag) || tag === 'CODE' || tag === 'IMG') {
         trailing = undefined
         start = false
       } else {
