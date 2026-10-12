@@ -463,9 +463,13 @@ interface Anchor {
 export function correspondence(
   before: string[],
   after: string[],
+  resemblance = true,
 ): Array<number | undefined> {
   const result: Array<number | undefined> = new Array(after.length)
-  const work = { budget: MATCHING_BUDGET, similarity: SIMILARITY_BUDGET }
+  const work = {
+    budget: MATCHING_BUDGET,
+    similarity: resemblance ? SIMILARITY_BUDGET : 0,
+  }
   const spans = [{ b: 0, a: 0, bEnd: before.length, aEnd: after.length }]
   for (let span = spans.pop(); span; span = spans.pop()) {
     let { b, a, bEnd, aEnd } = span
@@ -872,68 +876,86 @@ export class Preservation {
         }
         current.push(fingerprint)
       })
-      const positions = correspondence(
-        this.blocks.map((block) => block.form),
-        current,
-      )
+      const forms = this.blocks.map((block) => block.form)
+      const resembling = correspondence(forms, current)
       const processor = this.ctx.get(remarkCtx)
       const currentRawTree = processor.parse(canonical) as Root
       const currentTree = processor.runSync(structuredClone(currentRawTree), {
         value: canonical,
       }) as Root
-      let output = ''
-      let previous: number | undefined
-      current.forEach((text, index) => {
-        const position = positions[index]
-        const block = position == null ? undefined : this.blocks[position]
-        if (index === 0) {
-          if (position === 0 && block)
-            output += this.source.slice(0, block.start)
-          else if (this.source.startsWith('\uFEFF')) output += '\uFEFF'
-        } else if (previous != null && position === previous + 1 && block) {
-          output += this.source.slice(this.blocks[previous]!.end, block.start)
-        } else output += this.lineEnding.repeat(2)
-        if (block && block.form === text)
-          output += this.source.slice(block.start, block.end)
-        else if (block && currentTree.children.length === current.length) {
-          output += this.retainBlock(
-            block,
-            positionalNode(
-              currentRawTree,
-              currentTree.children[index] as unknown as SourceNode,
-            ),
-            canonical,
-          )
-        } else
-          output += restoreCodeEndings(
-            this.ctx,
-            doc.type.create(null, [doc.child(index)]),
-            withEnding(text, this.lineEnding),
-          )
-        previous = position
-      })
-      if (previous === this.blocks.length - 1 && this.blocks.length)
-        output += this.source.slice(this.blocks[previous]!.end)
-      else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
-      // A `---` rule that opens the file reads back as front matter when
-      // another `---` line follows, whether it is new or moved there.
-      const bom = output.startsWith('\uFEFF') ? 1 : 0
-      if (
-        doc.firstChild?.type.name === 'hr' &&
-        sourceFrontmatter(output.slice(bom))?.startsWith('---')
-      )
-        output = output.slice(0, bom) + '***' + output.slice(bom + 3)
       const parse = this.ctx.get(parserCtx)
-      const reopened = parse(output)
       const normalized = (text: string): string => text.replace(/\r\n?/g, '\n')
-      if (semanticSignature(reopened) === semanticSignature(doc)) {
-        const actual = normalized(serialize(this.ctx, reopened))
-        if (actual === normalized(canonical)) return output
-        // Parsing may normalize loose-list spacing. Compare both reconstructed
-        // source and intended canonical source after that same normalization.
-        if (actual === normalized(serialize(this.ctx, parse(canonical))))
-          return output
+      const reconstruct = (
+        positions: Array<number | undefined>,
+      ): string | undefined => {
+        let output = ''
+        let previous: number | undefined
+        current.forEach((text, index) => {
+          const position = positions[index]
+          const block = position == null ? undefined : this.blocks[position]
+          if (index === 0) {
+            if (position === 0 && block)
+              output += this.source.slice(0, block.start)
+            else if (this.source.startsWith('\uFEFF')) output += '\uFEFF'
+          } else if (previous != null && position === previous + 1 && block) {
+            output += this.source.slice(this.blocks[previous]!.end, block.start)
+          } else output += this.lineEnding.repeat(2)
+          if (block && block.form === text)
+            output += this.source.slice(block.start, block.end)
+          else if (block && currentTree.children.length === current.length) {
+            output += this.retainBlock(
+              block,
+              positionalNode(
+                currentRawTree,
+                currentTree.children[index] as unknown as SourceNode,
+              ),
+              canonical,
+            )
+          } else
+            output += restoreCodeEndings(
+              this.ctx,
+              doc.type.create(null, [doc.child(index)]),
+              withEnding(text, this.lineEnding),
+            )
+          previous = position
+        })
+        if (previous === this.blocks.length - 1 && this.blocks.length)
+          output += this.source.slice(this.blocks[previous]!.end)
+        else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
+        // A `---` rule that opens the file reads back as front matter when
+        // another `---` line follows, whether it is new or moved there.
+        const bom = output.startsWith('\uFEFF') ? 1 : 0
+        if (
+          doc.firstChild?.type.name === 'hr' &&
+          sourceFrontmatter(output.slice(bom))?.startsWith('---')
+        )
+          output = output.slice(0, bom) + '***' + output.slice(bom + 3)
+        const reopened = parse(output)
+        if (semanticSignature(reopened) === semanticSignature(doc)) {
+          const actual = normalized(serialize(this.ctx, reopened))
+          if (actual === normalized(canonical)) return output
+          // Parsing may normalize loose-list spacing. Compare both reconstructed
+          // source and intended canonical source after that same normalization.
+          if (actual === normalized(serialize(this.ctx, parse(canonical))))
+            return output
+        }
+        return undefined
       }
+      // Pairing by resemblance can leave a block in canonical form beside an
+      // authored neighbour it then merges with, such as two lists. The
+      // alignment's own pairing does not depend on resemblance, so try it too.
+      const output =
+        reconstruct(resembling) ??
+        (() => {
+          const aligned = correspondence(forms, current, false)
+          // Unmatched blocks are holes, which every() would skip.
+          return current.every(
+            (_, index) => aligned[index] === resembling[index],
+          )
+            ? undefined
+            : reconstruct(aligned)
+        })()
+      if (output !== undefined) return output
       throw new PreservationError(
         'The edited Markdown cannot be reopened without changing its content',
       )

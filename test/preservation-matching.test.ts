@@ -216,6 +216,18 @@ test('an edited block keeps its own source beside inserted and deleted blocks', 
     )
   }))
 
+test('swapping two adjacent lists and editing both still saves', () =>
+  withEditor('x\n', (editor) => {
+    // Pairing one list by resemblance leaves the other in canonical form, where
+    // it would merge with its neighbour; the alignment's own pairing does not.
+    saveAs(
+      editor.ctx,
+      '- item one\n- item two\n\n* star one\n* star two\n\nEnd\n',
+      '* star NEW one\n* star two\n\n- item one edited\n- item two\n\nEnd\n',
+      null,
+    )
+  }))
+
 test('moved blocks are rewritten canonically while everything between them keeps its source', () => {
   const plain = (i: number) => `Plain ${i}`
   const before = Array.from({ length: 1000 }, (_, i) =>
