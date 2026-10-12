@@ -144,7 +144,7 @@ import {
   projectionOffset,
   validateOffsets,
   formattedRects,
-  literalRects,
+  literalRangesRects,
   literalVisibleRanges,
   intersectsViewport,
   textRect,
@@ -2314,16 +2314,30 @@ export class InkKitEditor {
   }
 
   textRangeRects(range: TextRange): readonly TextRect[] {
-    const projection = this.validateTextRange(range)
-    const rects = this.literalSurface
-      ? literalRects(this.plain, range.from, range.to)
-      : formattedRects(
-          this.editor.ctx.get(editorViewCtx),
-          projection,
-          range.from,
-          range.to,
+    return this.textRangesRects([range])[0]!
+  }
+
+  textRangesRects(
+    ranges: readonly TextRange[],
+  ): readonly (readonly TextRect[])[] {
+    this.assertCurrent()
+    const projections = ranges.map((range) => this.validateTextRange(range))
+    if (!ranges.length) return Object.freeze([])
+    const results = this.literalSurface
+      ? literalRangesRects(this.plain, ranges)
+      : ranges.map((range, index) =>
+          formattedRects(
+            this.editor.ctx.get(editorViewCtx),
+            projections[index]!,
+            range.from,
+            range.to,
+          ),
         )
-    return Object.freeze(rects.map((rect) => Object.freeze(rect)))
+    return Object.freeze(
+      results.map((rects) =>
+        Object.freeze(rects.map((rect) => Object.freeze(rect))),
+      ),
+    )
   }
 
   visibleTextRanges(snapshotId: string): readonly TextRange[] {
@@ -2476,11 +2490,12 @@ export class InkKitEditor {
 
   private revealLiteralSelection(): void {
     this.revealRects(
-      literalRects(
-        this.plain,
-        this.plain.selectionStart,
-        this.plain.selectionEnd,
-      ),
+      literalRangesRects(this.plain, [
+        {
+          from: this.plain.selectionStart,
+          to: this.plain.selectionEnd,
+        },
+      ])[0]!,
     )
   }
 

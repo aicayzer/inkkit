@@ -35,6 +35,7 @@ const versions = [
   '0.0.11',
   '0.0.12',
   '0.0.13',
+  '0.0.14',
 ]
 if (!versions.includes(version))
   throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
@@ -2452,6 +2453,40 @@ if (releaseAtLeast('0.0.13')) {
         assert('focused', true, 'compose'),
         { op: 'insertText', text: 'Written' },
         contains('snapshot.text', 'Written'),
+      ],
+    }
+  }
+}
+if (releaseAtLeast('0.0.14')) {
+  for (const mode of ['formatted', 'source', 'txt']) {
+    scenarios[`native-search-batch-geometry-${mode}`] = {
+      source: 'A😀B é 中文\n\nSecond paragraph.\n',
+      format: mode === 'txt' ? 'txt' : 'md',
+      operations: [
+        ...(mode === 'source' ? [{ op: 'editingMode', mode }] : []),
+        { op: 'textSnapshot', name: 'text' },
+        {
+          op: 'textRangeRects',
+          sourceName: 'text',
+          text: '😀',
+          name: 'single',
+        },
+        {
+          op: 'textRangesRects',
+          name: 'batch',
+          ranges: [
+            { sourceName: 'text', text: '😀' },
+            { sourceName: 'text', text: 'Second' },
+          ],
+        },
+        assert('length', 2, 'batch'),
+        {
+          op: 'assert',
+          name: 'batch',
+          path: '0',
+          equalsFrom: { name: 'single', path: '' },
+        },
+        { op: 'assert', name: 'batch', path: '1.length', truthy: true },
       ],
     }
   }

@@ -337,6 +337,11 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
           args.range as Parameters<InkKitEditor['textRangeRects']>[0],
         )
         break
+      case 'textRangesRects':
+        result = target.textRangesRects(
+          args.ranges as Parameters<InkKitEditor['textRangesRects']>[0],
+        )
+        break
       case 'visibleTextRanges':
         result = target.visibleTextRanges(String(args.snapshotId))
         break

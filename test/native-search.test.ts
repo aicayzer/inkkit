@@ -514,3 +514,72 @@ test('ordinary formatted find reveals its complete effective selection', () =>
       reveal.mockRestore()
     }
   }))
+
+test('batch geometry validates every range before creating a source layout', () =>
+  run((editor) => {
+    editor.setEditingMode('source')
+    const emoji = range(editor, '😀')
+    const append = vi.spyOn(document.body, 'append')
+    try {
+      expect(() =>
+        editor.textRangesRects([emoji, { ...emoji, from: emoji.from + 1 }]),
+      ).toThrow(expect.objectContaining({ code: 'invalid-range' }))
+      expect(append).not.toHaveBeenCalled()
+      expect(() =>
+        editor.textRangesRects([emoji, { ...emoji, snapshotId: 'stale' }]),
+      ).toThrow(expect.objectContaining({ code: 'stale-document' }))
+      expect(editor.textRangesRects([])).toEqual([])
+    } finally {
+      append.mockRestore()
+    }
+  }))
+
+test('batch source geometry uses one temporary layout and freezes ordered results', () =>
+  run((editor, root) => {
+    editor.setEditingMode('source')
+    const plain = root.querySelector('textarea')!
+    Object.defineProperties(plain, {
+      clientWidth: { value: 600 },
+      clientHeight: { value: 400 },
+    })
+    const selected = [range(editor, '😀'), range(editor, 'Title')]
+    const append = vi.spyOn(document.body, 'append')
+    const children = document.body.childElementCount
+    try {
+      const result = editor.textRangesRects(selected)
+      expect(append).toHaveBeenCalledTimes(1)
+      expect(document.body.childElementCount).toBe(children)
+      expect(result).toEqual(
+        selected.map((value) => editor.textRangeRects(value)),
+      )
+      expect(Object.isFrozen(result)).toBe(true)
+      expect(result.every(Object.isFrozen)).toBe(true)
+      expect(result.flat().every(Object.isFrozen)).toBe(true)
+    } finally {
+      append.mockRestore()
+    }
+  }))
+
+test('failed batch measurement releases its temporary source layout', () =>
+  run((editor, root) => {
+    editor.setEditingMode('source')
+    const plain = root.querySelector('textarea')!
+    Object.defineProperties(plain, {
+      clientWidth: { value: 600 },
+      clientHeight: { value: 400 },
+    })
+    const before = document.body.childElementCount
+    const rects = vi
+      .spyOn(Range.prototype, 'getClientRects')
+      .mockImplementation(() => {
+        throw new Error('Measurement failed')
+      })
+    try {
+      expect(() => editor.textRangesRects([range(editor, 'Title')])).toThrow(
+        'Measurement failed',
+      )
+      expect(document.body.childElementCount).toBe(before)
+    } finally {
+      rects.mockRestore()
+    }
+  }))
