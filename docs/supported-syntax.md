@@ -63,6 +63,18 @@ Complete HTML `<!--comments-->` and Obsidian `%%comments%%` are editable author 
 
 Comment delimiters inside footnote identifiers or link destinations are literal identifier or destination text. They are not author comments. Footnote body comments follow the ordinary comment rules.
 
+## Web page clipboard
+
+Pasting HTML from a web page, notes app or word processor imports readable content instead of raw HTML blocks.
+
+- `style`, `meta`, `link`, `title` and `head` elements, form controls and `<!--StartFragment-->` markers produce no content.
+- `u`, `sub`, `small`, `time`, `abbr`, `cite`, `dfn`, `var`, `ins`, `bdi`, `bdo` and `label` keep their text and nested formatting in the same paragraph. The dialect has no underline, subscript or similar marks, so only the wrapper is lost.
+- `figure` and `figcaption` produce their image and caption text. `picture` produces its `img`; its `source` elements are dropped.
+- `dl` produces one paragraph per entry. Each `dt` term is bold and each `dd` definition is a plain paragraph, because Markdown has no definition lists.
+- A checkbox that leads a list item, directly or inside a paragraph or label, makes a task item with the same checked state.
+
+Custom elements, `iframe`, `script`, `svg`, `math`, `object`, authored comments and other unrecognised elements remain literal source, with their content unchanged. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.
+
 ## Spreadsheet clipboard
 
 Ordinary paste supports tab-separated rows with LF, CRLF or CR endings and simple HTML tables containing inline text and supported formatting. Tab-separated fields can use paired double quotes and doubled quote escapes. Ragged rows are padded with empty cells; trailing empty cells are retained. One terminal row separator is ignored. The first row becomes a new table's header. Existing table headers keep their role when their cells are overwritten. New HTML tables use the header row’s per-column alignment. Logical `start` and `end` alignment resolves from text direction to GFM left or right; body cells follow their column’s header alignment. Tables are bounded to 100 rows and 100 columns, including growth.

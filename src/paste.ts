@@ -11,6 +11,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
 import { isImage } from './image-blocks'
+import { isRichElement, normalizeClipboardHTML } from './paste-html'
 import {
   avoidReferenceCollisions,
   markdownFromHTML,
@@ -264,10 +265,10 @@ export class PasteController {
               element.removeAttribute(name)
           }
         }
-        // Native HTML clipboards add encoding metadata. Obsidian's reading
-        // view also copies its title and collapse controls with document HTML.
-        for (const metadata of container.querySelectorAll('meta[charset]'))
-          metadata.remove()
+        // Native HTML clipboards add encoding metadata and fragment markers.
+        normalizeClipboardHTML(container)
+        // Obsidian's reading view also copies its title and collapse controls
+        // with document HTML.
         for (const control of container.querySelectorAll(
           'div.mod-header.mod-ui,div.mod-footer.mod-ui',
         )) {
@@ -296,52 +297,8 @@ export class PasteController {
         )) {
           if (control.querySelector('svg.svg-icon')) control.remove()
         }
-        const supported = new Set([
-          'P',
-          'H1',
-          'H2',
-          'H3',
-          'H4',
-          'H5',
-          'H6',
-          'STRONG',
-          'MARK',
-          'B',
-          'EM',
-          'I',
-          'S',
-          'DEL',
-          'STRIKE',
-          'CODE',
-          'PRE',
-          'BLOCKQUOTE',
-          'A',
-          'BR',
-          'HR',
-          'UL',
-          'OL',
-          'LI',
-          'TABLE',
-          'THEAD',
-          'TBODY',
-          'TFOOT',
-          'TR',
-          'TH',
-          'TD',
-          'IMG',
-          'SPAN',
-          'SUP',
-          'DIV',
-          'FONT',
-          'SECTION',
-          'ARTICLE',
-          'MAIN',
-          'HEADER',
-          'FOOTER',
-        ])
         for (const element of [...container.querySelectorAll('*')]) {
-          if (!container.contains(element) || supported.has(element.tagName))
-            continue
+          if (!container.contains(element) || isRichElement(element)) continue
           const literal = document.createElement('pre')
           literal.className = 'literal-markdown'
           literal.textContent = element.outerHTML
