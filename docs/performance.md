@@ -35,4 +35,36 @@ A Chromium CPU profile of mixed loading/editing attributed the dominant editing 
 
 Optional presentation plugins can be skipped at mount through `rendering: { codeHighlighting: false, diagramPreview: false }`. Mermaid is imported only after validating an actual render request. Explicit diagram copy/print still renders on demand. These changes reduce execution work for minimal hosts while retaining the default rich behaviour.
 
-No bundle-size reduction is claimed. Single-file offline consumers include optional rendering code even with dynamic imports. Splitting delivery would require a different packaging/host contract; measurements do not justify changing that contract in this consolidation wave. No renderer replacement, arbitrary budget or general plugin platform was introduced. Remaining large-document editing costs come principally from whole-document preservation/reopen validation, which remains the correctness boundary. Hosts should evaluate their actual documents using this reproducible baseline.
+No bundle-size reduction is claimed. Single-file offline consumers include optional rendering code even with dynamic imports. Splitting delivery would require a different packaging/host contract; measurements do not justify changing that contract in this consolidation wave. No renderer replacement, arbitrary budget or general plugin platform was introduced. Rich-text and structural editing still use whole-document preservation and reopen validation. The October 12 text-block measurements below cover a narrower incremental path. Hosts should evaluate their actual documents using these reproducible baselines.
+
+## Text-block input measurements, October 12, 2026
+
+The preservation fix compares commit `97a45cc` (0.0.13) with the candidate on one M4 Pro MacBook Pro, using installed Chrome through Playwright. These are development-source measurements, separate from packed-package and WKWebView checks. Each row averages ten individual `keyboard.insertText('x')` operations. Paragraph and code cases edit the document end; heading cases edit the first heading. Input latency runs from `beforeinput` to the synchronous `changed` callback; it excludes subsequent painting and operating-system keyboard latency. Preservation time totals all `Preservation.serialize` calls per input, including heading DOM normalization. Diagram previews are disabled and code highlighting remains enabled.
+
+| Document                                       | Characters | Preservation before / after (ms) | Input before / after (ms) |
+| ---------------------------------------------- | ---------: | -------------------------------: | ------------------------: |
+| 100 long plain paragraphs                      |     34,700 |                     29.43 / 0.53 |              30.25 / 1.09 |
+| 500 long plain paragraphs                      |    173,500 |                    143.37 / 0.50 |             144.45 / 1.19 |
+| 1000 long plain paragraphs                     |    347,000 |                    287.26 / 0.49 |             288.84 / 1.72 |
+| 500 code blocks                                |    164,500 |                    48.93 / 49.29 |           105.69 / 106.39 |
+| 500 marked paragraphs                          |    190,500 |                    210.03 / 0.88 |             212.07 / 2.33 |
+| 500 paragraphs, heading edit                   |    173,511 |                    140.72 / 0.31 |             141.96 / 1.10 |
+| 500 paragraphs plus mixed blocks, heading edit |    173,634 |                    143.01 / 0.28 |             144.33 / 1.06 |
+
+To repeat the comparison, install dependencies in both checkouts and run from the candidate checkout with Chrome installed:
+
+```sh
+node scripts/measure-preservation.mjs /path/to/baseline-checkout
+```
+
+The script starts Vite on ports 4194 and 4195, uses fixed paragraph, code, marked-text and heading fixtures, verifies that all ten inputs reached the snapshot, and records samples in `_local/preservation-performance.json`. Run one comparison at a time with those ports free. A single run does not establish a cross-machine latency guarantee.
+
+Independent paragraph and heading edits retain their surrounding source bytes and reparse only the changed blocks. This requires unchanged block structure and blank-line separation from neighboring blocks. Text may contain emphasis, bold and inline-code marks. Reference brackets, HTML/comment forms, inline atoms and ambiguous block moves use the complete document path because their meaning can depend on other blocks. Each reconstructed block must parse to the intended node, with only Milkdown's derived heading DOM ID excluded. Cached validation belongs to immutable node identity and its original block position.
+
+The mixed fixture adds a table, fenced code, a reference link and definition, and unsupported HTML beside the 500 paragraphs. Its heading edit is independent of those unchanged blocks. The boundary is parsing independence, not whether the rest of a document contains rich content. Changes inside context-sensitive blocks, lists, tables and code still receive complete source reconstruction and reopen validation. The shortcut-reference regression demonstrates why: `[New]` is plain text in isolation but becomes a link when `[New]: /target` exists elsewhere.
+
+Loading and rendering are not optimized by this change; the 1,000-paragraph load remained approximately 0.44 seconds. Code-block input remains materially slower.
+
+Block correspondence uses banded edit distance with a shared one-million-cell work budget across widening attempts. Its cost depends on edit distance rather than the rectangular span between two distant changes; repeated paragraphs do not require unique anchors. Large unmatched rewrites can still fail closed. Ordinary keyboard regression cases cover first/last edits across 1,000 paragraphs, authored and unsupported source, history, mode changes and reload.
+
+Formatted changes are validated after dialect normalization and before the final state reaches the view. A rejected change reports a preservation error, restores the current visible document and leaves the snapshot, revision and undo history unchanged. Browser tests exercise rejected DOM input and synthetic composition recovery; these do not establish every operating-system IME behavior.

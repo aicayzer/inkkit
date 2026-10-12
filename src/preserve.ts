@@ -433,6 +433,13 @@ function semanticSignature(doc: ProseNode): string {
   return JSON.stringify(clean(json))
 }
 
+// Milkdown derives heading DOM IDs; Markdown stores the level and content.
+function withoutHeadingId(node: ProseNode): ProseNode {
+  return node.type.name === 'heading' && node.attrs.id
+    ? node.type.create({ ...node.attrs, id: '' }, node.content, node.marks)
+    : node
+}
+
 // Edit distance distinguishes replacements from insertions, so replacing a block
 // retains its surrounding whitespace without assigning it a neighbour's source.
 function correspondence(
@@ -460,34 +467,57 @@ function correspondence(
   }
   const rows = endBefore - head + 1
   const columns = endAfter - head + 1
-  if (rows * columns > 1_000_000)
-    throw new PreservationError(
-      'The edit changes too many blocks to preserve safely',
-    )
-  const costs = Array.from({ length: rows }, () => new Uint32Array(columns))
-  for (let i = 0; i < rows; i++) costs[i]![0] = i
-  for (let j = 0; j < columns; j++) costs[0]![j] = j
-  for (let i = 1; i < rows; i++) {
-    for (let j = 1; j < columns; j++) {
-      const change = before[head + i - 1] === after[head + j - 1] ? 0 : 1
-      costs[i]![j] = Math.min(
-        costs[i - 1]![j]! + 1,
-        costs[i]![j - 1]! + 1,
-        costs[i - 1]![j - 1]! + change,
-      )
+  let budget = 1_000_000
+  let width = Math.max(1, Math.abs(rows - columns))
+  for (;;) {
+    const costs: Uint32Array[] = []
+    const get = (i: number, j: number): number =>
+      i < 0 || j < 0 || Math.abs(i - j) > width
+        ? width + 1
+        : (costs[i]?.[j - Math.max(0, i - width)] ?? width + 1)
+    for (let i = 0; i < rows; i++) {
+      const from = Math.max(0, i - width)
+      const to = Math.min(columns - 1, i + width)
+      budget -= to - from + 1
+      if (budget < 0)
+        throw new PreservationError(
+          'The edit changes too many blocks to preserve safely',
+        )
+      const row = new Uint32Array(to - from + 1)
+      costs.push(row)
+      for (let j = from; j <= to; j++) {
+        const change = before[head + i - 1] === after[head + j - 1] ? 0 : 1
+        row[j - from] =
+          i === 0
+            ? j
+            : j === 0
+              ? i
+              : Math.min(
+                  get(i - 1, j) + 1,
+                  get(i, j - 1) + 1,
+                  get(i - 1, j - 1) + change,
+                )
+      }
     }
-  }
-  let i = rows - 1
-  let j = columns - 1
-  while (i || j) {
-    const change =
-      i && j && before[head + i - 1] === after[head + j - 1] ? 0 : 1
-    if (i && j && costs[i]![j] === costs[i - 1]![j - 1]! + change) {
-      result[head + j - 1] = head + i - 1
-      i--
-      j--
-    } else if (i && costs[i]![j] === costs[i - 1]![j]! + 1) i--
-    else j--
+    // A path with at most width edits cannot leave this diagonal band.
+    // Widen only when needed, charging every attempt to the same work budget.
+    if (get(rows - 1, columns - 1) > width) {
+      width *= 2
+      continue
+    }
+    let i = rows - 1
+    let j = columns - 1
+    while (i || j) {
+      const change =
+        i && j && before[head + i - 1] === after[head + j - 1] ? 0 : 1
+      if (i && j && get(i, j) === get(i - 1, j - 1) + change) {
+        result[head + j - 1] = head + i - 1
+        i--
+        j--
+      } else if (i && get(i, j) === get(i - 1, j) + 1) i--
+      else j--
+    }
+    break
   }
   return result
 }
@@ -497,7 +527,12 @@ export class Preservation {
   private readonly baseline: ProseNode
   private readonly blocks: Block[] = []
   private readonly lineEnding: string
+  private readonly originalForms = new Set<string>()
   private readonly forms = new WeakMap<ProseNode, string>()
+  private readonly textBlockEdits = new WeakMap<
+    ProseNode,
+    { index: number; text: string }
+  >()
 
   constructor(
     private readonly ctx: Ctx,
@@ -542,6 +577,7 @@ export class Preservation {
           ast: positionalNode(rawTree, node as unknown as SourceNode),
         })
       }
+      for (const block of this.blocks) this.originalForms.add(block.form)
     } catch (cause) {
       if (cause instanceof PreservationError) throw cause
       throw new PreservationError('Cannot read Markdown for preservation', {
@@ -550,9 +586,102 @@ export class Preservation {
     }
   }
 
+  private retainBlock(
+    block: Block,
+    after: SourceNode,
+    canonical: string,
+  ): string {
+    const offset = this.source.startsWith('\uFEFF') ? 1 : 0
+    const start = block.ast.position?.start.offset
+    if (start == null)
+      throw new PreservationError('A source block has no location')
+    return (
+      this.source.slice(block.start, start + offset) +
+      retainSource(
+        block.ast,
+        after,
+        this.source.slice(offset),
+        canonical,
+        this.lineEnding,
+      )
+    )
+  }
+
+  private independentTextBlocks(doc: ProseNode): string | undefined {
+    if (
+      this.baseline.childCount !== this.blocks.length ||
+      doc.childCount !== this.blocks.length ||
+      !doc.sameMarkup(this.baseline)
+    )
+      return undefined
+    let output = '',
+      previous = 0
+    for (let index = 0; index < doc.childCount; index++) {
+      const node = doc.child(index)
+      const before = this.baseline.child(index)
+      const block = this.blocks[index]!
+      if (node.eq(before)) continue
+      let retained = this.textBlockEdits.get(node)
+      if (retained?.index !== index) {
+        const raw = this.source.slice(block.start, block.end)
+        const expected = withoutHeadingId(node)
+        // References and HTML/comments can depend on other blocks. Restrict
+        // local validation to text blocks without these context-sensitive forms.
+        const contextual = /[\[<]|%%/
+        const textOnly = (block: ProseNode): boolean => {
+          let valid = true
+          block.forEach((child) => {
+            if (!child.isText) valid = false
+          })
+          return valid
+        }
+        if (
+          !['paragraph', 'heading'].includes(node.type.name) ||
+          !expected.sameMarkup(withoutHeadingId(before)) ||
+          !textOnly(node) ||
+          !textOnly(before) ||
+          contextual.test(raw) ||
+          (index > 0 &&
+            !/\r?\n[ \t]*\r?\n/.test(
+              this.source.slice(this.blocks[index - 1]!.end, block.start),
+            )) ||
+          (index + 1 < this.blocks.length &&
+            !/\r?\n[ \t]*\r?\n/.test(
+              this.source.slice(block.end, this.blocks[index + 1]!.start),
+            ))
+        )
+          return undefined
+        const canonical = blockForm(this.ctx, node)
+        if (
+          contextual.test(canonical) ||
+          (canonical !== block.form && this.originalForms.has(canonical))
+        )
+          return undefined
+        const tree = this.ctx.get(remarkCtx).parse(canonical) as Root
+        if (tree.children.length !== 1) return undefined
+        const text = this.retainBlock(
+          block,
+          tree.children[0] as unknown as SourceNode,
+          canonical,
+        )
+        const reopened = this.ctx.get(parserCtx)(text)
+        if (reopened.childCount !== 1) return undefined
+        if (!withoutHeadingId(reopened.firstChild!).eq(expected))
+          return undefined
+        retained = { index, text }
+        this.textBlockEdits.set(node, retained)
+      }
+      output += this.source.slice(previous, block.start) + retained.text
+      previous = block.end
+    }
+    return output + this.source.slice(previous)
+  }
+
   serialize(doc: ProseNode): string {
     if (doc.eq(this.baseline)) return this.source
     try {
+      const independent = this.independentTextBlocks(doc)
+      if (independent !== undefined) return independent
       const canonical = serialize(this.ctx, doc)
       if (canonical === '')
         return this.source.startsWith('\uFEFF') ? '\uFEFF' : ''
@@ -574,7 +703,6 @@ export class Preservation {
       const currentTree = processor.runSync(structuredClone(currentRawTree), {
         value: canonical,
       }) as Root
-      const body = this.source.replace(/^\uFEFF/, '')
       let output = ''
       let previous: number | undefined
       current.forEach((text, index) => {
@@ -590,15 +718,13 @@ export class Preservation {
         if (block && block.form === text)
           output += this.source.slice(block.start, block.end)
         else if (block && currentTree.children.length === current.length) {
-          output += retainSource(
-            block.ast,
+          output += this.retainBlock(
+            block,
             positionalNode(
               currentRawTree,
               currentTree.children[index] as unknown as SourceNode,
             ),
-            body,
             canonical,
-            this.lineEnding,
           )
         } else
           output += restoreCodeEndings(
@@ -613,12 +739,15 @@ export class Preservation {
       else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
       const parse = this.ctx.get(parserCtx)
       const reopened = parse(output)
-      if (
-        serialize(this.ctx, reopened).replace(/\r\n?/g, '\n') ===
-          canonical.replace(/\r\n?/g, '\n') &&
-        semanticSignature(reopened) === semanticSignature(doc)
-      )
-        return output
+      const normalized = (text: string): string => text.replace(/\r\n?/g, '\n')
+      if (semanticSignature(reopened) === semanticSignature(doc)) {
+        const actual = normalized(serialize(this.ctx, reopened))
+        if (actual === normalized(canonical)) return output
+        // Parsing may normalize loose-list spacing. Compare both reconstructed
+        // source and intended canonical source after that same normalization.
+        if (actual === normalized(serialize(this.ctx, parse(canonical))))
+          return output
+      }
       throw new PreservationError(
         'The edited Markdown cannot be reopened without changing its content',
       )

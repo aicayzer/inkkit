@@ -426,3 +426,34 @@ test('image cut retains source if host clipboard writing fails', async () => {
     },
   )
 })
+
+test('a preservation failure rejects the edit without changing snapshot, revision or undo history', () => {
+  const errors: Error[] = []
+  const changes: string[] = []
+  return run(
+    (editor, _root, ctx) => {
+      const source = '- One\n\nBetween\n\n- Two\n'
+      editor.loadDocument({ ...input, text: source })
+      const before = editor.snapshot()
+      const view = ctx.get(editorViewCtx)
+      const from = view.state.doc.firstChild!.nodeSize
+      view.dispatch(
+        view.state.tr.delete(from, from + view.state.doc.child(1).nodeSize),
+      )
+      expect(errors).toHaveLength(1)
+      expect(errors[0]?.message).toContain('The edit was not applied')
+      expect(editor.snapshot()).toEqual(before)
+      expect(changes).toEqual([])
+      expect(editor.undo()).toBe(false)
+      view.dispatch(view.state.tr.insertText('!', from + 1))
+      expect(editor.snapshot().text).toBe(source.replace('Between', '!Between'))
+      expect(editor.undo()).toBe(true)
+      expect(editor.snapshot().text).toBe(source)
+    },
+    undefined,
+    {
+      error: (error) => errors.push(error),
+      changed: (text) => changes.push(text),
+    },
+  )
+})

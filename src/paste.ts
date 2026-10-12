@@ -522,7 +522,7 @@ export class PasteController {
           schema.marks.link
         ) {
           const anchor = operation
-          const mark = schema.marks.link.create({ href: text, title: '' })
+          const mark = schema.marks.link.create({ href: text })
           view.dispatch(
             view.state.tr
               .addMark(anchor.from, anchor.to, mark)

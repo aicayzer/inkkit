@@ -1593,6 +1593,30 @@ export class InkKitEditor {
         unbind(orderedListKeymap)
         ctx.update(editorViewOptionsCtx, (options) => ({
           ...options,
+          dispatchTransaction: function (this: EditorView, tr) {
+            const next = this.state.apply(tr)
+            if (
+              !instance.loading &&
+              instance.preservation &&
+              !instance.literalSurface &&
+              !next.doc.eq(this.state.doc)
+            ) {
+              try {
+                // Validate the final state, including dialect normalisation transactions.
+                instance.currentText(next.doc)
+              } catch (error) {
+                this.updateState(this.state)
+                instance.events.error?.(
+                  new InkKitError(
+                    'preservation',
+                    `The edit was not applied because its Markdown could not be preserved: ${error instanceof Error ? error.message : String(error)}`,
+                  ),
+                )
+                return
+              }
+            }
+            this.updateState(next)
+          },
           handleScrollToSelection: () => {
             if (!instance.loading && instance.ready)
               instance.revealCurrentSelection()

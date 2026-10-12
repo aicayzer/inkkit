@@ -846,6 +846,27 @@ window.interop = {
               operation.generation,
             )
             break
+          case 'removeDOM': {
+            const target = view().querySelector(operation.selector)
+            if (!target)
+              throw Error(`DOM target not found: ${operation.selector}`)
+            target.remove()
+            await settle()
+            result = capture()
+            break
+          }
+          case 'formattedInput': {
+            const target = activeEditor()
+            if (target instanceof HTMLTextAreaElement)
+              throw Error(
+                'Formatted input requires the contenteditable surface',
+              )
+            target.focus()
+            // Exercise WebKit's DOM input path, including its mutation observer.
+            result = document.execCommand('insertText', false, operation.text)
+            await settle()
+            break
+          }
           case 'sourceInput': {
             const target = activeEditor()
             if (!(target instanceof HTMLTextAreaElement))
