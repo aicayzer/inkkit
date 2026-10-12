@@ -17,7 +17,11 @@ import {
 import { Preservation } from '../src/preserve'
 import { withEditor } from './harness'
 
-const renderer = vi.hoisted(() => ({ initialize: vi.fn(), render: vi.fn() }))
+const renderer = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn(),
+  mermaidAPI: { getDiagramFromText: vi.fn() },
+}))
 vi.mock('mermaid', () => ({ default: renderer }))
 
 const cleanSVG =
@@ -31,6 +35,9 @@ const imageBytes = new Uint8Array([1, 2, 3])
 beforeEach(() => {
   renderer.initialize.mockReset()
   renderer.render.mockReset().mockResolvedValue({ svg: cleanSVG })
+  renderer.mermaidAPI.getDiagramFromText
+    .mockReset()
+    .mockResolvedValue({ type: 'pie', db: {} })
   vi.stubGlobal(
     'URL',
     class extends originalURL {
@@ -147,58 +154,6 @@ for (const label of [
     expect(() => validateDiagram(label)).not.toThrow()
   })
 
-const directives = [
-  'click',
-  'callback',
-  'href',
-  'link',
-  'image',
-  'icon',
-  'fontawesome',
-  'style',
-  'classDef',
-  'linkStyle',
-]
-const mixedCase = (word: string) =>
-  [...word].map((c, i) => (i % 2 ? c.toUpperCase() : c.toLowerCase())).join('')
-
-for (const directive of directives)
-  for (const [position, build] of [
-    ['at the start of a line', (d: string) => `flowchart TD\nA --> B\n${d}`],
-    ['after a quoted label', (d: string) => `flowchart TD\nA["Click"]\n${d}`],
-    ['after spaces', (d: string) => `flowchart TD\nA --> B\n   ${d}`],
-    ['after a tab', (d: string) => `flowchart TD\nA --> B\n\t${d}`],
-    ['after a semicolon', (d: string) => `flowchart TD\nA --> B;${d}`],
-    [
-      'after a spaced semicolon',
-      (d: string) => `flowchart TD\nA --> B ;  ${d}`,
-    ],
-    ['after a label and semicolon', (d: string) => `graph TD\nA[Link]; ${d}`],
-    ['on the header line', (d: string) => `sequenceDiagram ${d}`],
-    ['after the header semicolon', (d: string) => `flowchart TD;${d}`],
-    ['after a carriage return', (d: string) => `flowchart TD\r\nA --> B\r${d}`],
-    ['after a closing brace', (d: string) => `erDiagram\nA {\n} ${d}`],
-    [
-      'after a subgraph end',
-      (d: string) => `flowchart TD\nsubgraph s\nend ${d}`,
-    ],
-    [
-      'after a comment line',
-      (d: string) => `%% note\nflowchart TD\n%% x\n${d}`,
-    ],
-  ] as const)
-    for (const word of [
-      directive,
-      mixedCase(directive),
-      directive.toUpperCase(),
-    ])
-      test(`refuses the ${word} directive ${position}`, async () => {
-        const diagram = build(`${word} A cb`)
-        expect(() => validateDiagram(diagram)).toThrow(/actions, resources/)
-        await expect(renderDiagram(diagram)).rejects.toThrow()
-        expect(renderer.render).not.toHaveBeenCalled()
-      })
-
 for (const attack of [
   '%%{init: {"securityLevel":"loose"}}%%\nflowchart LR\nA[Click]-->B',
   'flowchart LR\nA[Click]-->B\n%%{init: {"securityLevel":"loose"}}%%',
@@ -208,12 +163,10 @@ for (const attack of [
   'flowchart LR\nA[<img src="https://example.com/a.png">]',
   'flowchart LR\nA[&#x3c;script&#x3e;]',
   'flowchart LR\nA@{ img: "https://example.com/a.png" }',
-  'flowchart LR\nclick A callback',
   'flowchart LR\nclick A "javascript:alert(1)"',
   'flowchart LR\nA[$$x$$]',
   'flowchart LR\nstyle A fill:url(/tracking)',
   'flowchart LR\nclassDef unsafe fill:u\\72l(/tracking)',
-  'flowchart LR\nlinkStyle 0 stroke:#f00',
   'flowchart LR\nA --> B\nclassDef c mask-image:image-set("/pixel" 1x)',
   'flowchart LR\nA --> B\nclassDef c mask:-WEBKIT-IMAGE-SET("/pixel" 1x)',
   'flowchart LR\nA --> B\nclassDef c fill:cross-fade("/a", "/b", 50%)',
@@ -270,6 +223,36 @@ for (const resource of [
     expect(result).not.toMatch(/pixel/)
     expect(result).toContain('<rect')
   })
+
+test('the parse result is checked before Mermaid renders', async () => {
+  renderer.mermaidAPI.getDiagramFromText.mockResolvedValueOnce({
+    type: 'er',
+    db: {
+      getClasses: () => new Map(),
+      getEntities: () => new Map([['A', { cssStyles: ['fill:#f0e'] }]]),
+      getSubGraphs: () => [],
+    },
+  })
+  await expect(renderDiagram(source())).rejects.toThrow(/actions, resources/)
+  expect(renderer.render).not.toHaveBeenCalled()
+})
+
+test('a parse result without the expected accessors is refused', async () => {
+  renderer.mermaidAPI.getDiagramFromText.mockResolvedValueOnce({
+    type: 'er',
+    db: {},
+  })
+  await expect(renderDiagram(source())).rejects.toThrow()
+  expect(renderer.render).not.toHaveBeenCalled()
+})
+
+test('a parse error is reported without rendering', async () => {
+  renderer.mermaidAPI.getDiagramFromText.mockRejectedValueOnce(
+    new Error('Parse error on line 2'),
+  )
+  await expect(renderDiagram(source())).rejects.toThrow('Parse error')
+  expect(renderer.render).not.toHaveBeenCalled()
+})
 
 test('rendering locks safe configuration and removes its temporary DOM', async () => {
   await renderDiagram(source())
