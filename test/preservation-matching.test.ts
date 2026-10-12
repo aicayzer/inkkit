@@ -202,23 +202,49 @@ test('repeated identical blocks align without unique anchors', () => {
   })
 }, 60_000)
 
-test(
-  'a Replace All over repeated and distinct blocks keeps untouched source',
-  () =>
-    mount(
-      join(
-        Array.from({ length: 1500 }, (_, i) =>
-          i % 4 === 0 ? '* * *' : i % 3 === 0 ? `__word__ ${i}` : authored(i),
-        ),
+for (const ending of ['\n', '\r\n'])
+  test(
+    `a Replace All over repeated and distinct blocks with ${JSON.stringify(ending)} line endings keeps untouched source`,
+    () =>
+      mount(
+        join(
+          Array.from({ length: 1500 }, (_, i) =>
+            i % 4 === 0
+              ? '* * *'
+              : i % 3 === 0
+                ? `__word__ [${i}](/w/${i})`
+                : authored(i),
+          ),
+        ).replaceAll('\n', ending),
+        (editor) => {
+          const source = editor.snapshot().text
+          expect(editor.replaceAll('word', 'term')).toBeGreaterThan(300)
+          expect(editor.snapshot().text).toBe(source.replaceAll('word', 'term'))
+        },
       ),
-      (editor) => {
-        const source = editor.snapshot().text
-        expect(editor.replaceAll('word', 'term')).toBeGreaterThan(300)
-        expect(editor.snapshot().text).toBe(source.replaceAll('word', 'term'))
-      },
-    ),
-  60_000,
-)
+    60_000,
+  )
+
+for (const ending of ['\n', '\r\n'])
+  test(`Replace All keeps authored syntax when a ${JSON.stringify(ending)} document opens with a thematic break`, () => {
+    // InkKit writes a rule as `---`; opening a document, that would read back
+    // as front matter closed by the next `---` rule.
+    const source = [
+      '***',
+      '__word__ one [link][r]',
+      '***',
+      '__word__ two',
+      '[r]: /x',
+    ]
+      .join('\n\n')
+      .replaceAll('\n', ending)
+    return mount(source + ending, (editor) => {
+      expect(editor.replaceAll('word', 'term')).toBe(2)
+      expect(editor.snapshot().text).toBe(
+        (source + ending).replaceAll('word', 'term'),
+      )
+    })
+  })
 
 for (const ending of ['\n', '\r\n'])
   test(`Replace All in ${JSON.stringify(ending)} front matter keeps its line endings`, () => {

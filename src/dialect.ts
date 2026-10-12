@@ -181,6 +181,16 @@ function remarkDialect(this: Processor) {
             )
           : value
       },
+      thematicBreak(node, parent, state) {
+        const value = defaultHandlers.thematicBreak(node, parent, state)
+        // A document opening with `---` reads back as front matter when
+        // another `---` line follows.
+        return parent?.type === 'root' &&
+          parent.children.length > 1 &&
+          parent.children[0] === node
+          ? value.replaceAll('-', '*')
+          : value
+      },
     },
   } satisfies StringifyOptions)
   add('toMarkdownExtensions', { handlers: { link, code: fencedCodeHandler } })

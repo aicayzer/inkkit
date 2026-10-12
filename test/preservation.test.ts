@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { withEditor } from './harness'
 import { Preservation, PreservationError } from '../src/preserve'
 
@@ -58,6 +59,19 @@ for (const source of [
         source.replace('EDIT', 'EDIT!\r\nmore'),
       )
     }))
+
+test('a rule inserted at the start of a document with a later --- line does not read back as front matter', () =>
+  withEditor('Intro\n\nTitle\n---\n', (editor) => {
+    const view = editor.ctx.get(editorViewCtx)
+    const preservation = new Preservation(editor.ctx, 'Intro\n\nTitle\n---\n')
+    view.dispatch(view.state.tr.insert(0, view.state.schema.nodes.hr!.create()))
+    const result = preservation.serialize(view.state.doc)
+    expect(result).toBe('***\n\nIntro\n\nTitle\n---\n')
+    const types = (doc: ProseNode) => doc.children.map((node) => node.type.name)
+    expect(types(editor.ctx.get(parserCtx)(result))).toEqual(
+      types(view.state.doc),
+    )
+  }))
 
 test('undo restores original bytes and an inserted block preserves previous source', async () => {
   const source = '__bold__\n\n_last_'

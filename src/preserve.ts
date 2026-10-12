@@ -809,12 +809,22 @@ export class Preservation {
             ),
             canonical,
           )
-        } else
+        } else {
+          // Only an opening block's form depends on its place: a leading `---`
+          // rule would read back as front matter, so use the document's form.
+          const opening =
+            index === 0 && currentTree.children.length === current.length
+              ? currentTree.children[0]!.position
+              : undefined
           output += restoreCodeEndings(
             this.ctx,
             doc.type.create(null, [doc.child(index)]),
-            text.replaceAll('\n', this.lineEnding),
+            (opening
+              ? form(canonical.slice(opening.start.offset, opening.end.offset))
+              : text
+            ).replaceAll('\n', this.lineEnding),
           )
+        }
         previous = position
       })
       if (previous === this.blocks.length - 1 && this.blocks.length)
