@@ -38,6 +38,11 @@ editor.loadDocument({
 const { text } = editor.snapshot(1)
 ```
 
+## Built with InkKit
+
+- [Memos](https://github.com/aicayzer/memos): a small Mac app for memos, in one floating window
+- [PadPad](https://github.com/aicayzer/padpad): a small Mac app for quick text and files
+
 ## Learn more
 
 - [Supported syntax](docs/supported-syntax.md)

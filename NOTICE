@@ -1,7 +1,3 @@
-InkKit includes editor behavior and source from PadPad and Memos.
-Copyright (c) 2026 August Cayzer. Licensed under the MIT License.
-Sources: https://github.com/aicayzer/padpad and https://github.com/aicayzer/memos
-
 The scoped table styles in src/style.css are adapted from prosemirror-tables.
 Source: https://github.com/ProseMirror/prosemirror-tables
 
