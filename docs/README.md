@@ -1,6 +1,6 @@
 # InkKit documentation
 
-These guides describe InkKit’s public contracts. Host editability, text-input preferences, command availability and appearance/label/shortcut controls are available from 0.0.8. Check the [releases](https://github.com/aicayzer/inkkit/releases) and [milestones](https://github.com/aicayzer/inkkit/milestones) for publication and verification status.
+These guides describe InkKit’s public contracts. Published versions and their verification evidence are on the [releases](https://github.com/aicayzer/inkkit/releases) page.
 
 | Guide                                           | Use it to                                                                                                  |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
