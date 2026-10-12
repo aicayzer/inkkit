@@ -394,3 +394,38 @@ test('random edits, language changes, conversions and history always match a ful
     expect(actual(view), `step ${step}`).toEqual(expected(view.state.doc))
   }
 })
+
+async function timeOneEdit(lines: number): Promise<number> {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const big = await Editor.make()
+    .config((ctx) => {
+      ctx.set(rootCtx, host)
+      ctx.set(
+        defaultValueCtx,
+        '```ts\n' + 'const a = 1; // c\n'.repeat(lines) + '```\n',
+      )
+      ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
+    })
+    .use(dialect)
+    .use(highlightPlugin)
+    .create()
+  try {
+    const bigView = big.ctx.get(editorViewCtx)
+    const start = performance.now()
+    bigView.dispatch(bigView.state.tr.insertText('x', 3))
+    return performance.now() - start
+  } finally {
+    await big.destroy()
+    host.remove()
+  }
+}
+
+test('one edit in a very large block takes time linear in its size', async () => {
+  await timeOneEdit(500)
+  const small = await timeOneEdit(2500)
+  const large = await timeOneEdit(10000)
+  // Linear growth is 4x; a quadratic pass over the block's decorations is 16x.
+  expect(large).toBeLessThan(Math.max(small, 5) * 9)
+  expect(large).toBeLessThan(2000)
+}, 120_000)

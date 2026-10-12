@@ -71,14 +71,16 @@ Formatted changes are validated after dialect normalization and before the final
 
 ## Code highlighting measurements, October 12, 2026
 
-Code highlighting colors blocks with `lowlight` and previously ran it over every code block on each document change. It now highlights only the blocks a transaction touched; decorations of other blocks are mapped to their new positions. These measurements use the same script, machine, browser (Chrome 154) and method as the text-block table, comparing `main` at `e3e3687` (0.0.15) with the candidate. Diagram previews are disabled and code highlighting is enabled, except in the last row. Each row is the mean of ten `keyboard.insertText('x')` inputs. Two runs of each side agreed within 4 ms for the baseline rows.
+Code highlighting colors blocks with `lowlight` and previously ran it over every code block on each document change. It now highlights only the blocks a transaction touched; decorations of other blocks are mapped to their new positions. These measurements use the same script, machine, browser (Chrome 154) and method as the text-block table, comparing `main` at `e3e3687` (0.0.15) with the candidate. Diagram previews are disabled and code highlighting is enabled, except in the last row. Each row is the mean of ten `keyboard.insertText('x')` inputs. Two runs of each side agreed within 10 ms for the baseline rows.
 
 The 500 code blocks are five-line TypeScript blocks (164,511 characters, 20,000 decorations). The heading edit is outside every code block. The end edit is inside the last block.
 
 | Document and edit                              | Input before / after (ms) |
 | ---------------------------------------------- | ------------------------: |
-| 500 code blocks, heading edit                  |               89.5 / 10.2 |
-| 500 code blocks, edit in the last block        |              103.9 / 64.4 |
-| 500 code blocks, heading edit, no highlighting |                 1.8 / 1.9 |
+| 500 code blocks, heading edit                  |               96.2 / 10.4 |
+| 500 code blocks, edit in the last block        |              107.1 / 75.4 |
+| 500 code blocks, heading edit, no highlighting |                 2.1 / 1.9 |
 
 For the end edit, preservation (about 48 ms per input, unchanged) is now most of the cost. For the heading edit, about 8 ms above the no-highlighting floor remains; it was not profiled. The regression tests in `test/code-highlighting.test.ts` count `lowlight.highlight` calls and compare the decorations with an independent full recompute after edits, language changes, block deletion and undo, and a seeded sequence of random edits. Loading a document highlights every block, as before.
+
+A single `insertText` in one TypeScript block of 3,000, 12,000 and 30,000 lines (`const a = 1; // c`, jsdom, no browser) takes 22, 89 and 233 ms on `main` and 26, 97 and 251 ms with this change, so the cost of an edit inside a block still grows linearly with that block.

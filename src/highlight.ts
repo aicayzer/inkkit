@@ -38,7 +38,8 @@ function decorations(doc: ProseNode): DecorationSet {
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
     if (node.type.name === 'code_block')
-      found.push(...blockDecorations(node, pos))
+      for (const decoration of blockDecorations(node, pos))
+        found.push(decoration)
     return false
   })
   return DecorationSet.create(doc, found)
@@ -59,16 +60,19 @@ function touched(tr: Transaction): [number, number][] {
   if (start != null) {
     const end = tr.before.content.findDiffEnd(tr.doc.content)
     // The scans meet when inserted text repeats its neighbours.
-    if (end) ranges.push([start, end.b + Math.max(0, start - end.a)])
+    if (end)
+      ranges.push([start, end.b + Math.max(0, start - Math.min(end.a, end.b))])
   }
   return ranges
 }
 
 // Mapping carries colors of unchanged blocks to their new positions without
 // reading them, but leaves stale colors inside any block that was edited. Those
-// blocks lose their decorations and are highlighted again; no other block is.
+// blocks are highlighted again; no other block is. Stale colors are dropped by
+// rebuilding the set: DecorationSet.remove compares every removed decoration
+// with every other in its block, which is quadratic in a large block.
 function update(mapped: DecorationSet, tr: Transaction): DecorationSet {
-  const stale: Decoration[] = []
+  const stale: [number, number][] = []
   const fresh: Decoration[] = []
   const seen = new Set<number>()
   for (const [from, to] of touched(tr)) {
@@ -85,10 +89,32 @@ function update(mapped: DecorationSet, tr: Transaction): DecorationSet {
       }
       return false
     })
-    stale.push(...mapped.find(start, end))
-    for (const [node, pos] of blocks) fresh.push(...blockDecorations(node, pos))
+    stale.push([start, end])
+    for (const [node, pos] of blocks)
+      for (const decoration of blockDecorations(node, pos))
+        fresh.push(decoration)
   }
-  return mapped.remove(stale).add(tr.doc, fresh)
+  if (!stale.some(([start, end]) => mapped.find(start, end).length > 0))
+    return mapped.add(tr.doc, fresh)
+  stale.sort((a, b) => a[0] - b[0])
+  const merged: [number, number][] = []
+  for (const range of stale) {
+    const last = merged.at(-1)
+    if (last && range[0] <= last[1]) last[1] = Math.max(last[1], range[1])
+    else merged.push([range[0], range[1]])
+  }
+  const kept = mapped.find().filter((decoration) => {
+    let low = 0
+    let high = merged.length
+    while (low < high) {
+      const middle = (low + high) >> 1
+      if (merged[middle]![0] < decoration.to) low = middle + 1
+      else high = middle
+    }
+    const range = merged[low - 1]
+    return !range || range[1] <= decoration.from
+  })
+  return DecorationSet.create(tr.doc, kept.concat(fresh))
 }
 
 export const highlightPlugin = $prose(
