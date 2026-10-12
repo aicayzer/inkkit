@@ -100,7 +100,7 @@ test('composition guards and protected structured content @native-search', async
   const image = rangeFor(text, 'Opaque image')
   await expect(
     operation(page, 'replaceTextRange', { range: image, text: 'NO' }),
-  ).rejects.toThrow(/range|protected|structured/i)
+  ).rejects.toThrow(/embedded content or structural separators/i)
   const acrossBlocks = {
     snapshotId: text.snapshotId,
     from: 0,
@@ -108,7 +108,7 @@ test('composition guards and protected structured content @native-search', async
   }
   await expect(
     operation(page, 'replaceTextRange', { range: acrossBlocks, text: 'NO' }),
-  ).rejects.toThrow(/range|structured/i)
+  ).rejects.toThrow(/embedded content or structural separators/i)
   const surface = page.getByRole('textbox', {
     name: 'Formatted Markdown editor',
     exact: true,
