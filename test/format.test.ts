@@ -254,6 +254,7 @@ test('backspace at the start of a first list item that holds more lifts the whol
         view.someProp('handleKeyDown', (handler) => handler(view, event)),
       ).toBe(true)
       expect(serialize(ctxOf(editor))).toBe(expected)
+      expect(editor.snapshot().text).toBe(expected)
       const { $from } = view.state.selection
       expect([$from.parent.textContent, $from.parentOffset]).toEqual(['A', 0])
     })
@@ -433,6 +434,9 @@ test('pasting a url over a selection links what is selected', async () => {
     expect(serialize(ctxOf(editor))).toBe(
       'Read the [notes](https://example.com)\n',
     )
+    expect(editor.snapshot().text).toBe(
+      'Read the [notes](https://example.com)\n',
+    )
   })
 })
 
@@ -582,3 +586,22 @@ test('authored spacing between list groups survives switching documents and relo
     },
   )
 })
+
+test('nested-list lifting remains saveable beside unchanged authored and unsupported blocks', () =>
+  withInkKitEditor(
+    '__authored__\n\n- x\n  - A\n    - a1\n  - B\n\n<section>unsupported</section>\n',
+    (editor) => {
+      const view = ctxOf(editor).get(editorViewCtx)
+      placeCaret(editor, view.state.doc.firstChild!.nodeSize + 8)
+      const event = new KeyboardEvent('keydown', {
+        key: 'Backspace',
+        code: 'Backspace',
+      })
+      expect(
+        view.someProp('handleKeyDown', (handler) => handler(view, event)),
+      ).toBe(true)
+      expect(editor.snapshot().text).toBe(
+        '__authored__\n\n- x\n\n  A\n  - a1\n  - B\n\n<section>unsupported</section>\n',
+      )
+    },
+  ))

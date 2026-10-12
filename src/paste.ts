@@ -35,9 +35,13 @@ interface Anchor {
   from: number
   to: number
 }
+interface MappedAnchor extends Anchor {
+  operation: Anchor
+}
 
 export class PasteController {
   private active?: Anchor
+  private readonly key = new PluginKey<MappedAnchor | null>('inkkitPaste')
   private dead = false
   get pending(): boolean {
     return this.active != null
@@ -46,20 +50,22 @@ export class PasteController {
   constructor(private readonly options: PasteControllerOptions) {
     this.plugin = $prose(
       () =>
-        new Plugin({
-          key: new PluginKey('inkkitPaste'),
+        new Plugin<MappedAnchor | null>({
+          key: this.key,
           state: {
             init: () => null,
-            apply: (transaction) => {
-              if (this.active) {
-                const empty = this.active.from === this.active.to
-                this.active.from = transaction.mapping.map(this.active.from, 1)
-                this.active.to = transaction.mapping.map(
-                  this.active.to,
-                  empty ? 1 : -1,
-                )
+            apply: (transaction, previous) => {
+              if (!this.active) return null
+              const anchor =
+                previous?.operation === this.active ? previous : this.active
+              return {
+                operation: this.active,
+                from: transaction.mapping.map(anchor.from, 1),
+                to: transaction.mapping.map(
+                  anchor.to,
+                  anchor.from === anchor.to ? 1 : -1,
+                ),
               }
-              return null
             },
           },
           props: {
@@ -108,6 +114,12 @@ export class PasteController {
   }
   paste(input: ClipboardInput): Promise<void> {
     return this.run(input)
+  }
+  private anchor(operation: Anchor): Anchor {
+    const mapped = this.key.getState(
+      this.options.ctx().get(editorViewCtx).state,
+    )
+    return mapped?.operation === operation ? mapped : operation
   }
   cancelPending(): void {
     this.active = undefined
@@ -181,7 +193,7 @@ export class PasteController {
           (input.html ? markdownFromHTML(input.html) : undefined))
       if (plainText) {
         if (view.state.selection.$from.parent.type.spec.code) {
-          const anchor = operation
+          const anchor = this.anchor(operation)
           view.dispatch(
             view.state.tr.insertText(input.text, anchor.from, anchor.to),
           )
@@ -521,8 +533,8 @@ export class PasteController {
           /^https?:\/\/\S+$/.test(text) &&
           schema.marks.link
         ) {
-          const anchor = operation
-          const mark = schema.marks.link.create({ href: text, title: '' })
+          const anchor = this.anchor(operation)
+          const mark = schema.marks.link.create({ href: text })
           view.dispatch(
             view.state.tr
               .addMark(anchor.from, anchor.to, mark)
@@ -535,7 +547,7 @@ export class PasteController {
       }
       this.assertContext(context, operation)
       if (!view.editable || this.options.editable?.() === false) return
-      const anchor = operation
+      const anchor = this.anchor(operation)
       if (!plainText) {
         const valid = slice.content.firstChild?.isInline
           ? Fragment.from(schema.nodes.paragraph!.create(null, slice.content))

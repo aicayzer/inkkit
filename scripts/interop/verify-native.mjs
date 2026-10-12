@@ -2490,6 +2490,61 @@ if (releaseAtLeast('0.0.14')) {
       ],
     }
   }
+  const longSource =
+    '__Authored__\n\n<section>unsupported</section>\n\n' +
+    Array.from({ length: 1000 }, (_, index) => `Paragraph ${index}.`).join(
+      '\n\n',
+    ) +
+    '\n'
+  const firstEdit = longSource.replace('Paragraph 0.', 'First paragraph.')
+  const distantEdit = firstEdit.replace('Paragraph 999.', 'Last paragraph.')
+  scenarios['source-distant-dom-input'] = {
+    source: longSource,
+    operations: [
+      { op: 'select', text: 'Paragraph 0.' },
+      { op: 'formattedInput', text: 'First paragraph.' },
+      assert('snapshot.text', firstEdit),
+      { op: 'select', text: 'Paragraph 999.' },
+      { op: 'formattedInput', text: 'Last paragraph.' },
+      assert('snapshot.text', distantEdit),
+      { op: 'undo' },
+      assert('snapshot.text', firstEdit),
+      { op: 'redo' },
+      assert('snapshot.text', distantEdit),
+      { op: 'editingMode', mode: 'source' },
+      assert('snapshot.text', distantEdit),
+      { op: 'editingMode', mode: 'formatted' },
+      { op: 'save' },
+      { op: 'reopen' },
+      assert('snapshot.text', distantEdit),
+      assert('snapshot.dirty', false),
+    ],
+  }
+  scenarios['source-failed-dom-recovery'] = {
+    source: '- One\n\nBetween\n\n- Two\n',
+    operations: [
+      { op: 'removeDOM', selector: ':scope > p' },
+      assert('snapshot.text', '- One\n\nBetween\n\n- Two\n'),
+      assert('snapshot.revision', 0),
+      contains('html', 'Between'),
+      assert('errorCode', 'preservation'),
+      {
+        op: 'acknowledgeError',
+        code: 'preservation',
+        message:
+          'The edit was not applied because its Markdown could not be preserved: The edited Markdown cannot be reopened without changing its content',
+      },
+      { op: 'select', text: 'Between' },
+      { op: 'formattedInput', text: 'Recovered' },
+      assert('snapshot.text', '- One\n\nRecovered\n\n- Two\n'),
+      { op: 'undo' },
+      assert('snapshot.text', '- One\n\nBetween\n\n- Two\n'),
+      { op: 'redo' },
+      { op: 'save' },
+      { op: 'reopen' },
+      assert('snapshot.text', '- One\n\nRecovered\n\n- Two\n'),
+    ],
+  }
 }
 const names = Object.keys(scenarios)
 const groups = {

@@ -426,3 +426,85 @@ test('image cut retains source if host clipboard writing fails', async () => {
     },
   )
 })
+
+test('a preservation failure rejects the edit without changing snapshot, revision or undo history', () => {
+  const errors: Error[] = []
+  const changes: string[] = []
+  return run(
+    (editor, _root, ctx) => {
+      const source = '- One\n\nBetween\n\n- Two\n'
+      editor.loadDocument({ ...input, text: source })
+      const before = editor.snapshot()
+      const view = ctx.get(editorViewCtx)
+      const from = view.state.doc.firstChild!.nodeSize
+      view.dispatch(
+        view.state.tr.delete(from, from + view.state.doc.child(1).nodeSize),
+      )
+      expect(errors).toHaveLength(1)
+      expect(errors[0]?.message).toContain('The edit was not applied')
+      expect(editor.snapshot()).toEqual(before)
+      expect(changes).toEqual([])
+      expect(editor.undo()).toBe(false)
+      view.dispatch(view.state.tr.insertText('!', from + 1))
+      expect(editor.snapshot().text).toBe(source.replace('Between', '!Between'))
+      expect(editor.undo()).toBe(true)
+      expect(editor.snapshot().text).toBe(source)
+    },
+    undefined,
+    {
+      error: (error) => errors.push(error),
+      changed: (text) => changes.push(text),
+    },
+  )
+})
+
+test('rejected edits leave a pending image paste at its accepted selection', async () => {
+  let finish!: (value: { reference: string }) => void
+  const errors: Error[] = []
+  await run(
+    async (editor, _root, ctx) => {
+      const source = '- One\n\nBetween\n\n- Two\n'
+      editor.loadDocument({ ...input, text: source })
+      const view = ctx.get(editorViewCtx)
+      let selected = 0
+      view.state.doc.descendants((node, pos) => {
+        if (node.isText && node.text === 'Two') selected = pos
+      })
+      view.dispatch(
+        view.state.tr.setSelection(
+          TextSelection.create(view.state.doc, selected, selected + 3),
+        ),
+      )
+      const paste = editor.paste({
+        text: '',
+        images: [
+          {
+            bytes: new Uint8Array([1]),
+            mimeType: 'image/png',
+            filename: 'pasted',
+          },
+        ],
+      })
+      const from = view.state.doc.firstChild!.nodeSize
+      view.dispatch(
+        view.state.tr.delete(from, from + view.state.doc.child(1).nodeSize),
+      )
+      expect(errors).toHaveLength(1)
+      expect(view.state.doc.textContent).toBe('OneBetweenTwo')
+      view.dispatch(view.state.tr.insertText('!', from + 1))
+      finish({ reference: 'opaque:image' })
+      await paste
+      expect(editor.snapshot().text).toBe(
+        '- One\n\n!Between\n\n- ![pasted](opaque:image)\n',
+      )
+    },
+    {
+      ...imageAdapter,
+      importImage: () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    },
+    { error: (error) => errors.push(error) },
+  )
+})
