@@ -81,6 +81,80 @@ export function isRewrittenElement(element: Element): boolean {
   return rich.has(element.tagName) || handled.has(element.tagName)
 }
 
+// `white-space` and its longhand `white-space-collapse` keep source spaces with
+// these keywords; `pre-line` keeps line breaks, so it is left alone too.
+const keepingWhitespace = new Set([
+  'pre',
+  'pre-wrap',
+  'pre-line',
+  'break-spaces',
+  'preserve',
+  'preserve-breaks',
+  'preserve-spaces',
+])
+
+/**
+ * Whether the element's own inline style makes a browser keep the whitespace
+ * of its content, as copied editor code does with `white-space: pre`. The
+ * declarations are parsed, so case, spacing, comments, quoted text and
+ * `!important` do not matter. Style sheets are not consulted.
+ */
+export function keepsWhitespace(element: Element): boolean {
+  const style = element.getAttribute('style')
+  if (!style) return false
+  const winning = new Map<string, { value: string; important: boolean }>()
+  for (const declaration of declarations(style)) {
+    const colon = declaration.indexOf(':')
+    if (colon < 0) continue
+    const name = declaration.slice(0, colon).trim().toLowerCase()
+    if (name !== 'white-space' && name !== 'white-space-collapse') continue
+    let value = declaration.slice(colon + 1).trim()
+    const important = /!\s*important$/i.test(value)
+    if (important) value = value.replace(/!\s*important$/i, '')
+    const earlier = winning.get(name)
+    if (!earlier?.important || important)
+      winning.set(name, { value: value.trim().toLowerCase(), important })
+  }
+  return [...winning.values()].some(({ value }) =>
+    value.split(/\s+/).some((keyword) => keepingWhitespace.has(keyword)),
+  )
+}
+
+// Splits a style attribute at the semicolons that end declarations, ignoring
+// those inside comments, quoted strings and parentheses such as `url(...)`.
+function declarations(style: string): string[] {
+  const result: string[] = []
+  let current = ''
+  let quote = ''
+  let depth = 0
+  for (let index = 0; index < style.length; index++) {
+    const character = style[index]!
+    if (quote) {
+      current += character
+      if (character === '\\' && index + 1 < style.length)
+        current += style[++index]
+      else if (character === quote) quote = ''
+    } else if (character === '/' && style[index + 1] === '*') {
+      const end = style.indexOf('*/', index + 2)
+      index = end < 0 ? style.length : end + 1
+    } else if (character === '"' || character === "'") {
+      quote = character
+      current += character
+    } else if (character === '(') {
+      depth++
+      current += character
+    } else if (character === ')') {
+      depth = Math.max(0, depth - 1)
+      current += character
+    } else if (character === ';' && depth === 0) {
+      result.push(current)
+      current = ''
+    } else current += character
+  }
+  result.push(current)
+  return result
+}
+
 /**
  * Rewrites common web-page elements to ones the importer already understands.
  * Elements that will stay literal source are not entered, so their content is
@@ -257,7 +331,8 @@ const space = /[ \t\r\n\f]+/g
 /**
  * Collapses source whitespace the way a browser renders it: runs become one
  * space, and none remains at the edges of a block or beside a line break.
- * `pre`, `code` and elements that stay literal source are not entered.
+ * `pre`, `code`, elements that stay literal source and elements whose style
+ * keeps whitespace are not entered.
  */
 export function collapseClipboardWhitespace(root: Node): void {
   hoistEdgeSpace(root)
@@ -283,7 +358,16 @@ export function collapseClipboardWhitespace(root: Node): void {
     if (node.nodeType !== Node.ELEMENT_NODE) return
     const element = node as Element
     const tag = element.tagName
-    if (inline.has(tag)) {
+    if (keepsWhitespace(element)) {
+      // Treated like `code` inside a line and like `pre` as a block.
+      if (inline.has(tag)) {
+        trailing = undefined
+        start = false
+      } else {
+        trim()
+        start = true
+      }
+    } else if (inline.has(tag)) {
       for (const child of [...element.childNodes]) visit(child)
     } else if (tag === 'BR') {
       trim()
@@ -310,6 +394,7 @@ function hoistEdgeSpace(node: Node): void {
   for (const child of [...node.childNodes]) {
     if (child.nodeType !== Node.ELEMENT_NODE) continue
     const element = child as Element
+    if (keepsWhitespace(element)) continue
     if (inline.has(element.tagName)) {
       hoistEdgeSpace(element)
       const lead = edgeText(element, 'start')
@@ -332,7 +417,11 @@ function hoistEdgeSpace(node: Node): void {
 function edgeText(element: Element, side: 'start' | 'end'): Text | undefined {
   let node = side === 'start' ? element.firstChild : element.lastChild
   while (node && node.nodeType === Node.ELEMENT_NODE) {
-    if (!inline.has((node as Element).tagName)) return undefined
+    if (
+      !inline.has((node as Element).tagName) ||
+      keepsWhitespace(node as Element)
+    )
+      return undefined
     node = side === 'start' ? node.firstChild : node.lastChild
   }
   return node?.nodeType === Node.TEXT_NODE ? (node as Text) : undefined

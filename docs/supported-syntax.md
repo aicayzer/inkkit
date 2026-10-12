@@ -72,7 +72,7 @@ Pasting HTML from a web page, notes app or word processor imports readable conte
 - `figure` and `figcaption` produce their image and caption text. `picture` produces its `img`; its `source` elements are dropped.
 - `dl` produces one paragraph per entry. Each `dt` term is bold and each `dd` definition is a plain paragraph, because Markdown has no definition lists.
 - A checkbox that leads a list item, directly or inside a paragraph or label, makes a task item with the same checked state.
-- Source whitespace collapses as in a browser: runs become one space, and indentation and line breaks at the edges of blocks add nothing. `pre`, `code` and literal elements keep theirs.
+- Source whitespace collapses as in a browser: runs become one space, and indentation and line breaks at the edges of blocks add nothing. `pre`, `code`, literal elements and any element whose inline `style` sets `white-space` to `pre`, `pre-wrap`, `pre-line` or `break-spaces` keep theirs, as does one that sets `white-space-collapse` to `preserve`, `preserve-breaks` or `preserve-spaces`. This keeps the indentation of code copied from an editor. Style sheets are not read.
 - Tables beside other content import with these elements in their cells. A table with an `input` in a cell, such as a checkbox, stays literal source, because the control and its state cannot be kept in a cell. A table copied on its own follows the spreadsheet paste rules below, which do not accept these elements.
 
 Custom elements, `iframe`, `script`, `svg`, `math`, `object`, authored comments and other unrecognised elements remain literal source, with their content unchanged, including any table inside them. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.

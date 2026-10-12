@@ -335,6 +335,51 @@ test('a checkbox in a table cell keeps the table as source so its state survives
   }
 })
 
+test('text styled to keep its whitespace is not collapsed', async () => {
+  const markdown = await fromHTML(
+    '<div style="white-space: pre"><div><span>    </span><span>return</span><span> x</span></div></div>',
+  )
+  expect(markdown.replace(/&#x20;/g, ' ')).toContain('    return x')
+  const inline = await fromHTML(
+    '<p>Run <span style="white-space: pre">    code  here</span> now</p>',
+  )
+  expect(inline.replace(/&#x20;/g, ' ')).toContain('    code  here')
+  expect(inline).toContain('Run')
+  expect(inline).toContain('now')
+})
+
+test('white-space values are read as CSS, not matched as text', async () => {
+  for (const style of [
+    'white-space: pre-wrap',
+    'WHITE-SPACE:PRE',
+    'color: red;white-space :  pre !important',
+    'white-space: break-spaces;',
+    'white-space: pre-line',
+    'white-space-collapse: preserve',
+    '/* code */ white-space: pre',
+    'white-space: pre !important; white-space: normal',
+  ]) {
+    const markdown = await fromHTML(
+      `<p>a<span style="${style}">    b</span></p>`,
+    )
+    expect(markdown.replace(/&#x20;/g, ' '), style).toContain('a    b')
+  }
+  for (const style of [
+    'white-space: normal',
+    'white-space: nowrap',
+    'white-space: pre; white-space: normal',
+    'content: "white-space: pre"',
+    '--note: white-space: pre',
+    'content: "x; white-space: pre"',
+    '/* white-space: pre */ color: red',
+  ]) {
+    expect(
+      await fromHTML(`<p>a<span style="${style}">    b</span></p>`),
+      style,
+    ).toBe('a b\n')
+  }
+})
+
 test('indentation inside pretty-printed blocks is not imported as text', async () => {
   expect(await fromHTML('<p>\n  text\n</p>')).toBe('text\n')
   expect(await fromHTML('<ul>\n  <li>\n    item\n  </li>\n</ul>')).toBe(

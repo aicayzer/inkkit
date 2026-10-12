@@ -140,3 +140,16 @@ test('a checkbox in a table cell keeps its checked state', async ({ page }) => {
     .poll(async () => (await observe(page)).snapshot!.text)
     .toBe(`Intro\n\n${table}\n`)
 })
+
+test('code copied from an editor keeps its indentation', async ({ page }) => {
+  await openEmpty(page)
+  await pasteHTML(
+    page,
+    '<div style="white-space: pre"><div><span>    </span><span>return</span><span> x</span></div></div><p>Run <span style="WHITE-SPACE : pre !important">  a  b</span></p>',
+  )
+  await expect
+    .poll(async () =>
+      (await observe(page)).snapshot!.text.replace(/&#x20;/g, ' '),
+    )
+    .toBe('    return x\n\nRun   a  b\n')
+})
