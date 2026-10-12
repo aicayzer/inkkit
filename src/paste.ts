@@ -230,7 +230,7 @@ export class PasteController {
             // `label` in a cell do not make it literal. A table that is still
             // unsupported keeps its original source.
             const trial = table.cloneNode(true) as HTMLTableElement
-            const holder = document.createDocumentFragment()
+            const holder = table.ownerDocument.createDocumentFragment()
             holder.append(trial)
             normalizeClipboardHTML(holder)
             if (!unsupportedClipboardTable(trial)) {

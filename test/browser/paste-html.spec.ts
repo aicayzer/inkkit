@@ -80,3 +80,22 @@ test('pretty-printed page HTML pastes without indentation entities', async ({
       'Indented text on two lines.\n\n- [x] parent\n  - child\n\n```\nkeep   this\n  as is\n```\n',
     )
 })
+
+test('a table kept as source does not load the images in its cells', async ({
+  page,
+}) => {
+  const requests: string[] = []
+  page.on('request', (request) => {
+    if (request.url().includes('probe.invalid')) requests.push(request.url())
+  })
+  await openEmpty(page)
+  await pasteHTML(
+    page,
+    '<p>Before</p><table><tr><th colspan="2">A</th></tr><tr><td><img src="https://probe.invalid/cell.png" alt="cell"></td><td>b</td></tr></table>',
+  )
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toContain('<table>')
+  await page.waitForTimeout(500)
+  expect(requests).toEqual([])
+})
