@@ -100,7 +100,7 @@ test('composition guards and protected structured content @native-search', async
   const image = rangeFor(text, 'Opaque image')
   await expect(
     operation(page, 'replaceTextRange', { range: image, text: 'NO' }),
-  ).rejects.toThrow(/range|protected|structured/i)
+  ).rejects.toThrow(/embedded content or structural separators/i)
   const acrossBlocks = {
     snapshotId: text.snapshotId,
     from: 0,
@@ -108,7 +108,7 @@ test('composition guards and protected structured content @native-search', async
   }
   await expect(
     operation(page, 'replaceTextRange', { range: acrossBlocks, text: 'NO' }),
-  ).rejects.toThrow(/range|structured/i)
+  ).rejects.toThrow(/embedded content or structural separators/i)
   const surface = page.getByRole('textbox', {
     name: 'Formatted Markdown editor',
     exact: true,
@@ -293,5 +293,65 @@ for (const mode of ['formatted', 'source', 'txt'] as const) {
       window.inkkitPlayground.replaceDocument('Replacement document', 'md'),
     )
     await expect(host).toBeFocused()
+  })
+}
+
+for (const mode of ['formatted', 'source', 'txt'] as const) {
+  test(`batch geometry stays current after layout changes (${mode}) @native-search`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture('native-search')
+    const source =
+      'A😀B é 中文 ' + 'Wrapped text '.repeat(40) + '\n\nLast paragraph.'
+    await page.evaluate(
+      ({ source, mode }) =>
+        window.inkkitPlayground.replaceDocument(
+          source,
+          mode === 'txt' ? 'txt' : 'md',
+        ),
+      { source, mode },
+    )
+    if (mode === 'source') await operation(page, 'editingMode', { mode })
+    const snapshot = await readText(page)
+    const ranges = [
+      rangeFor(snapshot, '😀'),
+      rangeFor(snapshot, 'Last paragraph.'),
+    ]
+    const before = (await operation(page, 'textRangesRects', {
+      ranges,
+    })) as ReturnType<InkKitEditor['textRangesRects']>
+    expect(before).toEqual(
+      await Promise.all(
+        ranges.map((range) => operation(page, 'textRangeRects', { range })),
+      ),
+    )
+    expect(before.every((rects) => rects.length > 0)).toBe(true)
+    await page.setViewportSize({ width: 730, height: 800 })
+    const after = (await operation(page, 'textRangesRects', {
+      ranges,
+    })) as ReturnType<InkKitEditor['textRangesRects']>
+    expect(after).toEqual(
+      await Promise.all(
+        ranges.map((range) => operation(page, 'textRangeRects', { range })),
+      ),
+    )
+    expect(after[1]![0]!.top).not.toBe(before[1]![0]!.top)
+    const sourceBefore = (await observe(page)).snapshot
+    await expect(
+      operation(page, 'textRangesRects', {
+        ranges: [ranges[0], { ...ranges[0], from: ranges[0]!.from + 1 }],
+      }),
+    ).rejects.toThrow(/range|UTF-16/i)
+    expect((await observe(page)).snapshot).toEqual(sourceBefore)
+    await operation(page, 'replaceTextRange', { range: ranges[0], text: 'X' })
+    await expect(
+      operation(page, 'textRangesRects', { ranges }),
+    ).rejects.toThrow(/changed|stale/i)
+    const current = await readText(page)
+    const refreshed = (await operation(page, 'textRangesRects', {
+      ranges: [rangeFor(current, 'X')],
+    })) as ReturnType<InkKitEditor['textRangesRects']>
+    expect(refreshed[0]!.length).toBeGreaterThan(0)
   })
 }

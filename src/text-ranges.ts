@@ -172,9 +172,17 @@ export function formattedRects(
     return [textRect(view.coordsAtPos(position))]
   }
   const rects: TextRect[] = []
-  for (const span of projection.spans) {
-    if (span.to <= from || span.from >= to || span.kind === 'separator')
-      continue
+  let low = 0
+  let high = projection.spans.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (projection.spans[middle]!.to <= from) low = middle + 1
+    else high = middle
+  }
+  for (let index = low; index < projection.spans.length; index++) {
+    const span = projection.spans[index]!
+    if (span.from >= to) break
+    if (span.kind === 'separator') continue
     if (span.kind === 'embed' || span.kind === 'break') {
       const node = view.nodeDOM(span.start)
       if (node instanceof Element) {
@@ -250,25 +258,26 @@ function withLiteralLayout<T>(
   }
 }
 
-export function literalRects(
+export function literalRangesRects(
   plain: HTMLTextAreaElement,
-  from: number,
-  to: number,
-): TextRect[] {
+  ranges: readonly { from: number; to: number }[],
+): TextRect[][] {
   return (
     withLiteralLayout(plain, (text) => {
       const range = plain.ownerDocument.createRange()
-      range.setStart(text, from)
-      range.setEnd(text, from === to ? Math.min(to + 1, text.length) : to)
-      return Array.from(range.getClientRects(), (rect) =>
-        textRect({
-          left: rect.left,
-          right: from === to ? rect.left : rect.right,
-          top: rect.top,
-          bottom: rect.bottom,
-        }),
-      )
-    }) ?? []
+      return ranges.map(({ from, to }) => {
+        range.setStart(text, from)
+        range.setEnd(text, from === to ? Math.min(to + 1, text.length) : to)
+        return Array.from(range.getClientRects(), (rect) =>
+          textRect({
+            left: rect.left,
+            right: from === to ? rect.left : rect.right,
+            top: rect.top,
+            bottom: rect.bottom,
+          }),
+        )
+      })
+    }) ?? ranges.map(() => [])
   )
 }
 
