@@ -35,7 +35,7 @@ A Chromium CPU profile of mixed loading/editing attributed the dominant editing 
 
 Optional presentation plugins can be skipped at mount through `rendering: { codeHighlighting: false, diagramPreview: false }`. Mermaid is imported only after validating an actual render request. Explicit diagram copy/print still renders on demand. These changes reduce execution work for minimal hosts while retaining the default rich behaviour.
 
-No bundle-size reduction is claimed. Single-file offline consumers include optional rendering code even with dynamic imports. Splitting delivery would require a different packaging/host contract; measurements do not justify changing that contract in this consolidation wave. No renderer replacement, arbitrary budget or general plugin platform was introduced. Rich-text and structural editing still use whole-document preservation and reopen validation. The October 12 text-block measurements below cover a narrower incremental path. Hosts should evaluate their actual documents using these reproducible baselines.
+No bundle-size reduction is claimed. Single-file offline consumers include optional rendering code even with dynamic imports. Splitting delivery would require a different packaging/host contract; measurements do not justify changing that contract in this consolidation wave. No renderer replacement, arbitrary budget or general plugin platform was introduced. Context-sensitive and structural edits still use whole-document preservation and reopen validation. The October 12 text-block measurements below cover a narrower incremental path. Hosts should evaluate their actual documents using these reproducible baselines.
 
 ## Text-block input measurements, October 12, 2026
 
