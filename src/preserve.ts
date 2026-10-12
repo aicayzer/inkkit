@@ -4,6 +4,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { serialize } from './dialect'
 import { restoreCodeEndings, finalCodeEnding } from './code-fences'
+import { sourceFrontmatter } from './literals'
 
 interface Block {
   start: number
@@ -903,27 +904,25 @@ export class Preservation {
             ),
             canonical,
           )
-        } else {
-          // Only an opening block's form depends on its place: a leading `---`
-          // rule would read back as front matter, so use the document's form.
-          const opening =
-            index === 0 && currentTree.children.length === current.length
-              ? currentTree.children[0]!.position
-              : undefined
+        } else
           output += restoreCodeEndings(
             this.ctx,
             doc.type.create(null, [doc.child(index)]),
-            (opening
-              ? form(canonical.slice(opening.start.offset, opening.end.offset))
-              : text
-            ).replaceAll('\n', this.lineEnding),
+            withEnding(text, this.lineEnding),
           )
-        }
         previous = position
       })
       if (previous === this.blocks.length - 1 && this.blocks.length)
         output += this.source.slice(this.blocks[previous]!.end)
       else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
+      // A `---` rule that opens the file reads back as front matter when
+      // another `---` line follows, whether it is new or moved there.
+      const bom = output.startsWith('\uFEFF') ? 1 : 0
+      if (
+        doc.firstChild?.type.name === 'hr' &&
+        sourceFrontmatter(output.slice(bom))?.startsWith('---')
+      )
+        output = output.slice(0, bom) + '***' + output.slice(bom + 3)
       const parse = this.ctx.get(parserCtx)
       const reopened = parse(output)
       const normalized = (text: string): string => text.replace(/\r\n?/g, '\n')

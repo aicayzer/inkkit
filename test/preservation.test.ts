@@ -73,6 +73,35 @@ test('a rule inserted at the start of a document with a later --- line does not 
     )
   }))
 
+test('an authored --- rule that comes to open the document with a later --- line is written as ***', () =>
+  withEditor('x\n', (editor) => {
+    const parse = editor.ctx.get(parserCtx)
+    const save = (before: string, after: string) => {
+      const result = new Preservation(editor.ctx, before).serialize(
+        parse(after),
+      )
+      const types = (doc: ProseNode) =>
+        doc.children.map((node) => node.type.name)
+      expect(types(parse(result))).toEqual(types(parse(after)))
+      return result
+    }
+    // Deleting the first block moves the rule to the start.
+    expect(
+      save(
+        'Intro\n\n---\n\nPara\n\n---\n\nEnd\n',
+        '***\n\nPara\n\n---\n\nEnd\n',
+      ),
+    ).toBe('***\n\nPara\n\n---\n\nEnd\n')
+    // A rule added at the end closes what would read as front matter.
+    expect(save('---\n\nPara __b__\n', '***\n\nPara __b__\n\n***\n')).toBe(
+      '***\n\nPara __b__\n\n---\n',
+    )
+    // Without a later --- line, the authored rule keeps its bytes.
+    expect(save('---\n\nPara __b__\n', '***\n\nPara __b__ edited\n')).toBe(
+      '---\n\nPara __b__ edited\n',
+    )
+  }))
+
 test('undo restores original bytes and an inserted block preserves previous source', async () => {
   const source = '__bold__\n\n_last_'
   await withEditor(source, (editor) => {
