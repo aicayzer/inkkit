@@ -140,6 +140,21 @@ test('changing, inserting and deleting hundreds of distinct blocks retains every
   })
 }, 60_000)
 
+test('deleting the first block and adding one at the end keeps the unchanged block between them', () =>
+  withEditor('x\n', (editor) => {
+    // Edit distance alone ties here and pairs the unchanged block with the deleted one.
+    saveAs(
+      editor.ctx,
+      '_Draft_ note\n\n* one\n* two\n',
+      '* one\n* two\n\nAdded\n',
+    )
+    saveAs(
+      editor.ctx,
+      '__Intro__ text\n\n_Kept_ [l](/k)\n',
+      '_Kept_ [l](/k)\n\nAdded\n',
+    )
+  }))
+
 test('moved blocks are rewritten canonically while everything between them keeps its source', () => {
   const plain = (i: number) => `Plain ${i}`
   const before = Array.from({ length: 1000 }, (_, i) =>
