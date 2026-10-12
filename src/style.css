@@ -207,16 +207,26 @@
   height: auto;
   border-radius: 6px;
 }
+.inkkit-root .ProseMirror .inkkit-image-preview {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  line-height: 0;
+}
 .inkkit-root .ProseMirror .image-absent {
   color: var(--_inkkit-muted);
   font-style: italic;
 }
 .inkkit-root .ProseMirror .image-handle {
   position: absolute;
-  right: -3px;
-  top: 0;
-  width: 10px;
-  height: 100%;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 32px;
+  max-height: 100%;
+  touch-action: none;
   cursor: col-resize;
   opacity: 0;
 }
@@ -227,20 +237,39 @@
 .inkkit-root .ProseMirror .image-handle::after {
   content: '';
   position: absolute;
-  right: 3px;
-  top: 25%;
-  height: 50%;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 20px;
+  max-height: 100%;
   width: 4px;
   border-radius: 2px;
   background: var(--_inkkit-accent);
 }
+.inkkit-root .ProseMirror[contenteditable='false'] .image-handle {
+  display: none;
+}
 
 .inkkit-root .ProseMirror .inkkit-file {
+  box-sizing: border-box;
   vertical-align: middle;
   border: 1px solid var(--_inkkit-rule);
-  border-radius: 4px;
-  padding: 4px;
+  border-radius: 6px;
+  padding: 8px;
   white-space: normal;
+}
+
+.inkkit-root .ProseMirror .inkkit-file-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  font-size: 0.9em;
+  line-height: 1.4;
+  color: var(--_inkkit-muted);
+}
+.inkkit-root .ProseMirror .inkkit-file-footer:not(:first-child) {
+  margin-block-start: 0.5em;
 }
 
 .inkkit-root .ProseMirror .inkkit-file audio,
@@ -261,12 +290,17 @@
 }
 
 .inkkit-root .ProseMirror .inkkit-file-label {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .inkkit-root .ProseMirror .inkkit-file-control {
-  margin-inline-start: 0.5em;
+  flex: none;
+  padding: 0.25em 0.5em;
   font: inherit;
+  line-height: 1.4;
+  white-space: nowrap;
   color: var(--_inkkit-text);
   background: var(--_inkkit-code-bg);
   border: 1px solid var(--_inkkit-rule);

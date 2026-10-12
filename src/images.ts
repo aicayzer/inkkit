@@ -163,13 +163,15 @@ class ImageView implements NodeView {
   }
 
   private card(label: string, status?: string, retry = false): void {
+    const footer = document.createElement('span')
+    footer.className = 'inkkit-file-footer'
     const text = document.createElement('span')
     text.className = 'inkkit-file-label'
     text.textContent = status ? `${label}: ${status}` : label
     if (status) text.setAttribute('role', 'status')
-    this.dom.append(text)
+    footer.append(text)
     if (retry && this.runtime)
-      this.dom.append(
+      footer.append(
         this.button(this.runtime.labels.fileRetry, () =>
           this.resolution?.retry(),
         ),
@@ -180,8 +182,9 @@ class ImageView implements NodeView {
         'aria-label',
         `${this.runtime.labels.fileOpen} ${label}`,
       )
-      this.dom.append(open)
+      footer.append(open)
     }
+    this.dom.append(footer)
   }
 
   private failPreview(): void {
@@ -311,10 +314,13 @@ class ImageView implements NodeView {
       })
     image.src = url
     this.image = image
+    const preview = document.createElement('span')
+    preview.className = 'inkkit-image-preview'
     const handle = document.createElement('span')
     handle.className = 'image-handle'
     handle.addEventListener('pointerdown', this.startResize)
-    this.dom.append(image, handle)
+    preview.append(image, handle)
+    this.dom.append(preview)
   }
 
   private startResize = (event: PointerEvent): void => {
