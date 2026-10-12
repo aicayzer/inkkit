@@ -607,3 +607,40 @@ test('Delete in an empty first list line before an image selects the image inste
     editor.undo()
     expect(text()).toBe(before)
   }))
+
+test('replacing the text beside an image leaves a standalone image block, by find and replace', () =>
+  run('Cap ![A](a.png)\n', ({ editor, view, text }) => {
+    editor.find('Cap ')
+    expect(editor.replace('Cap ', '')).toBe(true)
+    expect(text()).toBe('![A](a.png)\n')
+    expect(blocks(view())).toEqual(['image_block'])
+    editor.undo()
+    expect(text()).toBe('Cap ![A](a.png)\n')
+  }))
+
+test('replacing all the text beside images leaves standalone blocks, across several blocks', () =>
+  run(
+    'Cap ![A](a.png)\n\nKeep Cap here\n\n> Cap ![B](b.png)\n',
+    ({ editor, view, text }) => {
+      expect(editor.replaceAll('Cap ', '')).toBe(3)
+      expect(text()).toBe('![A](a.png)\n\nKeep here\n\n> ![B](b.png)\n')
+      expect(blocks(view())).toEqual(['image_block', 'paragraph', 'blockquote'])
+      expect(view().state.doc.child(2).firstChild!.type.name).toBe(
+        'image_block',
+      )
+      editor.undo()
+      expect(text()).toBe(
+        'Cap ![A](a.png)\n\nKeep Cap here\n\n> Cap ![B](b.png)\n',
+      )
+    },
+  ))
+
+test('replacing a text range beside an image leaves a standalone image block', () =>
+  run('Cap ![A](a.png)\n', ({ editor, view, text }) => {
+    const { snapshotId } = editor.textSnapshot()
+    expect(editor.replaceTextRange({ snapshotId, from: 0, to: 4 }, '')).toBe(
+      true,
+    )
+    expect(text()).toBe('![A](a.png)\n')
+    expect(blocks(view())).toEqual(['image_block'])
+  }))

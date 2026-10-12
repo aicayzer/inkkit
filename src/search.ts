@@ -5,6 +5,7 @@ import {
   Selection,
   TextSelection,
   type EditorState,
+  type Transaction,
 } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { SearchQuery, setSearchState, getSearchState } from 'prosemirror-search'
@@ -164,7 +165,7 @@ export function replaceFormatted(
   view: EditorView,
   search: string,
   replacement: string,
-  preflight: (doc: ProseNode) => void,
+  preflight: (tr: Transaction) => void,
   all = false,
 ): number {
   if (!search) return 0
@@ -210,7 +211,7 @@ export function replaceFormatted(
     )
   }
   try {
-    preflight(tr.doc)
+    preflight(tr)
   } catch (error) {
     if (error instanceof InkKitError) throw error
     throw new InkKitError(
@@ -228,7 +229,7 @@ export function replaceFormattedRange(
   from: number,
   to: number,
   replacement: string,
-  preflight: (doc: ProseNode) => void,
+  preflight: (tr: Transaction) => void,
 ): boolean {
   const start = view.state.doc.resolve(from)
   const end = view.state.doc.resolve(to)
@@ -252,7 +253,7 @@ export function replaceFormattedRange(
   )
   tr.setSelection(TextSelection.create(tr.doc, from, tr.mapping.map(to, 1)))
   try {
-    preflight(tr.doc)
+    preflight(tr)
   } catch (error) {
     if (error instanceof InkKitError) throw error
     throw new InkKitError(

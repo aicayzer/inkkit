@@ -1597,15 +1597,9 @@ export class InkKitEditor {
           ...options,
           dispatchTransaction: function (this: EditorView, tr) {
             const next = this.state.apply(tr)
-            if (
-              !instance.loading &&
-              instance.preservation &&
-              !instance.literalSurface &&
-              !next.doc.eq(this.state.doc)
-            ) {
+            if (!instance.loading) {
               try {
-                // Validate the final state, including dialect normalisation transactions.
-                instance.currentText(next.doc)
+                instance.assertPreserved(this.state.doc, next.doc)
               } catch (error) {
                 this.updateState(this.state)
                 instance.events.error?.(
@@ -2284,6 +2278,13 @@ export class InkKitEditor {
     this.publishCommandState()
   }
 
+  /** Throws when a document reached by an edit, after every appended normalisation, cannot be
+   *  saved as preserved Markdown. Dispatch and the replacement commands share this check. */
+  private assertPreserved(before: ProseNode, after: ProseNode): void {
+    if (this.preservation && !this.literalSurface && !after.eq(before))
+      this.currentText(after)
+  }
+
   replaceTextRange(range: TextRange, text: string): boolean {
     const projection = this.validateTextRange(range)
     this.assertMutation()
@@ -2328,14 +2329,9 @@ export class InkKitEditor {
       range.to,
       range.from === range.to ? 1 : -1,
     )
-    return replaceFormattedRange(
-      this.editor.ctx.get(editorViewCtx),
-      from,
-      to,
-      text,
-      (doc) => {
-        this.currentText(doc)
-      },
+    const view = this.editor.ctx.get(editorViewCtx)
+    return replaceFormattedRange(view, from, to, text, (tr) =>
+      this.assertPreserved(view.state.doc, view.state.apply(tr).doc),
     )
   }
 
@@ -2643,13 +2639,12 @@ export class InkKitEditor {
       this.plainSearch = search
       return result.count
     }
+    const view = this.editor.ctx.get(editorViewCtx)
     return replaceFormatted(
-      this.editor.ctx.get(editorViewCtx),
+      view,
       search,
       replacement,
-      (doc) => {
-        this.currentText(doc)
-      },
+      (tr) => this.assertPreserved(view.state.doc, view.state.apply(tr).doc),
       all,
     )
   }
