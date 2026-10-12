@@ -153,48 +153,37 @@ export const imageBlockSchema = $nodeSchema(imageBlockName, () => ({
   },
 }))
 
-/** Positions in the current document that the given transactions changed. */
-function changedRanges(
-  transactions: readonly Transaction[],
-): [number, number][] {
-  let ranges: [number, number][] = []
-  for (const tr of transactions)
-    for (const map of tr.mapping.maps) {
-      ranges = ranges.map(([from, to]) => [map.map(from, -1), map.map(to, 1)])
-      map.forEach((_from, _to, start, end) => ranges.push([start, end]))
-    }
-  return ranges
-}
-
 // An edit can leave a paragraph holding only an image, which reading its Markdown again would give
 // as an image block. The caret keeps its side of the image.
 const normalise = $prose(
   () =>
     new Plugin({
       key: new PluginKey('inkkitImageBlockNormalise'),
-      appendTransaction(transactions, _old, state) {
+      appendTransaction(transactions, old, state) {
         const type = state.schema.nodes[imageBlockName]
         if (!type || !transactions.some((tr) => tr.docChanged)) return null
+        // Compare the documents, as mark and attribute steps change no positions.
+        const start = old.doc.content.findDiffStart(state.doc.content)
+        const end = old.doc.content.findDiffEnd(state.doc.content)
+        if (start == null || !end) return null
         const found = new Map<number, ProseNode>()
-        const size = state.doc.content.size
-        for (const [from, to] of changedRanges(transactions))
-          state.doc.nodesBetween(
-            Math.max(0, Math.min(from, size)),
-            Math.max(0, Math.min(to, size)),
-            (node, pos, parent, index) => {
-              if (!node.isTextblock) return true
-              const children: ProseNode[] = []
-              node.forEach((child) => children.push(child))
-              if (
-                node.type.name === 'paragraph' &&
-                standaloneImage(children) &&
-                parent &&
-                accepts(parent, index, type)
-              )
-                found.set(pos, node)
-              return false
-            },
-          )
+        state.doc.nodesBetween(
+          Math.min(start, end.b),
+          Math.max(start, end.b),
+          (node, pos, parent, index) => {
+            if (!node.isTextblock) return true
+            const children: ProseNode[] = []
+            node.forEach((child) => children.push(child))
+            if (
+              node.type.name === 'paragraph' &&
+              standaloneImage(children) &&
+              parent &&
+              accepts(parent, index, type)
+            )
+              found.set(pos, node)
+            return false
+          },
+        )
         if (!found.size) return null
         const tr = state.tr
         const { head } = state.selection

@@ -564,3 +564,30 @@ test('resizing a linked sole image or deleting text beside it keeps the link', (
       expect(blocks(view())).not.toContain('image_block')
     },
   ))
+
+test.each([
+  ['link', markedImages.linked],
+  ['emphasis', markedImages.emphasised],
+])(
+  'removing the %s mark from a sole image makes it a block, with undo and redo',
+  (mark, image) =>
+    run(markedSource(image), ({ editor, view, text }) => {
+      const source = markedSource(image)
+      const paragraph = view().state.doc.child(1)
+      const from = view().state.doc.child(0).nodeSize + 1
+      view().dispatch(
+        view().state.tr.removeMark(
+          from,
+          from + paragraph.content.size,
+          view().state.schema.marks[mark]!,
+        ),
+      )
+      expect(text()).toBe('Intro\n\n![Badge](b.png)\n\nEnd\n')
+      expect(blocks(view())).toEqual(['paragraph', 'image_block', 'paragraph'])
+      editor.undo()
+      expect(text()).toBe(source)
+      expect(blocks(view())).not.toContain('image_block')
+      editor.redo()
+      expect(text()).toBe('Intro\n\n![Badge](b.png)\n\nEnd\n')
+    }),
+)
