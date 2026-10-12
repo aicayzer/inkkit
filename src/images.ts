@@ -167,9 +167,16 @@ class ImageView implements NodeView {
     footer.className = 'inkkit-file-footer'
     const text = document.createElement('span')
     text.className = 'inkkit-file-label'
-    text.textContent = status ? `${label}: ${status}` : label
-    if (status) text.setAttribute('role', 'status')
+    text.textContent = label
+    text.title = label
     footer.append(text)
+    if (status) {
+      const description = document.createElement('span')
+      description.className = 'inkkit-file-status'
+      description.setAttribute('role', 'status')
+      description.textContent = status
+      footer.append(description)
+    }
     if (retry && this.runtime)
       footer.append(
         this.button(this.runtime.labels.fileRetry, () =>

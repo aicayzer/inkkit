@@ -27,6 +27,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(card.locator('img')).toBeVisible()
     const open = card.getByRole('button', { name: `Open ${longName}` })
     await expect(open).toBeVisible()
+    await expect(card.locator('.inkkit-file-label')).toHaveText(longName)
+    await expect(card.locator('.inkkit-file-label')).toHaveAttribute(
+      'title',
+      longName,
+    )
     const layout = await card.evaluate((element) => {
       const bounds = element.getBoundingClientRect()
       const label = element.querySelector('.inkkit-file-label')!
@@ -40,13 +45,16 @@ for (const colorScheme of ['light', 'dark'] as const) {
         image: image.getBoundingClientRect().toJSON(),
         grip: grip.getBoundingClientRect().toJSON(),
         lineHeight: parseFloat(getComputedStyle(control).lineHeight),
+        labelLineHeight: parseFloat(getComputedStyle(label).lineHeight),
+        labelOverflow: getComputedStyle(label).textOverflow,
         visibleGripHeight: parseFloat(getComputedStyle(grip, '::after').height),
         overflow: element.scrollWidth > element.clientWidth,
       }
     })
     expect(layout.lineHeight).toBeGreaterThan(12)
     expect(layout.control.height).toBeGreaterThan(24)
-    expect(layout.label.height).toBeGreaterThan(24)
+    expect(layout.label.height).toBeLessThanOrEqual(layout.labelLineHeight + 1)
+    expect(layout.labelOverflow).toBe('ellipsis')
     expect(layout.overflow).toBe(false)
     expect(layout.control.right).toBeLessThanOrEqual(layout.card.right)
     expect(layout.control.top).toBeGreaterThanOrEqual(layout.image.bottom)
@@ -55,6 +63,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await open.focus()
     await page.keyboard.press('Enter')
     await page.keyboard.press('Space')
+    await expect(open).toBeFocused()
+    expect(
+      await open.evaluate((element) =>
+        parseFloat(getComputedStyle(element).outlineWidth),
+      ),
+    ).toBeGreaterThan(0)
     const events = (await operation(page, 'fileEvents')) as {
       operation: string
     }[]

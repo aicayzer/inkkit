@@ -283,8 +283,10 @@ test.each(['image', 'audio', 'video', 'pdf', 'file'] as const)(
               '',
             )
             const fallback = root.querySelector('.inkkit-file-label')!
-            expect(fallback.textContent).toBe(
-              'Useful name: Open to view this PDF',
+            expect(fallback.textContent).toBe('Useful name')
+            expect(fallback.getAttribute('title')).toBe('Useful name')
+            expect(root.querySelector('[role="status"]')?.textContent).toBe(
+              'Open to view this PDF',
             )
             expect(fallback.closest('iframe')).toBeNull()
           }
