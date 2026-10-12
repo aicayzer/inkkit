@@ -67,7 +67,7 @@ Comment delimiters inside footnote identifiers or link destinations are literal 
 
 Pasting HTML from a web page, notes app or word processor imports readable content instead of raw HTML blocks.
 
-- `style`, `meta`, `link`, `title` and `head` elements, form controls and `<!--StartFragment-->` markers produce no content.
+- `style`, `meta`, `link`, `title` and `input` elements and `<!--StartFragment-->` markers produce no content. Other form controls, such as `button`, `select` and `textarea`, remain literal source.
 - `u`, `sub`, `small`, `time`, `abbr`, `cite`, `dfn`, `var`, `ins`, `bdi`, `bdo` and `label` keep their text and nested formatting in the same paragraph. The dialect has no underline, subscript or similar marks, so only the wrapper is lost.
 - `figure` and `figcaption` produce their image and caption text. `picture` produces its `img`; its `source` elements are dropped.
 - `dl` produces one paragraph per entry. Each `dt` term is bold and each `dd` definition is a plain paragraph, because Markdown has no definition lists.

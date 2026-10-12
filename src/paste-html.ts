@@ -44,16 +44,9 @@ const rich = new Set([
   'HEADER',
   'FOOTER',
 ])
-// Document furniture and form controls hold no content of their own.
-const dropped = new Set([
-  'HEAD',
-  'STYLE',
-  'META',
-  'LINK',
-  'TITLE',
-  'SOURCE',
-  'INPUT',
-])
+// Document furniture and form inputs hold no content of their own. A
+// template never keeps `head`, so it is not listed.
+const dropped = new Set(['STYLE', 'META', 'LINK', 'TITLE', 'SOURCE', 'INPUT'])
 // The dialect has no underline, subscript or similar marks, so these keep
 // their children and lose only the wrapper.
 const unwrapped = new Set([
