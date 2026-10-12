@@ -77,10 +77,10 @@ The 500 code blocks are five-line TypeScript blocks (164,511 characters, 20,000 
 
 | Document and edit                              | Input before / after (ms) |
 | ---------------------------------------------- | ------------------------: |
-| 500 code blocks, heading edit                  |               96.2 / 10.4 |
-| 500 code blocks, edit in the last block        |              107.1 / 75.4 |
-| 500 code blocks, heading edit, no highlighting |                 2.1 / 1.9 |
+| 500 code blocks, heading edit                  |               95.8 / 11.3 |
+| 500 code blocks, edit in the last block        |              108.1 / 67.1 |
+| 500 code blocks, heading edit, no highlighting |                 2.1 / 2.0 |
 
-For the end edit, preservation (about 48 ms per input, unchanged) is now most of the cost. For the heading edit, about 8 ms above the no-highlighting floor remains; it was not profiled. The regression tests in `test/code-highlighting.test.ts` count `lowlight.highlight` calls and compare the decorations with an independent full recompute after edits, language changes, block deletion and undo, and a seeded sequence of random edits. Loading a document highlights every block, as before.
+For the end edit, preservation (about 49 ms per input, unchanged) is now most of the cost. An edit that touches 256 or fewer existing decorations removes them from the mapped set; one that touches more, as in a large block, rebuilds the set instead, because removal is quadratic in the decorations removed. For the heading edit, about 9 ms above the no-highlighting floor remains; it was not profiled. The regression tests in `test/code-highlighting.test.ts` count `lowlight.highlight` calls and compare the decorations with an independent full recompute after edits, language changes, block deletion and undo, and a seeded sequence of random edits. Loading a document highlights every block, as before.
 
 A single `insertText` in one TypeScript block of 3,000, 12,000 and 30,000 lines (`const a = 1; // c`, jsdom, no browser) takes 22, 89 and 233 ms on `main` and 26, 97 and 251 ms with this change, so the cost of an edit inside a block still grows linearly with that block.

@@ -94,8 +94,12 @@ function update(mapped: DecorationSet, tr: Transaction): DecorationSet {
       for (const decoration of blockDecorations(node, pos))
         fresh.push(decoration)
   }
-  if (!stale.some(([start, end]) => mapped.find(start, end).length > 0))
-    return mapped.add(tr.doc, fresh)
+  const found: Decoration[] = []
+  for (const [start, end] of stale)
+    for (const decoration of mapped.find(start, end)) found.push(decoration)
+  if (found.length === 0) return mapped.add(tr.doc, fresh)
+  // remove is quadratic in the decorations it removes, so only a large block takes the rebuild below.
+  if (found.length <= 256) return mapped.remove(found).add(tr.doc, fresh)
   stale.sort((a, b) => a[0] - b[0])
   const merged: [number, number][] = []
   for (const range of stale) {
