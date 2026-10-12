@@ -5,7 +5,13 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { closeHistory, undo } from '@milkdown/kit/prose/history'
 import { InkKitEditor } from '../src/index'
 
-const renderer = vi.hoisted(() => ({ initialize: vi.fn(), render: vi.fn() }))
+const renderer = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn(),
+  mermaidAPI: {
+    getDiagramFromText: vi.fn(async () => ({ type: 'pie', db: {} })),
+  },
+}))
 vi.mock('mermaid', () => ({ default: renderer }))
 const originalURL = URL
 
