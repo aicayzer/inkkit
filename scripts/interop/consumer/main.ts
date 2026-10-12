@@ -670,7 +670,9 @@ window.interop = {
             const image = view().querySelectorAll(
               operation.selector ?? '.image img',
             )[operation.occurrence ?? 0]
-            const handle = image?.parentElement.querySelector('.image-handle')
+            const handle = image
+              ?.closest('.image')
+              ?.querySelector(':scope > .image-handle')
             if (!handle) throw Error('Resize handle not found')
             const width = image.getBoundingClientRect().width
             const capturePointer = handle.setPointerCapture

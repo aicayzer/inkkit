@@ -56,6 +56,12 @@ import {
   fencedCodeHandler,
 } from './code-fences'
 import { literalBlock, createLiteralPreservation } from './literals'
+import {
+  imageAttrs,
+  imageBlocks,
+  markdownImageAttrs,
+  readParagraph,
+} from './image-blocks'
 import { references, remarkReferencesPlugin } from './references'
 import { callouts, remarkCalloutsPlugin } from './callouts'
 import { inlineHighlight } from './inline-highlight'
@@ -193,6 +199,12 @@ const preserveSpacerParagraphs = paragraphSchema.extendSchema(
     const schema = base(ctx)
     return {
       ...schema,
+      parseMarkdown: {
+        ...schema.parseMarkdown,
+        runner(state, node, type) {
+          readParagraph(state, node, type)
+        },
+      },
       toMarkdown: {
         ...schema.toMarkdown,
         runner(state, node) {
@@ -262,19 +274,11 @@ const visibleSoftbreaks = hardbreakSchema.extendSchema((base) => (ctx) => {
   }
 })
 
-// Remark represents a missing title as null; the image schema accepts strings.
 const normalizedImages = imageSchema.extendSchema((base) => (ctx) => {
   const schema = base(ctx)
   return {
     ...schema,
-    attrs: {
-      ...schema.attrs,
-      inkkitFileRaw: { default: null },
-      inkkitFileTarget: { default: null },
-      inkkitFileFragment: { default: null },
-      inkkitFileWidth: { default: null },
-      inkkitFileInTable: { default: false },
-    },
+    attrs: imageAttrs,
     parseDOM: [
       {
         tag: 'img[src]',
@@ -290,16 +294,7 @@ const normalizedImages = imageSchema.extendSchema((base) => (ctx) => {
     parseMarkdown: {
       ...schema.parseMarkdown,
       runner(state, node, type) {
-        state.addNode(type, {
-          src: String(node.url ?? ''),
-          alt: String(node.alt ?? ''),
-          title: String(node.title ?? ''),
-          inkkitFileRaw: node.inkkitFileRaw ?? null,
-          inkkitFileTarget: node.inkkitFileTarget ?? null,
-          inkkitFileFragment: node.inkkitFileFragment ?? null,
-          inkkitFileWidth: node.inkkitFileWidth ?? null,
-          inkkitFileInTable: node.inkkitFileInTable ?? false,
-        })
+        state.addNode(type, markdownImageAttrs(node))
       },
     },
     toMarkdown: {
@@ -422,6 +417,7 @@ export function createDialect(
     preserveSpacerParagraphs,
     visibleSoftbreaks,
     normalizedImages,
+    imageBlocks,
     autolinkInputRule,
     extendListItemSchemaForTask,
     strikethroughAttr,

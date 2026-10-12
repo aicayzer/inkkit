@@ -97,9 +97,9 @@ test('managed images are optional and preserve original references', async () =>
     .use(createDialect(true))
     .create()
   try {
-    expect(
-      editor.ctx.get(editorViewCtx).state.doc.firstChild?.firstChild?.type.name,
-    ).toBe('image')
+    expect(editor.ctx.get(editorViewCtx).state.doc.firstChild?.type.name).toBe(
+      'image_block',
+    )
     expect(serialize(editor.ctx)).toBe(source)
   } finally {
     await editor.destroy()

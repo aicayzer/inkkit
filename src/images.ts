@@ -7,6 +7,7 @@ import { $view } from '@milkdown/kit/utils'
 import type { FileReference, ImageAdapter } from './types'
 import { FileResolution, type FileViewRuntime } from './files'
 import { fileReference } from './linked-syntax'
+import { imageBlockSchema } from './image-blocks'
 
 /** A width rides in the alt text, as `![a picture|400](images/….png)`. Other Markdown readers
  *  show the picture and keep the number without requiring a private extension. */
@@ -24,6 +25,8 @@ const minimumWidth = 48
 
 class ImageView implements NodeView {
   dom: HTMLElement
+  /** The card or picture, which a standalone image's block row holds. */
+  private element: HTMLElement
   private image?: HTMLImageElement
   private media?: HTMLMediaElement
   private pdf?: HTMLIFrameElement
@@ -40,8 +43,13 @@ class ImageView implements NodeView {
     private readonly runtime?: FileViewRuntime,
     private readonly canMutate: () => boolean = () => true,
   ) {
-    this.dom = document.createElement('span')
-    this.dom.className = 'image'
+    this.element = document.createElement('span')
+    this.element.className = 'image'
+    if (node.isBlock) {
+      this.dom = document.createElement('div')
+      this.dom.className = 'inkkit-image-block'
+      this.dom.append(this.element)
+    } else this.dom = this.element
     this.view.dom.addEventListener('inkkit-cancel-resize', this.cancelResize)
     this.view.dom.addEventListener('inkkit-media-policy', this.mediaPolicy)
     if (runtime) {
@@ -165,11 +173,25 @@ class ImageView implements NodeView {
   private card(label: string, status?: string, retry = false): void {
     const footer = document.createElement('span')
     footer.className = 'inkkit-file-footer'
+    const name = document.createElement('span')
+    name.className = 'inkkit-file-name'
     const text = document.createElement('span')
     text.className = 'inkkit-file-label'
     text.textContent = label
     text.title = label
-    footer.append(text)
+    name.append(text)
+    if (this.runtime?.adapter.open) {
+      const open = this.button('', this.activate)
+      open.classList.add('inkkit-file-open')
+      open.setAttribute(
+        'aria-label',
+        `${this.runtime.labels.fileOpen} ${label}`,
+      )
+      open.title = this.runtime.labels.fileOpen
+      open.append(openArrow())
+      name.append(open)
+    }
+    footer.append(name)
     if (status) {
       const description = document.createElement('span')
       description.className = 'inkkit-file-status'
@@ -183,15 +205,7 @@ class ImageView implements NodeView {
           this.resolution?.retry(),
         ),
       )
-    if (this.runtime?.adapter.open) {
-      const open = this.button(this.runtime.labels.fileOpen, this.activate)
-      open.setAttribute(
-        'aria-label',
-        `${this.runtime.labels.fileOpen} ${label}`,
-      )
-      footer.append(open)
-    }
-    this.dom.append(footer)
+    this.element.append(footer)
   }
 
   private failPreview(): void {
@@ -212,11 +226,11 @@ class ImageView implements NodeView {
         }
       : splitAlt(String(this.node.attrs.alt ?? ''))
     this.width = width
-    this.dom.textContent = ''
+    this.element.textContent = ''
     this.image = undefined
     if (this.runtime) {
-      this.dom.classList.add('inkkit-file')
-      this.dom.oncontextmenu = (event) => {
+      this.element.classList.add('inkkit-file')
+      this.element.oncontextmenu = (event) => {
         if (!this.runtime?.adapter.contextMenu || !this.active()) return
         const captured = this.runtime.capture()
         if (!captured.isCurrent()) return
@@ -236,11 +250,11 @@ class ImageView implements NodeView {
         state.status === 'resolved'
           ? state.presentation.label || alt || reference.reference
           : alt || reference.reference
-      this.dom.setAttribute('aria-label', label)
-      this.dom.dataset.inkkitFileState = this.previewFailed
+      this.element.setAttribute('aria-label', label)
+      this.element.dataset.inkkitFileState = this.previewFailed
         ? 'error'
         : state.status
-      this.dom.dataset.inkkitFileKind =
+      this.element.dataset.inkkitFileKind =
         state.status === 'resolved' ? state.presentation.kind : 'file'
       if (this.previewFailed) {
         this.card(label, this.runtime.labels.filePreviewUnavailable, true)
@@ -280,7 +294,7 @@ class ImageView implements NodeView {
         })
         media.src = presentation.url
         this.media = media
-        this.dom.append(media)
+        this.element.append(media)
         this.card(label)
       } else if (presentation.kind === 'pdf') {
         const pdf = document.createElement('iframe')
@@ -293,7 +307,7 @@ class ImageView implements NodeView {
         })
         pdf.src = presentation.url
         this.pdf = pdf
-        this.dom.append(pdf)
+        this.element.append(pdf)
         this.card(label, this.runtime.labels.filePDFPreview)
       } else this.card(label)
       return
@@ -302,11 +316,11 @@ class ImageView implements NodeView {
       String(this.node.attrs.src ?? ''),
     )
     if (!presentation) {
-      this.dom.classList.add('image-absent')
-      this.dom.textContent = alt || String(this.node.attrs.src ?? '')
+      this.element.classList.add('image-absent')
+      this.element.textContent = alt || String(this.node.attrs.src ?? '')
       return
     }
-    this.dom.classList.remove('image-absent')
+    this.element.classList.remove('image-absent')
     this.renderImage(presentation.url, alt, width)
   }
 
@@ -323,11 +337,12 @@ class ImageView implements NodeView {
     this.image = image
     const preview = document.createElement('span')
     preview.className = 'inkkit-image-preview'
+    preview.append(image)
+    // The grip sits on the whole card, so it centres on the picture and its name together.
     const handle = document.createElement('span')
     handle.className = 'image-handle'
     handle.addEventListener('pointerdown', this.startResize)
-    preview.append(image, handle)
-    this.dom.append(preview)
+    this.element.append(preview, handle)
   }
 
   private startResize = (event: PointerEvent): void => {
@@ -402,14 +417,29 @@ class ImageView implements NodeView {
   }
 }
 
+const svg = 'http://www.w3.org/2000/svg'
+
+function openArrow(): SVGElement {
+  const icon = document.createElementNS(svg, 'svg')
+  icon.setAttribute('viewBox', '0 0 12 12')
+  icon.setAttribute('aria-hidden', 'true')
+  icon.setAttribute('focusable', 'false')
+  const path = document.createElementNS(svg, 'path')
+  path.setAttribute('d', 'M4 2.5h5.5V8M9.5 2.5 2.5 9.5')
+  icon.append(path)
+  return icon
+}
+
 export function imageView(
   adapter?: ImageAdapter,
   runtime?: FileViewRuntime,
   canMutate: () => boolean = () => true,
 ) {
-  return $view(
-    imageSchema.node,
-    () => (node, view, getPos) =>
-      new ImageView(node, view, getPos, adapter, runtime, canMutate),
-  )
+  const view = (schema: { node: unknown }) =>
+    $view(
+      schema.node as typeof imageSchema.node,
+      () => (node, view, getPos) =>
+        new ImageView(node, view, getPos, adapter, runtime, canMutate),
+    )
+  return [view(imageSchema), view(imageBlockSchema)]
 }

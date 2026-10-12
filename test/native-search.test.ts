@@ -394,7 +394,7 @@ test.each([
   {
     text: 'Before\n\n![photo](opaque)\n\nAfter\n',
     label: 'photo',
-    type: 'image',
+    type: 'image_block',
   },
 ])(
   'reload retains valid $type node selections and safely falls back when the selected node disappears',

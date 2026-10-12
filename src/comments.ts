@@ -2,6 +2,7 @@ import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { isImageBlock } from './image-blocks'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import type { Extension as FromExtension } from 'mdast-util-from-markdown'
 import type {
@@ -500,6 +501,12 @@ export function shareableFragment(content: Fragment): Fragment {
     literalCommentSpans(label).length > 0
   content.forEach((node) => {
     if (isComment(node)) return
+    // Shared output treats a standalone image as the paragraph its Markdown holds.
+    if (isImageBlock(node)) {
+      const { paragraph, image } = node.type.schema.nodes
+      filtered.push(paragraph!.create(null, image!.create(node.attrs)))
+      return
+    }
     if (
       node.type.name === 'reference_definition' &&
       labelHasComments(node.attrs.label)
