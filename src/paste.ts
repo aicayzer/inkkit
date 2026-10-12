@@ -232,12 +232,16 @@ export class PasteController {
           if (schema.nodes.table) {
             // Judge the table as it will import, so wrappers such as `u` or
             // `label` in a cell do not make it literal. A table that is still
-            // unsupported keeps its original source.
+            // unsupported keeps its original source. An input in a cell would
+            // be dropped with its state, so that table stays source too.
             const trial = table.cloneNode(true) as HTMLTableElement
             const holder = table.ownerDocument.createDocumentFragment()
             holder.append(trial)
             normalizeClipboardHTML(holder)
-            if (!unsupportedClipboardTable(trial)) {
+            if (
+              !table.querySelector('td input,th input') &&
+              !unsupportedClipboardTable(trial)
+            ) {
               table.replaceWith(trial)
               continue
             }

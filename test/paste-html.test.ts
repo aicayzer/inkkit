@@ -291,7 +291,7 @@ test('a paragraph emptied by a dropped element adds no blank paragraph', async (
 test('tables beside other content import with common wrappers in their cells', async () => {
   expect(
     await fromHTML(
-      '<p>Intro</p><table><tr><th>Name</th><th>When</th></tr><tr><td><u>Ada</u></td><td><time datetime="2026-01-02">2 Jan</time> <abbr title="Coordinated">UTC</abbr></td></tr><tr><td><label><input type="checkbox"> yes</label></td><td><small>s</small><style>td{}</style></td></tr></table>',
+      '<p>Intro</p><table><tr><th>Name</th><th>When</th></tr><tr><td><u>Ada</u></td><td><time datetime="2026-01-02">2 Jan</time> <abbr title="Coordinated">UTC</abbr></td></tr><tr><td><label>yes</label></td><td><small>s</small><style>td{}</style></td></tr></table>',
     ),
   ).toBe(
     'Intro\n\n| Name | When      |\n| ---- | --------- |\n| Ada  | 2 Jan UTC |\n| yes  | s         |\n',
@@ -321,6 +321,18 @@ test('a table whose ancestors all import is still normalised', async () => {
       '<div><section><table><tr><th>Name</th></tr><tr><td><u>Ada</u></td></tr></table></section></div>',
     ),
   ).toBe('| Name |\n| ---- |\n| Ada  |\n')
+})
+
+test('a checkbox in a table cell keeps the table as source so its state survives', async () => {
+  for (const checkbox of [
+    '<input type="checkbox" checked="">',
+    '<input type="checkbox">',
+    '<label><input type="checkbox" checked=""> done</label>',
+    '<input type="text" value="typed">',
+  ]) {
+    const table = `<table><tbody><tr><th>Done</th></tr><tr><td>${checkbox}</td></tr></tbody></table>`
+    expect(await fromHTML(`<p>Intro</p>${table}`)).toContain(table)
+  }
 })
 
 test('indentation inside pretty-printed blocks is not imported as text', async () => {

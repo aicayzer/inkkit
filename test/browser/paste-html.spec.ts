@@ -130,3 +130,13 @@ test('a table inside a literal element does not load the images in its cells', a
   await page.waitForTimeout(500)
   expect(requests).toEqual([])
 })
+
+test('a checkbox in a table cell keeps its checked state', async ({ page }) => {
+  await openEmpty(page)
+  const table =
+    '<table><tbody><tr><th>Done</th></tr><tr><td><input type="checkbox" checked=""></td></tr><tr><td><input type="checkbox"></td></tr></tbody></table>'
+  await pasteHTML(page, `<p>Intro</p>${table}`)
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(`Intro\n\n${table}\n`)
+})
