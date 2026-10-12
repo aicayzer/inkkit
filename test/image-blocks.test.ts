@@ -591,3 +591,19 @@ test.each([
       expect(text()).toBe('Intro\n\n![Badge](b.png)\n\nEnd\n')
     }),
 )
+
+test('Delete in an empty first list line before an image selects the image instead of leaving a stray gap', () =>
+  run('- x\n\n  ![a](a.png)\n', ({ editor, view, text }) => {
+    view().dispatch(view().state.tr.delete(3, 4))
+    const before = text()
+    select(view(), TextSelection.create(view().state.doc, 3))
+    expect(key(editor, 'Delete')).toBe(true)
+    const selection = view().state.selection
+    expect(selection).toBeInstanceOf(NodeSelection)
+    expect((selection as NodeSelection).node.type.name).toBe('image_block')
+    expect(text()).toBe(before)
+    expect(key(editor, 'Delete')).toBe(true)
+    expect(text()).toBe('- <br />\n')
+    editor.undo()
+    expect(text()).toBe(before)
+  }))

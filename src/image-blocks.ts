@@ -267,19 +267,21 @@ function towardImage(dir: -1 | 1): Command {
       index >= 0 && index < parent.childCount ? parent.child(index) : undefined
     if (!isImageBlock(neighbour)) return false
     const block = dir < 0 ? $head.before() - 1 : $head.after()
-    if (!dispatch) return true
+    // An empty paragraph goes, unless its parent needs it, such as a list item's first line.
     if (
       $head.parent.content.size === 0 &&
-      $head.parent.type.name === 'paragraph'
+      $head.parent.type.name === 'paragraph' &&
+      parent.canReplace($head.index(-1), $head.index(-1) + 1)
     ) {
       const tr = state.tr.delete($head.before(), $head.after())
-      dispatch(
+      dispatch?.(
         tr
           .setSelection(new GapCursor(tr.doc.resolve($head.before())))
           .scrollIntoView(),
       )
       return true
     }
+    if (!dispatch) return true
     dispatch(
       state.tr.setSelection(NodeSelection.create(doc, block)).scrollIntoView(),
     )
