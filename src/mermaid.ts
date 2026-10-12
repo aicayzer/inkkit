@@ -251,8 +251,10 @@ export function renderDiagram(source: string): Promise<string> {
         'suppressErrorRendering',
       ],
     })
-    // getDiagramFromText is the pinned Mermaid's own parser, the one render
-    // runs again on the same text; the public parse does not return the diagram.
+    // getDiagramFromText is the pinned Mermaid's own parser, which render runs
+    // again on the same text; the public parse does not return the diagram. It
+    // skips render's configuration step, so the two parse alike only because
+    // the source check refuses %%{ directives and front matter.
     refuseDirectives(await mermaid.mermaidAPI.getDiagramFromText(source))
     // Mermaid measures text while laying out, so the holder must be attached
     // and rendered. Such a holder can load CSS resources before sanitising,
