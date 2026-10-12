@@ -440,34 +440,113 @@ function withoutHeadingId(node: ProseNode): ProseNode {
     : node
 }
 
-// Edit distance distinguishes replacements from insertions, so replacing a block
-// retains its surrounding whitespace without assigning it a neighbour's source.
-function correspondence(
+const MATCHING_BUDGET = 1_000_000
+
+interface Anchor {
+  b: number
+  a: number
+}
+
+// Unchanged blocks are anchored first, so a long document with many scattered
+// edits is matched as many short gaps rather than one wide span.
+export function correspondence(
   before: string[],
   after: string[],
 ): Array<number | undefined> {
   const result: Array<number | undefined> = new Array(after.length)
-  let head = 0
-  while (
-    head < before.length &&
-    head < after.length &&
-    before[head] === after[head]
-  ) {
-    result[head] = head
-    head++
+  const work = { budget: MATCHING_BUDGET }
+  const spans = [{ b: 0, a: 0, bEnd: before.length, aEnd: after.length }]
+  for (let span = spans.pop(); span; span = spans.pop()) {
+    let { b, a, bEnd, aEnd } = span
+    while (b < bEnd && a < aEnd && before[b] === after[a]) result[a++] = b++
+    while (b < bEnd && a < aEnd && before[bEnd - 1] === after[aEnd - 1])
+      result[--aEnd] = --bEnd
+    if (b === bEnd || a === aEnd) continue
+    work.budget -= bEnd - b + (aEnd - a)
+    if (work.budget < 0) throw tooManyBlocks()
+    const anchors = uniqueAnchors(before, after, b, bEnd, a, aEnd)
+    if (!anchors.length) {
+      align(before, after, b, bEnd, a, aEnd, result, work)
+      continue
+    }
+    for (const anchor of anchors) {
+      result[anchor.a] = anchor.b
+      spans.push({ b, a, bEnd: anchor.b, aEnd: anchor.a })
+      b = anchor.b + 1
+      a = anchor.a + 1
+    }
+    spans.push({ b, a, bEnd, aEnd })
   }
-  let endBefore = before.length
-  let endAfter = after.length
-  while (
-    endBefore > head &&
-    endAfter > head &&
-    before[endBefore - 1] === after[endAfter - 1]
-  ) {
-    result[--endAfter] = --endBefore
+  return result
+}
+
+function tooManyBlocks(): PreservationError {
+  return new PreservationError(
+    'The edit changes too many blocks to preserve safely',
+  )
+}
+
+// Blocks that occur exactly once on each side, in the longest subsequence whose
+// order the two sides share. A repeated block is never an anchor: which copy it
+// belongs to is not known until its neighbours are placed.
+function uniqueAnchors(
+  before: string[],
+  after: string[],
+  b: number,
+  bEnd: number,
+  a: number,
+  aEnd: number,
+): Anchor[] {
+  const once = (list: string[], from: number, to: number) => {
+    const at = new Map<string, number>()
+    for (let i = from; i < to; i++) at.set(list[i]!, at.has(list[i]!) ? -1 : i)
+    return at
   }
-  const rows = endBefore - head + 1
-  const columns = endAfter - head + 1
-  let budget = 1_000_000
+  const beforeAt = once(before, b, bEnd)
+  const afterAt = once(after, a, aEnd)
+  const pairs: Anchor[] = []
+  for (let i = a; i < aEnd; i++) {
+    const match = beforeAt.get(after[i]!)
+    if (match != null && match >= 0 && afterAt.get(after[i]!) === i)
+      pairs.push({ b: match, a: i })
+  }
+  // Patience sorting: tails[k] ends the best increasing subsequence of length k + 1.
+  const tails: number[] = []
+  const previous: number[] = new Array(pairs.length)
+  for (const [index, pair] of pairs.entries()) {
+    let low = 0
+    let high = tails.length
+    while (low < high) {
+      const middle = (low + high) >> 1
+      if (pairs[tails[middle]!]!.b < pair.b) low = middle + 1
+      else high = middle
+    }
+    previous[index] = low ? tails[low - 1]! : -1
+    tails[low] = index
+  }
+  const anchors: Anchor[] = []
+  let at = tails.length ? tails[tails.length - 1]! : -1
+  while (at >= 0) {
+    anchors.push(pairs[at]!)
+    at = previous[at]!
+  }
+  return anchors.reverse()
+}
+
+// Edit distance distinguishes replacements from insertions, so replacing a block
+// retains its surrounding whitespace without assigning it a neighbour's source.
+function align(
+  before: string[],
+  after: string[],
+  b: number,
+  bEnd: number,
+  a: number,
+  aEnd: number,
+  result: Array<number | undefined>,
+  work: { budget: number },
+): void {
+  const rows = bEnd - b + 1
+  const columns = aEnd - a + 1
   let width = Math.max(1, Math.abs(rows - columns))
   for (;;) {
     const costs: Uint32Array[] = []
@@ -478,15 +557,12 @@ function correspondence(
     for (let i = 0; i < rows; i++) {
       const from = Math.max(0, i - width)
       const to = Math.min(columns - 1, i + width)
-      budget -= to - from + 1
-      if (budget < 0)
-        throw new PreservationError(
-          'The edit changes too many blocks to preserve safely',
-        )
+      work.budget -= to - from + 1
+      if (work.budget < 0) throw tooManyBlocks()
       const row = new Uint32Array(to - from + 1)
       costs.push(row)
       for (let j = from; j <= to; j++) {
-        const change = before[head + i - 1] === after[head + j - 1] ? 0 : 1
+        const change = before[b + i - 1] === after[a + j - 1] ? 0 : 1
         row[j - from] =
           i === 0
             ? j
@@ -508,18 +584,16 @@ function correspondence(
     let i = rows - 1
     let j = columns - 1
     while (i || j) {
-      const change =
-        i && j && before[head + i - 1] === after[head + j - 1] ? 0 : 1
+      const change = i && j && before[b + i - 1] === after[a + j - 1] ? 0 : 1
       if (i && j && get(i, j) === get(i - 1, j - 1) + change) {
-        result[head + j - 1] = head + i - 1
+        result[a + j - 1] = b + i - 1
         i--
         j--
       } else if (i && get(i, j) === get(i - 1, j) + 1) i--
       else j--
     }
-    break
+    return
   }
-  return result
 }
 
 /** Retains the loaded source of blocks the edit leaves alone. */

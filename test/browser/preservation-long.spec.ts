@@ -56,6 +56,42 @@ test('distant ordinary typing remains saveable, undoable and reloadable @preserv
   expect((await observe(page)).diagnostics).toEqual([])
 })
 
+test('Replace All over hundreds of changed formatted blocks saves, undoes and reloads @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  const kinds = [
+    (i: number, w: string) => `__Kept ${i}__ [link ${i}](/k/${i}) ${w} here.`,
+    (i: number, w: string) => `* first ${i} ${w}\n* second ${i}`,
+    (i: number, w: string) => `> quoted ${i} ${w}`,
+    (i: number, w: string) => '```ts\nconst a' + i + ` = "${w}";\n` + '```',
+    (i: number, w: string) => `| A | B |\n| - | - |\n| ${w} ${i} | x |`,
+    (i: number, w: string) => `Note ${i} ${w}[^n${i}]\n\n[^n${i}]: Note ${i}.`,
+  ]
+  const source =
+    Array.from({ length: 1200 }, (_, i) =>
+      kinds[i % kinds.length]!(i, i % 4 === 0 ? 'word' : 'plain'),
+    ).join('\n\n') + '\n'
+  const expected = source.replaceAll('word', 'term')
+  await operation(page, 'replaceSource', { text: source })
+  await operation(page, 'editingMode', { mode: 'formatted' })
+  expect(
+    await operation(page, 'replaceAll', {
+      search: 'word',
+      replacement: 'term',
+    }),
+  ).toBe(300)
+  expect((await observe(page)).snapshot?.text).toBe(expected)
+  await operation(page, 'undo')
+  expect((await observe(page)).snapshot?.text).toBe(source)
+  await operation(page, 'redo')
+  expect((await observe(page)).snapshot?.text).toBe(expected)
+  await operation(page, 'reload', { text: expected })
+  expect((await observe(page)).snapshot?.text).toBe(expected)
+  expect((await observe(page)).diagnostics).toEqual([])
+})
+
 test('rejected typing and composition restore visible DOM and leave saving and history usable @preservation', async ({
   page,
   openFixture,
