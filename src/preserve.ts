@@ -232,7 +232,10 @@ function retainSource(
   }
   if (before.type === 'text' && after.type === 'text')
     return retainBoundaryWhitespace(
-      retainText(raw, before.value!, after.value!, false, inTable),
+      withEnding(
+        retainText(raw, before.value!, after.value!, false, inTable),
+        lineEnding,
+      ),
       canonical.slice(newStart, newEnd),
     )
   if (
@@ -289,12 +292,13 @@ function retainSource(
             ? source.slice(childStart, from) +
               source.slice(originalFrom, originalTo) +
               source.slice(to, childEnd)
-            : canonical
-                .slice(
+            : withEnding(
+                canonical.slice(
                   incoming.position!.start.offset!,
                   incoming.position!.end.offset!,
-                )
-                .replaceAll('\n', lineEnding)
+                ),
+                lineEnding,
+              )
       }
       output += source.slice(previous, childStart) + retainedSource
       previous = childEnd
@@ -337,12 +341,17 @@ function retainSource(
     if (from != null && to != null && newFrom != null && newTo != null)
       return retainBoundaryWhitespace(
         source.slice(start, from) +
-          canonical.slice(newFrom, newTo).replaceAll('\n', lineEnding) +
+          withEnding(canonical.slice(newFrom, newTo), lineEnding) +
           source.slice(to, end),
         canonical.slice(newStart, newEnd),
       )
   }
-  return canonical.slice(newStart, newEnd).replaceAll('\n', lineEnding)
+  return withEnding(canonical.slice(newStart, newEnd), lineEnding)
+}
+
+// Canonical Markdown keeps authored CRLF inside literal blocks and code fences.
+function withEnding(text: string, lineEnding: string): string {
+  return lineEnding === '\n' ? text : text.replace(/\r?\n/g, lineEnding)
 }
 
 function positionalNode(tree: Root, transformed: SourceNode): SourceNode {

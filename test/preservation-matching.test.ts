@@ -15,16 +15,23 @@ const kinds = [
   (i: number, w: string) =>
     `Note ${i} ${w}[^n${i}]\n\n[^n${i}]: Footnote ${i}.`,
   (i: number, w: string) => `# Heading ${i} ${w}`,
+  (i: number, w: string) => `<div>\nhtml ${i} ${w}\n</div>`,
+  (i: number, w: string) => `Unresolved ${i} ${w} [x][missing]\nnext line`,
 ]
 
 // Every block mentions "word" only when it is one of the `changed` ones.
-function mixedSource(blocks: number, changed: number): string {
+function mixedSource(blocks: number, changed: number, ending: string): string {
   const every = blocks / changed
   return (
-    Array.from({ length: blocks }, (_, i) => {
-      const edit = Math.floor((i + 1) / every) > Math.floor(i / every)
-      return kinds[i % kinds.length]!(i, edit ? 'word' : 'plain')
-    }).join('\n\n') + '\n'
+    ['---\ntitle: word\n---']
+      .concat(
+        Array.from({ length: blocks }, (_, i) => {
+          const edit = Math.floor((i + 1) / every) > Math.floor(i / every)
+          return kinds[i % kinds.length]!(i, edit ? 'word' : 'plain')
+        }),
+      )
+      .join('\n\n')
+      .replaceAll('\n', ending) + ending
   )
 }
 
@@ -60,15 +67,17 @@ async function mount(
   }
 }
 
-for (const [blocks, changed] of [
-  [60, 20],
-  [1000, 300],
-  [2000, 1000],
+for (const [blocks, changed, ending] of [
+  [60, 20, '\n'],
+  [1000, 300, '\n'],
+  [2000, 1000, '\n'],
+  [60, 20, '\r\n'],
+  [1000, 300, '\r\n'],
 ] as const) {
   test(
-    `Replace All saves ${changed} changed of ${blocks} mixed blocks and keeps the rest byte-identical`,
+    `Replace All saves ${changed} changed of ${blocks} mixed blocks with ${JSON.stringify(ending)} line endings and keeps the rest byte-identical`,
     () =>
-      mount(mixedSource(blocks, changed), (editor, ctx) => {
+      mount(mixedSource(blocks, changed, ending), (editor, ctx) => {
         const source = editor.snapshot().text
         const expected = source.replaceAll('word', 'term')
         expect(editor.replaceAll('word', 'term')).toBeGreaterThanOrEqual(
@@ -210,6 +219,15 @@ test(
     ),
   60_000,
 )
+
+for (const ending of ['\n', '\r\n'])
+  test(`Replace All in ${JSON.stringify(ending)} front matter keeps its line endings`, () => {
+    const source = '---\ntitle: word\n---\n\nbody\n'.replaceAll('\n', ending)
+    return mount(source, (editor) => {
+      expect(editor.replaceAll('word', 'term')).toBe(1)
+      expect(editor.snapshot().text).toBe(source.replace('word', 'term'))
+    })
+  })
 
 test('block correspondence pairs unchanged blocks with themselves and never an unchanged block with different content', () => {
   let seed = 7

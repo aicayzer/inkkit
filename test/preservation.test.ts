@@ -33,6 +33,32 @@ for (const source of sources) {
   })
 }
 
+// Literal blocks hold their authored line endings, unlike the canonical source
+// that edited blocks are rebuilt from.
+for (const source of [
+  '---\r\ntitle: EDIT\r\n---\r\n\r\nBody\r\n',
+  '<div>\r\nEDIT\r\n</div>\r\n\r\nBody\r\n',
+  'Unresolved [x][missing] EDIT\r\nnext\r\n\r\nBody\r\n',
+])
+  test(`typing in a CRLF literal block keeps CRLF: ${JSON.stringify(source)}`, () =>
+    withEditor(source, (editor) => {
+      const view = editor.ctx.get(editorViewCtx)
+      const preservation = new Preservation(editor.ctx, source)
+      let at = -1
+      view.state.doc.descendants((node, position) => {
+        if (at < 0 && node.text?.includes('EDIT'))
+          at = position + node.text.indexOf('EDIT') + 'EDIT'.length
+      })
+      view.dispatch(view.state.tr.insertText('!', at))
+      expect(preservation.serialize(view.state.doc)).toBe(
+        source.replace('EDIT', 'EDIT!'),
+      )
+      view.dispatch(view.state.tr.insertText('\nmore', at + 1))
+      expect(preservation.serialize(view.state.doc)).toBe(
+        source.replace('EDIT', 'EDIT!\r\nmore'),
+      )
+    }))
+
 test('undo restores original bytes and an inserted block preserves previous source', async () => {
   const source = '__bold__\n\n_last_'
   await withEditor(source, (editor) => {
