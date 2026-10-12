@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { afterEach, beforeAll, expect, test, vi } from 'vitest'
 import mermaid from 'mermaid'
 import { renderDiagram } from '../src/mermaid'
@@ -273,3 +275,14 @@ for (const statement of statements)
   ] as const)
     test(`never renders "${statement.split(' ')[0]}" ${position}`, () =>
       refusedBeforeRendering(build(statement)))
+
+test('the directive check was verified against the installed Mermaid', () => {
+  const require = createRequire(import.meta.url)
+  const manifest = require.resolve('mermaid/package.json')
+  const { version } = JSON.parse(readFileSync(manifest, 'utf8')) as {
+    version: string
+  }
+  // refuseDirectives reads each diagram type's own fields; check them again
+  // against the new version's parsers before changing this.
+  expect(version).toBe('12.1.0')
+})
