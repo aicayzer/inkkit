@@ -698,6 +698,8 @@ function joinable(content: Fragment): Slice {
 /**
  * Markdown drops the spaces at the edges of a paragraph. Where a pasted
  * paragraph joins text beside the caret, the spaces written next to it stay.
+ * Spaces beside a line break, or on a pasted line with no text, would not
+ * read back, so they are dropped.
  */
 function withEdgeSpaces(
   slice: Slice,
@@ -705,15 +707,15 @@ function withEdgeSpaces(
   $from: ResolvedPos,
   $to: ResolvedPos,
 ): Slice {
+  const beside = (node: ProseNode | null | undefined) =>
+    node != null && node.type.name !== 'hardbreak'
   const lead =
-    slice.openStart && $from.parent.isTextblock && $from.parentOffset > 0
-      ? /^[ \t]*/.exec(source)![0]
+    slice.openStart && $from.parent.isTextblock && beside($from.nodeBefore)
+      ? (/^[ \t]+(?=\S)/.exec(source)?.[0] ?? '')
       : ''
   const trail =
-    slice.openEnd &&
-    $to.parent.isTextblock &&
-    $to.parentOffset < $to.parent.content.size
-      ? /[ \t]*$/.exec(source.slice(lead.length))![0]
+    slice.openEnd && $to.parent.isTextblock && beside($to.nodeAfter)
+      ? (/(?<=\S)[ \t]+$/.exec(source.slice(lead.length))?.[0] ?? '')
       : ''
   if (!lead && !trail) return slice
   const schema = $from.doc.type.schema
