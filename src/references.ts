@@ -1,5 +1,6 @@
 import { editorLabels } from './labels'
 import { isSafeLinkTarget } from './link-safety'
+import { followsText, type LinkForm } from './link-form'
 import { $node, $remark, $prose } from '@milkdown/kit/utils'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
@@ -209,6 +210,18 @@ export const remarkReferencesPlugin = $remark(
   () => remarkReferences,
 )
 
+// How a link in HTML was written: as InkKit recorded it, or, for a link from
+// elsewhere whose text is its web or email address, as that bare address.
+function pastedForm(element: HTMLElement, href: string): LinkForm {
+  const form = element.getAttribute('data-inkkit-link-form')
+  if (form === 'literal' || form === 'angle') return form
+  if (form) return null
+  const text = element.textContent ?? ''
+  return followsText(text, href) && /^(https?:\/\/|www\.)|@/i.test(text)
+    ? 'literal'
+    : null
+}
+
 export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
   const schema = base(ctx)
   return {
@@ -221,6 +234,8 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
       identifier: { default: null },
       referenceType: { default: null },
       referenceContent: { default: null },
+      // How the link was written, from link-form.ts.
+      form: { default: null },
     },
     parseDOM: [
       {
@@ -233,6 +248,7 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
           if (!isSafeLinkTarget(href)) return false
           return {
             href,
+            form: pastedForm(element, href),
             title: element.getAttribute('title'),
             label: element.getAttribute('data-inkkit-label'),
             identifier: element.getAttribute('data-inkkit-reference'),
@@ -254,6 +270,8 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
       delete attrs.identifier
       delete attrs.referenceType
       delete attrs.referenceContent
+      delete attrs.form
+      attrs['data-inkkit-link-form'] = mark.attrs.form ?? 'written'
       if (mark.attrs.identifier != null) {
         attrs['data-inkkit-reference'] = mark.attrs.identifier
         attrs['data-inkkit-label'] = mark.attrs.label
@@ -265,8 +283,18 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
     parseMarkdown: {
       match: (node) => node.type === 'link' || node.type === 'linkReference',
       runner(state, node, type) {
-        if (node.type === 'link')
-          return schema.parseMarkdown.runner(state, node, type)
+        if (node.type === 'link') {
+          state.openMark(type, {
+            href: node.url,
+            title: node.title ?? null,
+            form:
+              (node.data as { inkkitLinkForm?: unknown } | undefined)
+                ?.inkkitLinkForm ?? null,
+          })
+          state.next(node.children)
+          state.closeMark(type)
+          return
+        }
         state.openMark(type, {
           href: String(node.url ?? ''),
           title: node.title ?? null,
@@ -282,8 +310,14 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
     toMarkdown: {
       ...schema.toMarkdown,
       runner(state, mark, node) {
-        if (mark.attrs.identifier == null)
-          return schema.toMarkdown.runner(state, mark, node)
+        if (mark.attrs.identifier == null) {
+          state.withMark(mark, 'link', undefined, {
+            title: mark.attrs.title,
+            url: mark.attrs.href,
+            data: { inkkitLinkForm: mark.attrs.form },
+          })
+          return
+        }
         state.withMark(mark, 'linkReference', undefined, {
           identifier: mark.attrs.identifier,
           label: mark.attrs.label,

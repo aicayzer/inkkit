@@ -4,6 +4,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import {
   commonmark,
   docSchema,
+  hardbreakClearMarkPlugin,
   hardbreakSchema,
   imageSchema,
   paragraphSchema,
@@ -37,9 +38,11 @@ import {
   setAlignCommand,
   exitTable,
 } from '@milkdown/kit/preset/gfm'
+import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { keymap } from '@milkdown/kit/prose/keymap'
-import { autolinkInputRule } from './autolink'
+import { autolinkLiterals } from './autolink'
+import { followsText, remarkLinkForms, type LinkForm } from './link-form'
 import { isScriptAddress } from './link-safety'
 import { sourceAttribute } from './source'
 import {
@@ -93,12 +96,14 @@ import { gfmStrikethrough } from 'micromark-extension-gfm-strikethrough'
 import { gfmTaskListItem } from 'micromark-extension-gfm-task-list-item'
 import type { Processor } from 'unified'
 
-const bareURL = /^https?:\/\/[^\s<>]+$/
-// The literal form stops at these, so a URL ending in one would come back shorter than it went out.
-const endsInPunctuation = /[.,;:!?]$/
-// What may sit against a bare URL without the reader running the two together.
-const beforeURL = /(^|[\s([*_~])$/
-const afterURL = /^([\s.,;:!?)\]}<]|$)/
+// The literal form stops at these, so an address ending in one would come back shorter than it went out.
+const endsInPunctuation = /[.,;:!?*_~]$/
+// What may sit against a bare address without the reader running the two together.
+// GFM reads an address after a space or any punctuation but `/`.
+const beforeURL = /(^|[\s\p{P}\p{S}])$/u
+// Text GFM leaves off the end of an address and the writer does not escape:
+// what follows an address up to a space must be only these.
+const trailing = /^["'.,;:!?)\]]*$/
 
 function balanced(url: string): boolean {
   let open = 0
@@ -110,60 +115,241 @@ function balanced(url: string): boolean {
   return open === 0
 }
 
-function textAt(
-  parent: Parents | undefined,
-  node: Link,
-  offset: number,
-): PhrasingContent | undefined {
-  const children = parent?.children as PhrasingContent[] | undefined
-  const index = children?.indexOf(node as PhrasingContent) ?? -1
-  return index < 0 ? undefined : children?.[index + offset]
-}
+// Formatting a bare address can sit inside. Its delimiters are punctuation,
+// which may come before an address, and those of emphasis and strikethrough
+// are also characters an address does not end with, so what follows them
+// decides whether the address runs on.
+const wrappers = new Set(['emphasis', 'strong', 'delete', 'highlight'])
+const transparent = new Set(['emphasis', 'strong', 'delete'])
+const blocks = new Set(['paragraph', 'heading', 'tableCell'])
 
-/** A link whose text is its own URL is written as the bare URL, the way it was typed. Only where reading
- *  it back gives the same link again: nothing may run into it at either end. */
-function writesBare(
-  node: Link,
-  parent: Parents | undefined,
-  inCell: boolean,
-): boolean {
+/** A bare address is written bare only where reading it back gives the same link: nothing may run into it at
+ *  either end. `ancestors` runs from the root to the link's parent. */
+function writesBare(node: Link, index: number, ancestors: Parents[]): boolean {
   const [child, ...rest] = node.children
   if (
     node.title ||
     rest.length > 0 ||
     child?.type !== 'text' ||
-    child.value !== node.url
+    !followsText(child.value, node.url) ||
+    /[\s<>]/.test(child.value) ||
+    endsInPunctuation.test(child.value) ||
+    !balanced(child.value)
   )
     return false
-  if (
-    !bareURL.test(node.url) ||
-    endsInPunctuation.test(node.url) ||
-    !balanced(node.url)
-  )
+  // Spaces at either end of a block are written as character references,
+  // which a bare address would run into or follow without a space.
+  const edge = (parent: Parents, text: PhrasingContent, at: 0 | -1) =>
+    blocks.has(parent.type) &&
+    text.type === 'text' &&
+    /^[ \t]+$/.test(text.value) &&
+    parent.children.at(at) === text
+  const follows = (parent: Parents, text: PhrasingContent): boolean => {
+    if (text.type !== 'text') return false
+    const run = /^\S*/.exec(text.value)![0]
+    return (
+      trailing.test(run) &&
+      (run.length < text.value.length ||
+        (blocks.has(parent.type) && parent.children.at(-1) === text))
+    )
+  }
+  const side = (step: -1 | 1): boolean => {
+    let current: Parents | Link = node
+    for (let level = ancestors.length - 1; level >= 0; level--) {
+      const parent = ancestors[level]!
+      const children = parent.children as PhrasingContent[]
+      const at =
+        current === node ? index : children.indexOf(current as PhrasingContent)
+      const sibling = children[at + step]
+      if (sibling)
+        return (
+          sibling.type === 'text' &&
+          !edge(parent, sibling, step < 0 ? 0 : -1) &&
+          (step < 0
+            ? beforeURL.test(sibling.value) && !sibling.value.endsWith('/')
+            : follows(parent, sibling))
+        )
+      if (blocks.has(parent.type)) return true
+      if (!wrappers.has(parent.type)) return false
+      if (step < 0 || !transparent.has(parent.type)) return step < 0
+      current = parent
+    }
     return false
-  const before = textAt(parent, node, -1)
-  if (before && (before.type !== 'text' || !beforeURL.test(before.value)))
-    return false
-  const after = textAt(parent, node, 1)
-  if (after && (after.type !== 'text' || !afterURL.test(after.value)))
-    return false
-  // Spaces that end a cell are written as character references, which a bare URL would run into.
-  return !(
-    inCell &&
-    after?.type === 'text' &&
-    /^[ \t]+$/.test(after.value) &&
-    parent?.children.at(-1) === after
-  )
+  }
+  return side(-1) && side(1)
 }
 
-const link: (typeof defaultHandlers)['link'] = (node, parent, state, info) =>
-  writesBare(node, parent, state.stack.includes('tableCell'))
-    ? node.url
-    : defaultHandlers.link(node, parent, state, info)
-link.peek = (node, parent, state) =>
-  writesBare(node, parent, state.stack.includes('tableCell'))
-    ? node.url[0]!
-    : defaultHandlers.link.peek(node, parent, state)
+// Literal links that can be written bare, found once per document because
+// what runs into an address can sit outside the formatting around it.
+let bareLinks = new WeakSet<Link>()
+
+const root: (typeof defaultHandlers)['root'] = (node, parent, state, info) => {
+  bareLinks = new WeakSet()
+  // Moving spaces out of formatting can leave empty text, and formatting
+  // with nothing in it, written as bare delimiters that would join their
+  // neighbours.
+  const empty = (child: PhrasingContent): boolean =>
+    (child.type === 'text' && child.value === '') ||
+    (wrappers.has(child.type) &&
+      'children' in child &&
+      child.children.every(empty))
+  const visit = (current: Parents, ancestors: Parents[]) => {
+    if (current.children.some((child) => empty(child as PhrasingContent)))
+      current.children = current.children.filter(
+        (child) => !empty(child as PhrasingContent),
+      ) as typeof current.children
+    const children = current.children as PhrasingContent[]
+    children.forEach((child, index) => {
+      if (child.type === 'link' && formOf(child)) {
+        const outside = formattedOutside(child)
+        if (outside) child = children[index] = outside
+      }
+      if (
+        child.type === 'link' &&
+        formOf(child) === 'literal' &&
+        writesBare(child, index, [...ancestors, current])
+      )
+        bareLinks.add(child)
+      if ('children' in child) visit(child, [...ancestors, current])
+    })
+  }
+  visit(node, [])
+  bracketLinks = new WeakSet()
+  keepFormattingClosed(node, true)
+  return defaultHandlers.root(node, parent, state, info)
+}
+
+// Links written with brackets although written bare or in angle brackets
+// elsewhere, because formatting around them could not close.
+let bracketLinks = new WeakSet<Link>()
+
+const spaceOrPunctuation = /^[\s\p{P}\p{S}]$/u
+
+// Formatting written around a link in angle brackets opens before `<` and
+// closes after `>`, which Markdown allows only beside a space or punctuation.
+// Where a letter sits there instead, the formatting goes inside a link
+// written with brackets.
+function keepFormattingClosed(current: Parents, block: boolean): void {
+  const children = current.children as PhrasingContent[]
+  children.forEach((child, index) => {
+    const chain: Array<PhrasingContent & { children: PhrasingContent[] }> = []
+    let inner: PhrasingContent = child
+    while (
+      wrappers.has(inner.type) &&
+      'children' in inner &&
+      inner.children.length === 1
+    ) {
+      chain.push(inner as PhrasingContent & { children: PhrasingContent[] })
+      inner = inner.children[0]!
+    }
+    if (chain.length && inner.type === 'link' && formOf(inner)) {
+      const link = inner
+      if (!bareLinks.has(link)) {
+        // Beyond the block is a line end; other nodes end in punctuation.
+        const outside = block ? ' ' : '.'
+        const previous = children[index - 1]
+        const next = children[index + 1]
+        const before = !previous
+          ? outside
+          : previous.type === 'text'
+            ? (previous.value.at(-1) ?? outside)
+            : '.'
+        const after = !next
+          ? outside
+          : next.type === 'text'
+            ? (next.value[0] ?? outside)
+            : '.'
+        if (
+          !spaceOrPunctuation.test(before) ||
+          !spaceOrPunctuation.test(after)
+        ) {
+          let content: PhrasingContent[] = link.children
+          for (const wrapper of [...chain].reverse())
+            content = [{ ...wrapper, children: content } as PhrasingContent]
+          const written: Link = {
+            ...link,
+            children: content as Link['children'],
+          }
+          bracketLinks.add(written)
+          children[index] = written
+          return
+        }
+      }
+    }
+    if ('children' in child) keepFormattingClosed(child, blocks.has(child.type))
+  })
+}
+
+const formOf = (node: Link): LinkForm =>
+  (node.data as { inkkitLinkForm?: LinkForm } | undefined)?.inkkitLinkForm ??
+  null
+
+// Formatting around a whole address is written outside it, as `*https://…*`,
+// so that the address stays bare or in angle brackets. A bare address ends
+// before `*`, `_` and `~`, but would run into other delimiters such as `==`.
+function formattedOutside(node: Link): PhrasingContent | undefined {
+  const literal = formOf(node) === 'literal'
+  const wrappers: Array<PhrasingContent & { children: PhrasingContent[] }> = []
+  let inner: PhrasingContent | undefined = node.children[0]
+  while (
+    node.children.length === 1 &&
+    inner &&
+    'children' in inner &&
+    inner.type !== 'link' &&
+    inner.children.length === 1 &&
+    (!literal || ['emphasis', 'strong', 'delete'].includes(inner.type))
+  ) {
+    wrappers.push(inner as PhrasingContent & { children: PhrasingContent[] })
+    inner = inner.children[0]
+  }
+  if (!wrappers.length || inner?.type !== 'text') return undefined
+  let result: PhrasingContent = { ...node, children: [inner] }
+  for (const wrapper of wrappers.reverse())
+    result = { ...wrapper, children: [result] } as PhrasingContent
+  return result
+}
+
+type Written = 'bare' | 'angle' | 'brackets'
+
+function written(node: Link): Written {
+  if (bracketLinks.has(node)) return 'brackets'
+  const form = formOf(node)
+  if (form === 'literal' && bareLinks.has(node)) return 'bare'
+  // A link written with brackets keeps them, even when its label is its address.
+  return form ? 'angle' : 'brackets'
+}
+
+// mdast-util-to-markdown writes a link whose label is its address in angle
+// brackets unless `resourceLink` is set; an address that cannot be one, such
+// as `www.` text, still gets brackets.
+function withResourceLink<T>(
+  state: { options: { resourceLink?: boolean | null } },
+  resourceLink: boolean,
+  write: () => T,
+): T {
+  const previous = state.options.resourceLink
+  state.options.resourceLink = resourceLink
+  try {
+    return write()
+  } finally {
+    state.options.resourceLink = previous
+  }
+}
+
+const link: (typeof defaultHandlers)['link'] = (node, parent, state, info) => {
+  const form = written(node)
+  if (form === 'bare') return (node.children[0] as { value: string }).value
+  return withResourceLink(state, form === 'brackets', () =>
+    defaultHandlers.link(node, parent, state, info),
+  )
+}
+link.peek = (node, parent, state) => {
+  const form = written(node)
+  if (form === 'bare') return (node.children[0] as { value: string }).value[0]!
+  return withResourceLink(state, form === 'brackets', () =>
+    defaultHandlers.link.peek!(node, parent, state),
+  )
+}
 
 function remarkDialect(this: Processor) {
   const data = this.data() as Record<string, unknown[] | undefined>
@@ -218,7 +404,9 @@ function remarkDialect(this: Processor) {
       },
     },
   } satisfies StringifyOptions)
-  add('toMarkdownExtensions', { handlers: { link, code: fencedCodeHandler } })
+  add('toMarkdownExtensions', {
+    handlers: { link, root, code: fencedCodeHandler },
+  })
   return padShortRows
 }
 
@@ -239,7 +427,43 @@ export const remarkDialectPlugin = $remark('remarkDialect', () => remarkDialect)
 
 // Reference links retain their authored form instead of expanding to inline links.
 const commonmarkWithLiteralReferences = commonmark.filter(
-  (plugin) => !remarkInlineLinkPlugin.includes(plugin),
+  (plugin) =>
+    !remarkInlineLinkPlugin.includes(plugin) &&
+    plugin !== hardbreakClearMarkPlugin,
+)
+
+// A line break inserted inside formatting does not take its marks, and no
+// line break takes inline code, which cannot hold one. This replaces the
+// preset's plugin, which also cleared the marks of breaks inside newly
+// formatted text and, doing so, reset their attributes, turning a soft break
+// into a hard one, at positions read from the first step against the final
+// document.
+const breaksWithoutMarks = $prose(
+  (ctx) =>
+    new Plugin({
+      key: new PluginKey('inkkitBreaksWithoutMarks'),
+      appendTransaction(transactions, oldState, newState) {
+        if (!transactions.some((tr) => tr.docChanged)) return null
+        const inserted = transactions.some((tr) => tr.getMeta('hardbreak'))
+        const start = oldState.doc.content.findDiffStart(newState.doc.content)
+        if (start == null) return null
+        const end = oldState.doc.content.findDiffEnd(newState.doc.content)!.b
+        const type = hardbreakSchema.type(ctx)
+        const tr = newState.tr
+        newState.doc.nodesBetween(start, Math.max(start, end), (node, pos) => {
+          if (node.type !== type) return
+          for (const mark of node.marks)
+            if (inserted || mark.type.spec.code)
+              tr.removeMark(pos, pos + 1, mark.type)
+        })
+        return tr.steps.length ? tr : null
+      },
+    }),
+)
+
+export const remarkLinkFormsPlugin = $remark(
+  'inkkitLinkForms',
+  () => remarkLinkForms,
 )
 
 // The preset drops the final empty paragraph, which makes trailing spacers shrink on each reload.
@@ -521,6 +745,7 @@ export function createDialect(
     cellBreakKeymap,
     remarkCodeFences,
     remarkReferencesPlugin,
+    remarkLinkFormsPlugin,
     remarkCalloutsPlugin,
     remarkCommentsPlugin,
     wikiLinks || files ? linkedSyntax(wikiLinks, files) : [],
@@ -544,7 +769,8 @@ export function createDialect(
     visibleSoftbreaks,
     normalizedImages,
     imageBlocks,
-    autolinkInputRule,
+    autolinkLiterals,
+    breaksWithoutMarks,
     listItems,
     strikethroughAttr,
     strikethroughSchema,

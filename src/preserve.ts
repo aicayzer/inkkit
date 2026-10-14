@@ -3,6 +3,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { serialize } from './dialect'
+import { linkForm } from './link-form'
 import { restoreCodeEndings, finalCodeEnding } from './code-fences'
 import { lineBreakHTML, sourceFrontmatter } from './literals'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
@@ -25,7 +26,7 @@ interface SourceNode {
 // Line endings are the document's, not the node's: a CRLF source and its LF
 // canonical form describe the same text.
 function signature(node: SourceNode): string {
-  return JSON.stringify(node, function (key, value) {
+  return JSON.stringify(ordered(node), function (key, value) {
     if (['position', 'data', 'marker'].includes(key)) return undefined
     const holder = this as SourceNode
     // Every spelling of a line break reads back as the same break.
@@ -42,8 +43,29 @@ function signature(node: SourceNode): string {
   })
 }
 
+const formatting = new Set(['emphasis', 'strong', 'delete', 'highlight'])
+
+// Formatting around a whole link and a link around whole formatting read the
+// same, so both are compared with the formatting outside.
+function ordered(node: SourceNode): SourceNode {
+  let current = node
+  const inner = current.children?.[0]
+  if (
+    current.type === 'link' &&
+    current.children!.length === 1 &&
+    formatting.has(inner!.type)
+  )
+    current = {
+      ...inner!,
+      children: [{ ...current, children: inner!.children }],
+    }
+  return current.children
+    ? { ...current, children: current.children.map(ordered) }
+    : current
+}
+
 function ownShape(node: SourceNode): string {
-  return JSON.stringify(node, (key, value) =>
+  return JSON.stringify(ordered(node), (key, value) =>
     ['position', 'data', 'children', 'value', 'marker'].includes(key)
       ? undefined
       : value,
@@ -145,12 +167,188 @@ function authoredNeighbour(
   return marker ? { ordered: before.ordered, marker } : undefined
 }
 
+// The text Markdown inline source reads as, with the source offset of each of
+// its characters; undefined where it holds more than escapes and entities.
+function decodedOffsets(
+  raw: string,
+  lines = false,
+): { decoded: string; offsets: number[] } | undefined {
+  const offsets = [0]
+  let decoded = ''
+  for (let index = 0; index < raw.length;) {
+    const token =
+      /^\\[!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~]/.exec(raw.slice(index))?.[0] ??
+      /^&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);/.exec(
+        raw.slice(index),
+      )?.[0]
+    let value = raw[index]!
+    if (token?.startsWith('\\')) value = token[1]!
+    else if (token) {
+      const element = document.createElement('textarea')
+      element.innerHTML = token
+      value = element.value
+    } else if (!lines && (raw[index] === '\n' || raw[index] === '\r'))
+      return undefined
+    index += token?.length ?? 1
+    decoded += value
+    for (let part = 0; part < value.length; part++) offsets.push(index)
+  }
+  return { decoded, offsets }
+}
+
+// GFM finds addresses after punctuation in a pass after parsing, which gives
+// the address and the text split around it no position. Each such run of
+// children is found in the source between its located neighbours.
+function locateChildren(node: SourceNode, text: string): void {
+  const children = node.children
+  const start = node.position?.start.offset
+  const end = node.position?.end.offset
+  if (!children || start == null || end == null) return
+  for (let index = 0; index < children.length;) {
+    if (children[index]!.position?.start.offset != null) {
+      index++
+      continue
+    }
+    let last = index
+    while (
+      last < children.length &&
+      children[last]!.position?.start.offset == null
+    )
+      last++
+    const from = children[index - 1]?.position?.end.offset ?? start
+    const to = children[last]?.position?.start.offset ?? end
+    const run = children.slice(index, last)
+    const values = run.map((child) => inlineText(child))
+    const read = decodedOffsets(text.slice(from, to), true)
+    const at = read?.decoded.indexOf(values.join(''))
+    if (
+      read &&
+      at != null &&
+      at >= 0 &&
+      run.every((child) => child.type === 'text' || child.type === 'link')
+    ) {
+      let offset = at
+      run.forEach((child, part) => {
+        const childStart = from + read.offsets[offset]!
+        offset += values[part]!.length
+        const childEnd = from + read.offsets[offset]!
+        child.position = {
+          start: { offset: childStart },
+          end: { offset: childEnd },
+        } as SourceNode['position']
+        child.children?.forEach((inner) => {
+          inner.position = child.position
+        })
+      })
+    }
+    index = last
+  }
+}
+
+// The text a run of text and links written bare or in angle brackets reads
+// as, with the offset in `text` of each character and the range of each
+// link, or undefined for any other run.
+function runOffsets(
+  nodes: readonly SourceNode[],
+  text: string,
+  from: number,
+  to: number,
+):
+  | { decoded: string; offsets: number[]; links: Array<[number, number]> }
+  | undefined {
+  let decoded = ''
+  const offsets = [from]
+  const links: Array<[number, number]> = []
+  let at = from
+  for (const node of nodes) {
+    const start = node.position?.start.offset
+    const end = node.position?.end.offset
+    if (start !== at || end == null) return undefined
+    const raw = text.slice(start, end)
+    if (node.type === 'link') {
+      const label = inlineText(node)
+      const angle = raw === `<${label}>`
+      if (raw !== label && !angle) return undefined
+      links.push([decoded.length, decoded.length + label.length])
+      decoded += label
+      // An edit widens to whole links, so only their ends are used.
+      for (let index = 1; index <= label.length; index++)
+        offsets.push(
+          index === label.length ? end : start + index + Number(angle),
+        )
+    } else if (node.type === 'text') {
+      const read = decodedOffsets(raw, true)
+      if (!read || read.decoded !== node.value) return undefined
+      decoded += read.decoded
+      offsets.push(...read.offsets.slice(1).map((offset) => start + offset))
+    } else return undefined
+    at = end
+  }
+  return at === to ? { decoded, offsets, links } : undefined
+}
+
+// A run of text and addresses, such as an address that an edit ended, keeps
+// its source outside the edit. The edit, widened to the addresses it touches
+// before or after, is written as the canonical writer writes it, since
+// escapes kept beside a new address could stop it reading as one.
+function retainRun(
+  before: readonly SourceNode[],
+  after: readonly SourceNode[],
+  source: string,
+  canonical: string,
+  [from, to]: [number, number],
+  [newFrom, newTo]: [number, number],
+): string | undefined {
+  const old = runOffsets(before, source, from, to)
+  const now = runOffsets(after, canonical, newFrom, newTo)
+  if (!old || !now) return undefined
+  const a = old.decoded
+  const b = now.decoded
+  let prefix = 0
+  while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix])
+    prefix++
+  let suffix = 0
+  while (
+    suffix < a.length - prefix &&
+    suffix < b.length - prefix &&
+    a[a.length - 1 - suffix] === b[b.length - 1 - suffix]
+  )
+    suffix++
+  for (let widened = true; widened;) {
+    widened = false
+    for (const [links, length] of [
+      [old.links, a.length],
+      [now.links, b.length],
+    ] as const)
+      for (const [start, end] of links)
+        if (start <= length - suffix && end >= prefix) {
+          if (start < prefix) {
+            prefix = start
+            widened = true
+          }
+          if (length - end < suffix) {
+            suffix = length - end
+            widened = true
+          }
+        }
+  }
+  return (
+    source.slice(from, old.offsets[prefix]) +
+    canonical.slice(now.offsets[prefix], now.offsets[b.length - suffix]) +
+    source.slice(old.offsets[a.length - suffix], to)
+  )
+}
+
 function retainText(
   raw: string,
   before: string,
   after: string,
   quoteIndent = false,
   inTable = false,
+  // The canonical text, used for text inserted against a link, and whether a
+  // link sits before and after this text.
+  written?: string,
+  beside: readonly [boolean, boolean] = [false, false],
 ): string {
   before = before.replace(/\r\n?/g, '\n')
   after = after.replace(/\r\n?/g, '\n')
@@ -210,7 +408,26 @@ function retainText(
   }
   if (decoded !== before) {
     // Continuation indentation is excluded from a quoted paragraph's text.
-    return quoteIndent ? after : retainText(raw, before, after, true, inTable)
+    return quoteIndent
+      ? after
+      : retainText(raw, before, after, true, inTable, written, beside)
+  }
+  // Text written against a link is written as the canonical writer writes
+  // it, which knows what a bare address would run into.
+  if (
+    written !== undefined &&
+    ((beside[0] && prefix === 0) || (beside[1] && suffix === 0))
+  ) {
+    const writtenOffsets = decodedOffsets(written)
+    if (writtenOffsets && writtenOffsets.decoded === after)
+      return (
+        raw.slice(0, offsets[prefix]) +
+        written.slice(
+          writtenOffsets.offsets[prefix],
+          writtenOffsets.offsets[after.length - suffix],
+        ) +
+        raw.slice(offsets[before.length - suffix])
+      )
   }
   const inserted = after
     .slice(prefix, after.length - suffix)
@@ -373,6 +590,119 @@ function spacer(node: SourceNode | undefined): boolean {
   )
 }
 
+// Nodes whose children are inline content.
+const inlineParents = new Set([
+  'paragraph',
+  'heading',
+  'tableCell',
+  'emphasis',
+  'strong',
+  'delete',
+  'highlight',
+  'link',
+])
+
+// HTML stops an address at its `<`, and a line break at the end of the line.
+const inlineText = (node: SourceNode): string =>
+  node.type === 'html'
+    ? '<'
+    : node.type === 'break'
+      ? '\n'
+      : (node.value ?? '') + (node.children?.map(inlineText).join('') ?? '')
+
+// The text an address could run into from one side: up to the first space,
+// and whether the space is the last text of the block.
+function edge(text: string): string {
+  const run = /^\S*/.exec(text)![0]
+  const rest = text.slice(run.length)
+  return `${run}|${rest === '' ? 'end' : /^\s+$/.test(rest) ? 'space' : rest[0]}`
+}
+
+const reversed = (text: string) => [...text].reverse().join('')
+
+// A bare address reads differently beside other text: a character written
+// against it can join it, so it is written bare, in angle brackets or as a
+// link depending on its neighbours; and whether formatting delimiters open
+// or close depends on the characters beside them. An address whose own text
+// changed, or an address or formatting that an edit reaches with no space
+// between, takes the form the edited document writes. Every other node keeps
+// its source.
+function rewrittenAddress(
+  parent: string,
+  before: readonly SourceNode[],
+  beforeIndex: number,
+  after: readonly SourceNode[],
+  afterIndex: number,
+  source: string,
+  canonical: string,
+): boolean {
+  const old = before[beforeIndex]
+  const now = after[afterIndex]
+  if (!old || !now || !inlineParents.has(parent)) return false
+  const links = (node: SourceNode, found: SourceNode[] = []) => {
+    if (node.type === 'link') found.push(node)
+    node.children?.forEach((child) => links(child, found))
+    return found
+  }
+  const oldLinks = links(old)
+  const address = oldLinks.some((link) => linkForm(link, source) !== null)
+  if (!address && !formatting.has(old.type)) return false
+  if (now.position?.start.offset == null) return false
+  // The text beside the node, read away from it only as far as `edge` needs:
+  // past the first space to the next other character.
+  const beside = (nodes: readonly SourceNode[], from: number, step: 1 | -1) => {
+    let text = ''
+    for (let index = from; index >= 0 && index < nodes.length; index += step) {
+      const part = inlineText(nodes[index]!)
+      text += step > 0 ? part : reversed(part)
+      if (/\s\S/.test(text)) break
+    }
+    return text
+  }
+  // Formatting whose content changed is compared child by child instead.
+  if (old.type !== 'link' && signature(old) !== signature(now)) return false
+  const following = [
+    beside(before, beforeIndex + 1, 1),
+    beside(after, afterIndex + 1, 1),
+  ]
+  const preceding = [
+    beside(before, beforeIndex - 1, -1),
+    beside(after, afterIndex - 1, -1),
+  ]
+  const slice = (node: SourceNode, from: string) => {
+    const start = node.position?.start.offset
+    const end = node.position?.end.offset
+    return start == null || end == null ? undefined : from.slice(start, end)
+  }
+  // Delimiters open and close the same beside a space or punctuation, but
+  // not always beside other text; where that changed, the formatting takes
+  // the form the edited document writes.
+  const kind = (text: string) => text === '' || /^[\s\p{P}\p{S}]/u.test(text)
+  if (
+    formatting.has(old.type) &&
+    (kind(following[0]!) !== kind(following[1]!) ||
+      kind(preceding[0]!) !== kind(preceding[1]!)) &&
+    slice(old, source) !== slice(now, canonical)
+  )
+    return true
+  if (
+    !address ||
+    (signature(old) === signature(now) &&
+      edge(following[0]!) === edge(following[1]!) &&
+      edge(preceding[0]!) === edge(preceding[1]!))
+  )
+    return false
+  const nowLinks = links(now)
+  if (oldLinks.length !== nowLinks.length) return true
+  return oldLinks.some((link, index) => {
+    if (linkForm(link, source) === null) return false
+    const written = slice(link, source)
+    return (
+      written === undefined || written !== slice(nowLinks[index]!, canonical)
+    )
+  })
+}
+
 // Patch changed leaves so an adjacent edit retains authored delimiters and labels.
 function retainSource(
   before: SourceNode,
@@ -383,7 +713,13 @@ function retainSource(
   inTable = false,
   // The header's cell count, for the rows of a table.
   width?: number,
+  // Whether a link sits before and after this node.
+  beside: readonly [boolean, boolean] = [false, false],
 ): string {
+  if (inlineParents.has(before.type)) {
+    locateChildren(before, source)
+    locateChildren(after, canonical)
+  }
   const start = before.position?.start.offset
   const end = before.position?.end.offset
   const newStart = after.position?.start.offset
@@ -523,7 +859,15 @@ function retainSource(
   if (before.type === 'text' && after.type === 'text')
     return retainBoundaryWhitespace(
       withEnding(
-        retainText(raw, before.value!, after.value!, false, inTable),
+        retainText(
+          raw,
+          before.value!,
+          after.value!,
+          false,
+          inTable,
+          canonical.slice(newStart, newEnd),
+          beside,
+        ),
         lineEnding,
       ),
       canonical.slice(newStart, newEnd),
@@ -536,12 +880,18 @@ function retainSource(
   const marker = sameList(before, after)
     ? authoredMarker(before, source)
     : undefined
+  // GFM finds addresses after punctuation in a pass that gives the address
+  // and the text around it no position; such children are written afresh.
+  const located = (nodes: SourceNode[]) =>
+    nodes.every((node) => node.position?.start.offset != null)
   if (
     before.type === after.type &&
     ownShape(before) === ownShape(after) &&
     before.children &&
     after.children &&
-    before.children.length === after.children.length
+    before.children.length === after.children.length &&
+    located(before.children) &&
+    located(after.children)
   ) {
     let output = '',
       at = start
@@ -575,8 +925,20 @@ function retainSource(
         childEnd = child.position?.end.offset
       if (childStart == null || childEnd == null)
         throw new PreservationError('A source token has no location')
-      let retainedSource =
-        incoming.type === 'list' && !sameList(original, incoming)
+      let retainedSource = rewrittenAddress(
+        before.type,
+        before.children!,
+        movedIndex < 0 ? index : movedIndex,
+        after.children!,
+        index,
+        source,
+        canonical,
+      )
+        ? canonical.slice(
+            incoming.position!.start.offset!,
+            incoming.position!.end.offset!,
+          )
+        : incoming.type === 'list' && !sameList(original, incoming)
           ? withEnding(
               canonicalSlice(
                 undefined,
@@ -603,6 +965,10 @@ function retainSource(
               before.type === 'table'
                 ? before.children![0]?.children?.length
                 : undefined,
+              [
+                after.children![index - 1]?.type === 'link',
+                after.children![index + 1]?.type === 'link',
+              ],
             )
       if (
         before.type === 'tableRow' &&
@@ -668,6 +1034,32 @@ function retainSource(
         signature(after.children[after.children.length - 1 - suffix]!)
     )
       suffix++
+    if (
+      prefix &&
+      rewrittenAddress(
+        before.type,
+        before.children,
+        prefix - 1,
+        after.children,
+        prefix - 1,
+        source,
+        canonical,
+      )
+    )
+      prefix--
+    if (
+      suffix &&
+      rewrittenAddress(
+        before.type,
+        before.children,
+        before.children.length - suffix,
+        after.children,
+        after.children.length - suffix,
+        source,
+        canonical,
+      )
+    )
+      suffix--
     // A cell's range includes its pipe and padding, which would hide a space
     // now at the edge of its content from the boundary check.
     const cell =
@@ -705,23 +1097,39 @@ function retainSource(
         retainBoundaryWhitespace(
           source.slice(first, from) +
             withEnding(
-              canonicalSlice(
-                marker,
-                after.children.slice(prefix, after.children.length - suffix),
-                canonical,
-                newFrom,
-                newTo,
-                authoredNeighbour(
-                  before.children[prefix - 1],
-                  after.children[prefix - 1],
-                  source,
+              (inlineParents.has(before.type)
+                ? retainRun(
+                    before.children.slice(
+                      prefix,
+                      before.children.length - suffix,
+                    ),
+                    after.children.slice(
+                      prefix,
+                      after.children.length - suffix,
+                    ),
+                    source,
+                    canonical,
+                    [from, to],
+                    [newFrom, newTo],
+                  )
+                : undefined) ??
+                canonicalSlice(
+                  marker,
+                  after.children.slice(prefix, after.children.length - suffix),
+                  canonical,
+                  newFrom,
+                  newTo,
+                  authoredNeighbour(
+                    before.children[prefix - 1],
+                    after.children[prefix - 1],
+                    source,
+                  ),
+                  authoredNeighbour(
+                    before.children[before.children.length - suffix],
+                    after.children[after.children.length - suffix],
+                    source,
+                  ),
                 ),
-                authoredNeighbour(
-                  before.children[before.children.length - suffix],
-                  after.children[after.children.length - suffix],
-                  source,
-                ),
-              ),
               lineEnding,
             ) +
             source.slice(to, last),
@@ -872,6 +1280,7 @@ export function semanticSignature(doc: ProseNode): string {
         'label',
         'spread',
         'authoredFence',
+        'form',
         'inkkitFileRaw',
         'inkkitFileWidth',
         'inkkitFileInTable',
@@ -1814,6 +2223,7 @@ export class Preservation {
         if (actual === normalized(serialize(this.ctx, parse(canonical))))
           return output
       }
+
       throw new PreservationError(
         'The edited Markdown cannot be reopened without changing its content',
       )
