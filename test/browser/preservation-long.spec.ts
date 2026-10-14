@@ -1,4 +1,9 @@
 import { test, expect, observe, operation } from './fixtures'
+import type { Page } from '@playwright/test'
+
+// The editor reads a moved caret from a selectionchange task queued before this one.
+const settled = (page: Page) =>
+  page.evaluate(() => new Promise((resolve) => setTimeout(resolve)))
 
 test('distant ordinary typing remains saveable, undoable and reloadable @preservation', async ({
   page,
@@ -21,6 +26,7 @@ test('distant ordinary typing remains saveable, undoable and reloadable @preserv
     window.getSelection()!.removeAllRanges()
     window.getSelection()!.addRange(range)
   })
+  await settled(page)
   await page.keyboard.type('First ')
   await expect
     .poll(async () => (await observe(page)).snapshot?.text)
@@ -33,6 +39,7 @@ test('distant ordinary typing remains saveable, undoable and reloadable @preserv
     window.getSelection()!.removeAllRanges()
     window.getSelection()!.addRange(range)
   })
+  await settled(page)
   await page.keyboard.type(' Last')
   const expected = source
     .replace('Paragraph 0.', 'First Paragraph 0.')
@@ -158,4 +165,47 @@ test('rejected typing and composition restore visible DOM and leave saving and h
   expect((await observe(page)).snapshot?.text).toBe('Before\n')
   await operation(page, 'redo')
   expect((await observe(page)).snapshot?.text).toBe('Before accepted\n')
+})
+
+test('new list items and a pasted list keep each list apart and saveable @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  const source = '* one\n* two\n\nMiddle\n\n- dash\n\nEnd\n'
+  await operation(page, 'replaceSource', { text: source })
+  await operation(page, 'reload')
+  await operation(page, 'find', { text: 'two' })
+  const selection = () =>
+    page.evaluate(() => {
+      const selection = window.getSelection()!
+      return selection.isCollapsed
+        ? selection.anchorNode?.textContent?.slice(0, selection.anchorOffset)
+        : `[${selection.toString()}]`
+    })
+  await expect.poll(selection).toBe('[two]')
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(selection).toBe('two')
+  await settled(page)
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('three')
+  const typed = source.replace('* two\n', '* two\n* three\n')
+  await expect
+    .poll(async () => (await observe(page)).snapshot?.text)
+    .toBe(typed)
+  await operation(page, 'find', { text: 'End' })
+  await operation(page, 'paste', {
+    input: { text: 'c\n\nEnd', markdown: '- c\n\nEnd\n' },
+  })
+  const pasted = typed.replace('- dash\n', '- dash\n\n* c\n')
+  expect((await observe(page)).snapshot?.text).toBe(pasted)
+  await expect(page.locator('#editor .ProseMirror > ul')).toHaveCount(3)
+  await operation(page, 'undo')
+  expect((await observe(page)).snapshot?.text).toBe(typed)
+  await operation(page, 'redo')
+  expect((await observe(page)).snapshot?.text).toBe(pasted)
+  await operation(page, 'reload', { text: pasted })
+  expect((await observe(page)).snapshot?.text).toBe(pasted)
+  await expect(page.locator('#editor .ProseMirror > ul')).toHaveCount(3)
+  expect((await observe(page)).diagnostics).toEqual([])
 })

@@ -35,6 +35,101 @@ function ownShape(node: SourceNode): string {
   )
 }
 
+// The character that decides which list an item belongs to: its bullet, or the
+// delimiter after its number. Items with different ones start a new list.
+function markerAt(
+  text: string,
+  at: number,
+): { at: number; marker: string } | undefined {
+  const match = /^(?:[-*+]|\d{1,9}[.)])/.exec(text.slice(at, at + 10))
+  return match
+    ? { at: at + match[0].length - 1, marker: match[0].at(-1)! }
+    : undefined
+}
+
+function relabel(text: string, offsets: number[], marker: string): string {
+  for (const offset of offsets) {
+    const found = markerAt(text, offset)
+    if (
+      found &&
+      found.marker !== marker &&
+      /[-*+]/.test(found.marker) === /[-*+]/.test(marker)
+    )
+      text = text.slice(0, found.at) + marker + text.slice(found.at + 1)
+  }
+  return text
+}
+
+function authoredMarker(list: SourceNode, source: string): string | undefined {
+  const at = list.children?.[0]?.position?.start.offset
+  return at == null ? undefined : markerAt(source, at)?.marker
+}
+
+const sameList = (before: SourceNode, after: SourceNode): boolean =>
+  before.type === 'list' &&
+  after.type === 'list' &&
+  before.ordered === after.ordered
+
+interface Neighbour {
+  ordered: unknown
+  marker: string
+}
+
+// Canonical Markdown written into authored source. Items written into an
+// authored list take its marker, which they would otherwise split away from.
+// A list written beside an authored list takes a marker that list does not
+// use, which it would otherwise merge with.
+function canonicalSlice(
+  marker: string | undefined,
+  children: SourceNode[],
+  canonical: string,
+  from: number,
+  to: number,
+  previous?: Neighbour,
+  next?: Neighbour,
+): string {
+  let text = canonical.slice(from, to)
+  const offsets = (list: SourceNode) =>
+    (list.children ?? []).map((item) => item.position!.start.offset! - from)
+  if (marker)
+    return relabel(
+      text,
+      children.map((item) => item.position!.start.offset! - from),
+      marker,
+    )
+  children.forEach((child, index) => {
+    if (child.type !== 'list') {
+      previous = undefined
+      return
+    }
+    const avoid = [previous, index === children.length - 1 ? next : undefined]
+      .filter((neighbour) => neighbour?.ordered === child.ordered)
+      .map((neighbour) => neighbour!.marker)
+    const own = markerAt(
+      canonical,
+      child.children![0]!.position!.start.offset!,
+    )?.marker
+    const choice = [
+      own,
+      ...(child.ordered ? ['.', ')'] : ['-', '*', '+']),
+    ].find((candidate) => candidate && !avoid.includes(candidate))
+    if (choice) text = relabel(text, offsets(child), choice)
+    previous = { ordered: child.ordered, marker: choice ?? own ?? '' }
+  })
+  return text
+}
+
+// The authored list a child is, as a neighbour of canonical Markdown.
+function authoredNeighbour(
+  before: SourceNode | undefined,
+  after: SourceNode | undefined,
+  source: string,
+): Neighbour | undefined {
+  if (!before || !after || !sameList(before, after)) return undefined
+  const marker = authoredMarker(before, source)
+  return marker ? { ordered: before.ordered, marker } : undefined
+}
+
 function retainText(
   raw: string,
   before: string,
@@ -244,6 +339,9 @@ function retainSource(
     ownShape(before) === ownShape(after)
   )
     return raw
+  const marker = sameList(before, after)
+    ? authoredMarker(before, source)
+    : undefined
   if (
     before.type === after.type &&
     ownShape(before) === ownShape(after) &&
@@ -252,7 +350,8 @@ function retainSource(
     before.children.length === after.children.length
   ) {
     let output = '',
-      previous = start
+      at = start
+    let previous: Neighbour | undefined
     const retained = new Set<number>()
     before.children.forEach((child, index) => {
       const incoming = after.children![index]!
@@ -271,14 +370,32 @@ function retainSource(
         childEnd = child.position?.end.offset
       if (childStart == null || childEnd == null)
         throw new PreservationError('A source token has no location')
-      let retainedSource = retainSource(
-        original,
-        incoming,
-        source,
-        canonical,
-        lineEnding,
-        inTable || before.type === 'tableCell',
-      )
+      let retainedSource =
+        incoming.type === 'list' && !sameList(original, incoming)
+          ? withEnding(
+              canonicalSlice(
+                undefined,
+                [incoming],
+                canonical,
+                incoming.position!.start.offset!,
+                incoming.position!.end.offset!,
+                previous,
+                authoredNeighbour(
+                  before.children![index + 1],
+                  after.children![index + 1],
+                  source,
+                ),
+              ),
+              lineEnding,
+            )
+          : retainSource(
+              original,
+              incoming,
+              source,
+              canonical,
+              lineEnding,
+              inTable || before.type === 'tableCell',
+            )
       if (before.type === 'tableRow' && movedIndex >= 0) {
         // Cell positions own different pipe boundaries at the row edges.
         const originalFrom = original.children?.[0]?.position?.start.offset
@@ -301,10 +418,22 @@ function retainSource(
                 lineEnding,
               )
       }
-      output += source.slice(previous, childStart) + retainedSource
-      previous = childEnd
+      if (marker) retainedSource = relabel(retainedSource, [0], marker)
+      previous =
+        incoming.type !== 'list'
+          ? undefined
+          : (authoredNeighbour(original, incoming, source) ?? {
+              ordered: incoming.ordered,
+              marker:
+                markerAt(
+                  retainedSource,
+                  /^[ \t]*/.exec(retainedSource)![0].length,
+                )?.marker ?? '',
+            })
+      output += source.slice(at, childStart) + retainedSource
+      at = childEnd
     })
-    return output + source.slice(previous, end)
+    return output + source.slice(at, end)
   }
   if (
     before.type === after.type &&
@@ -363,14 +492,72 @@ function retainSource(
         source.slice(start, first) +
         retainBoundaryWhitespace(
           source.slice(first, from) +
-            withEnding(canonical.slice(newFrom, newTo), lineEnding) +
+            withEnding(
+              canonicalSlice(
+                marker,
+                after.children.slice(prefix, after.children.length - suffix),
+                canonical,
+                newFrom,
+                newTo,
+                authoredNeighbour(
+                  before.children[prefix - 1],
+                  after.children[prefix - 1],
+                  source,
+                ),
+                authoredNeighbour(
+                  before.children[before.children.length - suffix],
+                  after.children[after.children.length - suffix],
+                  source,
+                ),
+              ),
+              lineEnding,
+            ) +
             source.slice(to, last),
           canonical.slice(newFirst, newLast),
         ) +
         source.slice(last, end)
       )
   }
-  return withEnding(canonical.slice(newStart, newEnd), lineEnding)
+  // A list can end after blank lines that its container gave it; keep the
+  // authored ones rather than add the canonical ones beside them, unless the
+  // list became tight or loose, which those lines can undo.
+  const lastAfter = after.children?.at(-1)?.position?.end.offset
+  const lastBefore = before.children?.at(-1)?.position?.end.offset
+  const trailing =
+    marker != null &&
+    lastAfter != null &&
+    lastBefore != null &&
+    loose(before, source) === loose(after, canonical)
+  return (
+    withEnding(
+      canonicalSlice(
+        marker,
+        after.children ?? [],
+        canonical,
+        newStart,
+        trailing ? lastAfter : newEnd,
+      ),
+      lineEnding,
+    ) + (trailing ? source.slice(lastBefore, end) : '')
+  )
+}
+
+// Whether blank lines separate a list's items or the blocks inside one. A
+// list's own spread can also count blank lines after its last item.
+function loose(list: SourceNode, text: string): boolean {
+  const blank = (from?: number, to?: number) =>
+    from != null && to != null && /\n[ \t>]*\r?\n/.test(text.slice(from, to))
+  const gaps = (nodes: SourceNode[]) =>
+    nodes.some((node, index) =>
+      index
+        ? blank(
+            nodes[index - 1]!.position?.end.offset,
+            node.position?.start.offset,
+          )
+        : false,
+    )
+  const items = list.children ?? []
+  return gaps(items) || items.some((item) => gaps(item.children ?? []))
 }
 
 // Canonical Markdown keeps authored CRLF inside literal blocks and code fences.
@@ -486,13 +673,9 @@ interface Anchor {
 export function correspondence(
   before: string[],
   after: string[],
-  resemblance = true,
 ): Array<number | undefined> {
   const result: Array<number | undefined> = new Array(after.length)
-  const work = {
-    budget: MATCHING_BUDGET,
-    similarity: resemblance ? SIMILARITY_BUDGET : 0,
-  }
+  const work = { budget: MATCHING_BUDGET, similarity: SIMILARITY_BUDGET }
   const spans = [{ b: 0, a: 0, bEnd: before.length, aEnd: after.length }]
   for (let span = spans.pop(); span; span = spans.pop()) {
     let { b, a, bEnd, aEnd } = span
@@ -727,6 +910,8 @@ function similarity(left: string, right: string): number {
   return prefix + suffix
 }
 
+type Kept = 'unchanged' | 'edited' | 'canonical'
+
 /** Retains the loaded source of blocks the edit leaves alone. */
 export class Preservation {
   private readonly baseline: ProseNode
@@ -882,6 +1067,143 @@ export class Preservation {
     return output + this.source.slice(previous)
   }
 
+  // Two lists of one kind side by side are one list unless their markers
+  // differ, so each run of adjacent lists gets markers that alternate. A list
+  // written afresh changes first, then an edited list. An unchanged list keeps
+  // its source unless a move changed one of its neighbours; otherwise the
+  // reopen check refuses.
+  private separateLists(
+    doc: ProseNode,
+    pieces: string[],
+    kept: Kept[],
+    positions: Array<number | undefined>,
+    current: string[],
+  ): void {
+    const kind = (index: number): string | undefined => {
+      const name = doc.maybeChild(index)?.type.name
+      return name === 'bullet_list' || name === 'ordered_list'
+        ? name
+        : undefined
+    }
+    const marker = (index: number): string | undefined =>
+      markerAt(pieces[index]!, /^[ \t]*/.exec(pieces[index]!)![0].length)
+        ?.marker
+    const elsewhere = new Set(
+      current.filter((_, index) => kept[index] !== 'unchanged'),
+    )
+    const moved = (index: number) =>
+      positions[index] == null && this.originalForms.has(current[index]!)
+    // Beside its source neighbour, or beside new blocks only, with nothing
+    // between them in the source moved elsewhere.
+    const inPlace = (index: number, step: -1 | 1): boolean => {
+      const own = positions[index]!
+      let next = index + step
+      while (
+        next >= 0 &&
+        next < pieces.length &&
+        positions[next] == null &&
+        !moved(next)
+      )
+        next += step
+      if (next >= 0 && next < pieces.length && positions[next] == null)
+        return false
+      const other =
+        next < 0
+          ? -1
+          : next >= pieces.length
+            ? this.blocks.length
+            : positions[next]!
+      if ((other - own) * step <= 0) return false
+      for (let at = own + step; at !== other; at += step)
+        if (elsewhere.has(this.blocks[at]!.form)) return false
+      return true
+    }
+    // An unchanged list changes only to part from a list with its marker across
+    // a boundary that a move disturbed, and one moved on both sides first.
+    const cost = (index: number): number => {
+      if (kept[index] === 'canonical') return 1
+      if (kept[index] === 'edited') return 10
+      const own = marker(index)
+      const sides = ([-1, 1] as const).map((step) => inPlace(index, step))
+      const collides = ([-1, 1] as const).some(
+        (step, side) =>
+          !sides[side] &&
+          kind(index + step) === kind(index) &&
+          marker(index + step) === own,
+      )
+      return collides
+        ? [50, 150][Number(sides[0]) + Number(sides[1])]!
+        : Infinity
+    }
+    for (let start = 0; start < pieces.length;) {
+      const list = kind(start)
+      let end = start + 1
+      while (list && kind(end) === list) end++
+      const run = Array.from({ length: end - start }, (_, i) => start + i)
+      start = end
+      if (
+        run.length < 2 ||
+        run.every((index, i) => !i || marker(index) !== marker(index - 1))
+      )
+        continue
+      const markers = list === 'bullet_list' ? ['-', '*', '+'] : ['.', ')']
+      const options = run.map((index) => {
+        const own = marker(index)
+        const change = cost(index)
+        const choices: Array<{ marker: string; cost: number; text: string }> =
+          own ? [{ marker: own, cost: 0, text: pieces[index]! }] : []
+        if (change !== Infinity)
+          for (const choice of markers) {
+            if (choice === own) continue
+            const text = this.relabelList(pieces[index]!, choice)
+            if (text !== undefined)
+              choices.push({ marker: choice, cost: change, text })
+          }
+        return choices
+      })
+      // Fewest and cheapest changes, with adjacent markers always different.
+      const best = options.map((choices) => choices.map(() => Infinity))
+      const from = options.map((choices) => choices.map(() => -1))
+      options[0]!.forEach((choice, j) => (best[0]![j] = choice.cost))
+      for (let i = 1; i < options.length; i++)
+        options[i]!.forEach((choice, j) => {
+          options[i - 1]!.forEach((previous, k) => {
+            const total = best[i - 1]![k]! + choice.cost
+            if (previous.marker !== choice.marker && total < best[i]![j]!) {
+              best[i]![j] = total
+              from[i]![j] = k
+            }
+          })
+        })
+      const last = best.at(-1)!
+      let j = last.indexOf(Math.min(...last))
+      if (j < 0 || last[j] === Infinity) continue
+      for (let i = options.length - 1; i >= 0; j = from[i]![j]!, i--)
+        pieces[run[i]!] = options[i]![j]!.text
+    }
+  }
+
+  private relabelList(text: string, marker: string): string | undefined {
+    const processor = this.ctx.get(remarkCtx)
+    const read = (text: string) =>
+      (processor.parse(text) as Root).children as unknown as SourceNode[]
+    const [list, ...rest] = read(text)
+    if (list?.type !== 'list' || rest.length) return undefined
+    const relabelled = relabel(
+      text,
+      list.children!.map((item) => item.position!.start.offset!),
+      marker,
+    )
+    const reread = read(relabelled)
+    // A bullet can turn an item into a thematic break, such as `* * *`.
+    return reread.length === 1 &&
+      signature(reread[0]!) === signature(list) &&
+      markerAt(relabelled, list.children![0]!.position!.start.offset!)
+        ?.marker === marker
+      ? relabelled
+      : undefined
+  }
+
   serialize(doc: ProseNode): string {
     if (doc.eq(this.baseline)) return this.source
     try {
@@ -900,7 +1222,6 @@ export class Preservation {
         current.push(fingerprint)
       })
       const forms = this.blocks.map((block) => block.form)
-      const resembling = correspondence(forms, current)
       const processor = this.ctx.get(remarkCtx)
       const currentRawTree = processor.parse(canonical) as Root
       const currentTree = processor.runSync(structuredClone(currentRawTree), {
@@ -908,77 +1229,70 @@ export class Preservation {
       }) as Root
       const parse = this.ctx.get(parserCtx)
       const normalized = (text: string): string => text.replace(/\r\n?/g, '\n')
-      const reconstruct = (
-        positions: Array<number | undefined>,
-      ): string | undefined => {
-        let output = ''
-        let previous: number | undefined
-        current.forEach((text, index) => {
-          const position = positions[index]
-          const block = position == null ? undefined : this.blocks[position]
-          if (index === 0) {
-            if (position === 0 && block)
-              output += this.source.slice(0, block.start)
-            else if (this.source.startsWith('\uFEFF')) output += '\uFEFF'
-          } else if (previous != null && position === previous + 1 && block) {
-            output += this.source.slice(this.blocks[previous]!.end, block.start)
-          } else output += this.lineEnding.repeat(2)
-          if (block && block.form === text)
-            output += this.source.slice(block.start, block.end)
-          else if (block && currentTree.children.length === current.length) {
-            output += this.retainBlock(
-              block,
-              positionalNode(
-                currentRawTree,
-                currentTree.children[index] as unknown as SourceNode,
-              ),
-              canonical,
-            )
-          } else
-            output += restoreCodeEndings(
-              this.ctx,
-              doc.type.create(null, [doc.child(index)]),
-              withEnding(text, this.lineEnding),
-            )
-          previous = position
-        })
-        if (previous === this.blocks.length - 1 && this.blocks.length)
-          output += this.source.slice(this.blocks[previous]!.end)
-        else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
-        // A `---` rule that opens the file reads back as front matter when
-        // another `---` line follows, whether it is new or moved there.
-        const bom = output.startsWith('\uFEFF') ? 1 : 0
-        if (
-          doc.firstChild?.type.name === 'hr' &&
-          sourceFrontmatter(output.slice(bom))?.startsWith('---')
+      const positions = correspondence(forms, current)
+      const gaps: string[] = []
+      const pieces: string[] = []
+      const kept: Kept[] = []
+      let previous: number | undefined
+      current.forEach((text, index) => {
+        const position = positions[index]
+        const block = position == null ? undefined : this.blocks[position]
+        if (index === 0) {
+          if (position === 0 && block)
+            gaps.push(this.source.slice(0, block.start))
+          else gaps.push(this.source.startsWith('\uFEFF') ? '\uFEFF' : '')
+        } else if (previous != null && position === previous + 1 && block) {
+          gaps.push(this.source.slice(this.blocks[previous]!.end, block.start))
+        } else gaps.push(this.lineEnding.repeat(2))
+        const kind: Kept =
+          block && block.form === text
+            ? 'unchanged'
+            : block && currentTree.children.length === current.length
+              ? 'edited'
+              : 'canonical'
+        kept.push(kind)
+        pieces.push(
+          kind === 'unchanged'
+            ? this.source.slice(block!.start, block!.end)
+            : kind === 'edited'
+              ? this.retainBlock(
+                  block!,
+                  positionalNode(
+                    currentRawTree,
+                    currentTree.children[index] as unknown as SourceNode,
+                  ),
+                  canonical,
+                )
+              : restoreCodeEndings(
+                  this.ctx,
+                  doc.type.create(null, [doc.child(index)]),
+                  withEnding(text, this.lineEnding),
+                ),
         )
-          output = output.slice(0, bom) + '***' + output.slice(bom + 3)
-        const reopened = parse(output)
-        if (semanticSignature(reopened) === semanticSignature(doc)) {
-          const actual = normalized(serialize(this.ctx, reopened))
-          if (actual === normalized(canonical)) return output
-          // Parsing may normalize loose-list spacing. Compare both reconstructed
-          // source and intended canonical source after that same normalization.
-          if (actual === normalized(serialize(this.ctx, parse(canonical))))
-            return output
-        }
-        return undefined
+        previous = position
+      })
+      this.separateLists(doc, pieces, kept, positions, current)
+      let output = pieces.map((piece, index) => gaps[index] + piece).join('')
+      if (previous === this.blocks.length - 1 && this.blocks.length)
+        output += this.source.slice(this.blocks[previous]!.end)
+      else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
+      // A `---` rule that opens the file reads back as front matter when
+      // another `---` line follows, whether it is new or moved there.
+      const bom = output.startsWith('\uFEFF') ? 1 : 0
+      if (
+        doc.firstChild?.type.name === 'hr' &&
+        sourceFrontmatter(output.slice(bom))?.startsWith('---')
+      )
+        output = output.slice(0, bom) + '***' + output.slice(bom + 3)
+      const reopened = parse(output)
+      if (semanticSignature(reopened) === semanticSignature(doc)) {
+        const actual = normalized(serialize(this.ctx, reopened))
+        if (actual === normalized(canonical)) return output
+        // Parsing may normalize loose-list spacing. Compare both reconstructed
+        // source and intended canonical source after that same normalization.
+        if (actual === normalized(serialize(this.ctx, parse(canonical))))
+          return output
       }
-      // Pairing by resemblance can leave a block in canonical form beside an
-      // authored neighbour it then merges with, such as two lists. The
-      // alignment's own pairing does not depend on resemblance, so try it too.
-      const output =
-        reconstruct(resembling) ??
-        (() => {
-          const aligned = correspondence(forms, current, false)
-          // Unmatched blocks are holes, which every() would skip.
-          return current.every(
-            (_, index) => aligned[index] === resembling[index],
-          )
-            ? undefined
-            : reconstruct(aligned)
-        })()
-      if (output !== undefined) return output
       throw new PreservationError(
         'The edited Markdown cannot be reopened without changing its content',
       )
