@@ -299,23 +299,31 @@ for (const [typed, link] of [
       expect(s.view.dom.querySelector('a')?.getAttribute('href')).toBe(link)
     }))
 
-// 8. Many edits in one block.
-test('replacing text in thousands of addresses in one paragraph stays quick', () => {
-  const source =
-    Array.from({ length: 3000 }, (_, i) => `https://example.com/p${i}`).join(
-      ' ',
-    ) + '\n'
-  return session(source, async (s) => {
-    const started = performance.now()
-    expect(s.editor.replaceAll('example', 'sample')).toBe(3000)
-    const elapsed = performance.now() - started
-    expect(s.errors).toEqual([])
-    expect(s.editor.snapshot().text).toBe(
-      source.replaceAll('example', 'sample'),
-    )
-    expect(elapsed).toBeLessThan(10000)
-  })
-}, 30000)
+// 8. Many edits in one block. Six times as many addresses must take well
+// under 36 times as long, as they would if each edit read the whole block.
+test('replacing text in thousands of addresses in one paragraph stays quick', async () => {
+  const replace = async (count: number) => {
+    const source = Array.from(
+      { length: count },
+      (_, i) => `https://example.com/p${i}`,
+    ).join(' ')
+    let elapsed = 0
+    await session(`${source}\n`, async (s) => {
+      const started = performance.now()
+      expect(s.editor.replaceAll('example', 'sample')).toBe(count)
+      elapsed = performance.now() - started
+      expect(s.errors).toEqual([])
+      expect(s.editor.snapshot().text).toBe(
+        `${source.replaceAll('example', 'sample')}\n`,
+      )
+    })
+    return elapsed
+  }
+  await replace(50)
+  const few = await replace(500)
+  const many = await replace(3000)
+  expect(many / few).toBeLessThan(18)
+}, 60000)
 
 // Random typing, deleting and undo around each kind of link. Every edit that
 // applies must save and reopen as the document the person sees. After many
