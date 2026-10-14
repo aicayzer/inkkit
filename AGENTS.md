@@ -33,7 +33,7 @@ Rules that follow from the boundary:
 
 ## Build and verify
 
-Use Node.js 26 and the pnpm version in `package.json`.
+Use Node.js 22.14 or later (CI runs 26) and the pnpm version in `package.json`.
 
 ```sh
 pnpm install --frozen-lockfile
