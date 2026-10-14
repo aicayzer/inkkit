@@ -209,7 +209,7 @@ test('inserting images with the caret in a table cell puts them inline in it', a
   expect(await text(page)).toBe(saved)
 })
 
-test('inserting images with the caret in a code block is rejected', async ({
+test('inserting images with the caret in a code block places them after it', async ({
   page,
 }) => {
   await open(page, '```\ncode\n```\n\n![Fixture](images/native.png)\n')
@@ -217,14 +217,13 @@ test('inserting images with the caret in a code block is rejected', async ({
   const box = (await code.boundingBox())!
   await page.mouse.click(box.x + 20, box.y + box.height / 2)
   await expect
-    .poll(async () => (await observe(page)).commandState!.commands.insertImages)
-    .toBe(false)
-  const failure = await operation(page, 'insertImages', {
+    .poll(async () => (await observe(page)).commandState!.caret.block.type)
+    .toBe('codeBlock')
+  await operation(page, 'insertImages', {
     images: [{ path: 'images/one.png', alt: 'One' }],
-  }).catch((error: Error) => error.message)
-  expect(failure).toContain('no place for an image')
+  })
   expect(await text(page)).toBe(
-    '```\ncode\n```\n\n![Fixture](images/native.png)\n',
+    '```\ncode\n```\n\n![One](images/one.png)\n\n![Fixture](images/native.png)\n',
   )
 })
 

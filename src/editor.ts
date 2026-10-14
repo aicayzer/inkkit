@@ -880,8 +880,7 @@ export class InkKitEditor {
         paste: mutable,
         replace: mutable,
         replaceSource: mutable,
-        insertImages:
-          formatted && !!this.options.images && !!imagePlacement(state),
+        insertImages: formatted && !!this.options.images,
         insertPaths: mutable,
         insertFootnote: formatted,
         editReferenceDefinition:
@@ -2937,14 +2936,9 @@ export class InkKitEditor {
       )
     const view = this.editor.ctx.get(editorViewCtx)
     const { schema } = view.state
-    const at = x != null && y != null
-    const placement = at ? 'blocks' : imagePlacement(view.state)
-    if (!placement)
-      throw new InkKitError(
-        'invalid-range',
-        'The selection has no place for an image',
-      )
-    if (placement === 'inline') {
+    const placement =
+      x != null && y != null ? undefined : imagePlacement(view.state)
+    if (placement?.kind === 'inline') {
       this.insertInline(images)
       return
     }
@@ -2963,9 +2957,12 @@ export class InkKitEditor {
       this.insertBlocks(blocks, x, y)
       return
     }
-    const tr = view.state.tr.replaceSelection(
-      new Slice(Fragment.fromArray(blocks), 0, 0),
-    )
+    const tr =
+      placement?.kind === 'after'
+        ? view.state.tr.insert(placement.pos, blocks)
+        : view.state.tr.replaceSelection(
+            new Slice(Fragment.fromArray(blocks), 0, 0),
+          )
     // After the last image, so typing continues below it rather than in the block that follows.
     const last = blocks.at(-1)!.firstChild
     let after: number | undefined

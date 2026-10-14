@@ -87,24 +87,40 @@ function cellDepth($pos: ResolvedPos): number {
   return 0
 }
 
-/** Where `insertImages` can put images at a selection: `blocks` splits the selection's block to place
- *  one block per image, `inline` places them in the one line of a table cell, which cannot hold
- *  blocks. Anything else is a selection that has no place for an image: code, comments and other
- *  literal source, a selection across cells, or one that starts or ends in a cell and not the other. */
-export function imagePlacement(
-  state: EditorState,
-): 'blocks' | 'inline' | undefined {
+export type ImagePlacement =
+  { kind: 'blocks' } | { kind: 'inline' } | { kind: 'after'; pos: number }
+
+/** Where `insertImages` puts images for a selection. `blocks` replaces the selection with one block per
+ *  image. `inline` places them on the one line of a table cell, which cannot hold blocks. `after` puts
+ *  them below the nearest block that takes a following paragraph, leaving the selection and its
+ *  block as written: the selection is in source that cannot hold an image, such as code, a comment
+ *  or an unsupported literal block, or it spans table cells. Nothing is ever split or discarded. */
+export function imagePlacement(state: EditorState): ImagePlacement {
   const image = state.schema.nodes.image
+  const paragraph = state.schema.nodes.paragraph
   const { selection } = state
-  if (!image || selection instanceof CellSelection) return undefined
   const { $from, $to } = selection
-  for (const { parent } of [$from, $to])
-    if (parent.inlineContent && !parent.type.contentMatch.matchType(image))
-      return undefined
+  const unfit =
+    selection instanceof CellSelection ||
+    [$from, $to].some(
+      ({ parent }) =>
+        parent.inlineContent &&
+        !(image && parent.type.contentMatch.matchType(image)),
+    )
   const from = cellDepth($from)
   const to = cellDepth($to)
-  if (!from && !to) return 'blocks'
-  return from && to && $from.sameParent($to) ? 'inline' : undefined
+  if (!unfit && !from && !to) return { kind: 'blocks' }
+  if (!unfit && from && to && $from.sameParent($to)) return { kind: 'inline' }
+  for (let depth = $to.depth; depth > 0; depth--) {
+    if ($to.node(depth).isInline) continue
+    const index = $to.index(depth - 1) + 1
+    if (
+      paragraph &&
+      $to.node(depth - 1).canReplaceWith(index, index, paragraph)
+    )
+      return { kind: 'after', pos: $to.after(depth) }
+  }
+  return { kind: 'after', pos: state.doc.content.size }
 }
 
 /** The image a paragraph holds as its only content, without marks, which makes the paragraph a

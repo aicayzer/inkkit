@@ -82,19 +82,19 @@ async function run(
   }
 }
 
-function rejects(editor: InkKitEditor, text: () => string, changed: unknown) {
+/** Inserts at the current selection and expects the images after `block`, with the source around
+ *  them and the selection's text untouched. */
+function placesAfter(
+  { editor, text, view }: Pick<Harness, 'editor' | 'text' | 'view'>,
+  expected: string,
+) {
+  expect(editor.commandState().commands.insertImages).toBe(true)
   const before = text()
-  let error: unknown
-  try {
-    editor.insertImages(pair)
-  } catch (caught) {
-    error = caught
-  }
-  expect(error).toBeInstanceOf(InkKitError)
-  expect((error as InkKitError).code).toBe('invalid-range')
+  editor.insertImages(pair)
+  expect(text()).toBe(expected)
+  expect(view().state.selection.empty).toBe(true)
+  expect(editor.undo()).toBe(true)
   expect(text()).toBe(before)
-  expect(changed).not.toHaveBeenCalled()
-  expect(editor.undo()).toBe(false)
 }
 
 test('a caret in a table cell inserts the image inline and leaves the other cells alone', () =>
@@ -195,10 +195,11 @@ test('alt text and titles with pipes or line breaks stay on one line in a cell',
     expect(row).toBe('| one | two![left \\| right](a.png "first second") |')
   }))
 
-test('a selection that spans cells rejects and changes nothing', () =>
-  run(table, ({ editor, view, text, at, select, changed }) => {
+test('a selection across cells or selecting cells places the images after the table, keeping every cell', () =>
+  run(table, (harness) => {
+    const { view, at, select } = harness
     select(at('one', 1), at('three', 2))
-    rejects(editor, text, changed)
+    placesAfter(harness, `${table}\n![A](a.png)\n\n![B](b.png)\n`)
     let first = -1
     let last = -1
     view().state.doc.descendants((node, pos) => {
@@ -211,30 +212,76 @@ test('a selection that spans cells rejects and changes nothing', () =>
         CellSelection.create(view().state.doc, first, last),
       ),
     )
-    rejects(editor, text, changed)
-    expect(editor.commandState().commands.insertImages).toBe(false)
+    harness.editor.insertImages(pair)
+    expect(harness.text()).toBe(`${table}\n![A](a.png)\n\n![B](b.png)\n`)
   }))
 
-test('a selection from a paragraph into a cell rejects', () =>
-  run(`Intro\n\n${table}`, ({ editor, text, at, select, changed }) => {
-    select(at('Intro', 2), at('one', 1))
-    rejects(editor, text, changed)
+test('a selection from a paragraph into a cell places the images after the table', () =>
+  run(`Intro\n\n${table}`, (harness) => {
+    harness.select(harness.at('Intro', 2), harness.at('one', 1))
+    placesAfter(harness, `Intro\n\n${table}\n![A](a.png)\n\n![B](b.png)\n`)
   }))
 
 test.each([
-  ['a code block', '```js\nconst a = 1\n```\n', 'const', 'const a'],
-  ['a Mermaid diagram', '```mermaid\ngraph TD\nA-->B\n```\n', 'graph', 'graph'],
-  ['an author comment', 'Text %%note%% more\n', 'note', 'note'],
-  ['front matter', '---\ntitle: x\n---\n\nText\n', 'title', 'title'],
+  [
+    'a code block',
+    '```js\nconst a = 1\n```\n\nText\n',
+    'const',
+    '```js\nconst a = 1\n```\n\n![A](a.png)\n\n![B](b.png)\n\nText\n',
+  ],
+  [
+    'a Mermaid diagram',
+    '```mermaid\ngraph TD\nA-->B\n```\n',
+    'graph',
+    '```mermaid\ngraph TD\nA-->B\n```\n\n![A](a.png)\n\n![B](b.png)\n',
+  ],
+  [
+    'an author comment',
+    'Text %%note%% more\n',
+    'note',
+    'Text %%note%% more\n\n![A](a.png)\n\n![B](b.png)\n',
+  ],
+  [
+    'front matter',
+    '---\ntitle: x\n---\n\nText\n',
+    'title',
+    '---\ntitle: x\n---\n\n![A](a.png)\n\n![B](b.png)\n\nText\n',
+  ],
+  [
+    'a paragraph with inline HTML',
+    'Press <kbd>Esc</kbd> to leave\n\nNext\n',
+    'leave',
+    'Press <kbd>Esc</kbd> to leave\n\n![A](a.png)\n\n![B](b.png)\n\nNext\n',
+  ],
+  [
+    'a paragraph with unresolved brackets',
+    '[x] done and dusted\n\nNext\n',
+    'done',
+    '[x] done and dusted\n\n![A](a.png)\n\n![B](b.png)\n\nNext\n',
+  ],
+  [
+    'a table with inline HTML',
+    '| Key | Use |\n| --- | --- |\n| <kbd>Esc</kbd> | leave |\n',
+    'leave',
+    '| Key | Use |\n| --- | --- |\n| <kbd>Esc</kbd> | leave |\n\n![A](a.png)\n\n![B](b.png)\n',
+  ],
+  [
+    'a code block in a list item',
+    '- item\n\n  ```\n  code\n  ```\n\nNext\n',
+    'code',
+    '- item\n\n  ```\n  code\n  ```\n\n  ![A](a.png)\n\n  ![B](b.png)\n\nNext\n',
+  ],
 ])(
-  'a caret or selection in %s rejects and changes nothing',
-  (_name, source, find, selected) =>
-    run(source, ({ editor, text, at, select, changed }) => {
-      select(at(find, 1))
-      expect(editor.commandState().commands.insertImages).toBe(false)
-      rejects(editor, text, changed)
-      select(at(selected, 0), at(selected))
-      rejects(editor, text, changed)
+  'a caret or selection in %s places the images after it and splits nothing',
+  (_name, source, find, expected) =>
+    run(source, (harness) => {
+      harness.select(harness.at(find, 1))
+      placesAfter(harness, expected)
+      harness.select(harness.at(find, 0), harness.at(find))
+      const before = harness.text()
+      harness.editor.insertImages(pair)
+      expect(harness.text()).toBe(expected)
+      expect(before).toBe(source)
     }),
 )
 
