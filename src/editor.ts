@@ -160,6 +160,7 @@ import {
   setCommentVisibility,
   sourceReplacement,
 } from './comments'
+import { scrollOutward, scrollWholePixels } from './scroll'
 import { PasteController } from './paste'
 import { selectionPlugin } from './selection'
 import { search, SearchQuery, setSearchState } from 'prosemirror-search'
@@ -2485,12 +2486,19 @@ export class InkKitEditor {
     let remainingTop = vertical,
       remainingLeft = horizontal
     if (this.literalSurface) {
-      const top = this.plain.scrollTop,
-        left = this.plain.scrollLeft
-      this.plain.scrollTop += vertical
-      this.plain.scrollLeft += horizontal
-      remainingTop -= this.plain.scrollTop - top
-      remainingLeft -= this.plain.scrollLeft - left
+      const style = this.root.ownerDocument.defaultView!.getComputedStyle(
+        this.plain,
+      )
+      // The first or last line sits within the padding plus its own leading,
+      // under half the height of its first rect, so a reveal that ends there
+      // shows the edge. A range of many lines does not count as one line.
+      const halfCaret = (leading.bottom - leading.top) / 2
+      const remaining = scrollWholePixels(this.plain, vertical, horizontal, {
+        top: (Number.parseFloat(style.paddingTop) || 0) + halfCaret,
+        bottom: (Number.parseFloat(style.paddingBottom) || 0) + halfCaret,
+      })
+      remainingTop = remaining.vertical
+      remainingLeft = remaining.horizontal
     }
     let container: HTMLElement | null = this.viewportContainer ?? this.root
     const document = this.root.ownerDocument
@@ -2499,16 +2507,15 @@ export class InkKitEditor {
       container !== document.body &&
       container !== document.documentElement
     ) {
-      const top = container.scrollTop,
-        left = container.scrollLeft
-      container.scrollTop += remainingTop
-      container.scrollLeft += remainingLeft
-      remainingTop -= container.scrollTop - top
-      remainingLeft -= container.scrollLeft - left
+      ;({ vertical: remainingTop, horizontal: remainingLeft } =
+        scrollWholePixels(container, remainingTop, remainingLeft))
       container = container.parentElement
     }
     if (remainingTop || remainingLeft)
-      document.defaultView!.scrollBy(remainingLeft, remainingTop)
+      document.defaultView!.scrollBy(
+        scrollOutward(remainingLeft),
+        scrollOutward(remainingTop),
+      )
   }
 
   private revealCurrentSelection(): void {
