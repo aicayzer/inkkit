@@ -403,6 +403,30 @@ test('typing after pasted or dropped content continues after it', async () => {
   })
 })
 
+test('typing after a dropped table that stays HTML continues after it', async () => {
+  await withEditor(async (session) => {
+    const html =
+      '<table><tr><td colspan="2">merged</td></tr><tr><td>a</td><td>b</td></tr></table>'
+    await insert(session, html, 'drop', 'one\n\ntwo\n')
+    const { state } = session.view
+    session.view.dispatch(state.tr.replaceSelectionWith(state.schema.text('Z')))
+    expect(refusals(session)).toEqual([])
+    expect(session.editor.snapshot().text).toBe(`${html}Z\n\none\n\ntwo\n`)
+  })
+})
+
+test('typing after a dropped comment goes to the next text, not into the comment', async () => {
+  await withEditor(async (session) => {
+    await insert(session, '<p>a</p><!-- note -->', 'drop', 'one\n\ntwo\n')
+    const { state } = session.view
+    session.view.dispatch(state.tr.replaceSelectionWith(state.schema.text('Z')))
+    expect(refusals(session)).toEqual([])
+    expect(session.editor.snapshot().text).toBe(
+      'a\n\n<!-- note -->\n\nZone\n\ntwo\n',
+    )
+  })
+})
+
 test('list items pasted at the end of a list item join that list', async () => {
   await withEditor(async (session) => {
     load(session, '- one\n')
