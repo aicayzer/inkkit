@@ -28,6 +28,25 @@ test('ordinary copy keeps paragraph, nested list and table structure readable', 
     },
   )
 })
+test('copied HTML carries no editor roles or names on definitions and preserved blocks', async () => {
+  await withEditor(
+    '<aside>Literal</aside>\n\nNote[^a]\n\n[^a]: Text\n',
+    (editor) => {
+      const view = editor.ctx.get(editorViewCtx)
+      const copied = clipboardContent(view.state.doc.content, view.state.schema)
+      const html = document.createElement('div')
+      html.innerHTML = copied.html
+      const marked = html.querySelectorAll(
+        '.literal-markdown, [data-inkkit-footnote-definition]',
+      )
+      expect(marked).toHaveLength(2)
+      for (const element of marked) {
+        expect(element.hasAttribute('role')).toBe(false)
+        expect(element.hasAttribute('aria-label')).toBe(false)
+      }
+    },
+  )
+})
 test('literal unsupported HTML copies as visible source rather than executing markup', async () => {
   await withEditor('<aside>Literal</aside>\n', (editor) => {
     const view = editor.ctx.get(editorViewCtx)

@@ -175,14 +175,18 @@ Inherited legacy `--accent`, `--text`, `--muted`, `--rule`, `--code-bg`, `--mono
 
 `EditorOptions.labels` is `Partial<EditorLabels>`. Omitted labels keep their defaults; overrides are inserted safely as text. The label keys are:
 
-| Area                         | Label keys                                                                                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Editing surfaces             | `formattedEditor`, `plainTextEditor`, `sourceEditor`, `placeholder`.                                                                                                |
-| Code and callouts            | `copyCode`, `expandCallout`, `collapseCallout`.                                                                                                                     |
-| Diagram status and footnotes | `diagramRendering`, `diagramUnavailable`, `footnote`; the latter two prefix a diagnostic or authored label.                                                         |
-| Table operations             | `tableAddRow`, `tableAddColumn`, `tableDeleteRow`, `tableDeleteColumn`, `tableAlignLeft`, `tableAlignCenter`, `tableAlignRight`, `tableMoveColumn`, `tableMoveRow`. |
+| Area                          | Label keys                                                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Editing surfaces              | `formattedEditor`, `plainTextEditor`, `sourceEditor`, `placeholder`.                                                                                                |
+| Code and callouts             | `copyCode`, `expandCallout`, `collapseCallout`.                                                                                                                     |
+| Diagram status and footnotes  | `diagramRendering`, `diagramUnavailable`, `footnote`; the latter two prefix a diagnostic or authored label.                                                         |
+| Table operations              | `tableAddRow`, `tableAddColumn`, `tableDeleteRow`, `tableDeleteColumn`, `tableAlignLeft`, `tableAlignCenter`, `tableAlignRight`, `tableMoveColumn`, `tableMoveRow`. |
+| Attachments and links         | `fileLoading`, `fileMissing`, `fileError`, `fileRetry`, `fileOpen`, `filePreviewUnavailable`, `filePDFPreview`, `wikiMissing`.                                      |
+| Comments and preserved blocks | `comment` names an author comment; `preservedMarkdown` names a block of Markdown InkKit keeps as authored and does not render.                                      |
 
 The host owns its localisation catalogue, toolbar and menu labels. Labels are fixed at mount time.
+
+Blocks that browsers would otherwise expose as unnamed, generic elements carry a role that allows a name. An attachment card is a `group` named after the file, so its Open, status and Retry controls read as part of it. A footnote definition is a `note` named by `footnote` and its label, as its reference is. An author comment, shown when comments are revealed, is a `note` named by `comment`. A preserved Markdown block is a `group` named by `preservedMarkdown`. The roles are not configurable; the names are. Copied HTML omits these roles and names.
 
 `EditorOptions.keymap` and `setKeymap(bindings: Keymap)` configure bindings in ProseMirror key notation. Formatting names are `heading1` through `heading6`, `paragraph`, `bold`, `italic`, `strikethrough`, `highlight`, `code`, `codeBlock`, `quote`, `bulletList`, `orderedList` and `taskList`. Formatting has no default host bindings.
 
@@ -209,8 +213,6 @@ Resolution never changes authored Markdown or revision. Each view captures docum
 Images share the existing width convention and resize handle. A completed gesture creates one isolated undo entry; cancelled gestures do not change source. Read-only, composition and pending edits reject resizing. Audio/video use native controls with no autoplay, retaining playback through read-only transitions and adjacent edits. Hiding or destroying their view pauses playback and releases the element's resource. Returning to the formatted view resolves again without autoplay. PDF uses a sandboxed frame and an always-visible descriptive host Open card. Preview is best effort: sandbox restrictions can block a built-in PDF viewer without firing an error event. The card remains available when the frame is blank; PDF content is not executed. File cards never execute their content.
 
 `clipboardSnapshot()` and `printableSnapshot()` resolve kinds afresh from frozen content, independently of current display elements. Source edits, reloads (including identical generations), mode changes and destruction cancel pending exports and reject stale output. Non-image kinds use the descriptive fallbacks in the syntax table. `PrintableWarning.code` distinguishes `attachment-fallback` from `attachment-unavailable`; existing `diagram-unavailable` remains unchanged. A resolved image's missing or invalid portable bytes reject print with `image-unavailable`; clipboard retains its description and `images.error`. Private display URLs are never exported. Native copy/cut should use `events.clipboard` and acknowledge a successful clipboard write before source removal.
-
-New mount-time label overrides are `fileLoading`, `fileMissing`, `fileError`, `fileRetry`, `fileOpen`, `filePreviewUnavailable`, `filePDFPreview` and `wikiMissing`.
 
 ## Lightweight presentation from 0.0.11
 
