@@ -166,9 +166,9 @@ export function restoreConvertedSpaces(root: ParentNode): void {
 }
 
 function restoreConvertedSpace(span: Element): void {
-  const walker = span.ownerDocument.createTreeWalker(span, NodeFilter.SHOW_TEXT)
-  for (let node = walker.nextNode(); node; node = walker.nextNode())
-    (node as Text).data = (node as Text).data.replace(/\u00a0/g, ' ')
+  for (const node of span.childNodes)
+    if (node.nodeType === Node.TEXT_NODE)
+      (node as Text).data = (node as Text).data.replace(/\u00a0/g, ' ')
 }
 
 /**
