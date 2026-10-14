@@ -968,7 +968,8 @@ export class Preservation {
   // Two lists of one kind side by side are one list unless their markers
   // differ, so each run of adjacent lists gets markers that alternate. A list
   // written afresh changes first, then an edited list. An unchanged list keeps
-  // its source unless a move placed it there; otherwise the reopen check refuses.
+  // its source unless a move changed one of its neighbours; otherwise the
+  // reopen check refuses.
   private separateLists(
     doc: ProseNode,
     pieces: string[],
