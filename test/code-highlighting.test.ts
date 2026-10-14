@@ -422,10 +422,10 @@ test('an edit in a block of many colors at the length limit matches a full recom
 
 // Every number and comma in `1,1,1` has its own color, so a block within the
 // length limit still holds thousands of decorations.
-async function timeOneEdit(characters: number): Promise<number> {
+async function colorfulBlock(characters: number) {
   const host = document.createElement('div')
   document.body.append(host)
-  const big = await Editor.make()
+  const editor = await Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, host)
       ctx.set(
@@ -437,28 +437,49 @@ async function timeOneEdit(characters: number): Promise<number> {
     .use(dialect)
     .use(highlightPlugin)
     .create()
-  try {
-    const bigView = big.ctx.get(editorViewCtx)
-    expect(actual(bigView).length).toBe(characters)
-    const times: number[] = []
-    for (let i = 0; i < 5; i++) {
+  const view = editor.ctx.get(editorViewCtx)
+  expect(actual(view).length).toBe(characters)
+  return {
+    // Milliseconds for one edit in the block; a second edit puts it back.
+    edit(): number {
       const start = performance.now()
-      bigView.dispatch(bigView.state.tr.insertText('2', 3))
-      times.push(performance.now() - start)
-      bigView.dispatch(bigView.state.tr.delete(3, 4))
-    }
-    return times.sort((a, b) => a - b)[2]!
-  } finally {
-    await big.destroy()
-    host.remove()
+      view.dispatch(view.state.tr.insertText('2', 3))
+      const elapsed = performance.now() - start
+      view.dispatch(view.state.tr.delete(3, 4))
+      return elapsed
+    },
+    async destroy() {
+      await editor.destroy()
+      host.remove()
+    },
   }
 }
 
+// A busy machine slows a sample but never speeds one up, so the fastest of
+// many samples is the least disturbed. The sizes are sampled in turn, so a
+// stall slows both. One edit takes about 10 times as long in the large block
+// as in the small one when time grows linearly (4800 / 400 is 12) and about
+// 100 times when it grows quadratically; the bound lies between.
 test('one edit in a block of many colors takes time linear in its size', async () => {
-  await timeOneEdit(1200)
-  const small = await timeOneEdit(1200)
-  const large = await timeOneEdit(4800)
-  expect(4800).toBeLessThanOrEqual(highlightLimit)
-  // Linear growth is 4x; removing each stale color separately is about 16x.
-  expect(large).toBeLessThan(Math.max(small, 2) * 9)
+  const smallSize = 400
+  const largeSize = 4800
+  expect(largeSize).toBeLessThanOrEqual(highlightLimit)
+  const small = await colorfulBlock(smallSize)
+  const large = await colorfulBlock(largeSize)
+  try {
+    for (let i = 0; i < 3; i++) {
+      small.edit()
+      large.edit()
+    }
+    let fastestSmall = Infinity
+    let fastestLarge = Infinity
+    for (let i = 0; i < 15; i++) {
+      fastestSmall = Math.min(fastestSmall, small.edit())
+      fastestLarge = Math.min(fastestLarge, large.edit())
+    }
+    expect(fastestLarge).toBeLessThan(Math.max(fastestSmall, 0.1) * 40)
+  } finally {
+    await small.destroy()
+    await large.destroy()
+  }
 }, 120_000)
