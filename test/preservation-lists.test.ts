@@ -130,6 +130,12 @@ test.each([
     '> * a\n>\n> - b\n',
   ],
   [
+    'a quoted list made tight before two blank quote lines',
+    '> * a\n>\n> * b\n>\n>\n> End\n',
+    '> * a\n> * b\n>\n> End\n',
+    '> * a\n> * b\n>\n> End\n',
+  ],
+  [
     'a quoted list after a - list',
     '> - a\n>\n> End\n',
     '> - a\n>\n> * b\n>\n> End\n',

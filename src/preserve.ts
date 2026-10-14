@@ -519,10 +519,15 @@ function retainSource(
       )
   }
   // A list can end after blank lines that its container gave it; keep the
-  // authored ones rather than add the canonical ones beside them.
+  // authored ones rather than add the canonical ones beside them, unless the
+  // list became tight or loose, which those lines can undo.
   const lastAfter = after.children?.at(-1)?.position?.end.offset
   const lastBefore = before.children?.at(-1)?.position?.end.offset
-  const trailing = marker != null && lastAfter != null && lastBefore != null
+  const trailing =
+    marker != null &&
+    lastAfter != null &&
+    lastBefore != null &&
+    loose(before, source) === loose(after, canonical)
   return (
     withEnding(
       canonicalSlice(
@@ -535,6 +540,24 @@ function retainSource(
       lineEnding,
     ) + (trailing ? source.slice(lastBefore, end) : '')
   )
+}
+
+// Whether blank lines separate a list's items or the blocks inside one. A
+// list's own spread can also count blank lines after its last item.
+function loose(list: SourceNode, text: string): boolean {
+  const blank = (from?: number, to?: number) =>
+    from != null && to != null && /\n[ \t>]*\r?\n/.test(text.slice(from, to))
+  const gaps = (nodes: SourceNode[]) =>
+    nodes.some((node, index) =>
+      index
+        ? blank(
+            nodes[index - 1]!.position?.end.offset,
+            node.position?.start.offset,
+          )
+        : false,
+    )
+  const items = list.children ?? []
+  return gaps(items) || items.some((item) => gaps(item.children ?? []))
 }
 
 // Canonical Markdown keeps authored CRLF inside literal blocks and code fences.
