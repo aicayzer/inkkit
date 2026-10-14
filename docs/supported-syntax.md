@@ -76,6 +76,15 @@ Put the body on subsequent quoted lines. Fold markers must directly follow the c
 
 Complete HTML `<!--comments-->` and Obsidian `%%comments%%` are editable author content, including inline and multiline comments. They start hidden; hosts can reveal them with `setCommentsVisible(true)`. Markdown snapshots and explicit Markdown copy retain comments. Ordinary text, HTML, clipboard metadata and print omit them even when revealed. Code and TXT remain literal; incomplete comment syntax remains literal. HTML is never executed.
 
+While comments are hidden, editing beside them keeps them:
+
+- Backspace and Delete, including word and line deletion, remove the visible text next to a hidden comment and keep the comment.
+- At the edge of a paragraph, Backspace and Delete join the visible blocks on either side of a hidden block comment and put the comment after the joined block. If no visible block is on that side, or the join would put text inside a hidden comment, nothing changes.
+- Arrow keys and other caret movement never place the caret inside a hidden comment. Hiding comments moves a caret that is inside one to the visible text beside it.
+- Deleting, cutting or typing over a selection removes the hidden comments inside the selection along with the text around them, and Undo restores them. A hidden comment at either end of the selection is beside the selected text and is kept. To remove a comment on its own, reveal comments first.
+
+Markdown reads a line that starts with an HTML comment as an HTML block, so an edit that would leave an HTML comment at the start of a paragraph, or leave a paragraph that holds only a comment, is refused with a `preservation` error.
+
 The formatted editor refuses an edit that would end a comment early, and the `error` event reports a `preservation` error. An HTML renderer ends an HTML comment at `-->` or `--!>`, and reads a comment that starts with `>` or `->` as empty, so comment text can't contain those markers or start with them. A `%%` comment ends at the next `%%`, so its text can't contain `%%`, and an inline `%%` comment can't end with `%`. Other dashes, arrows and percent signs are accepted. A comment that already contains such text loads unchanged, and edits outside it are accepted. Undo, redo, `replaceSource` and source mode restore or supply text as written and aren't checked.
 
 Comment delimiters inside footnote identifiers or link destinations are literal identifier or destination text. They are not author comments. Footnote body comments follow the ordinary comment rules.
