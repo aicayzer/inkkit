@@ -42,13 +42,16 @@ async function pasteAt(
         if (target >= start && target <= start + node.text!.length)
           positions.push(pos + target - start)
     })
-    const from = positions[0]!
-    const to = tail == null ? from : positions[positions.length - 1]!
-    view().dispatch(
-      view().state.tr.setSelection(
-        TextSelection.create(view().state.doc, from, to),
-      ),
-    )
+    // An empty note has no text to find; its caret is already in place.
+    if (positions.length) {
+      const from = positions[0]!
+      const to = tail == null ? from : positions[positions.length - 1]!
+      view().dispatch(
+        view().state.tr.setSelection(
+          TextSelection.create(view().state.doc, from, to),
+        ),
+      )
+    }
     await editor.paste(input)
     const text = editor.snapshot().text
     editor.insertText('X', 1)
@@ -187,6 +190,36 @@ test('a link pasted over a selection leaves the caret after the link', async () 
   ).toEqual({
     text: 'Keep [this](https://example.com) text.\n',
     typed: 'Keep [this](https://example.com)X text.\n',
+  })
+})
+
+test('typing after pasted blocks never goes into a comment or a folded callout', async () => {
+  for (const [text, typed] of [
+    ['x\n\n<!-- note -->', 'Beforex\n\n<!-- note -->\n\nXnext\n'],
+    ['<!-- note -->', 'Before\n\n<!-- note -->\n\nXnext\n'],
+    ['x\n\n---\n\n<!-- note -->', 'Beforex\n\n---\n\n<!-- note -->\n\nXnext\n'],
+    ['x\n\n> [!NOTE]-\n> hi', 'Beforex\n\n> [!NOTE]-\n> hi\n\nXnext\n'],
+  ] as const) {
+    const pasted = await pasteAt('Before‸\n\nnext\n', { text })
+    expect(pasted.typed, text).toBe(typed)
+    expect(pasted.text, text).toBe(typed.replace('X', ''))
+  }
+  // With no text after the paste, typing goes before the comment.
+  expect(await pasteAt('Before‸\n', { text: 'x\n\n<!-- note -->' })).toEqual({
+    text: 'Beforex\n\n<!-- note -->\n',
+    typed: 'BeforexX\n\n<!-- note -->\n',
+  })
+  // Blocks pasted into an empty note take the place of its empty paragraph.
+  expect(await pasteAt('‸', { text: 'x\n\n<!-- note -->' })).toEqual({
+    text: 'x\n\n<!-- note -->\n',
+    typed: 'xX\n\n<!-- note -->\n',
+  })
+})
+
+test('typing after a pasted rule continues after it', async () => {
+  expect(await pasteAt('Before‸\n\nnext\n', { text: 'x\n\n---' })).toEqual({
+    text: 'Beforex\n\n---\n\nnext\n',
+    typed: 'Beforex\n\n---\n\nXnext\n',
   })
 })
 

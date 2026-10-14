@@ -126,3 +126,23 @@ test('spaces pasted beside a line break are not kept', async ({ page }) => {
     .poll(async () => (await observe(page)).snapshot!.text)
     .toBe('a\\\nwordXbc\n')
 })
+
+test('typing after pasted blocks goes to the next text, not into hidden content', async ({
+  page,
+}) => {
+  for (const text of [
+    'x\n\n<!-- note -->',
+    'x\n\n> [!NOTE]-\n> hi',
+    'x\n\n---',
+  ]) {
+    await caretAfter(page, 'Before\n\nnext\n', 'Before')
+    await pastePlain(page, text)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toBe(`Before${text}\n\nnext\n`)
+    await page.keyboard.type('X')
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toBe(`Before${text}\n\nXnext\n`)
+  }
+})
