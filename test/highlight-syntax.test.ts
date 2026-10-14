@@ -384,6 +384,8 @@ for (const source of [
   test(`buffered highlight delimiters remain literal inside code or comments: ${JSON.stringify(source)}`, async () => {
     await withFacade((editor, ctx) => {
       editor.loadDocument({ ...input, text: source })
+      // A caret rests inside a comment only while comments are revealed.
+      editor.setCommentsVisible(true)
       const view = ctx.get(editorViewCtx)
       let caret = 0
       view.state.doc.descendants((node, pos) => {

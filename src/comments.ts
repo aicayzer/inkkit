@@ -1,7 +1,12 @@
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { isHistoryTransaction } from '@milkdown/kit/prose/history'
-import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
+import {
+  Plugin,
+  PluginKey,
+  type EditorState,
+  type Transaction,
+} from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { isImageBlock } from './image-blocks'
 import { fromMarkdown } from 'mdast-util-from-markdown'
@@ -456,6 +461,9 @@ export const commentVisibility = $prose(
       },
     }),
 )
+export function commentsVisible(state: EditorState): boolean {
+  return visibilityKey.getState(state) ?? false
+}
 export function setCommentVisibility(view: EditorView, visible: boolean): void {
   if (visibilityKey.getState(view.state) === visible) return
   view.dispatch(

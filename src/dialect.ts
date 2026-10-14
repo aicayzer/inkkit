@@ -72,6 +72,7 @@ import { references, remarkReferencesPlugin } from './references'
 import { callouts, remarkCalloutsPlugin } from './callouts'
 import { inlineHighlight } from './inline-highlight'
 import { comments, remarkCommentsPlugin } from './comments'
+import { hiddenCommentEditing } from './hidden-comments'
 import { gfmTableFromMarkdown, gfmTableToMarkdown } from 'mdast-util-gfm-table'
 import { gfmTable } from 'micromark-extension-gfm-table'
 import type { Link, Nodes, Parents, PhrasingContent } from 'mdast'
@@ -763,6 +764,7 @@ export function createDialect(
     wikiLinks ? wikiLinkSchema : [],
     callouts,
     comments,
+    hiddenCommentEditing,
     inlineHighlight,
     preservingCodeBlocks,
     preserveSpacerParagraphs,
