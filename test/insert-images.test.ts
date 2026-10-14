@@ -180,7 +180,7 @@ test('a table written by hand keeps the spelling of cells that were not edited',
     select(at('two'))
     editor.insertImages([pair[0]!])
     expect(text()).toBe(
-      '|Name|  Size |\n|:--|--:|\n|  one |two![A](a.png) |\n|three|  four|\n',
+      '|Name|  Size |\n|:--|--:|\n|  one |two![A](a.png)   |\n|three|  four|\n',
     )
   })
 })
