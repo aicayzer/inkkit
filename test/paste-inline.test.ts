@@ -65,6 +65,15 @@ test('plain text pasted inside a sentence joins the paragraph at the caret', asy
   expect(pasted.typed).toBe('Before word |after.\n')
 })
 
+test('spaces pasted at the start or end of a block are dropped, not encoded', async () => {
+  expect((await pasteAt('Before‸\n', { text: ' word ' })).text).toBe(
+    'Before word\n',
+  )
+  expect((await pasteAt('‸after\n', { text: ' word ' })).text).toBe(
+    'word after\n',
+  )
+})
+
 test('Markdown pasted inside a sentence joins the paragraph with its formatting', async () => {
   expect(
     (
