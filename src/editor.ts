@@ -153,7 +153,13 @@ import {
   type TextProjection,
 } from './text-ranges'
 import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
-import { commentSelectionContent, setCommentVisibility } from './comments'
+import {
+  assertCommentsEndWhereWritten,
+  commentSelectionContent,
+  isWrittenEdit,
+  setCommentVisibility,
+  sourceReplacement,
+} from './comments'
 import { PasteController } from './paste'
 import { selectionPlugin } from './selection'
 import { search, SearchQuery, setSearchState } from 'prosemirror-search'
@@ -1108,6 +1114,7 @@ export class InkKitEditor {
     let tr = view.state.tr
       .replaceWith(0, view.state.doc.content.size, parsed.content)
       .setDocAttribute(sourceAttribute, provenance)
+      .setMeta(sourceReplacement, true)
     tr.setSelection(Selection.atEnd(tr.doc))
     if (isolated) tr = closeHistory(tr)
     view.dispatch(tr)
@@ -1599,7 +1606,11 @@ export class InkKitEditor {
             const next = this.state.apply(tr)
             if (!instance.loading) {
               try {
-                instance.assertPreserved(this.state.doc, next.doc)
+                instance.assertPreserved(
+                  this.state.doc,
+                  next.doc,
+                  isWrittenEdit(tr),
+                )
               } catch (error) {
                 this.updateState(this.state)
                 instance.events.error?.(
@@ -2279,10 +2290,17 @@ export class InkKitEditor {
   }
 
   /** Throws when a document reached by an edit, after every appended normalisation, cannot be
-   *  saved as preserved Markdown. Dispatch and the replacement commands share this check. */
-  private assertPreserved(before: ProseNode, after: ProseNode): void {
-    if (this.preservation && !this.literalSurface && !after.eq(before))
-      this.currentText(after)
+   *  saved as preserved Markdown. Dispatch and the replacement commands share this check.
+   *  `written` is false for history steps and source replacement, which restore or supply a
+   *  document that may hold comment text the formatted editor would refuse to accept typed. */
+  private assertPreserved(
+    before: ProseNode,
+    after: ProseNode,
+    written = true,
+  ): void {
+    if (this.literalSurface || after.eq(before)) return
+    if (written) assertCommentsEndWhereWritten(before, after)
+    if (this.preservation) this.currentText(after)
   }
 
   replaceTextRange(range: TextRange, text: string): boolean {

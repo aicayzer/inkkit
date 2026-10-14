@@ -72,6 +72,8 @@ Put the body on subsequent quoted lines. Fold markers must directly follow the c
 
 Complete HTML `<!--comments-->` and Obsidian `%%comments%%` are editable author content, including inline and multiline comments. They start hidden; hosts can reveal them with `setCommentsVisible(true)`. Markdown snapshots and explicit Markdown copy retain comments. Ordinary text, HTML, clipboard metadata and print omit them even when revealed. Code and TXT remain literal; incomplete comment syntax remains literal. HTML is never executed.
 
+The formatted editor refuses an edit that would end a comment early, and the `error` event reports a `preservation` error. An HTML renderer ends an HTML comment at `-->` or `--!>`, and reads a comment that starts with `>` or `->` as empty, so comment text can't contain those markers or start with them. A `%%` comment ends at the next `%%`, so its text can't contain `%%`, and an inline `%%` comment can't end with `%`. Other dashes, arrows and percent signs are accepted. A comment that already contains such text loads unchanged, and edits outside it are accepted. Undo, redo, `replaceSource` and source mode restore or supply text as written and aren't checked.
+
 Comment delimiters inside footnote identifiers or link destinations are literal identifier or destination text. They are not author comments. Footnote body comments follow the ordinary comment rules.
 
 ## Web page clipboard
