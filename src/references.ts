@@ -281,12 +281,17 @@ export const referenceDefinition = $node('reference_definition', () => ({
   parseDOM: [
     {
       tag: '[data-inkkit-reference-definition]',
-      getAttrs: (dom) => ({
-        label: dom.getAttribute('data-inkkit-label') ?? '',
-        identifier: dom.getAttribute('data-inkkit-reference-definition') ?? '',
-        url: dom.getAttribute('data-inkkit-url') ?? '',
-        title: dom.getAttribute('data-inkkit-title'),
-      }),
+      getAttrs(dom) {
+        const url = dom.getAttribute('data-inkkit-url') ?? ''
+        if (!isSafeLinkTarget(url)) return false
+        return {
+          label: dom.getAttribute('data-inkkit-label') ?? '',
+          identifier:
+            dom.getAttribute('data-inkkit-reference-definition') ?? '',
+          url,
+          title: dom.getAttribute('data-inkkit-title'),
+        }
+      },
     },
   ],
   toDOM: (node) => [

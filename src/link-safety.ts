@@ -18,3 +18,15 @@ export function isSafeLinkTarget(value: string): boolean {
   const colon = head.indexOf(':')
   return colon < 0 || linkSchemes.has(head.slice(0, colon).toLowerCase())
 }
+
+/**
+ * Whether an image source would run script if a renderer treated it as an
+ * address. Image sources are opaque references that a host adapter owns, so
+ * only these schemes are refused, and tabs, line breaks and other control
+ * characters are ignored the way a browser ignores them.
+ */
+export function isScriptAddress(value: string): boolean {
+  return /^(?:javascript|vbscript):/i.test(
+    value.replace(/[\u0000-\u0020\u007f]/g, ''),
+  )
+}

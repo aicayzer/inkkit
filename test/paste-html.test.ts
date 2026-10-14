@@ -695,3 +695,93 @@ test('a link whose HTML comes from InkKit keeps the authored Markdown unchanged'
   ).markdown
   expect(markdown).toBe(source + '\n')
 })
+
+// A drop or an editor-level HTML insert reaches the schema's parse rules
+// without the paste importer.
+async function dropped(html: string): Promise<string> {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const editor = await Editor.make()
+    .config((ctx) => {
+      ctx.set(rootCtx, root)
+      ctx.set(defaultValueCtx, '')
+      ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
+    })
+    .use(createDialect(true))
+    .create()
+  try {
+    editor.ctx
+      .get(editorViewCtx)
+      .pasteHTML(html, new Event('paste') as ClipboardEvent)
+    return serialize(editor.ctx)
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+}
+
+const definition = (url: string) =>
+  `<div data-inkkit-reference-definition="x" data-inkkit-label="x" data-inkkit-url="${url}" class="inkkit-reference-definition">[x]: ${url}</div>`
+const reference = (href: string) =>
+  `<p><a href="${href}" data-inkkit-reference="x" data-inkkit-label="x" data-inkkit-reference-type="full">text</a></p>`
+
+test('a reference definition in pasted HTML keeps only a safe address', async () => {
+  const kept = await pasted({ html: definition('https://example.com/') })
+  expect(
+    kept.dom.querySelectorAll('.inkkit-reference-definition'),
+  ).toHaveLength(1)
+  for (const url of [
+    'javascript:run',
+    '&#106;avascript:run',
+    'data:text/html,x',
+  ]) {
+    const { dom, markdown } = await pasted({
+      html: `${reference('https://example.com/')}${definition(url)}`,
+    })
+    expect(
+      dom.querySelectorAll('.inkkit-reference-definition'),
+      url,
+    ).toHaveLength(0)
+    expect(markdown, url).not.toMatch(/^\[x\]: (?:javascript|data)/m)
+  }
+})
+
+test('HTML inserted without the importer keeps only safe addresses', async () => {
+  const kept = await dropped(
+    `${reference('https://example.com/')}${definition('https://example.com/')}`,
+  )
+  expect(kept).toContain('[text][x]')
+  expect(kept).toContain('[x]: https://example.com/')
+  for (const url of ['javascript:run', 'JAVASCRIPT:run', 'data:text/html,x']) {
+    const markdown = await dropped(
+      `<p><a href="${url}">plain</a></p>${reference(url)}${definition(url)}`,
+    )
+    expect(markdown, url).not.toMatch(/\]\((?:javascript|data)/i)
+    expect(markdown, url).not.toMatch(/^\[x\]: (?:javascript|data)/im)
+    expect(markdown, url).toContain('plain')
+  }
+})
+
+test('an image source with a script scheme is not kept when HTML is inserted', async () => {
+  expect(await dropped('<p><img src="images/photo.png" alt="Kept"></p>')).toBe(
+    '![Kept](images/photo.png)\n',
+  )
+  for (const src of [
+    'javascript:run',
+    ' JavaScript:run',
+    'java\tscript:run',
+    '&#106;avascript:run',
+    'vbscript:run',
+  ]) {
+    const markdown = await dropped(`<p>a<img src="${src}" alt="Picture">b</p>`)
+    expect(markdown, src).not.toMatch(/script/i)
+    expect(markdown, src).toContain('ab')
+  }
+})
+
+test('a converted space leaves literal source nested in its span unchanged', async () => {
+  const markdown = await fromHTML(
+    '<p>a<span class="Apple-converted-space">&nbsp;<custom-x>&nbsp;</custom-x></span>b</p>',
+  )
+  expect(markdown).toContain('<custom-x>&nbsp;</custom-x>')
+})
