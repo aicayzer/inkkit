@@ -172,6 +172,34 @@ test('HTML from WebKit pastes its converted spaces as ordinary spaces', async ({
     )
 })
 
+test('text copied from a page pastes with ordinary spaces beside links', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  // The browser itself writes the clipboard HTML here, so WebKit's own
+  // rewrite of the spaces reaches the editor.
+  await page.evaluate(() => {
+    const source = document.createElement('div')
+    source.id = 'copy-source'
+    source.innerHTML =
+      '<p><a href="https://example.com/a">The quote</a> for the record</p><p>See <a href="https://example.com/b">the quote</a> now</p><p>Run <code>pnpm check</code> first</p>'
+    document.body.append(source)
+    const range = document.createRange()
+    range.selectNodeContents(source)
+    const selection = getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+  })
+  await page.keyboard.press('ControlOrMeta+C')
+  await page.locator('.ProseMirror.editor').click()
+  await page.keyboard.press('ControlOrMeta+V')
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(
+      '[The quote](https://example.com/a) for the record\n\nSee [the quote](https://example.com/b) now\n\nRun `pnpm check` first\n',
+    )
+})
+
 test('pasted links with a script scheme keep their text without the link', async ({
   page,
 }) => {
