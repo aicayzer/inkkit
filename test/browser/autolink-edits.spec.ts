@@ -69,3 +69,131 @@ for (const [block, write] of blocks)
       await expect(anchor).toHaveText(link)
       await expect(anchor).toHaveAttribute('href', link)
     })
+
+// Places the caret before or after `marker` in the readable text.
+async function caret(page: Page, marker: string, after: boolean) {
+  await operation(page, 'textSnapshot')
+  const readable = (await observe(page)).lastResult as {
+    snapshotId: string
+    text: string
+  }
+  const at = readable.text.indexOf(marker) + (after ? marker.length : 0)
+  await operation(page, 'selectTextRange', {
+    range: { snapshotId: readable.snapshotId, from: at, to: at },
+    options: { focus: true },
+  })
+}
+
+const typing: [string, string, string, boolean, string, string][] = [
+  [
+    'a URL into plain text',
+    'Write here\n',
+    'here',
+    true,
+    ' https://example.com/a',
+    'Write here https://example.com/a\n',
+  ],
+  [
+    'a www. address into plain text',
+    'Write here\n',
+    'here',
+    true,
+    ' www.example.com',
+    'Write here www.example.com\n',
+  ],
+  [
+    'an email address into plain text',
+    'Write here\n',
+    'here',
+    true,
+    ' ada@example.com',
+    'Write here ada@example.com\n',
+  ],
+  ...["'", '"', '(', ':', '['].map(
+    (mark): [string, string, string, boolean, string, string] => [
+      `${mark} before a www. address`,
+      'Go www.example.com now.\n',
+      'www',
+      false,
+      mark,
+      `Go ${mark === '[' ? '\\[' : mark}www.example.com now.\n`,
+    ],
+  ),
+  ...['.html', '?q=1', '#part'].map(
+    (text): [string, string, string, boolean, string, string] => [
+      `${text} after a URL`,
+      'See https://example.com/page now.\n',
+      'page',
+      true,
+      text,
+      `See https://example.com/page${text} now.\n`,
+    ],
+  ),
+  [
+    'a port after a URL',
+    'See https://example.com now.\n',
+    '.com',
+    true,
+    ':8080',
+    'See https://example.com:8080 now.\n',
+  ],
+  [
+    'into a URL in angle brackets',
+    'See <https://example.com/path> now.\n',
+    'path',
+    true,
+    's',
+    'See <https://example.com/paths> now.\n',
+  ],
+  [
+    'into a written link whose label is its destination',
+    'See [docs](docs) now.\n',
+    'docs',
+    true,
+    'x',
+    'See [docsx](docs) now.\n',
+  ],
+]
+
+for (const [name, source, marker, after, text, saved] of typing)
+  test(`typing ${name} saves it as written @preservation`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture()
+    await operation(page, 'replaceSource', { text: source })
+    await caret(page, marker, after)
+    await page.keyboard.type(text)
+    const observed = await observe(page)
+    expect(observed.diagnostics).toEqual([])
+    expect(observed.snapshot!.text).toBe(saved)
+  })
+
+test('bold and undo over a soft line break keep it soft @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await operation(page, 'replaceSource', { text: 'line one\nline two\n' })
+  await operation(page, 'textSnapshot')
+  const readable = (await observe(page)).lastResult as {
+    snapshotId: string
+    text: string
+  }
+  await operation(page, 'selectTextRange', {
+    range: {
+      snapshotId: readable.snapshotId,
+      from: 0,
+      to: 'line one\nline two'.length,
+    },
+    options: { focus: true },
+  })
+  await operation(page, 'format', { command: 'bold' })
+  let observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  expect(observed.snapshot!.text).toBe('**line one\nline two**\n')
+  await page.keyboard.press('ControlOrMeta+z')
+  observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  expect(observed.snapshot!.text).toBe('line one\nline two\n')
+})

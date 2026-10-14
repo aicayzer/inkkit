@@ -221,6 +221,8 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
       identifier: { default: null },
       referenceType: { default: null },
       referenceContent: { default: null },
+      // How the link was written, from link-form.ts.
+      form: { default: null },
     },
     parseDOM: [
       {
@@ -254,6 +256,7 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
       delete attrs.identifier
       delete attrs.referenceType
       delete attrs.referenceContent
+      delete attrs.form
       if (mark.attrs.identifier != null) {
         attrs['data-inkkit-reference'] = mark.attrs.identifier
         attrs['data-inkkit-label'] = mark.attrs.label
@@ -265,8 +268,18 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
     parseMarkdown: {
       match: (node) => node.type === 'link' || node.type === 'linkReference',
       runner(state, node, type) {
-        if (node.type === 'link')
-          return schema.parseMarkdown.runner(state, node, type)
+        if (node.type === 'link') {
+          state.openMark(type, {
+            href: node.url,
+            title: node.title ?? null,
+            form:
+              (node.data as { inkkitLinkForm?: unknown } | undefined)
+                ?.inkkitLinkForm ?? null,
+          })
+          state.next(node.children)
+          state.closeMark(type)
+          return
+        }
         state.openMark(type, {
           href: String(node.url ?? ''),
           title: node.title ?? null,
@@ -282,8 +295,14 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
     toMarkdown: {
       ...schema.toMarkdown,
       runner(state, mark, node) {
-        if (mark.attrs.identifier == null)
-          return schema.toMarkdown.runner(state, mark, node)
+        if (mark.attrs.identifier == null) {
+          state.withMark(mark, 'link', undefined, {
+            title: mark.attrs.title,
+            url: mark.attrs.href,
+            data: { inkkitLinkForm: mark.attrs.form },
+          })
+          return
+        }
         state.withMark(mark, 'linkReference', undefined, {
           identifier: mark.attrs.identifier,
           label: mark.attrs.label,

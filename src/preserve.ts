@@ -3,6 +3,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { serialize } from './dialect'
+import { linkForm } from './link-form'
 import { restoreCodeEndings, finalCodeEnding } from './code-fences'
 import { lineBreakHTML, sourceFrontmatter } from './literals'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
@@ -373,6 +374,40 @@ function spacer(node: SourceNode | undefined): boolean {
   )
 }
 
+// A bare address reads differently beside other text: a character written
+// against it can join it, so it is written bare, in angle brackets or as a
+// link depending on its neighbours, including those outside formatting
+// around it. A node whose addresses the edited document writes differently
+// from its source takes its new form.
+function rewrittenAddress(
+  before: SourceNode | undefined,
+  after: SourceNode | undefined,
+  source: string,
+  canonical: string,
+): boolean {
+  if (!before || !after) return false
+  const links = (node: SourceNode, found: SourceNode[] = []) => {
+    if (node.type === 'link') found.push(node)
+    node.children?.forEach((child) => links(child, found))
+    return found
+  }
+  const old = links(before)
+  if (!old.some((link) => linkForm(link, source) !== null)) return false
+  if (after.position?.start.offset == null) return false
+  const now = links(after)
+  if (old.length !== now.length) return true
+  const slice = (node: SourceNode, text: string) => {
+    const start = node.position?.start.offset
+    const end = node.position?.end.offset
+    return start == null || end == null ? undefined : text.slice(start, end)
+  }
+  return old.some((link, index) => {
+    if (linkForm(link, source) === null) return false
+    const written = slice(link, source)
+    return written === undefined || written !== slice(now[index]!, canonical)
+  })
+}
+
 // Patch changed leaves so an adjacent edit retains authored delimiters and labels.
 function retainSource(
   before: SourceNode,
@@ -520,14 +555,27 @@ function retainSource(
       ? retained.slice(0, from) + '<br />' + retained.slice(to)
       : retained
   }
-  if (before.type === 'text' && after.type === 'text')
+  if (before.type === 'text' && after.type === 'text') {
+    const written = canonical.slice(newStart, newEnd)
+    const retained = retainText(
+      raw,
+      before.value!,
+      after.value!,
+      false,
+      inTable,
+    )
+    // Text that the writer escapes to keep GFM from reading an address in it,
+    // such as `https\://` once a domain follows, is written afresh: the
+    // authored text around the edit could read as a link.
+    const escapes = (text: string) => text.match(/\\[:@.]/g)?.length ?? 0
     return retainBoundaryWhitespace(
       withEnding(
-        retainText(raw, before.value!, after.value!, false, inTable),
+        escapes(written) > escapes(retained) ? written : retained,
         lineEnding,
       ),
-      canonical.slice(newStart, newEnd),
+      written,
     )
+  }
   if (
     signature(before) === signature(after) &&
     ownShape(before) === ownShape(after)
@@ -536,12 +584,18 @@ function retainSource(
   const marker = sameList(before, after)
     ? authoredMarker(before, source)
     : undefined
+  // GFM finds addresses after punctuation in a pass that gives the address
+  // and the text around it no position; such children are written afresh.
+  const located = (nodes: SourceNode[]) =>
+    nodes.every((node) => node.position?.start.offset != null)
   if (
     before.type === after.type &&
     ownShape(before) === ownShape(after) &&
     before.children &&
     after.children &&
-    before.children.length === after.children.length
+    before.children.length === after.children.length &&
+    located(before.children) &&
+    located(after.children)
   ) {
     let output = '',
       at = start
@@ -575,8 +629,17 @@ function retainSource(
         childEnd = child.position?.end.offset
       if (childStart == null || childEnd == null)
         throw new PreservationError('A source token has no location')
-      let retainedSource =
-        incoming.type === 'list' && !sameList(original, incoming)
+      let retainedSource = rewrittenAddress(
+        original,
+        incoming,
+        source,
+        canonical,
+      )
+        ? canonical.slice(
+            incoming.position!.start.offset!,
+            incoming.position!.end.offset!,
+          )
+        : incoming.type === 'list' && !sameList(original, incoming)
           ? withEnding(
               canonicalSlice(
                 undefined,
@@ -668,13 +731,25 @@ function retainSource(
         signature(after.children[after.children.length - 1 - suffix]!)
     )
       suffix++
-    // A bare URL takes in text written against it, so one beside a change is
-    // written again with that change rather than kept as authored.
-    const bare = (node: SourceNode | undefined) =>
-      node?.type === 'link' &&
-      !/^[<[]/.test(source.slice(node.position?.start.offset ?? 0))
-    if (prefix && bare(before.children[prefix - 1])) prefix--
-    if (suffix && bare(before.children[before.children.length - suffix]))
+    if (
+      prefix &&
+      rewrittenAddress(
+        before.children[prefix - 1],
+        after.children[prefix - 1],
+        source,
+        canonical,
+      )
+    )
+      prefix--
+    if (
+      suffix &&
+      rewrittenAddress(
+        before.children[before.children.length - suffix],
+        after.children[after.children.length - suffix],
+        source,
+        canonical,
+      )
+    )
       suffix--
     // A cell's range includes its pipe and padding, which would hide a space
     // now at the edge of its content from the boundary check.
@@ -880,6 +955,7 @@ export function semanticSignature(doc: ProseNode): string {
         'label',
         'spread',
         'authoredFence',
+        'form',
         'inkkitFileRaw',
         'inkkitFileWidth',
         'inkkitFileInTable',
@@ -1822,6 +1898,7 @@ export class Preservation {
         if (actual === normalized(serialize(this.ctx, parse(canonical))))
           return output
       }
+
       throw new PreservationError(
         'The edited Markdown cannot be reopened without changing its content',
       )

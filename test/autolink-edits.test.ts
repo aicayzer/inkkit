@@ -37,10 +37,17 @@ async function edit(
     })
     const [from, to, insert] = change(text)
     view.dispatch(view.state.tr.insertText(insert, start + from, start + to))
-    const edited = view.state.doc.toJSON()
+    // How a link was written is not part of what the document reads as.
+    const content = () =>
+      JSON.parse(
+        JSON.stringify(view.state.doc.toJSON(), (key, value) =>
+          key === 'form' ? undefined : value,
+        ),
+      )
+    const edited = content()
     const saved = editor.snapshot().text
     editor.loadDocument({ ...input, generation: 2, text: saved })
-    const reopened = view.state.doc.toJSON()
+    const reopened = content()
     const links: string[] = []
     view.state.doc.descendants((node) => {
       const link = node.marks.find((mark) => mark.type.name === 'link')

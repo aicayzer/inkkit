@@ -337,16 +337,14 @@ test('a space typed after a URL at the end of a table cell saves without joining
   expect(
     await typed(table, (_editor, view) => {
       caret(view, { text: 'see', offset: 3 })
-      // What the autolink input rule leaves after a URL and a space.
-      const { schema } = view.state
-      const link = schema.marks.link!.create({ href: 'https://example.com' })
+      // A typed URL becomes a bare link, then the space ends it.
       view.dispatch(
-        view.state.tr.insert(view.state.selection.from, [
-          schema.text(' '),
-          schema.text('https://example.com', [link]),
-          schema.text(' '),
-        ]),
+        view.state.tr.insertText(
+          ' https://example.com',
+          view.state.selection.from,
+        ),
       )
+      view.dispatch(view.state.tr.insertText(' ', view.state.selection.from))
     }),
   ).toBe(
     '| H | Other |\n| --- | --- |\n| see <https://example.com>&#x20; | b |\n',

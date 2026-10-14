@@ -279,7 +279,7 @@ test('a bare web address in pasted text imports as the link it reads back as', a
         via,
       )
       expect(text).toBe(
-        'Visit https://example.com/a **today** or [www.example.com](http://www.example.com)\n\n\\[https://example.test/: x]\n',
+        'Visit https://example.com/a **today** or www.example.com\n\n\\[https://example.test/: x]\n',
       )
     }
   })

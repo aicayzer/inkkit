@@ -1,50 +1,29 @@
-import { remarkCtx } from '@milkdown/kit/core'
-import { linkSchema } from '@milkdown/kit/preset/commonmark'
-import { InputRule } from '@milkdown/kit/prose/inputrules'
-import type { Mark, Node as ProseNode } from '@milkdown/kit/prose/model'
+import { parserCtx } from '@milkdown/kit/core'
+import type { Ctx } from '@milkdown/kit/ctx'
+import {
+  Mark,
+  type Node as ProseNode,
+  type Schema,
+} from '@milkdown/kit/prose/model'
 import {
   Plugin,
   PluginKey,
-  type EditorState,
+  TextSelection,
   type Transaction,
 } from '@milkdown/kit/prose/state'
-import { Mapping } from '@milkdown/kit/prose/transform'
-import { $inputRule, $prose } from '@milkdown/kit/utils'
-import type { Root } from 'mdast'
-
-// A typed URL becomes a link once a space follows it; nothing links it otherwise.
-export const autolinkInputRule = $inputRule((ctx) => {
-  return new InputRule(
-    /(?:^|\s)(https?:\/\/[^\s<>]+[^\s<>.,;:!?)\]])\s$/,
-    (state, match, _start, end) => {
-      const url = match[1]
-      if (!url) return null
-      const to = end
-      const from = to - url.length
-      const mark = linkSchema.type(ctx).create({ href: url })
-      return state.tr
-        .addMark(from, to, mark)
-        .insertText(' ', end, end)
-        .removeStoredMark(mark)
-    },
-  )
-})
-
-// A bare URL, www address or email address links to its own text.
-const literal = (text: string, href: string): boolean =>
-  href === text ||
-  (href === `http://${text}` && /^www\./i.test(text)) ||
-  href === `mailto:${text}`
+import { $prose } from '@milkdown/kit/utils'
+import { serialize } from './dialect'
+import type { LinkForm } from './link-form'
 
 interface Character {
   pos: number
   text: string
   link: Mark | undefined
+  form: LinkForm
   marks: readonly Mark[]
 }
 
-// The characters of a text block, with undefined where an inline node that is
-// not text breaks the run.
+// A text block's characters; undefined where an inline node breaks the text.
 function characters(
   block: ProseNode,
   start: number,
@@ -57,185 +36,343 @@ function characters(
     }
     const link = child.marks.find((mark) => mark.type.name === 'link')
     const marks = child.marks.filter((mark) => mark !== link)
+    const form = link ? ((link.attrs.form as LinkForm) ?? null) : null
     for (let index = 0; index < child.text!.length; index++)
       result.push({
         pos: start + offset + index,
         text: child.text![index]!,
         link,
+        form,
         marks,
       })
   })
   return result
 }
 
-interface Run {
-  from: number
-  to: number
-  href: string
-  text: string
+const sameMarks = (a: readonly Mark[], b: readonly Mark[]) =>
+  a.length === b.length && a.every((mark, index) => mark.eq(b[index]!))
+
+// The links each text reads as once written, as [start, end, href] within
+// it, found by writing the texts as plain paragraphs and reading them back.
+// GFM links addresses in a pass after escapes are read, so escaping cannot
+// keep one plain. Undefined where a text does not read back as itself.
+function literals(
+  ctx: Ctx,
+  schema: Schema,
+  texts: string[],
+): Array<Array<[number, number, string]> | undefined> {
+  if (!texts.length) return []
+  // A leading word puts each text after a space, where an address may start,
+  // and keeps it a paragraph of its own.
+  const doc = schema.topNodeType.create(
+    null,
+    texts.map((text) =>
+      schema.nodes.paragraph!.create(null, schema.text(`x ${text}`)),
+    ),
+  )
+  const reopened = ctx.get(parserCtx)(serialize(ctx, doc))
+  if (reopened.childCount !== texts.length)
+    return texts.length === 1
+      ? [undefined]
+      : texts.flatMap((text) => literals(ctx, schema, [text]))
+  return texts.map((text, index) => {
+    const paragraph = reopened.child(index)
+    if (
+      paragraph.type.name !== 'paragraph' ||
+      paragraph.textContent !== `x ${text}`
+    )
+      return undefined
+    const found: Array<[number, number, string]> = []
+    let valid = true
+    paragraph.forEach((child, offset) => {
+      if (!child.isText) valid = false
+      const link = child.marks.find((mark) => mark.type.name === 'link')
+      if (child.marks.length > (link ? 1 : 0)) valid = false
+      if (link)
+        found.push([offset - 2, offset - 2 + child.nodeSize, link.attrs.href])
+    })
+    return valid ? found : undefined
+  })
 }
 
-function linkRuns(chars: Array<Character | undefined>): Run[] {
-  const runs: Run[] = []
+// CommonMark reads an address in angle brackets as a link to it, or to
+// `mailto:` it for an email address.
+function angleHref(text: string): string | undefined {
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^\s<>\u0000-\u001f]*$/.test(text))
+    return text
+  if (
+    /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/.test(
+      text,
+    )
+  )
+    return `mailto:${text}`
+  return undefined
+}
+
+interface Wanted {
+  href: string
+  form: LinkForm
+}
+
+// Where a link is wanted on each character of an edited window of a block.
+// Characters inside a link written with brackets are left as they are.
+function wantedLinks(
+  ctx: Ctx,
+  schema: Schema,
+  chars: Array<Character | undefined>,
+  from: number,
+  to: number,
+): Map<number, Wanted | null> {
+  const wanted = new Map<number, Wanted | null>()
+  // An address in angle brackets keeps them while it is still one. Text after
+  // a space in it, or all of it once it is no longer one, is read as bare
+  // text below.
+  const released = new Set<number>()
   for (let index = 0; index < chars.length;) {
-    const link = chars[index]?.link
+    const link = chars[index]?.form === 'angle' ? chars[index]!.link : undefined
     if (!link) {
       index++
       continue
     }
-    let end = index
-    while (chars[end]?.link?.eq(link)) end++
-    runs.push({
-      from: index,
-      to: end,
-      href: String(link.attrs.href),
-      text: chars
+    let end = index + 1
+    while (end < chars.length && chars[end]?.link?.eq(link)) end++
+    if (end >= from && index <= to) {
+      const text = chars
         .slice(index, end)
         .map((char) => char!.text)
-        .join(''),
-    })
+        .join('')
+      // Text typed onto the end of an address that ends the address, such as
+      // a full stop, stays outside it.
+      let address = /^\S*/.exec(text)![0]
+      while (address && !angleHref(address)) address = address.slice(0, -1)
+      const href = angleHref(address)
+      for (let at = index; at < end; at++)
+        if (href && at < index + address.length)
+          wanted.set(at, { href, form: 'angle' })
+        else released.add(at)
+    }
     index = end
   }
-  return runs
-}
-
-// Ranges each transaction changed, in the document before and after them all.
-function changedRanges(transactions: readonly Transaction[]) {
-  const mapping = new Mapping(transactions.flatMap((tr) => tr.mapping.maps))
-  const before: Array<[number, number]> = []
-  const after: Array<[number, number]> = []
-  mapping.maps.forEach((map, index) => {
-    const back = mapping.slice(0, index).invert()
-    const forward = mapping.slice(index + 1)
-    map.forEach((oldFrom, oldTo, newFrom, newTo) => {
-      before.push([back.map(oldFrom, -1), back.map(oldTo, 1)])
-      after.push([forward.map(newFrom, -1), forward.map(newTo, 1)])
-    })
-  })
-  return { before, after }
-}
-
-function textBlocks(
-  doc: ProseNode,
-  ranges: Array<[number, number]>,
-): Array<{ block: ProseNode; start: number; from: number; to: number }> {
-  const blocks: Array<{
-    block: ProseNode
-    start: number
-    from: number
-    to: number
-  }> = []
-  for (const [from, to] of ranges)
-    doc.nodesBetween(
-      Math.max(0, from - 1),
-      Math.min(doc.content.size, to + 1),
-      (node, pos) => {
-        if (!node.isTextblock) return true
-        blocks.push({ block: node, start: pos + 1, from, to })
-        return false
-      },
+  // Bare text: runs without whitespace and with the same formatting, where
+  // an address could be read or could end.
+  const free = (index: number) => {
+    const char = chars[index]
+    return (
+      char !== undefined &&
+      (released.has(index) ||
+        (char.form !== 'angle' && !(char.link && !char.form)))
     )
-  return blocks
+  }
+  const spans: Array<[number, number]> = []
+  for (let index = 0; index < chars.length;) {
+    const char = chars[index]
+    if (!free(index) || /\s/.test(char!.text)) {
+      // A space never belongs to an address that follows its text.
+      if (free(index) && index >= from && index <= to && char!.link)
+        wanted.set(index, null)
+      index++
+      continue
+    }
+    let end = index + 1
+    while (
+      end < chars.length &&
+      free(end) &&
+      !/\s/.test(chars[end]!.text) &&
+      sameMarks(chars[end]!.marks, char!.marks)
+    )
+      end++
+    if (end >= from && index <= to) spans.push([index, end])
+    index = end
+  }
+  const found = literals(
+    ctx,
+    schema,
+    spans.map(([start, end]) =>
+      chars
+        .slice(start, end)
+        .map((char) => char!.text)
+        .join(''),
+    ),
+  )
+  spans.forEach(([start, end], index) => {
+    const links = found[index]
+    if (!links) return
+    for (let at = start; at < end; at++) wanted.set(at, null)
+    for (const [linkStart, linkEnd, href] of links)
+      for (let at = start + linkStart; at < start + linkEnd; at++)
+        wanted.set(at, { href, form: 'literal' })
+  })
+  return wanted
 }
 
-// The edited text of a bare URL keeps the link it reads as when written back:
-// the link follows the text while it is still a bare URL, and ends where the
-// text stops being one. Otherwise the document would hold a link that its own
-// Markdown cannot express.
+const differs = (
+  chars: Array<Character | undefined>,
+  wanted: Map<number, Wanted | null>,
+) =>
+  [...wanted].some(([at, want]) => {
+    const char = chars[at]!
+    return want
+      ? char.link?.attrs.href !== want.href || char.form !== want.form
+      : char.link !== undefined
+  })
+
+interface Block {
+  pos: number
+  chars: Array<Character | undefined>
+  wanted: Map<number, Wanted | null>
+}
+
+// Sets the wanted links: one step per run of characters that changes, or,
+// where a block has many, one step that writes the block again, since each
+// mark step rebuilds the whole block.
+function linked(tr: Transaction, blocks: Block[]): Transaction {
+  const type = tr.doc.type.schema.marks.link!
+  const create = (want: Wanted) =>
+    type.create({ href: want.href, form: want.form })
+  for (const { pos, chars, wanted } of blocks) {
+    const changes = [...wanted]
+      .filter(([at, want]) => differs(chars, new Map([[at, want]])))
+      .sort((a, b) => a[0] - b[0])
+    const runs: Array<{ from: number; to: number; want: Wanted | null }> = []
+    for (const [at, want] of changes) {
+      const run = runs.at(-1)
+      const char = chars[at]!
+      if (
+        run &&
+        run.to === char.pos &&
+        run.want?.href === want?.href &&
+        run.want?.form === want?.form
+      )
+        run.to = char.pos + 1
+      else runs.push({ from: char.pos, to: char.pos + 1, want })
+    }
+    if (runs.length <= 32) {
+      for (const { from, to, want } of runs)
+        if (want) tr.addMark(from, to, create(want))
+        else tr.removeMark(from, to, type)
+      continue
+    }
+    const block = tr.doc.nodeAt(pos)!
+    const nodes: ProseNode[] = []
+    let index = 0
+    block.forEach((child) => {
+      if (!child.isText) {
+        nodes.push(child)
+        index++
+        return
+      }
+      const base = child.marks.filter((mark) => mark.type !== type)
+      let text = ''
+      let marks: readonly Mark[] | undefined
+      for (const character of child.text!) {
+        const want = wanted.get(index)
+        const link =
+          want === undefined
+            ? child.marks.find((mark) => mark.type === type)
+            : want && create(want)
+        const next = link ? link.addToSet(base) : base
+        if (marks && !Mark.sameSet(marks, next)) {
+          nodes.push(tr.doc.type.schema.text(text, marks))
+          text = ''
+        }
+        marks = next
+        text += character
+        index++
+      }
+      if (text) nodes.push(tr.doc.type.schema.text(text, marks))
+    })
+    const { from, to } = tr.selection
+    tr.replaceWith(pos + 1, pos + 1 + block.content.size, nodes)
+    if (from > pos && to <= pos + block.nodeSize)
+      tr.setSelection(TextSelection.create(tr.doc, from, to))
+  }
+  return tr
+}
+
+// Whether a text block reads back with the same links once written.
+function readsBack(ctx: Ctx, tr: Transaction, pos: number): boolean {
+  const block = tr.doc.nodeAt(pos)!
+  const paragraph = tr.doc.type.schema.nodes.paragraph!.create(
+    null,
+    block.content,
+  )
+  const reopened = ctx.get(parserCtx)(
+    serialize(ctx, tr.doc.type.create(null, [paragraph])),
+  )
+  const clean = (node: ProseNode) =>
+    JSON.stringify(node.toJSON(), (key, value) =>
+      key === 'form' ? undefined : value,
+    )
+  return (
+    reopened.childCount === 1 &&
+    clean(reopened.firstChild!) === clean(paragraph)
+  )
+}
+
+// Positions where each transaction changed the document, in the final one.
+function changedWindow(
+  transactions: readonly Transaction[],
+  before: ProseNode,
+  after: ProseNode,
+): [number, number] | undefined {
+  if (!transactions.some((tr) => tr.docChanged)) return undefined
+  const start = before.content.findDiffStart(after.content)
+  if (start == null) return undefined
+  const end = before.content.findDiffEnd(after.content)!.b
+  return [start, Math.max(start, end)]
+}
+
+// Bare addresses follow their text, as GFM reads it: an edited address links
+// to its new text while it is still an address, text that stops being one is
+// plain, and an address typed into plain text becomes a link. An address in
+// angle brackets follows its text the same way. Links written with brackets
+// keep their destination. Each change is checked by writing the block and
+// reading it back; if that does not give the same block, nothing changes.
 export const autolinkLiterals = $prose(
   (ctx) =>
     new Plugin({
       key: new PluginKey('autolinkLiterals'),
-      appendTransaction(transactions, oldState: EditorState, newState) {
-        if (!transactions.some((tr) => tr.docChanged)) return null
-        const { before, after } = changedRanges(transactions)
-        if (!after.length) return null
-        const hrefs = new Set<string>()
-        for (const { block, start } of textBlocks(oldState.doc, before))
-          for (const run of linkRuns(characters(block, start)))
-            if (literal(run.text, run.href)) hrefs.add(run.href)
-        if (!hrefs.size) return null
-        const type = linkSchema.type(ctx)
-        const processor = ctx.get(remarkCtx)
-        const tr = newState.tr
-        const seen = new Set<number>()
-        for (const { block, start, from, to } of textBlocks(
-          newState.doc,
-          after,
-        )) {
-          const chars = characters(block, start)
-          for (const run of linkRuns(chars)) {
-            const runFrom = chars[run.from]!.pos
-            const runTo = chars[run.to - 1]!.pos + 1
-            if (
-              seen.has(runFrom) ||
-              !hrefs.has(run.href) ||
-              runTo < from ||
-              runFrom > to
-            )
-              continue
-            seen.add(runFrom)
-            // The text around the link that the URL could run into.
-            const marks = chars[run.from]!.marks
-            const joins = (char: Character | undefined) =>
-              char !== undefined &&
-              !char.link &&
-              !/\s/.test(char.text) &&
-              char.marks.length === marks.length &&
-              char.marks.every((mark, index) => mark.eq(marks[index]!))
-            let first = run.from
-            while (first > 0 && joins(chars[first - 1])) first--
-            let last = run.to
-            while (last < chars.length && joins(chars[last])) last++
-            const segment = chars.slice(first, last) as Character[]
-            const text = segment.map((char) => char.text).join('')
-            // The leading word keeps the text inside one paragraph, after a
-            // space, which is where a literal may start.
-            const tree = processor.parse(`x ${text}`) as Root
-            const wanted: Array<string | undefined> = segment.map(
-              () => undefined,
-            )
-            const visit = (node: Root | Root['children'][number]) => {
-              if (node.type === 'link') {
-                const start = (node.position?.start.offset ?? 0) - 2
-                const end = (node.position?.end.offset ?? 0) - 2
-                const [child, ...rest] = node.children
-                if (
-                  start >= 0 &&
-                  !rest.length &&
-                  child?.type === 'text' &&
-                  child.value === text.slice(start, end)
-                )
-                  for (let index = start; index < end; index++)
-                    wanted[index] = node.url
-                return
-              }
-              if ('children' in node) node.children.forEach(visit)
-            }
-            visit(tree)
-            if (
-              segment.every(
-                (char, index) => char.link?.attrs.href === wanted[index],
+      appendTransaction(transactions, oldState, newState) {
+        const window = changedWindow(transactions, oldState.doc, newState.doc)
+        if (!window) return null
+        const blocks: Block[] = []
+        newState.doc.nodesBetween(
+          Math.max(0, window[0] - 1),
+          Math.min(newState.doc.content.size, window[1] + 1),
+          (block, pos) => {
+            if (!block.isTextblock) return true
+            if (block.type.spec.code) return false
+            const chars = characters(block, pos + 1)
+            const index = (at: number) => {
+              const found = chars.findIndex(
+                (char) => char !== undefined && char.pos >= at,
               )
-            )
-              continue
-            const segmentFrom = segment[0]!.pos
-            tr.removeMark(segmentFrom, segment.at(-1)!.pos + 1, type)
-            for (let index = 0; index < segment.length;) {
-              const href = wanted[index]
-              let end = index + 1
-              while (end < segment.length && wanted[end] === href) end++
-              if (href)
-                tr.addMark(
-                  segment[index]!.pos,
-                  segment[end - 1]!.pos + 1,
-                  type.create({ href }),
-                )
-              index = end
+              return found < 0 ? chars.length : found
             }
-          }
-        }
-        return tr.steps.length ? tr : null
+            const wanted = wantedLinks(
+              ctx,
+              newState.schema,
+              chars,
+              Math.max(0, index(window[0]) - 1),
+              index(window[1]) + 1,
+            )
+            if (differs(chars, wanted)) blocks.push({ pos, chars, wanted })
+            return false
+          },
+        )
+        if (!blocks.length) return null
+        let tr = linked(newState.tr, blocks)
+        const failed = blocks.filter((block) => !readsBack(ctx, tr, block.pos))
+        if (!failed.length) return tr
+        // Where the address cannot be written to read back as a link, its
+        // text stays plain.
+        for (const block of failed)
+          for (const [at, want] of block.wanted)
+            if (want?.form === 'literal') block.wanted.set(at, null)
+        tr = linked(newState.tr, blocks)
+        const kept = blocks.filter((block) => readsBack(ctx, tr, block.pos))
+        if (kept.length === blocks.length) return tr
+        return kept.length ? linked(newState.tr, kept) : null
       },
     }),
 )
