@@ -168,7 +168,11 @@ function authoredNeighbour(
 }
 
 // The text Markdown inline source reads as, with the source offset of each of
-// its characters; undefined where it holds more than escapes and entities.
+// its characters; undefined where it holds more than escapes and entities, or
+// line endings when `lines` is set. A line ending reads as LF without the
+// spaces and tabs before it or the quote markers and indentation after it,
+// which paragraph text leaves out; the offset before it is where those spaces
+// start, so text typed at the end of a line goes before them.
 function decodedOffsets(
   raw: string,
   lines = false,
@@ -176,25 +180,30 @@ function decodedOffsets(
   const offsets = [0]
   let decoded = ''
   for (let index = 0; index < raw.length;) {
+    const rest = raw.slice(index)
+    const line = /^[ \t]*(?:\r\n?|\n)(?:[ \t]*>)*[ \t]*/.exec(rest)?.[0]
     const token =
-      /^\\[!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~]/.exec(raw.slice(index))?.[0] ??
-      /^&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);/.exec(
-        raw.slice(index),
-      )?.[0]
+      line ??
+      /^\\[!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~]/.exec(rest)?.[0] ??
+      /^&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);/.exec(rest)?.[0]
     let value = raw[index]!
-    if (token?.startsWith('\\')) value = token[1]!
+    if (line) {
+      if (!lines) return undefined
+      value = '\n'
+    } else if (token?.startsWith('\\')) value = token[1]!
     else if (token) {
       const element = document.createElement('textarea')
       element.innerHTML = token
       value = element.value
-    } else if (!lines && (raw[index] === '\n' || raw[index] === '\r'))
-      return undefined
+    }
     index += token?.length ?? 1
     decoded += value
     for (let part = 0; part < value.length; part++) offsets.push(index)
   }
   return { decoded, offsets }
 }
+
+const lf = (text: string) => text.replace(/\r\n?/g, '\n')
 
 // GFM finds addresses after punctuation in a pass after parsing, which gives
 // the address and the text split around it no position. Each such run of
@@ -218,7 +227,7 @@ function locateChildren(node: SourceNode, text: string): void {
     const from = children[index - 1]?.position?.end.offset ?? start
     const to = children[last]?.position?.start.offset ?? end
     const run = children.slice(index, last)
-    const values = run.map((child) => inlineText(child))
+    const values = run.map((child) => lf(inlineText(child)))
     const read = decodedOffsets(text.slice(from, to), true)
     const at = read?.decoded.indexOf(values.join(''))
     if (
@@ -278,7 +287,7 @@ function runOffsets(
         )
     } else if (node.type === 'text') {
       const read = decodedOffsets(raw, true)
-      if (!read || read.decoded !== node.value) return undefined
+      if (!read || read.decoded !== lf(node.value ?? '')) return undefined
       decoded += read.decoded
       offsets.push(...read.offsets.slice(1).map((offset) => start + offset))
     } else return undefined
@@ -343,15 +352,14 @@ function retainText(
   raw: string,
   before: string,
   after: string,
-  quoteIndent = false,
   inTable = false,
   // The canonical text, used for text inserted against a link, and whether a
   // link sits before and after this text.
   written?: string,
   beside: readonly [boolean, boolean] = [false, false],
 ): string {
-  before = before.replace(/\r\n?/g, '\n')
-  after = after.replace(/\r\n?/g, '\n')
+  before = lf(before)
+  after = lf(after)
   let prefix = 0
   while (
     prefix < before.length &&
@@ -366,52 +374,9 @@ function retainText(
     before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
   )
     suffix++
-  const offsets = [0]
-  let decoded = ''
-  for (let index = 0; index < raw.length;) {
-    if (index > 0 && raw[index - 1] === '\n') {
-      const gutter = (
-        quoteIndent ? /^(?:[ \t]*>[ \t]*)+/ : /^(?:[ \t]*>[ \t]?)+/
-      ).exec(raw.slice(index))
-      if (gutter) {
-        index += gutter[0].length
-        offsets[offsets.length - 1] = index
-        continue
-      }
-    }
-    const escaped = /^\\([!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~])/.exec(
-      raw.slice(index),
-    )
-    const entity = /^&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);/.exec(
-      raw.slice(index),
-    )
-    let value: string
-    let length: number
-    if (escaped) {
-      value = escaped[1]!
-      length = escaped[0].length
-    } else if (entity) {
-      const element = document.createElement('textarea')
-      element.innerHTML = entity[0]
-      value = element.value
-      length = entity[0].length
-    } else if (raw.slice(index, index + 2) === '\r\n') {
-      value = '\n'
-      length = 2
-    } else {
-      value = raw[index]!
-      length = 1
-    }
-    decoded += value
-    index += length
-    for (let part = 0; part < value.length; part++) offsets.push(index)
-  }
-  if (decoded !== before) {
-    // Continuation indentation is excluded from a quoted paragraph's text.
-    return quoteIndent
-      ? after
-      : retainText(raw, before, after, true, inTable, written, beside)
-  }
+  const read = decodedOffsets(raw, true)
+  if (read?.decoded !== before) return after
+  const { offsets } = read
   // Text written against a link is written as the canonical writer writes
   // it, which knows what a bare address would run into.
   if (
@@ -863,7 +828,6 @@ function retainSource(
           raw,
           before.value!,
           after.value!,
-          false,
           inTable,
           canonical.slice(newStart, newEnd),
           beside,
