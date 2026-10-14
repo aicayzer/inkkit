@@ -119,7 +119,11 @@ function textAt(
 
 /** A link whose text is its own URL is written as the bare URL, the way it was typed. Only where reading
  *  it back gives the same link again: nothing may run into it at either end. */
-function writesBare(node: Link, parent: Parents | undefined): boolean {
+function writesBare(
+  node: Link,
+  parent: Parents | undefined,
+  inCell: boolean,
+): boolean {
   const [child, ...rest] = node.children
   if (
     node.title ||
@@ -140,15 +144,21 @@ function writesBare(node: Link, parent: Parents | undefined): boolean {
   const after = textAt(parent, node, 1)
   if (after && (after.type !== 'text' || !afterURL.test(after.value)))
     return false
-  return true
+  // Spaces that end a cell are written as character references, which a bare URL would run into.
+  return !(
+    inCell &&
+    after?.type === 'text' &&
+    /^[ \t]+$/.test(after.value) &&
+    parent?.children.at(-1) === after
+  )
 }
 
 const link: (typeof defaultHandlers)['link'] = (node, parent, state, info) =>
-  writesBare(node, parent)
+  writesBare(node, parent, state.stack.includes('tableCell'))
     ? node.url
     : defaultHandlers.link(node, parent, state, info)
 link.peek = (node, parent, state) =>
-  writesBare(node, parent)
+  writesBare(node, parent, state.stack.includes('tableCell'))
     ? node.url[0]!
     : defaultHandlers.link.peek(node, parent, state)
 
@@ -174,12 +184,24 @@ function remarkDialect(this: Processor) {
     handlers: {
       text(node, parent, state, info) {
         const value = defaultHandlers.text(node, parent, state, info)
-        // GFM trims literal whitespace at cell edges on reopening.
-        return state.stack.includes('tableCell')
-          ? value.replace(/^[ \t]+|[ \t]+$/g, (spaces) =>
-              spaces.replaceAll(' ', '&#x20;').replaceAll('\t', '&#x9;'),
-            )
-          : value
+        // GFM trims spaces and tabs at the edges of a cell on reopening, so
+        // only the start of its first node and the end of its last need
+        // encoding. Inside a mark or link, delimiters stand before the pipe.
+        if (
+          !state.stack.includes('tableCell') ||
+          (parent?.type !== 'paragraph' && parent?.type !== 'tableCell')
+        )
+          return value
+        const siblings = parent.children
+        const encode = (spaces: string) =>
+          spaces.replaceAll(' ', '&#x20;').replaceAll('\t', '&#x9;')
+        return value
+          .replace(/^[ \t]+/, (spaces) =>
+            siblings[0] === node ? encode(spaces) : spaces,
+          )
+          .replace(/[ \t]+$/, (spaces) =>
+            siblings.at(-1) === node ? encode(spaces) : spaces,
+          )
       },
       thematicBreak(node, parent, state) {
         const value = defaultHandlers.thematicBreak(node, parent, state)
