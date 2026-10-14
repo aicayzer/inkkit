@@ -190,8 +190,15 @@ test('a run of blank lines takes the configuration check no longer than a line o
     return performance.now() - start
   }
   time('x')
-  const lines = time('x')
-  const blank = time('\n')
+  time('\n')
+  // A busy machine only slows a sample, so compare the fastest of several,
+  // taken in turn.
+  let lines = Infinity
+  let blank = Infinity
+  for (let i = 0; i < 5; i++) {
+    lines = Math.min(lines, time('x'))
+    blank = Math.min(blank, time('\n'))
+  }
   // Rescanning the blank lines that follow each line start took 400 ms here.
   expect(blank).toBeLessThan(lines * 5 + 50)
 })
