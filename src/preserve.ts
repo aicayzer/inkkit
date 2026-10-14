@@ -5,6 +5,7 @@ import type { Root } from 'mdast'
 import { serialize } from './dialect'
 import { restoreCodeEndings, finalCodeEnding } from './code-fences'
 import { sourceFrontmatter } from './literals'
+import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 
 interface Block {
   start: number
@@ -21,9 +22,15 @@ interface SourceNode {
   [key: string]: unknown
 }
 
+// Line endings are the document's, not the node's: a CRLF source and its LF
+// canonical form describe the same text.
 function signature(node: SourceNode): string {
   return JSON.stringify(node, (key, value) =>
-    ['position', 'data', 'marker'].includes(key) ? undefined : value,
+    ['position', 'data', 'marker'].includes(key)
+      ? undefined
+      : typeof value === 'string'
+        ? value.replace(/\r\n?/g, '\n')
+        : value,
   )
 }
 
@@ -568,6 +575,25 @@ function loose(list: SourceNode, text: string): boolean {
   return gaps(items) || items.some((item) => gaps(item.children ?? []))
 }
 
+// How a reference label is matched to a definition. Footnote labels, which
+// start with `^`, are a separate set.
+function definitionLabel(label: string): string {
+  return label.startsWith('^')
+    ? '^' + normalizeIdentifier(label.slice(1))
+    : normalizeIdentifier(label)
+}
+
+// Whether two nodes have the same blocks, leaving inline content aside.
+function sameBlocks(left: ProseNode, right: ProseNode): boolean {
+  if (left.type !== right.type || left.isTextblock !== right.isTextblock)
+    return false
+  if (left.isTextblock) return true
+  if (left.childCount !== right.childCount) return false
+  for (let index = 0; index < left.childCount; index++)
+    if (!sameBlocks(left.child(index), right.child(index))) return false
+  return true
+}
+
 // Canonical Markdown keeps authored CRLF inside literal blocks and code fences.
 function withEnding(text: string, lineEnding: string): string {
   return lineEnding === '\n' ? text : text.replace(/\r?\n/g, lineEnding)
@@ -601,7 +627,7 @@ function blockForm(ctx: Ctx, node: ProseNode): string {
   return form(serialize(ctx, node.type.schema.topNodeType.create(null, [node])))
 }
 
-function semanticSignature(doc: ProseNode): string {
+export function semanticSignature(doc: ProseNode): string {
   const clean = (value: Record<string, unknown>): Record<string, unknown> => {
     if (value.type === 'inkkit_wiki_link' && value.attrs) {
       const {
@@ -927,10 +953,18 @@ export class Preservation {
   private readonly lineEnding: string
   private readonly originalForms = new Set<string>()
   private readonly forms = new WeakMap<ProseNode, string>()
-  private readonly textBlockEdits = new WeakMap<
+  private readonly blockEdits = new WeakMap<
     ProseNode,
     { index: number; text: string }
   >()
+  private readonly itemEdits = new WeakMap<
+    ProseNode,
+    { index: number; item: number; text: string }
+  >()
+  private readonly definitionNodes = new Map<string, number>()
+  // Undefined when a definition sits inside another block, where appending
+  // the top-level ones would not reproduce the document.
+  private readonly definitionSources?: Array<{ label: string; text: string }>
 
   constructor(
     private readonly ctx: Ctx,
@@ -976,6 +1010,26 @@ export class Preservation {
         })
       }
       for (const block of this.blocks) this.originalForms.add(block.form)
+      const definition = (node: SourceNode) =>
+        node.type === 'definition' || node.type === 'footnoteDefinition'
+      const nested = (node: SourceNode): boolean =>
+        (node.children ?? []).some(
+          (child) => definition(child) || nested(child),
+        )
+      const top = rawTree.children as unknown as SourceNode[]
+      if (!top.some(nested))
+        this.definitionSources = top.filter(definition).map((node) => {
+          const raw = source.slice(
+            node.position!.start.offset! + offset,
+            node.position!.end.offset! + offset,
+          )
+          // A footnote reference is never validated alone, so only its label
+          // matters, and its body need not be parsed on every keystroke.
+          const label = /^\[((?:\\[\s\S]|[^\\\]])*)\]:/.exec(raw)![1]!
+          return node.type === 'footnoteDefinition'
+            ? { label: definitionLabel(label), text: `[${label}]: x` }
+            : { label: definitionLabel(label), text: raw }
+        })
     } catch (cause) {
       if (cause instanceof PreservationError) throw cause
       throw new PreservationError('Cannot read Markdown for preservation', {
@@ -1005,7 +1059,7 @@ export class Preservation {
     )
   }
 
-  private independentTextBlocks(doc: ProseNode): string | undefined {
+  private localEdits(doc: ProseNode): string | undefined {
     if (
       this.baseline.childCount !== this.blocks.length ||
       doc.childCount !== this.blocks.length ||
@@ -1014,65 +1068,335 @@ export class Preservation {
       return undefined
     let output = '',
       previous = 0
-    for (let index = 0; index < doc.childCount; index++) {
-      const node = doc.child(index)
-      const before = this.baseline.child(index)
+    let run: number[] = []
+    for (let index = 0; index <= doc.childCount; index++) {
+      const node = index < doc.childCount ? doc.child(index) : undefined
+      if (!node || node.eq(this.baseline.child(index))) {
+        if (run.length > 1 && !this.pairedInPlace(doc, run)) return undefined
+        run = []
+        continue
+      }
+      run.push(index)
       const block = this.blocks[index]!
-      if (node.eq(before)) continue
-      let retained = this.textBlockEdits.get(node)
+      let retained = this.blockEdits.get(node)
       if (retained?.index !== index) {
-        const raw = this.source.slice(block.start, block.end)
-        const expected = withoutHeadingId(node)
-        // References and HTML/comments can depend on other blocks. Restrict
-        // local validation to text blocks without these context-sensitive forms.
-        const contextual = /[\[<]|%%/
-        const textOnly = (block: ProseNode): boolean => {
-          let valid = true
-          block.forEach((child) => {
-            if (!child.isText) valid = false
-          })
-          return valid
-        }
-        if (
-          !['paragraph', 'heading'].includes(node.type.name) ||
-          !expected.sameMarkup(withoutHeadingId(before)) ||
-          !textOnly(node) ||
-          !textOnly(before) ||
-          contextual.test(raw) ||
-          (index > 0 &&
-            !/\r?\n[ \t]*\r?\n/.test(
-              this.source.slice(this.blocks[index - 1]!.end, block.start),
-            )) ||
-          (index + 1 < this.blocks.length &&
-            !/\r?\n[ \t]*\r?\n/.test(
-              this.source.slice(block.end, this.blocks[index + 1]!.start),
-            ))
-        )
-          return undefined
-        const canonical = blockForm(this.ctx, node)
-        if (
-          contextual.test(canonical) ||
-          (canonical !== block.form && this.originalForms.has(canonical))
-        )
-          return undefined
-        const tree = this.ctx.get(remarkCtx).parse(canonical) as Root
-        if (tree.children.length !== 1) return undefined
-        const text = this.retainBlock(
-          block,
-          tree.children[0] as unknown as SourceNode,
-          canonical,
-        )
-        const reopened = this.ctx.get(parserCtx)(text)
-        if (reopened.childCount !== 1) return undefined
-        if (!withoutHeadingId(reopened.firstChild!).eq(expected))
-          return undefined
+        const text = this.localBlock(index, node)
+        if (text === undefined) return undefined
         retained = { index, text }
-        this.textBlockEdits.set(node, retained)
+        this.blockEdits.set(node, retained)
       }
       output += this.source.slice(previous, block.start) + retained.text
       previous = block.end
     }
-    return output + this.source.slice(previous)
+    output += this.source.slice(previous)
+    // Front matter is found by reading from the start of the file to the next
+    // delimiter line, which an edited block can supply.
+    const bom = (text: string) => text.replace(/^\uFEFF/, '')
+    return sourceFrontmatter(bom(output)) ===
+      sourceFrontmatter(bom(this.source))
+      ? output
+      : undefined
+  }
+
+  // Whole-document matching pairs adjacent edited blocks by resemblance, which
+  // can pair one with its neighbour's original. Keep its result exactly.
+  private pairedInPlace(doc: ProseNode, run: number[]): boolean {
+    if (
+      run.some((index) =>
+        ['bullet_list', 'ordered_list'].includes(doc.child(index).type.name),
+      )
+    )
+      return false
+    const before = run.map((index) => this.blocks[index]!.form)
+    const after = run.map((index) => this.formOf(doc.child(index)))
+    const result: Array<number | undefined> = run.map((_, at) => at)
+    pairSimilar(before, after, 0, run.length, 0, run.length, result, {
+      similarity: SIMILARITY_BUDGET,
+    })
+    return result.every((position, at) => position === at)
+  }
+
+  // Every definition in the source, in order. A block's links can depend on
+  // definitions and nothing else outside it, so parsing it with these gives
+  // the meaning it has in the document.
+  // The definitions a block's text can refer to: only a bracketed label that
+  // matches one can resolve, so the others need not be parsed with it.
+  private definitions(
+    text: string,
+  ): { text: string; blocks: number; nodes: number } | undefined {
+    if (this.definitionSources === undefined) return undefined
+    const labels = new Set<string>()
+    for (const match of text.matchAll(/\[((?:\\[\s\S]|[^\\[\]])*)\]/g))
+      labels.add(definitionLabel(match[1]!))
+    const sources = this.definitionSources
+      .filter((source) => labels.has(source.label))
+      .map((source) => source.text)
+    const appended = sources.join('\n\n')
+    let nodes = this.definitionNodes.get(appended)
+    if (nodes === undefined) {
+      nodes = appended ? this.ctx.get(parserCtx)(appended).childCount : 0
+      this.definitionNodes.set(appended, nodes)
+    }
+    return { text: appended, blocks: sources.length, nodes }
+  }
+
+  // The block's text followed by what it can depend on elsewhere in the
+  // document, or undefined when that cannot be known from the block alone.
+  private inContext(
+    text: string,
+  ): { text: string; blocks: number; nodes: number } | undefined {
+    // HTML and %% comments can span blocks.
+    if (/<|%%/.test(text)) return undefined
+    if (!text.includes('[')) return { text, blocks: 1, nodes: 1 }
+    const definitions = this.definitions(text)
+    if (!definitions) return undefined
+    return definitions.text
+      ? {
+          text: text + this.lineEnding.repeat(2) + definitions.text,
+          blocks: 1 + definitions.blocks,
+          nodes: 1 + definitions.nodes,
+        }
+      : { text, blocks: 1, nodes: 1 }
+  }
+
+  // The first block of text as the document would read it in place.
+  private parseLocally(text: string): ProseNode | undefined {
+    const local = this.inContext(text)
+    if (!local) return undefined
+    const parsed = this.ctx.get(parserCtx)(local.text)
+    return parsed.childCount === local.nodes ? parsed.firstChild! : undefined
+  }
+
+  // Canonical Markdown for a block and its source tree, read in the same
+  // context, so references in it resolve as they do in the document.
+  private canonicalTree(
+    text: string,
+  ): { canonical: string; node: SourceNode } | undefined {
+    const local = this.inContext(text)
+    if (!local) return undefined
+    const tree = this.ctx.get(remarkCtx).parse(local.text) as Root
+    return tree.children.length === local.blocks
+      ? {
+          canonical: local.text,
+          node: tree.children[0] as unknown as SourceNode,
+        }
+      : undefined
+  }
+
+  // Inline content other than text and line breaks can depend on other blocks
+  // or carry attributes that a reparse does not reproduce.
+  private static plainInline(node: ProseNode): boolean {
+    let plain = true
+    node.descendants((child) => {
+      if (child.isInline && !child.isText && child.type.name !== 'hardbreak')
+        plain = false
+      return plain
+    })
+    return plain
+  }
+
+  private separated(index: number): boolean {
+    const block = this.blocks[index]!
+    return (
+      (index === 0 ||
+        /\r?\n[ \t]*\r?\n/.test(
+          this.source.slice(this.blocks[index - 1]!.end, block.start),
+        )) &&
+      (index + 1 === this.blocks.length ||
+        /\r?\n[ \t]*\r?\n/.test(
+          this.source.slice(block.end, this.blocks[index + 1]!.start),
+        ))
+    )
+  }
+
+  // Validates a changed block on its own when nothing outside it can change
+  // what it means, so a keystroke does not serialize and reparse the document.
+  private localBlock(index: number, node: ProseNode): string | undefined {
+    const before = this.baseline.child(index)
+    const block = this.blocks[index]!
+    const expected = withoutHeadingId(node)
+    if (
+      !expected.sameMarkup(withoutHeadingId(before)) ||
+      !this.separated(index)
+    )
+      return undefined
+    if (node.type.name === 'bullet_list' || node.type.name === 'ordered_list')
+      return this.localItems(index, node)
+    const code = node.type.name === 'code_block'
+    // Indented code is rewritten fenced, and the blocks after it can then read
+    // differently.
+    if (
+      code &&
+      !/^ {0,3}(?:`{3,}|~{3,})/.test(this.source.slice(block.start, block.end))
+    )
+      return undefined
+    if (
+      !code &&
+      (!['paragraph', 'heading', 'table'].includes(node.type.name) ||
+        !Preservation.plainInline(node) ||
+        !Preservation.plainInline(before) ||
+        !this.inContext(this.source.slice(block.start, block.end)))
+    )
+      return undefined
+    const form = this.formOf(node)
+    if (form !== block.form && this.originalForms.has(form)) return undefined
+    // Code is literal, so only its fence decides where it ends.
+    const canonical = code
+      ? (() => {
+          const tree = this.ctx.get(remarkCtx).parse(form) as Root
+          return tree.children.length === 1
+            ? {
+                canonical: form,
+                node: tree.children[0] as unknown as SourceNode,
+              }
+            : undefined
+        })()
+      : this.canonicalTree(form)
+    if (!canonical) return undefined
+    const text = this.retainBlock(block, canonical.node, canonical.canonical)
+    const reopened = code
+      ? (() => {
+          const parsed = this.ctx.get(parserCtx)(text)
+          return parsed.childCount === 1 ? parsed.firstChild! : undefined
+        })()
+      : this.parseLocally(text)
+    // The authored fence is presentation the editor keeps from loading.
+    const same = (node: ProseNode) =>
+      code
+        ? node.type === expected.type &&
+          node.attrs.language === expected.attrs.language &&
+          node.content.eq(expected.content)
+        : withoutHeadingId(node).eq(expected)
+    return reopened && same(reopened) ? text : undefined
+  }
+
+  private formOf(node: ProseNode): string {
+    let form = this.forms.get(node)
+    if (form == null) {
+      form = blockForm(this.ctx, node)
+      this.forms.set(node, form)
+    }
+    return form
+  }
+
+  // A list is one block, so typing in one item of a long list validates that
+  // item alone, read as the only item of a list with the same marker.
+  private localItems(index: number, node: ProseNode): string | undefined {
+    const before = this.baseline.child(index)
+    const block = this.blocks[index]!
+    const list = block.ast
+    const offset = this.source.startsWith('\uFEFF') ? 1 : 0
+    const source = this.source.slice(offset)
+    if (
+      list.type !== 'list' ||
+      list.children?.length !== node.childCount ||
+      before.childCount !== node.childCount
+    )
+      return undefined
+    // Whole-document matching would read a list that now matches another one
+    // as moved there.
+    for (let other = 0; other < this.baseline.childCount; other++) {
+      const candidate = this.baseline.child(other)
+      if (
+        other !== index &&
+        candidate.type === node.type &&
+        candidate.childCount === node.childCount &&
+        candidate.textContent === node.textContent
+      )
+        return undefined
+    }
+    const marker = authoredMarker(list, source)
+    let output = ''
+    let previous = block.start
+    for (let at = 0; at < node.childCount; at++) {
+      const item = node.child(at)
+      if (item.eq(before.child(at))) continue
+      let retained = this.itemEdits.get(item)
+      if (retained?.index !== index || retained.item !== at) {
+        const text = this.localItem(
+          node,
+          item,
+          before.child(at),
+          list.children[at]!,
+          source,
+          marker,
+        )
+        if (text === undefined) return undefined
+        retained = { index, item: at, text }
+        this.itemEdits.set(item, retained)
+      }
+      const ast = list.children[at]!
+      output +=
+        this.source.slice(previous, ast.position!.start.offset! + offset) +
+        retained.text
+      previous = ast.position!.end.offset! + offset
+    }
+    return output + this.source.slice(previous, block.end)
+  }
+
+  private localItem(
+    list: ProseNode,
+    item: ProseNode,
+    before: ProseNode,
+    ast: SourceNode,
+    source: string,
+    marker: string | undefined,
+  ): string | undefined {
+    const start = ast.position!.start.offset!
+    const end = ast.position!.end.offset!
+    if (
+      !item.sameMarkup(before) ||
+      !sameBlocks(item, before) ||
+      !Preservation.plainInline(item) ||
+      !Preservation.plainInline(before) ||
+      // The authored item is compared with the edit, so it must read the same
+      // in this context too.
+      !this.inContext(source.slice(start, end))
+    )
+      return undefined
+    const local = this.canonicalTree(
+      form(
+        serialize(
+          this.ctx,
+          list.type.schema.topNodeType.create(null, [
+            list.type.create(list.attrs, [item]),
+          ]),
+        ),
+      ),
+    )
+    const after = local?.node.children?.[0]
+    if (!local || local.node.children!.length !== 1 || !after) return undefined
+    // Whether an item is spread depends on the blank lines around it, which an
+    // edit that keeps its blocks does not change.
+    let text = retainSource(
+      ast,
+      { ...after, spread: ast.spread },
+      source,
+      local.canonical,
+      this.lineEnding,
+    )
+    if (marker) text = relabel(text, [0], marker)
+    // The marker and the spaces after it set the column that continuation
+    // lines, and blocks after the list, are read against.
+    const content = ast.children?.[0]?.position?.start.offset
+    if (content == null || !text.startsWith(source.slice(start, content)))
+      return undefined
+    // An item with nothing on its first line has a different content column.
+    if (/^(?:[-*+]|\d{1,9}[.)])[ \t]*(?:\r?\n|$)/.test(text)) return undefined
+    const indent = source.slice(source.lastIndexOf('\n', start - 1) + 1, start)
+    if (!/^[ \t]*$/.test(indent)) return undefined
+    const reopened = this.parseLocally(indent + text)
+    if (reopened?.type !== list.type || reopened.childCount !== 1)
+      return undefined
+    const reread = reopened.firstChild!
+    // The label and spacing of an item come from its list.
+    const { label: _label, spread: _spread, ...attrs } = reread.attrs
+    const { label: _l, spread: _s, ...expected } = item.attrs
+    return reread.type === item.type &&
+      JSON.stringify(attrs) === JSON.stringify(expected) &&
+      reread.content.eq(item.content)
+      ? text
+      : undefined
   }
 
   // Two lists of one kind side by side are one list unless their markers
@@ -1215,20 +1539,13 @@ export class Preservation {
   serialize(doc: ProseNode): string {
     if (doc.eq(this.baseline)) return this.source
     try {
-      const independent = this.independentTextBlocks(doc)
-      if (independent !== undefined) return independent
+      const local = this.localEdits(doc)
+      if (local !== undefined) return local
       const canonical = serialize(this.ctx, doc)
       if (canonical === '')
         return this.source.startsWith('\uFEFF') ? '\uFEFF' : ''
       const current: string[] = []
-      doc.forEach((node) => {
-        let fingerprint = this.forms.get(node)
-        if (fingerprint == null) {
-          fingerprint = blockForm(this.ctx, node)
-          this.forms.set(node, fingerprint)
-        }
-        current.push(fingerprint)
-      })
+      doc.forEach((node) => current.push(this.formOf(node)))
       const forms = this.blocks.map((block) => block.form)
       const processor = this.ctx.get(remarkCtx)
       const currentRawTree = processor.parse(canonical) as Root

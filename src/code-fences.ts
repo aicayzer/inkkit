@@ -22,6 +22,8 @@ function readFence(value: unknown): Fence | null {
     fence.marker.length <= 30000 &&
     typeof fence.info === 'string' &&
     !/[\r\n]/.test(fence.info) &&
+    // A backtick in the info string of a backtick fence is not a fence.
+    !(fence.marker[0] === '`' && fence.info.includes('`')) &&
     typeof fence.close === 'string' &&
     (!fence.close ||
       new RegExp(`^${fence.marker[0]}{${fence.marker.length},}$`).test(
@@ -85,6 +87,8 @@ export const preservingCodeBlocks = codeBlockSchema.extendSchema(
               authoredFence = readFence(
                 JSON.parse(dom.getAttribute('data-inkkit-fence') ?? 'null'),
               )
+              // An unclosed fence would take in the content that follows it.
+              if (!authoredFence?.close) authoredFence = null
             } catch {
               /* Ordinary code stays usable without provenance. */
             }

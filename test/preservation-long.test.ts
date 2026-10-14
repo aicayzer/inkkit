@@ -36,6 +36,7 @@ for (const repeated of [false, true]) {
   }
 }
 
+// The same thousand paragraphs as the distant-edit tests above.
 test('distant replacements and intervening inserted blocks retain untouched authored syntax', async () => {
   const source =
     Array.from({ length: 1000 }, (_, index) => `__Paragraph ${index}__`).join(
@@ -65,25 +66,35 @@ test('distant replacements and intervening inserted blocks retain untouched auth
         .replace('__Paragraph 999__', '__Paragraph 999 Last__'),
     )
   })
-})
+}, 15_000)
 
+// Only more than a thousand blocks exhaust the matching budget, so this is
+// slow by design.
 test('unmatchable large rewrites still fail within the correspondence work budget', async () => {
   const source = Array.from(
     { length: 1100 },
     (_, index) => `__Before ${index}__ [kept](/target)`,
   ).join('\n\n')
   await withEditor(source, (editor) => {
-    const after = editor.ctx.get(parserCtx)(
-      Array.from(
-        { length: 1100 },
-        (_, index) => `__After ${index}__ [kept](/target)`,
-      ).join('\n\n'),
+    const parse = editor.ctx.get(parserCtx)
+    const rewritten = Array.from(
+      { length: 1100 },
+      (_, index) => `__After ${index}__ [kept](/target)`,
     )
-    expect(() => new Preservation(editor.ctx, source).serialize(after)).toThrow(
-      'too many blocks',
-    )
+    // One block fewer, so blocks cannot be validated where they stand.
+    expect(() =>
+      new Preservation(editor.ctx, source).serialize(
+        parse(rewritten.slice(1).join('\n\n')),
+      ),
+    ).toThrow('too many blocks')
+    // Every block edited where it stands needs no matching.
+    expect(
+      new Preservation(editor.ctx, source).serialize(
+        parse(rewritten.join('\n\n')),
+      ),
+    ).toBe(rewritten.join('\n\n'))
   })
-})
+}, 30_000)
 
 test('plain paragraph validation retains indentation, trailing spaces, CRLF and unsupported neighbours', async () => {
   const source =

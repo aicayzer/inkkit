@@ -90,9 +90,24 @@ Pasting HTML from a web page, notes app or word processor imports readable conte
 - `dl` produces one paragraph per entry. Each `dt` term is bold and each `dd` definition is a plain paragraph, because Markdown has no definition lists.
 - A checkbox that leads a list item, directly or inside a paragraph or label, makes a task item with the same checked state.
 - Source whitespace collapses as in a browser: runs become one space, and indentation and line breaks at the edges of blocks add nothing. `pre`, `code`, literal elements and any element whose inline `style` sets `white-space` to `pre`, `pre-wrap` or `break-spaces` keep theirs, as does one that sets `white-space-collapse` to `preserve` or `preserve-spaces`. This keeps the indentation of code copied from an editor. Style sheets are not read.
+- WebKit, in Safari and in `WKWebView` apps, writes a space beside an inline element as a non-breaking space inside `<span class="Apple-converted-space">`. The text of such a span imports as ordinary spaces, and then follows the whitespace rules above. A non-breaking space anywhere else was authored and is kept.
+- Links keep their address only when it is relative, a fragment or a query, or its scheme is `http`, `https`, `mailto` or `tel`, in any letter case. Other addresses, such as `javascript:`, `data:`, `file:` and app-specific schemes, keep the link text and formatting without the link. So does an address with a control character, other than spaces, tabs and line breaks at its ends. An address is read the way a browser reads it, after HTML entities are decoded. The address of a reference definition in HTML follows the same rule. Images in pasted HTML are not saved by address: the host's image adapter stores the pixels and returns the reference, and an image source that uses a script scheme is never kept. Markdown source, whether typed or pasted as Markdown, keeps the addresses as authored. Elements that remain literal source, described below, keep their content as written.
 - Tables beside other content import with these elements in their cells. A table with an `input` in a cell, such as a checkbox, stays literal source, because the control and its state cannot be kept in a cell. A table copied on its own follows the spreadsheet paste rules below, which do not accept these elements.
 
-Custom elements, `iframe`, `script`, `svg`, `math`, `object`, authored comments and other unrecognised elements remain literal source, with their content unchanged, including any table inside them. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.
+Custom elements, `iframe`, `script`, `svg`, `math`, `object` and other unrecognised elements remain literal source, with their content unchanged, including any table inside them, when that source reads back as written. Authored HTML comments import as author comments. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.
+
+HTML import keeps only structure that reads back the same. Before pasted or dropped HTML is inserted, InkKit writes it as Markdown and reads that Markdown back. A part that would read back as different structure, or whose Markdown would hold a link address that HTML import refuses when read as GitHub Flavored Markdown, as strict CommonMark, or as CommonMark with raw HTML turned off, is imported in a simpler form that reads back the same:
+
+- Literal source, including source copied from InkKit, stays literal when it reads back as one block that ends where it was written and holds no refused address. Otherwise it imports as a code block with the same text.
+- A `%%` comment whose text other Markdown apps would read as formatting or links imports as an HTML comment, unless an app with raw HTML turned off would then read a refused address in it. A comment whose text would end it early, as described under comments, imports as plain text.
+- A callout title taken from the callout's visible text is saved with its punctuation escaped, so it reads back as the same plain title.
+- A reference or footnote label and a reference definition title are saved on one line, with each line break replaced by a space, and a bracket in a label is escaped. A code fence with an unclosed or invalid fence marker imports as an ordinary fence.
+- Text that Markdown reads as a link, such as a bare web address, imports as that link.
+- Any other part that would read back differently first loses InkKit's metadata, such as a reference label or callout, then its formatting, keeping its text.
+
+Code blocks and literal source are inserted as their own blocks, not joined to the paragraph at the insertion point.
+
+Raw HTML kept in a note, whether pasted or typed, is saved as written and is not checked for unsafe addresses or scripts. An app that renders notes must sanitize raw HTML itself.
 
 ## Spreadsheet clipboard
 

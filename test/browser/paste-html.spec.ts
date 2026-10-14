@@ -168,3 +168,105 @@ test('code copied from an editor keeps its indentation', async ({ page }) => {
     )
     .toBe('    return x\n\nRun   a  b\n')
 })
+
+test('HTML from WebKit pastes its converted spaces as ordinary spaces', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  const style =
+    'style="caret-color: rgb(0, 0, 0); font-family: Times; white-space: normal;"'
+  const space = '<span class="Apple-converted-space">&nbsp;</span>'
+  await pasteHTML(
+    page,
+    `<meta charset='utf-8'><a href="https://example.com" ${style}>The quote</a><span ${style}>${space}for the record. See${space}</span><a href="https://example.com/b" ${style}>this</a><span ${style}>${space}and <code>a${space}b</code>, but keep&nbsp;this.</span>`,
+  )
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(
+      '[The quote](https://example.com) for the record. See [this](https://example.com/b) and `a b`, but keep this.\n',
+    )
+})
+
+test('text copied from a page pastes with ordinary spaces beside links', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  // The browser itself writes the clipboard HTML here, so WebKit's own
+  // rewrite of the spaces reaches the editor.
+  await page.evaluate(() => {
+    const source = document.createElement('div')
+    source.id = 'copy-source'
+    source.innerHTML =
+      '<p><a href="https://example.com/a">The quote</a> for the record</p><p>See <a href="https://example.com/b">the quote</a> now</p><p>Run <code>pnpm check</code> first</p>'
+    document.body.append(source)
+    const range = document.createRange()
+    range.selectNodeContents(source)
+    const selection = getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+  })
+  await page.keyboard.press('ControlOrMeta+C')
+  await page.locator('.ProseMirror.editor').click()
+  await page.keyboard.press('ControlOrMeta+V')
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(
+      '[The quote](https://example.com/a) for the record\n\nSee [the quote](https://example.com/b) now\n\nRun `pnpm check` first\n',
+    )
+})
+
+test('pasted links with a script scheme keep their text without the link', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  await pasteHTML(
+    page,
+    '<p>Do <a href="javascript:void(0)">not run</a>, <a href="&#106;avascript:void(0)">not this</a>, <a href="data:text/html,x">or data</a>, but <a href="https://example.com/">open</a> and <a href="mailto:ada@example.com">write</a>.</p>',
+  )
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(
+      'Do not run, not this, or data, but [open](https://example.com/) and [write](mailto:ada@example.com).\n',
+    )
+  await expect(page.locator('.ProseMirror a')).toHaveCount(2)
+})
+
+async function dropHTML(page: Page, html: string) {
+  await page.evaluate((html) => {
+    const editor = document.querySelector('.ProseMirror.editor')!
+    const box = editor.getBoundingClientRect()
+    const data = new DataTransfer()
+    data.setData('text/plain', 'plain')
+    data.setData('text/html', html)
+    editor.dispatchEvent(
+      new DragEvent('drop', {
+        dataTransfer: data,
+        clientX: box.left + 8,
+        clientY: box.top + 8,
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+  }, html)
+}
+
+for (const via of ['paste', 'drop'] as const)
+  test(`pasted or dropped HTML saves only structure that reads back the same (${via})`, async ({
+    page,
+  }) => {
+    await openEmpty(page)
+    const html =
+      '<p>a</p><pre class="literal-markdown">&lt;b&gt;x&lt;/b&gt; [l](javascript:void(0))</pre><p>b<span data-inkkit-comment="obsidian">see [l](javascript:void(0))</span></p><p>Visit https://example.com/ now</p>'
+    if (via === 'paste') await pasteHTML(page, html)
+    else await dropHTML(page, html)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toBe(
+        'a\n\n```\n<b>x</b> [l](javascript:void(0))\n```\n\nbsee \\[l]\\(javascript:void(0))\n\nVisit https://example.com/ now\n' +
+          // A drop lands before the empty paragraph, which stays as a spacer.
+          (via === 'drop' ? '\n<br />\n' : ''),
+      )
+    await expect(page.locator('.ProseMirror pre.literal-markdown')).toHaveCount(
+      0,
+    )
+  })

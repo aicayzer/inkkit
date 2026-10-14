@@ -3,12 +3,15 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import {
   DOMParser as ProseParser,
   Fragment,
+  Slice,
   type Node as ProseNode,
   type Schema,
 } from '@milkdown/kit/prose/model'
 import { isInTable, selectedRect } from '@milkdown/kit/prose/tables'
 import { InkKitError, type ClipboardInput } from './types'
 import { literalCommentSpans } from './comments'
+import { restoreConvertedSpaces } from './paste-html'
+import { importableSlice } from './html-import'
 import { normalizeTableAlignment } from './table-alignment'
 import {
   dispatchTableOperation,
@@ -70,7 +73,15 @@ export function pasteSpreadsheet(ctx: Ctx, input: ClipboardInput): boolean {
     }
     if (cursor < input.html.length)
       children.push(schema.text(input.html.slice(cursor)))
-    const literal = schema.nodes.literal_markdown!.create(null, children)
+    // The source is kept only where it reads back as one literal block.
+    const content = importableSlice(
+      ctx,
+      new Slice(
+        Fragment.from(schema.nodes.literal_markdown!.create(null, children)),
+        0,
+        0,
+      ),
+    ).content
     const selection = view.state.selection
     const tr =
       selection.$from.parent.type.name === 'paragraph' &&
@@ -79,9 +90,11 @@ export function pasteSpreadsheet(ctx: Ctx, input: ClipboardInput): boolean {
         ? view.state.tr.replaceWith(
             selection.$from.before(),
             selection.$from.after(),
-            literal,
+            content,
           )
-        : view.state.tr.replaceSelectionWith(literal)
+        : content.childCount === 1
+          ? view.state.tr.replaceSelectionWith(content.firstChild!)
+          : view.state.tr.replaceSelection(new Slice(content, 0, 0))
     dispatchTableOperation(view, tr)
     return true
   }
@@ -324,6 +337,7 @@ function htmlGrid(schema: Schema, html: string): Grid {
       if (/[\n\r\t]/.test(cell.textContent ?? '')) reject()
       for (const link of cell.querySelectorAll('a'))
         if (!link.hasAttribute('href')) reject()
+      restoreConvertedSpaces(cell)
       const parsed = parser.parse(cell, { preserveWhitespace: true })
       if (parsed.childCount === 0) return Fragment.empty
       if (
