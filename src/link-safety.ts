@@ -22,8 +22,8 @@ export function isSafeLinkTarget(value: string): boolean {
 /**
  * Whether an image source would run script if a renderer treated it as an
  * address. Image sources are opaque references that a host adapter owns, so
- * only these schemes are refused, and tabs, line breaks and other control
- * characters are ignored the way a browser ignores them.
+ * only these schemes are refused. Spaces and control characters are ignored
+ * wherever they appear, which refuses at least what a browser would run.
  */
 export function isScriptAddress(value: string): boolean {
   return /^(?:javascript|vbscript):/i.test(
