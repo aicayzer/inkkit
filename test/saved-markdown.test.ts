@@ -105,7 +105,7 @@ for (const via of ['paste', 'drop'] as const) {
 
 test('a code fence from HTML cannot carry an info string or an open end that the fence rules refuse', async () => {
   const fence = (value: object) =>
-    `<pre data-inkkit-fence='${JSON.stringify(value)}'><code>a</code></pre><p>after</p>`
+    `<pre data-language="js" data-inkkit-fence='${JSON.stringify(value)}'><code>a</code></pre><p>after</p>`
   const base = {
     marker: '```',
     info: 'js',

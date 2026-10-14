@@ -61,6 +61,10 @@ export function singleLine(value: string): string {
   return value.replace(/[ \t]*[\r\n][ \t\r\n]*/g, ' ')
 }
 
+function nullableSingleLine(value: string | null): string | null {
+  return value == null ? value : singleLine(value)
+}
+
 /**
  * A label is written as its authored text, so one that did not come from
  * Markdown could close its brackets early or span lines. Line breaks become
@@ -316,7 +320,8 @@ export const referenceDefinition = $node('reference_definition', () => ({
           identifier:
             dom.getAttribute('data-inkkit-reference-definition') ?? '',
           url,
-          title: dom.getAttribute('data-inkkit-title'),
+          // Saved on one line, as the writer would save it.
+          title: nullableSingleLine(dom.getAttribute('data-inkkit-title')),
         }
       },
     },

@@ -263,6 +263,10 @@ const blocks = new Set([
   'HR',
 ])
 
+export function isBlockElement(element: Element): boolean {
+  return blocks.has(element.tagName)
+}
+
 // Bolds the inline content of a term. Paragraphs, headings and divisions
 // inside it each become one bold paragraph; other blocks are kept as they are.
 function boldInto(target: Element, nodes: Node[]): void {
