@@ -153,7 +153,11 @@ import {
   type TextProjection,
 } from './text-ranges'
 import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
-import { commentSelectionContent, setCommentVisibility } from './comments'
+import {
+  assertCommentsEndWhereWritten,
+  commentSelectionContent,
+  setCommentVisibility,
+} from './comments'
 import { PasteController } from './paste'
 import { selectionPlugin } from './selection'
 import { search, SearchQuery, setSearchState } from 'prosemirror-search'
@@ -2281,8 +2285,9 @@ export class InkKitEditor {
   /** Throws when a document reached by an edit, after every appended normalisation, cannot be
    *  saved as preserved Markdown. Dispatch and the replacement commands share this check. */
   private assertPreserved(before: ProseNode, after: ProseNode): void {
-    if (this.preservation && !this.literalSurface && !after.eq(before))
-      this.currentText(after)
+    if (this.literalSurface || after.eq(before)) return
+    assertCommentsEndWhereWritten(before, after)
+    if (this.preservation) this.currentText(after)
   }
 
   replaceTextRange(range: TextRange, text: string): boolean {

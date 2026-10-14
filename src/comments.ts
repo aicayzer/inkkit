@@ -460,6 +460,48 @@ export function setCommentVisibility(view: EditorView, visible: boolean): void {
   )
 }
 export const comments = [commentInline, commentBlock, commentVisibility].flat()
+/**
+ * Whether text inside a comment ends it early for a reader other than InkKit.
+ * HTML ends a comment at `-->` or `--!>`, and treats a start of `>` or `->` as
+ * an empty comment. A `%%` comment ends at its next `%%`.
+ */
+function commentTextEndsEarly(syntax: string, text: string): boolean {
+  return syntax === 'obsidian'
+    ? text.includes('%%')
+    : /^-?>/.test(text) || text.includes('-->') || text.includes('--!>')
+}
+
+/**
+ * Refuses an edit that gives a comment text which ends it early. A comment
+ * that already held that text before the edit is left alone, so a note that
+ * has one still loads and can be edited elsewhere.
+ */
+export function assertCommentsEndWhereWritten(
+  before: ProseNode,
+  after: ProseNode,
+): void {
+  const unsafe = (doc: ProseNode, visit: (key: string) => void) =>
+    doc.descendants((node) => {
+      if (!isComment(node)) return true
+      if (commentTextEndsEarly(node.attrs.syntax, node.textContent))
+        visit(`${node.attrs.syntax}:${node.textContent}`)
+      return false
+    })
+  let allowed: Map<string, number> | undefined
+  unsafe(after, (key) => {
+    if (!allowed) {
+      allowed = new Map()
+      unsafe(before, (known) =>
+        allowed!.set(known, (allowed!.get(known) ?? 0) + 1),
+      )
+    }
+    const remaining = allowed.get(key) ?? 0
+    if (remaining === 0)
+      throw new Error('A comment cannot contain text that would end it early')
+    allowed.set(key, remaining - 1)
+  })
+}
+
 export function isComment(node: ProseNode): boolean {
   return (
     node.type.name === 'comment_inline' || node.type.name === 'comment_block'
