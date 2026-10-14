@@ -262,11 +262,194 @@ for (const via of ['paste', 'drop'] as const)
     await expect
       .poll(async () => (await observe(page)).snapshot!.text)
       .toBe(
-        'a\n\n```\n<b>x</b> [l](javascript:void(0))\n```\n\nbsee \\[l]\\(javascript:void(0))\n\nVisit https://example.com/ now\n' +
-          // A drop lands before the empty paragraph, which stays as a spacer.
-          (via === 'drop' ? '\n<br />\n' : ''),
+        'a\n\n```\n<b>x</b> [l](javascript:void(0))\n```\n\nbsee \\[l]\\(javascript:void(0))\n\nVisit https://example.com/ now\n',
       )
     await expect(page.locator('.ProseMirror pre.literal-markdown')).toHaveCount(
       0,
     )
   })
+
+test('a drop and a paste of the same HTML save the same Markdown', async ({
+  page,
+}) => {
+  const pixel =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  for (const html of [
+    '<p>Read <a href="https://example.com/">the notes</a> and <a href="javascript:void(0)">this</a>.</p>',
+    `<p>Before</p><p><img src="${pixel}" alt="Pixel"></p><p>After</p>`,
+    '<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>',
+    '<p>Before</p><x-widget title="t">kept</x-widget><p>After</p>',
+    '<ol><li>a</li></ol><ol start="5"><li>b</li></ol>',
+    '<ol><li>a<ol><li>b</li></ol></li></ol>',
+    '<p>a</p><pre><code></code></pre><p>b</p>',
+  ]) {
+    await openEmpty(page)
+    await pasteHTML(page, html)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text, { message: html })
+      .not.toBe('')
+    const pasted = (await observe(page)).snapshot!.text
+    await openEmpty(page)
+    await dropHTML(page, html)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text, { message: html })
+      .toBe(pasted)
+  }
+})
+
+// Drops HTML with the pointer at a fraction of the height of the element the
+// selector names, inside the editor.
+async function dropHTMLOn(
+  page: Page,
+  html: string,
+  selector: string,
+  fraction: number,
+) {
+  await page.evaluate(
+    ({ html, selector, fraction }) => {
+      const editor = document.querySelector('.ProseMirror.editor')!
+      const box = editor.querySelector(selector)!.getBoundingClientRect()
+      const data = new DataTransfer()
+      data.setData('text/plain', 'Dropped')
+      data.setData('text/html', html)
+      editor.dispatchEvent(
+        new DragEvent('drop', {
+          dataTransfer: data,
+          clientX: box.left + Math.min(40, box.width / 2),
+          clientY: box.top + box.height * fraction,
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    },
+    { html, selector, fraction },
+  )
+}
+
+for (const [name, source, selector, fraction, kept] of [
+  ['beside a rule', 'First\n\n---\n\nLast\n', 'hr', 0.5, '---'],
+  ['above a rule', 'First\n\n---\n\nLast\n', 'hr', 0, '---'],
+  [
+    'beside an image',
+    'First\n\n![Photo](images/photo.png)\n\nLast\n',
+    '.inkkit-image-block',
+    0.5,
+    '![Photo](images/photo.png)',
+  ],
+  [
+    'on a code block',
+    'First\n\n```\nlet x = 1\n```\n\nLast\n',
+    'pre',
+    0.5,
+    '```\nlet x = 1\n```',
+  ],
+  [
+    'on the top edge of a table',
+    'First\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\nLast\n',
+    'table',
+    0.05,
+    '| A | B |',
+  ],
+  [
+    'in the middle of a paragraph',
+    'First words here\n\nLast\n',
+    'p',
+    0.5,
+    'First words here',
+  ],
+  ['beside an empty heading', 'First\n\n#\n\nLast\n', 'h1', 0.5, '\n#\n'],
+  [
+    'beside an empty code block',
+    'First\n\n```\n```\n\nLast\n',
+    'pre',
+    0.5,
+    '```\n```',
+  ],
+] as const)
+  test(`a drop ${name} inserts blocks without changing what is there`, async ({
+    page,
+  }) => {
+    await openEmpty(page)
+    await page.evaluate(
+      (source) => window.inkkitPlayground.replaceDocument(source, 'md'),
+      source,
+    )
+    await dropHTMLOn(page, '<p>Dropped <b>here</b></p>', selector, fraction)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toContain('Dropped **here**')
+    const text = (await observe(page)).snapshot!.text
+    expect(text).toContain(kept)
+    expect(text).toContain('First')
+    expect(text).toContain('Last')
+    expect(text).toMatch(/^Dropped \*\*here\*\*$/m)
+  })
+
+for (const html of [
+  '<span>end of para</span><p>next para</p>',
+  'Lead text<ul><li>a</li></ul>',
+  '<b>x</b><p>p</p>',
+])
+  test(`a drop of inline content followed by a block keeps both: ${html}`, async ({
+    page,
+  }) => {
+    await openEmpty(page)
+    await page.evaluate(() =>
+      window.inkkitPlayground.replaceDocument('First\n\nLast\n', 'md'),
+    )
+    await pasteHTML(page, html)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .not.toBe('First\n\nLast\n')
+    await page.evaluate(() =>
+      window.inkkitPlayground.replaceDocument('First\n\nLast\n', 'md'),
+    )
+    await dropHTMLOn(page, html, 'p', 0.5)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toMatch(html.includes('<ul>') ? /Lead text\n\n- a/ : /end of para|x\*\*/)
+    const text = (await observe(page)).snapshot!.text
+    expect(text).toMatch(/^First$/m)
+    expect(text).toMatch(/^Last$/m)
+  })
+
+test('typing after a drop continues after the dropped content', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  await page.evaluate(() =>
+    window.inkkitPlayground.replaceDocument('First\n\nLast\n', 'md'),
+  )
+  await dropHTMLOn(page, '<p>Dropped</p>', 'p', 0.5)
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toContain('Dropped')
+  await page.keyboard.type(' typed')
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe('First\n\nDropped typed\n\nLast\n')
+})
+
+for (const via of ['paste', 'drop'] as const)
+  for (const [html, kept] of [
+    ['<p>a</p><hr>', /^a\n\n---\n/],
+    [
+      '<table><tr><th>A</th></tr><tr><td>1</td></tr></table>',
+      /\| A +\|[\s\S]*\| 1 +\|/,
+    ],
+  ] as const)
+    test(`typing after a ${via} of ${html} keeps what was inserted`, async ({
+      page,
+    }) => {
+      await openEmpty(page)
+      if (via === 'paste') await pasteHTML(page, html)
+      else await dropHTML(page, html)
+      await expect
+        .poll(async () => (await observe(page)).snapshot!.text)
+        .toMatch(kept)
+      await page.keyboard.type('Z')
+      await expect
+        .poll(async () => (await observe(page)).snapshot!.text)
+        .toContain('Z')
+      expect((await observe(page)).snapshot!.text).toMatch(kept)
+    })
