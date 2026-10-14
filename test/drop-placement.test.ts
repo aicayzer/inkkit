@@ -101,6 +101,33 @@ test('a drop in or beside an empty paragraph replaces it', async () => {
   }
 })
 
+test('an empty heading or code block beside a drop is kept', async () => {
+  const { editor, root, view } = await mounted()
+  try {
+    editor.loadDocument({
+      documentId: 'note',
+      generation: 1,
+      format: 'md',
+      text: '#\n\n```\n```\n',
+    })
+    const heading = view.state.doc.child(0)
+    const code = view.state.doc.child(1)
+    expect(heading.type.name).toBe('heading')
+    expect(code.type.name).toBe('code_block')
+    const end = heading.nodeSize
+    // Inside the empty heading, and at the boundary between the two.
+    expect(rangeAt(view, 1)).toEqual({ from: end, to: end })
+    expect(rangeAt(view, end)).toEqual({ from: end, to: end })
+    expect(rangeAt(view, end + 1)).toEqual({
+      from: end + code.nodeSize,
+      to: end + code.nodeSize,
+    })
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+})
+
 test('destroying the editor right after a drag ends throws nothing', async () => {
   const { editor, root, view } = await mounted()
   view.dom.dispatchEvent(new Event('dragleave'))
