@@ -78,9 +78,10 @@ Complete HTML `<!--comments-->` and Obsidian `%%comments%%` are editable author 
 
 While comments are hidden, editing beside them keeps them:
 
-- Backspace and Delete, including word and line deletion, remove the visible text next to a hidden comment and keep the comment.
+- Backspace and Delete, including word and line deletion and any other modifier key held with them, remove the visible text next to a hidden comment and keep the comment.
 - At the edge of a paragraph, Backspace and Delete join the visible blocks on either side of a hidden block comment and put the comment after the joined block. If no visible block is on that side, or the join would put text inside a hidden comment, nothing changes.
-- Arrow keys and other caret movement never place the caret inside a hidden comment. Hiding comments moves a caret that is inside one to the visible text beside it.
+- Arrow keys and other caret movement never place the caret inside a hidden comment, and hiding comments moves a caret that is inside one to the visible text beside it. The exception is a note with no visible text, such as one that holds only a comment: the caret stays in the comment. There, Backspace, Delete and Enter do nothing, and typed, composed, pasted or inserted text goes into a new paragraph after the comment.
+- Any other edit from a caret that would remove a hidden comment, such as one the browser makes itself, is refused with a `preservation` error and changes nothing. A composition that the browser ends by removing a comment keeps the comment.
 - Deleting, cutting or typing over a selection removes the hidden comments inside the selection along with the text around them, and Undo restores them. A hidden comment at either end of the selection is beside the selected text and is kept. A selection that crosses the break between two paragraphs also removes any hidden block comment between them, even when it holds no other text. To remove a comment on its own, reveal comments first.
 
 Markdown reads a line that starts with an HTML comment as an HTML block, so an edit that would leave an HTML comment at the start of a paragraph, or leave a paragraph that holds only a comment, is refused with a `preservation` error.
