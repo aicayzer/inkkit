@@ -15,6 +15,8 @@ A Markdown editor for the web and for apps that host a web view. It edits format
 npm install @aicayzer/inkkit
 ```
 
+An app that does not render diagrams can import from `@aicayzer/inkkit/core` instead. That entry leaves Mermaid out of the app's bundle and keeps diagrams as editable source. See [Builds without diagrams](docs/api.md#builds-without-diagrams).
+
 ## Use
 
 ```ts

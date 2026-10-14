@@ -3,6 +3,8 @@ import { createRequire } from 'node:module'
 import { afterEach, beforeAll, expect, test, vi } from 'vitest'
 import mermaid from 'mermaid'
 import { renderDiagram } from '../src/mermaid'
+// The package entry registers Mermaid with the renderer.
+import '../src/index'
 
 // These cases use the pinned Mermaid itself. jsdom lays nothing out, so text
 // gets a plausible size and Mermaid can complete a real render.

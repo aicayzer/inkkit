@@ -179,7 +179,7 @@ import {
   type OutlineContext,
 } from './outline'
 import { taskListPlugin, toggleTaskList } from './tasks'
-import { isMermaid, mermaidPreview } from './mermaid'
+import { diagramsAvailable, isMermaid, mermaidPreview } from './mermaid'
 import {
   hasAuthoredImagesInLiterals,
   printableMarkdown,
@@ -1336,7 +1336,11 @@ export class InkKitEditor {
           'Some copied images were unavailable; their descriptions were retained',
         ),
       )
-    if (result.diagrams?.some((diagram) => diagram.error))
+    // A host built without Mermaid chose not to render diagrams.
+    if (
+      diagramsAvailable() &&
+      result.diagrams?.some((diagram) => diagram.error)
+    )
       this.events.error?.(
         new InkKitError(
           'diagram-unavailable',
@@ -1663,10 +1667,10 @@ export class InkKitEditor {
       .use(
         options.rendering?.codeHighlighting === false
           ? []
-          : (await import('./highlight')).highlightPlugin,
+          : (await import('./highlight.js')).highlightPlugin,
       )
       .use(
-        options.rendering?.diagramPreview === false
+        options.rendering?.diagramPreview === false || !diagramsAvailable()
           ? []
           : mermaidPreview((error) => events.error?.(error)),
       )

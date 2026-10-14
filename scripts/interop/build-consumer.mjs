@@ -8,6 +8,8 @@ const tarball = resolve(
   process.argv[2] ?? '_local/release/aicayzer-inkkit-0.0.1.tgz',
 )
 const destination = resolve(process.argv[3] ?? '_local/interop/consumer')
+// `core` builds the consumer against the core entry, without Mermaid.
+const core = process.argv[4] === 'core'
 const archive = await readFile(tarball)
 const tarballSha256 = createHash('sha256').update(archive).digest('hex')
 const consumerTarball = join(destination, `inkkit-${tarballSha256}.tgz`)
@@ -46,6 +48,7 @@ execFileSync(
 execFileSync(join(destination, 'node_modules/.bin/vite'), ['build'], {
   cwd: destination,
   stdio: 'inherit',
+  env: { ...process.env, INKKIT_CONSUMER_ENTRY: core ? 'core' : '' },
 })
 const html = await readFile(join(destination, 'dist/index.html'), 'utf8')
 if (/<script[^>]+\bsrc=|<link[^>]+\bhref=/i.test(html))

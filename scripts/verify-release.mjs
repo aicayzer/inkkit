@@ -93,6 +93,7 @@ try {
       'public declarations',
       'CSS export',
       'offline Vite bundle',
+      'core entry without Mermaid',
     ],
   }
   await writeFile(

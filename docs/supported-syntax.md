@@ -48,6 +48,8 @@ InkKit then parses the source with Mermaid and refuses a diagram whose parse res
 
 The rendered SVG is sanitised before display: scripts, `foreignObject`, images, links and event handlers are removed, as are attributes and style elements that contain resource syntax. Rejected or invalid source remains available; editing or saving does not depend on successful rendering. No diagram callbacks or external links are activated.
 
+A host built from the core entry, without Mermaid, shows no previews. Diagram fences stay editable source, and copy and print keep the source as readable code with the diagram-unavailable fallback. See [Builds without diagrams](api.md#builds-without-diagrams).
+
 Copy as Markdown retains the complete source fence for whole documents and complete diagram selections. Ordinary rich export uses an offline PNG for complete diagrams, retaining surrounding content and inert Mermaid source metadata for InkKit paste. Partial source selections remain code text. Other applications can retain the image while discarding Mermaid metadata. If rendering or rasterisation fails, rich output retains readable code and reports the failure. TXT does not render diagrams.
 
 ## Callouts

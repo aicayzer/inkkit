@@ -6,10 +6,10 @@ InkKit supplies document editing and portable exports. Your app supplies its int
 
 ## A simple writing tool
 
-A small host can mount the editor without an image adapter or custom toolbar. The event handlers connect to the host's own controls, link handling and clipboard.
+A small host can mount the editor without an image adapter or custom toolbar. The event handlers connect to the host's own controls, link handling and clipboard. This example uses the core entry, which leaves Mermaid out of the build and keeps diagrams as editable source; see [Builds without diagrams](api.md#builds-without-diagrams).
 
 ```ts
-import { InkKitEditor, type EditorEvents } from '@aicayzer/inkkit'
+import { InkKitEditor, type EditorEvents } from '@aicayzer/inkkit/core'
 import '@aicayzer/inkkit/style.css'
 
 async function mountWritingTool(root: HTMLElement, events: EditorEvents) {
