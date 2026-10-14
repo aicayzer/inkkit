@@ -1329,7 +1329,11 @@ export class InkKitEditor {
           'Some copied images were unavailable; their descriptions were retained',
         ),
       )
-    if (result.diagrams?.some((diagram) => diagram.error))
+    // A host built without Mermaid chose not to render diagrams.
+    if (
+      diagramsAvailable() &&
+      result.diagrams?.some((diagram) => diagram.error)
+    )
       this.events.error?.(
         new InkKitError(
           'diagram-unavailable',

@@ -562,6 +562,24 @@ test('renderer and raster failures retain source and report useful clipboard fal
     expect(failed.images).toEqual([])
   }))
 
+test('copying a diagram that cannot render reports diagram-unavailable', async () => {
+  const errors: Error[] = []
+  await run(
+    async (editor) => {
+      editor.loadDocument({
+        ...input,
+        text: '~~~mermaid\nmindmap\nRoot\n~~~\n',
+      })
+      await editor.clipboardSnapshot()
+    },
+    undefined,
+    { error: (error) => errors.push(error) },
+  )
+  expect(errors).toContainEqual(
+    expect.objectContaining({ code: 'diagram-unavailable' }),
+  )
+})
+
 test('partial diagram source copy remains readable source rather than a rendered diagram', () =>
   run(async (editor, _root, ctx) => {
     const diagram = source()

@@ -72,8 +72,9 @@ test('diagram source stays editable and preserved without previews or errors', a
   expect(loaded.count).toBe(0)
 })
 
-test('copy keeps readable diagram source and reports why it is unavailable', () =>
-  run(async (editor) => {
+test('copy keeps readable diagram source and reports why it is unavailable', async () => {
+  const errors: Error[] = []
+  await run(async (editor) => {
     const clip = await editor.clipboardSnapshot()
     expect(clip.diagrams).toEqual([
       {
@@ -92,7 +93,10 @@ test('copy keeps readable diagram source and reports why it is unavailable', () 
     expect(clip.text).toContain('Before')
     expect(clip.text).toContain('After')
     expect(loaded.count).toBe(0)
-  }))
+  }, errors)
+  // The host left diagrams out, so a missing rendering is not an error.
+  expect(errors).toEqual([])
+})
 
 test('print keeps readable diagram source with a diagram-unavailable warning', () =>
   run(async (editor) => {

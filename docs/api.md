@@ -217,7 +217,7 @@ The package has two entry points with the same exports:
 - `@aicayzer/inkkit` renders diagrams with Mermaid.
 - `@aicayzer/inkkit/core` never imports Mermaid. Mermaid is still installed as a dependency, but a host that imports only this entry does not bundle it, so each web view parses and holds a much smaller page. See [measurements](performance.md#builds-with-and-without-mermaid-october-14-2026).
 
-With the core entry, `mermaid` fences remain editable code blocks that keep their authored source. No preview is shown, whatever `rendering.diagramPreview` says, and no error is reported while editing. Clipboard output and `printableSnapshot()` keep the diagram source as readable code, the same fallback as a diagram that cannot render: clipboard `diagrams` entries carry an `error`, `events.error` reports `diagram-unavailable` for each clipboard export that includes a diagram, and print reports a `diagram-unavailable` warning.
+With the core entry, `mermaid` fences remain editable code blocks that keep their authored source. No preview is shown, whatever `rendering.diagramPreview` says, and `events.error` never reports `diagram-unavailable`, while editing or when copying. Clipboard output and `printableSnapshot()` keep the diagram source as readable code, the same fallback as a diagram that cannot render: clipboard `diagrams` entries carry an `error`, and print reports a `diagram-unavailable` warning.
 
 Import from one entry throughout the app. If any module imports `@aicayzer/inkkit`, the bundle includes Mermaid and every editor renders diagrams. The stylesheet import, `@aicayzer/inkkit/style.css`, is the same for both entries.
 
