@@ -5,7 +5,11 @@ import {
   selectNodeBackward,
   selectNodeForward,
 } from '@milkdown/kit/prose/commands'
-import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
+import {
+  Fragment,
+  type Node as ProseNode,
+  type ResolvedPos,
+} from '@milkdown/kit/prose/model'
 import { Mapping } from '@milkdown/kit/prose/transform'
 import {
   EditorState,
@@ -17,7 +21,7 @@ import {
   type Transaction,
 } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { commentsVisible, isComment } from './comments'
+import { commentsVisible, isComment, isWrittenEdit } from './comments'
 
 // A hidden comment is drawn `display: none`. Browsers delete such an element
 // along with the character beside it, often without a `beforeinput` event, so
@@ -31,6 +35,8 @@ const mac =
   /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
+// Any other chord with Backspace or Delete deletes one character, so no
+// native deletion runs beside a hidden comment.
 function deletion(event: KeyboardEvent): [Direction, Unit] | undefined {
   const { altKey: alt, ctrlKey: ctrl, metaKey: meta, key } = event
   const dir = key === 'Backspace' ? -1 : key === 'Delete' ? 1 : undefined
@@ -40,14 +46,14 @@ function deletion(event: KeyboardEvent): [Direction, Unit] | undefined {
     if (control && key === 'h') return [-1, 'character']
     if (control && key === 'd') return [1, 'character']
     if (!dir) return undefined
-    if (!alt && !meta) return [dir, 'character']
     if (alt && !ctrl && !meta) return [dir, 'word']
     if (meta && !alt && !ctrl) return [dir, 'lineboundary']
-    return undefined
+    return [dir, 'character']
   }
+  if (!dir) return undefined
   // Shift-Delete cuts outside macOS.
-  if (!dir || alt || meta || (dir > 0 && event.shiftKey)) return undefined
-  return [dir, ctrl ? 'word' : 'character']
+  if (dir > 0 && event.shiftKey && !alt && !ctrl && !meta) return undefined
+  return [dir, ctrl && !alt && !meta ? 'word' : 'character']
 }
 
 const inputDeletions: Record<string, [Direction, Unit]> = {
@@ -210,11 +216,14 @@ function joinAcross(
   const $head = removed.doc.resolve(result.selection.head)
   if ($head.depth <= depth) return undefined
   const steps = removed.steps.length
-  try {
-    removed.insert($head.after(depth + 1), comments)
-  } catch {
+  const size = removed.doc.content.size
+  removed.insert($head.after(depth + 1), comments)
+  // An insert that does not fit adds no step, or drops part of the content.
+  if (
+    removed.steps.length === steps ||
+    removed.doc.content.size !== size + comments.size
+  )
     return undefined
-  }
   return removed
     .setSelection(
       result.selection.map(removed.doc, removed.mapping.slice(steps)),
@@ -228,6 +237,22 @@ const containsComment = (block: ProseNode) => {
     if (inlineComment(node)) found = true
   })
   return found
+}
+
+/** The range a `beforeinput` deletion targets, as document positions. */
+function targetRange(
+  view: EditorView,
+  event: InputEvent,
+): { from: number; to: number } | undefined {
+  const [range] = event.getTargetRanges?.() ?? []
+  if (!range) return undefined
+  try {
+    const from = view.posAtDOM(range.startContainer, range.startOffset)
+    const to = view.posAtDOM(range.endContainer, range.endOffset)
+    return from <= to ? { from, to } : { from: to, to: from }
+  } catch {
+    return undefined
+  }
 }
 
 /** Applies a command's result, made on a copy of `base`'s document, to `base`. */
@@ -291,6 +316,7 @@ function deleteBeside(
   dir: Direction,
   unit: Unit,
   native: boolean,
+  target?: { from: number; to: number },
 ): boolean {
   const { state } = view
   const { selection } = state
@@ -301,7 +327,28 @@ function deleteBeside(
   )
     return false
   const $caret = selection.$head
-  if (!$caret.parent.isTextblock || isComment($caret.parent)) return false
+  // Only a note with no visible textblock leaves the caret in a hidden comment.
+  if (commentDepth($caret)) return true
+  if (!$caret.parent.isTextblock) return false
+  const inBlock =
+    target &&
+    target.from < target.to &&
+    target.from >= $caret.start() &&
+    target.to <= $caret.end()
+  if (inBlock && containsComment($caret.parent)) {
+    // The range the browser reported, such as Control-K to the end of the line.
+    const tr = state.tr
+    if (deleteAround(tr, target.from, target.to)) {
+      view.dispatch(
+        tr
+          .setSelection(
+            TextSelection.create(tr.doc, tr.mapping.map(target.from, -1)),
+          )
+          .scrollIntoView(),
+      )
+      return true
+    }
+  }
   const past = pastComments(state.doc, $caret.pos, dir)
   if (past === (dir < 0 ? $caret.start() : $caret.end()))
     return deleteAtEdge(view, $caret.pos, past, dir, native)
@@ -401,6 +448,130 @@ function selectionOutsideComments(
   )
 }
 
+/** The position after the hidden comment that holds an empty selection, if any. */
+export function hiddenCommentExit(state: EditorState): number | undefined {
+  const { selection } = state
+  if (commentsVisible(state) || !selection.empty) return undefined
+  const depth = commentDepth(selection.$head)
+  return depth ? selection.$head.after(depth) : undefined
+}
+
+/**
+ * Puts `content` after the hidden comment that holds the caret instead of
+ * inside it: inline content in a new paragraph after a block comment, with the
+ * caret after it. `undefined` when the caret is not in a hidden comment or the
+ * content cannot go there.
+ */
+export function insertAfterHiddenComment(
+  state: EditorState,
+  content: Fragment,
+): Transaction | undefined {
+  const pos = hiddenCommentExit(state)
+  if (pos === undefined) return undefined
+  const $pos = state.doc.resolve(pos)
+  const { paragraph } = state.schema.nodes
+  const blocks =
+    $pos.parent.inlineContent || content.firstChild?.isBlock
+      ? content
+      : paragraph && Fragment.from(paragraph.create(null, content))
+  if (!blocks || !$pos.parent.canReplace($pos.index(), $pos.index(), blocks))
+    return undefined
+  const tr = state.tr.insert(pos, blocks)
+  const end = pos + blocks.size
+  return tr
+    .setSelection(Selection.near(tr.doc.resolve(end), -1))
+    .scrollIntoView()
+}
+
+/** Marks a command that removes structure the person chose, such as a table row, with any hidden comments in it. */
+export const removesStructure = 'inkkit:removesStructure'
+
+function commentCount(doc: ProseNode): number {
+  let count = 0
+  doc.descendants((node) => {
+    if (!isComment(node)) return true
+    count++
+    return false
+  })
+  return count
+}
+
+/**
+ * Refuses a written edit made from a caret that removes a hidden comment,
+ * whatever produced it: a key, input the browser applied itself, a
+ * composition or a command. The person cannot see what such an edit removes.
+ * A selection deleted or replaced on purpose, undo, redo and source
+ * replacement are exempt.
+ */
+export function assertHiddenCommentsKept(
+  state: EditorState,
+  tr: Transaction,
+  after: ProseNode,
+): void {
+  if (
+    commentsVisible(state) ||
+    !state.selection.empty ||
+    !isWrittenEdit(tr) ||
+    tr.getMeta(removesStructure) ||
+    !touchesComment(tr)
+  )
+    return
+  if (commentCount(after) < commentCount(state.doc))
+    throw new Error('A hidden comment cannot be removed from beside it')
+}
+
+function touchesComment(tr: Transaction): boolean {
+  let touched = false
+  tr.steps.forEach((step, index) => {
+    const doc = tr.docs[index]!
+    step.getMap().forEach((from, to) => {
+      if (touched || to <= from) return
+      doc.nodesBetween(from, to, (node) => {
+        if (isComment(node)) touched = true
+        return !touched
+      })
+    })
+  })
+  return touched
+}
+
+/**
+ * Puts back inline comments that ending or cancelling a composition removed.
+ * The browser takes a hidden comment beside composed text with it, and
+ * refusing the edit would instead keep text the person cancelled.
+ */
+function restoreComposedOver(
+  transactions: readonly Transaction[],
+  before: EditorState,
+  state: EditorState,
+): Transaction | null {
+  if (
+    commentsVisible(state) ||
+    !before.selection.empty ||
+    !transactions.some(
+      (tr) =>
+        tr.getMeta('composition') && isWrittenEdit(tr) && touchesComment(tr),
+    )
+  )
+    return null
+  const mapping = new Mapping()
+  for (const tr of transactions) mapping.appendMapping(tr.mapping)
+  const removed: [number, ProseNode][] = []
+  before.doc.descendants((node, pos) => {
+    if (!isComment(node)) return true
+    if (node.isInline && mapping.mapResult(pos + 1).deleted)
+      removed.push([mapping.map(pos, -1), node])
+    return false
+  })
+  if (!removed.length) return null
+  const tr = state.tr
+  for (const [pos, node] of removed.reverse()) {
+    const $pos = tr.doc.resolve(pos)
+    if ($pos.parent.inlineContent) tr.insert(pos, node)
+  }
+  return tr.docChanged ? tr : null
+}
+
 export const hiddenCommentEditing = $prose(
   () =>
     new Plugin({
@@ -409,20 +580,64 @@ export const hiddenCommentEditing = $prose(
         handleKeyDown(view, event) {
           if (view.composing || event.isComposing || !view.editable)
             return false
+          // Enter would split the hidden comment.
+          if (
+            event.key === 'Enter' &&
+            hiddenCommentExit(view.state) !== undefined
+          )
+            return true
           const kind = deletion(event)
           return !!kind && deleteBeside(view, kind[0], kind[1], false)
         },
+        handleTextInput(view, _from, _to, text) {
+          if (!text) return false
+          const tr = insertAfterHiddenComment(
+            view.state,
+            Fragment.from(view.state.schema.text(text)),
+          )
+          if (!tr) return false
+          view.dispatch(tr)
+          return true
+        },
         handleDOMEvents: {
           beforeinput(view, event) {
+            if (!view.editable) return false
+            // Composed text needs a paragraph to land in before the browser writes it.
+            if (event.inputType === 'insertCompositionText') {
+              const tr = insertAfterHiddenComment(view.state, Fragment.empty)
+              if (tr) view.dispatch(tr)
+              return false
+            }
+            if (view.composing) return false
+            if (event.inputType === 'insertText' && event.data) {
+              const tr = insertAfterHiddenComment(
+                view.state,
+                Fragment.from(view.state.schema.text(event.data)),
+              )
+              if (!tr) return false
+              view.dispatch(tr)
+              event.preventDefault()
+              return true
+            }
             const kind = inputDeletions[event.inputType]
-            if (!kind || view.composing || !view.editable) return false
-            if (!deleteBeside(view, kind[0], kind[1], true)) return false
+            if (!kind) return false
+            if (
+              !deleteBeside(
+                view,
+                kind[0],
+                kind[1],
+                true,
+                targetRange(view, event),
+              )
+            )
+              return false
             event.preventDefault()
             return true
           },
         },
       },
-      appendTransaction: (_transactions, before, state) =>
+      appendTransaction: (transactions, before, state) =>
+        restoreComposedOver(transactions, before, state) ??
         selectionOutsideComments(before, state),
     }),
 )

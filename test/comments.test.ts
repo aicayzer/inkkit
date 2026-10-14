@@ -620,6 +620,8 @@ test('undo and redo restore a comment that already held text ending it early', a
   for (const source of endingEarly)
     await withComments(source, ({ editor, view, errors, commentRange }) => {
       const label = JSON.stringify(source)
+      // Removing a comment from a caret needs comments revealed.
+      editor.setCommentsVisible(true)
       const { from, to } = commentRange()
       view.dispatch(view.state.tr.delete(from, to))
       const deleted = editor.snapshot().text
@@ -638,6 +640,8 @@ test('history stays usable after a comment holding such text is restored', async
   await withComments(
     'Before\n\n<!-->kept-->\n',
     ({ editor, view, errors, commentRange }) => {
+      // Removing a comment from a caret needs comments revealed.
+      editor.setCommentsVisible(true)
       const { from, to } = commentRange()
       view.dispatch(view.state.tr.delete(from, to))
       view.dispatch(view.state.tr.insertText('Z', 1, 1))
@@ -672,6 +676,8 @@ test('typing that ends a comment early is still refused after history steps', as
   await withComments(
     'Before\n\n<!--note-->\n',
     ({ editor, view, errors, commentRange }) => {
+      // Removing a comment from a caret needs comments revealed.
+      editor.setCommentsVisible(true)
       const { from, to } = commentRange()
       view.dispatch(view.state.tr.delete(from, to))
       expect(editor.undo()).toBe(true)

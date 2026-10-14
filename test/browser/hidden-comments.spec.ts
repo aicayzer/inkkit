@@ -337,3 +337,204 @@ test('deletion input without a key press keeps a hidden comment', async ({
   })
   await expectSaved(page, 'Inline <!-- secret -->here.\n')
 })
+
+// Chords with no deletion binding of their own still delete one character.
+const chords = mac
+  ? ['Control+Alt+Backspace', 'Meta+Alt+Backspace', 'Control+Meta+Backspace']
+  : [
+      'Alt+Backspace',
+      'Control+Alt+Backspace',
+      'Meta+Backspace',
+      'Alt+Shift+Backspace',
+    ]
+for (const chord of chords)
+  test(`${chord} beside a hidden comment keeps it @smoke`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture()
+    await open(page, 'ab <!-- c -->cd\n')
+    await select(page, 3)
+    await press(page, [chord])
+    await expectSaved(page, 'ab<!-- c -->cd\n')
+  })
+
+test('Control-Alt-Delete beside a hidden comment keeps it', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await open(page, 'ab <!-- c -->cd\n')
+  await select(page, 3)
+  await press(page, ['Control+Alt+Delete'])
+  await expectSaved(page, 'ab <!-- c -->d\n')
+})
+
+for (const [name, last, expected] of [
+  ['cancelled', '', inline],
+  ['committed', 'か', 'Inline か<!-- secret --> here.\n'],
+] as const)
+  test(`a composition ${name} beside a hidden comment keeps it`, async ({
+    page,
+    openFixture,
+    browserName,
+  }) => {
+    test.skip(
+      browserName !== 'chromium',
+      'IME input needs the Chrome DevTools Protocol',
+    )
+    await openFixture()
+    await open(page, inline)
+    await select(page, 7)
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('Input.imeSetComposition', {
+      text: 'か',
+      selectionStart: 1,
+      selectionEnd: 1,
+    })
+    if (!last)
+      await cdp.send('Input.imeSetComposition', {
+        text: '',
+        selectionStart: 0,
+        selectionEnd: 0,
+      })
+    await cdp.send('Input.insertText', { text: last })
+    await expectSaved(page, expected)
+  })
+
+test('an edit the browser makes itself that would remove a hidden comment is refused and redrawn', async ({
+  page,
+  openFixture,
+}) => {
+  test.skip(!mac, 'Control-T transposes characters on macOS')
+  await openFixture()
+  const source = 'ab<!-- c -->cd\n'
+  await open(page, source)
+  await select(page, 2)
+  await press(page, ['Control+t'])
+  await expect
+    .poll(async () => (await observe(page)).diagnostics.map((d) => d.code))
+    .toEqual(['preservation'])
+  expect(await saved(page)).toBe(source)
+  const surface = page.locator('#editor .ProseMirror')
+  await expect.poll(() => surface.innerText()).toBe('abcd')
+  await expect(surface.locator('.inkkit-comment')).toHaveText(' c ')
+  await press(page, ['X'])
+  await expect.poll(() => saved(page)).toContain('<!-- c -->')
+})
+
+test('Control-K before a hidden comment deletes to the end of the line and keeps it', async ({
+  page,
+  openFixture,
+}) => {
+  test.skip(!mac, 'Control-K deletes to the end of the line on macOS')
+  await openFixture()
+  await open(page, 'Keep %%secret%% one two\n')
+  await select(page, 5)
+  await press(page, ['Control+k'])
+  await expectSaved(page, 'Keep %%secret%%\n')
+})
+
+test('a software keyboard deletion uses the range it reports', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await open(page, 'Keep %%secret%% one two\n')
+  await select(page, 5)
+  await page.evaluate(() => {
+    const surface = document.querySelector('#editor .ProseMirror')!
+    const paragraph = surface.querySelector('p')!
+    const last = paragraph.lastChild as Text
+    const range = new StaticRange({
+      startContainer: paragraph.firstChild!,
+      startOffset: 5,
+      endContainer: last,
+      endOffset: last.length,
+    })
+    const event = new InputEvent('beforeinput', {
+      inputType: 'deleteContentForward',
+      bubbles: true,
+      cancelable: true,
+    })
+    Object.defineProperty(event, 'getTargetRanges', { value: () => [range] })
+    surface.dispatchEvent(event)
+  })
+  await expectSaved(page, 'Keep %%secret%%\n')
+})
+
+async function load(page: Page, source: string) {
+  await page.evaluate(
+    (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+    source,
+  )
+  await operation(page, 'focus')
+}
+
+for (const key of ['Backspace', 'Delete', 'Enter'])
+  test(`${key} in a note that holds only a hidden comment changes nothing`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture()
+    await load(page, '<!-- c -->\n')
+    await press(page, [key])
+    await page.waitForTimeout(100)
+    await expectSaved(page, '<!-- c -->\n')
+  })
+
+for (const [name, write] of [
+  ['typing', (page: Page) => press(page, ['X'])],
+  ['insertText', (page: Page) => operation(page, 'insertText', { text: 'X' })],
+  ['plain paste', (page: Page) => operation(page, 'pastePlain', { text: 'X' })],
+  [
+    'paste',
+    (page: Page) =>
+      operation(page, 'paste', { input: { text: 'X', html: '<p>X</p>' } }),
+  ],
+] as const)
+  for (const [source, expected] of [
+    ['<!-- c -->\n', '<!-- c -->\n\nX\n'],
+    ['<!-- c -->\n\n---\n', '<!-- c -->\n\nX\n\n---\n'],
+  ] as const)
+    test(`${name} in a note with no visible text goes after the hidden comment in ${JSON.stringify(source)}`, async ({
+      page,
+      openFixture,
+    }) => {
+      await openFixture()
+      await load(page, source)
+      await write(page)
+      await expectSaved(page, expected)
+    })
+
+test('composing in a note that holds only a hidden comment goes after it', async ({
+  page,
+  openFixture,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium',
+    'IME input needs the Chrome DevTools Protocol',
+  )
+  await openFixture()
+  await load(page, '<!-- c -->\n')
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.imeSetComposition', {
+    text: 'か',
+    selectionStart: 1,
+    selectionEnd: 1,
+  })
+  await cdp.send('Input.insertText', { text: 'か' })
+  await expectSaved(page, '<!-- c -->\n\nか\n')
+})
+
+test('deleting a table row removes the hidden comments in it', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await open(page, '| a | b |\n| - | - |\n| x <!-- c --> | y |\n| p | q |\n')
+  await select(page, 5)
+  await operation(page, 'table', { command: 'deleteRow' })
+  await expectSaved(page, '| a | b |\n| - | - |\n| p | q |\n')
+})
