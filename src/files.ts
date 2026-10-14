@@ -7,7 +7,7 @@ import type {
   FilePresentation,
   FileReference,
 } from './types'
-import type { EditorLabels } from './labels'
+import type { EditorLabels } from './types'
 
 export interface FileViewRuntime {
   adapter: FileAdapter

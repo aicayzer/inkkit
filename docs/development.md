@@ -16,6 +16,18 @@ pnpm test:built-playground
 
 The public API is `src/core.ts`; `src/index.ts` registers Mermaid and re-exports it. App hosts own persistence, native menus and file access. Regression tests cover formatting, source preservation, clipboard import/export, tables, snapshots, asynchronous image/file operations and optional wiki links. The clean consumer compiles `FileAdapter`, `WikiLinkAdapter`, their reference/context/presentation types and `EditorOptions` alongside the existing public facade. CI uses hosted runners.
 
+## Dependencies
+
+The package bundles its runtime dependencies into `dist`, so a host runs the exact code that InkKit tested. Milkdown, ProseMirror, micromark, the mdast utilities, lowlight, DOMPurify and their own dependencies are `devDependencies`. `pnpm build` bundles the versions in `pnpm-lock.yaml`, the same tree that Vitest, the browser suite and the playground run. A host's lockfile cannot resolve a different parser, serializer or ProseMirror version for InkKit.
+
+Mermaid is the one runtime dependency, pinned exactly. It draws diagram previews and validates diagram source, never changes saved bytes, and would multiply the package size if bundled.
+
+- `pnpm build` runs `tsc` for declarations only, then `vite build --config vite.package.config.ts` for the JavaScript, then `scripts/finish-build.mjs`. That script keeps only the declarations the public entries reach and fails if one of them imports a package, because hosts do not install the bundled packages.
+- The build writes `dist/THIRD-PARTY-NOTICES.txt` with the name, version and licence of every bundled package. It is also the record of the tree a release ships.
+- To update a bundled package, change `pnpm-lock.yaml` in a pull request. CI then runs the preservation tests in `pnpm check`, the packed-consumer pages and the whole browser suite against the new tree before it can merge.
+
+The trade-off: a security fix in a bundled package reaches hosts only through an InkKit release, and a host's dependency audit does not see bundled packages. Watch InkKit's own lockfile, and release when a bundled package needs a fix.
+
 ## Bounded verification
 
 Choose checks from the changed behaviour, not from every available fixture combination.

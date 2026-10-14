@@ -86,7 +86,7 @@ import {
   type $UserKeymap,
 } from '@milkdown/kit/utils'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
-import { labelsCtx, defaultLabels, type EditorLabels } from './labels'
+import { labelsCtx, defaultLabels } from './labels'
 import { createDialect, stringifyOptions } from './dialect'
 import { Preservation } from './preserve'
 import {
@@ -123,8 +123,6 @@ import {
   tableContext,
   tableOptions,
   configureTableMovement,
-  type TableCommand,
-  type TableOptions,
 } from './tables'
 import {
   InkKitError,
@@ -144,6 +142,10 @@ import {
   type ViewportInsets,
   type ViewportOptions,
   type ViewportSnapshot,
+  type EditorLabels,
+  type Heading,
+  type TableCommand,
+  type TableOptions,
 } from './types'
 import {
   readableProjection,
@@ -203,7 +205,6 @@ import {
   collectSourceHeadings,
   navigateFormattedHeading,
   sourceHeadingPosition,
-  type Heading,
   type OutlineContext,
 } from './outline'
 import { taskListPlugin, toggleTaskList } from './tasks'

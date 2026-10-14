@@ -21,5 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-Milkdown and other runtime dependencies retain their own licences. They are
-installed as dependencies.
+The published package bundles Milkdown, ProseMirror and other packages. Each
+keeps its own licence; dist/THIRD-PARTY-NOTICES.txt in the package lists them
+with their licence texts. Mermaid is installed as a dependency and keeps its
+own licence.
