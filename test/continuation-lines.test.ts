@@ -91,6 +91,12 @@ const cases: Array<[string, string, string, string]> = [
   ],
   ['a tab-indented line', 'para one\n\ttwo\n', 'two', 'para one\n\ttwos\n'],
   [
+    'a paragraph with lone CR line endings',
+    'para one\r   two\r',
+    'one',
+    'para ones\r   two\r',
+  ],
+  [
     'a list item in a quote',
     '> - one\n>   more\n',
     'one',
