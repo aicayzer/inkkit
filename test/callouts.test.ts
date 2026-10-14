@@ -256,7 +256,9 @@ test.each([
         text: '',
       })
       await editor.paste({ text: copied.text, html: copied.html })
-      expect(editor.snapshot().text).toBe(saved)
+      // Pasted content has no authored source, and an item that opens with a
+      // block is written without the spacer line that reads the same.
+      expect(editor.snapshot().text).toBe(saved.replace('- <br />\n\n  ', '- '))
     }),
 )
 

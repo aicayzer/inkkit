@@ -4,7 +4,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { serialize } from './dialect'
 import { restoreCodeEndings, finalCodeEnding } from './code-fences'
-import { sourceFrontmatter } from './literals'
+import { lineBreakHTML, sourceFrontmatter } from './literals'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 
 interface Block {
@@ -25,13 +25,21 @@ interface SourceNode {
 // Line endings are the document's, not the node's: a CRLF source and its LF
 // canonical form describe the same text.
 function signature(node: SourceNode): string {
-  return JSON.stringify(node, (key, value) =>
-    ['position', 'data', 'marker'].includes(key)
-      ? undefined
-      : typeof value === 'string'
-        ? value.replace(/\r\n?/g, '\n')
-        : value,
-  )
+  return JSON.stringify(node, function (key, value) {
+    if (['position', 'data', 'marker'].includes(key)) return undefined
+    const holder = this as SourceNode
+    // Every spelling of a line break reads back as the same break.
+    if (key === 'value' && holder.type === 'html' && lineBreakHTML(value))
+      return '<br />'
+    // A row read as ending in empty cells is the row written without them.
+    if (key === 'children' && holder.type === 'tableRow') {
+      let end = (value as SourceNode[]).length
+      while (end > 0 && !(value as SourceNode[])[end - 1]!.children?.length)
+        end--
+      return (value as SourceNode[]).slice(0, end)
+    }
+    return typeof value === 'string' ? value.replace(/\r\n?/g, '\n') : value
+  })
 }
 
 function ownShape(node: SourceNode): string {
@@ -260,6 +268,111 @@ function retainBoundaryWhitespace(raw: string, canonical: string): string {
   return raw
 }
 
+// The pipes GFM splits a row at; an escaped pipe does not split it.
+function rowPipes(row: string): {
+  opening: boolean
+  closing: number | undefined
+  cells: number
+} {
+  const pipes: number[] = []
+  for (let index = 0; index < row.length; index++)
+    if (row[index] === '\\' && /[\\|]/.test(row[index + 1] ?? '')) index++
+    else if (row[index] === '|') pipes.push(index)
+  const opening = pipes[0] === row.search(/\S/)
+  const last = row.trimEnd().length - 1
+  const closing =
+    pipes.at(-1) === last && (!opening || pipes.length > 1) ? last : undefined
+  return {
+    opening,
+    closing,
+    cells: pipes.length + 1 - Number(opening) - Number(closing != null),
+  }
+}
+
+// A source row may stop before the header's last cell; the editor holds the
+// rest as empty cells, which stay unwritten until one of them gains content.
+// Then the new cells follow the row's own source, before its closing pipe.
+function retainShortRow(
+  before: SourceNode,
+  after: SourceNode,
+  retain: (row: SourceNode) => string,
+  source: string,
+  canonical: string,
+): string {
+  const count = before.children!.length
+  const row = retain({ ...after, children: after.children!.slice(0, count) })
+  let filled = after.children!.length
+  while (filled > count && !after.children![filled - 1]!.children?.length)
+    filled--
+  if (filled === count) return row
+  const from = after.children![count]!.position?.start.offset
+  const to = after.children![filled - 1]!.position?.end.offset
+  const start = before.position?.start.offset
+  const end = before.position?.end.offset
+  if (from == null || to == null || start == null || end == null)
+    throw new PreservationError('A source token has no location')
+  const kept = rowPipes(row)
+  let output = (
+    kept.closing == null ? row : row.slice(0, kept.closing)
+  ).trimEnd()
+  // Without an opening pipe, an empty first cell would not be read at all.
+  if (!kept.opening && !after.children![0]!.children?.length)
+    output = `|${output ? ' ' : ''}${output.trimStart()}`
+  for (let cell = kept.cells; cell < count; cell++) output += ' |'
+  // A cell that matches one of the row's own, such as one moved there, keeps
+  // that cell's authored text.
+  const contentOf = (cell: SourceNode) => [
+    cell.children![0]!.position!.start.offset!,
+    cell.children!.at(-1)!.position!.end.offset!,
+  ]
+  const added = after
+    .children!.slice(count, filled)
+    .map((cell) => {
+      const text = canonical.slice(
+        cell.position!.start.offset!,
+        cell.position!.end.offset!,
+      )
+      const original = cell.children?.length
+        ? before.children!.find(
+            (candidate) =>
+              candidate.children?.length &&
+              signature(candidate) === signature(cell),
+          )
+        : undefined
+      if (!original) return text
+      const [cellFrom, cellTo] = contentOf(cell)
+      const [sourceFrom, sourceTo] = contentOf(original)
+      const offset = cell.position!.start.offset!
+      return (
+        text.slice(0, cellFrom! - offset) +
+        source.slice(sourceFrom, sourceTo) +
+        text.slice(cellTo! - offset)
+      )
+    })
+    .join('')
+  const addedPipes = rowPipes(added)
+  const closing =
+    kept.closing != null || rowPipes(source.slice(start, end)).closing != null
+  return (
+    `${output} ` +
+    (addedPipes.closing == null
+      ? added
+      : added.slice(0, addedPipes.closing)
+    ).trimEnd() +
+    (closing ? ' |' : '')
+  )
+}
+
+// A `<br />` line, read as an HTML block or as a paragraph holding only it.
+function spacer(node: SourceNode | undefined): boolean {
+  const html = node?.type === 'paragraph' ? node.children?.[0] : node
+  return (
+    (node?.type !== 'paragraph' || node.children?.length === 1) &&
+    html?.type === 'html' &&
+    lineBreakHTML(String(html.value))
+  )
+}
+
 // Patch changed leaves so an adjacent edit retains authored delimiters and labels.
 function retainSource(
   before: SourceNode,
@@ -268,6 +381,8 @@ function retainSource(
   canonical: string,
   lineEnding: string,
   inTable = false,
+  // The header's cell count, for the rows of a table.
+  width?: number,
 ): string {
   const start = before.position?.start.offset
   const end = before.position?.end.offset
@@ -281,6 +396,7 @@ function retainSource(
     after.type === 'code' &&
     before.lang === after.lang
   ) {
+    if ((before.value ?? '') === (after.value ?? '')) return raw
     const opening = /^([ \t>]*)(`{3,}|~{3,})([^\r\n]*)(\r?\n)/.exec(raw)
     if (opening) {
       const lines = raw.slice(opening[0].length).split(/\r?\n/)
@@ -289,11 +405,19 @@ function retainSource(
       )
       const originalLine =
         (before.value ?? '').replace(/\r\n?/g, '\n').split('\n')[0] ?? ''
-      const first = lines[0] ?? ''
-      const gutter = first.endsWith(originalLine)
-        ? first.slice(0, first.length - originalLine.length)
-        : opening[1]!
-      const body = (after.value ?? '').replace(/\r\n?/g, '\n').split('\n')
+      // A fence whose code is empty or starts with a blank line has no line
+      // to take the indent from but its closing one.
+      const first = originalLine ? lines[0] : undefined
+      const gutter =
+        first === undefined
+          ? (closing?.[1] ?? opening[1]!)
+          : first.endsWith(originalLine)
+            ? first.slice(0, first.length - originalLine.length)
+            : opening[1]!
+      // A code block without code is written as a fence with no line inside.
+      const body = after.value
+        ? after.value.replace(/\r\n?/g, '\n').split('\n')
+        : []
       const character = opening[2]![0]!
       let length = opening[2]!.length
       for (const line of body) {
@@ -305,8 +429,8 @@ function retainSource(
         opening[1] +
         fence +
         opening[3] +
-        lineEnding +
-        body.map((line) => gutter + line).join(lineEnding) +
+        body.map((line) => lineEnding + gutter + line).join('') +
+        (closing || body.length ? '' : opening[4]) +
         (closing
           ? lineEnding +
             closing[1] +
@@ -332,6 +456,69 @@ function retainSource(
           : String(after.url)) +
         destination[3]
       )
+  }
+  if (
+    before.type === 'tableRow' &&
+    after.type === 'tableRow' &&
+    before.children &&
+    after.children &&
+    width != null &&
+    before.children.length < width &&
+    after.children.length === width
+  )
+    return retainShortRow(
+      before,
+      after,
+      (row) =>
+        retainSource(before, row, source, canonical, lineEnding, inTable),
+      source,
+      canonical,
+    )
+  if (
+    before.type === 'tableCell' &&
+    after.type === 'tableCell' &&
+    !before.children?.length &&
+    after.children?.length
+  ) {
+    // An empty cell's range is only its pipe and padding, so its new content
+    // goes inside them rather than through the whole-range boundary check.
+    const from = after.children[0]!.position?.start.offset
+    const to = after.children.at(-1)!.position?.end.offset
+    if (from == null || to == null)
+      throw new PreservationError('A source token has no location')
+    const pipes = rowPipes(raw)
+    return `${pipes.opening ? '| ' : ''}${canonical.slice(from, to)} ${pipes.closing != null ? '|' : ''}`
+  }
+  if (
+    before.type === 'listItem' &&
+    after.type === 'listItem' &&
+    before.children &&
+    after.children &&
+    before.children.length === after.children.length + 1 &&
+    (spacer(before.children[0]) || before.children[0]!.type === 'paragraph') &&
+    after.children[0]?.type !== 'paragraph' &&
+    !spacer(after.children[0])
+  ) {
+    // The item now opens with an empty line before a block, which is written
+    // as no line. The blocks after it keep their authored source.
+    const retained = retainSource(
+      { ...before, children: before.children.slice(1) },
+      { ...after, spread: before.spread },
+      source,
+      canonical,
+      lineEnding,
+      inTable,
+    )
+    const first = before.children[0]!
+    if (spacer(first)) return retained
+    // An emptied first line is kept as the `<br />` line it reads back as.
+    const from = first.position!.start.offset! - start
+    const to = first.position!.end.offset! - start
+    return retained.startsWith(
+      source.slice(start, before.children[1]!.position!.start.offset!),
+    )
+      ? retained.slice(0, from) + '<br />' + retained.slice(to)
+      : retained
   }
   if (before.type === 'text' && after.type === 'text')
     return retainBoundaryWhitespace(
@@ -359,18 +546,29 @@ function retainSource(
     let output = '',
       at = start
     let previous: Neighbour | undefined
-    const retained = new Set<number>()
+    const same = (candidate: SourceNode, incoming: SourceNode) =>
+      signature(candidate) === signature(incoming) &&
+      ownShape(candidate) === ownShape(incoming)
+    const reorderable = before.type === 'table' || before.type === 'tableRow'
+    // Equal rows or cells can differ in spelling, so each one that stayed in
+    // place keeps its own source before any moved one is matched.
+    const retained = new Set<number>(
+      reorderable
+        ? before.children.flatMap((child, index) =>
+            same(child, after.children![index]!) ? [index] : [],
+          )
+        : [],
+    )
     before.children.forEach((child, index) => {
       const incoming = after.children![index]!
-      const movedIndex =
-        before.type === 'table' || before.type === 'tableRow'
-          ? before.children!.findIndex(
+      const movedIndex = !reorderable
+        ? -1
+        : same(child, incoming)
+          ? index
+          : before.children!.findIndex(
               (candidate, candidateIndex) =>
-                !retained.has(candidateIndex) &&
-                signature(candidate) === signature(incoming) &&
-                ownShape(candidate) === ownShape(incoming),
+                !retained.has(candidateIndex) && same(candidate, incoming),
             )
-          : -1
       const original = movedIndex < 0 ? child : before.children![movedIndex]!
       if (movedIndex >= 0) retained.add(movedIndex)
       const childStart = child.position?.start.offset,
@@ -402,8 +600,15 @@ function retainSource(
               canonical,
               lineEnding,
               inTable || before.type === 'tableCell',
+              before.type === 'table'
+                ? before.children![0]?.children?.length
+                : undefined,
             )
-      if (before.type === 'tableRow' && movedIndex >= 0) {
+      if (
+        before.type === 'tableRow' &&
+        movedIndex >= 0 &&
+        movedIndex !== index
+      ) {
         // Cell positions own different pipe boundaries at the row edges.
         const originalFrom = original.children?.[0]?.position?.start.offset
         const originalTo = original.children?.at(-1)?.position?.end.offset
@@ -662,7 +867,6 @@ export function semanticSignature(doc: ProseNode): string {
       [
         'referenceContent',
         'referenceType',
-        'listPlaceholder',
         'marker',
         'id',
         'label',

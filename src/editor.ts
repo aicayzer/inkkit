@@ -535,6 +535,23 @@ function joinLists(tr: Transaction, start: number, index: number): void {
 
 let editorSequence = 0
 
+// A pause in source typing longer than this ends an undo step, as in the
+// formatted editor's history.
+const sourceGroupDelay = 500
+// Earlier undo steps of typed source that the formatted document has not taken
+// in; the oldest merge into the next beyond this many.
+const sourceStepLimit = 100
+
+interface TypedSource {
+  text: string
+  from: number
+  to: number
+  // Where the caret and selection were before this step began.
+  before: { from: number; to: number }
+  // An edit that is not typing, which later typing does not join.
+  closed: boolean
+}
+
 export class InkKitEditor {
   private editor!: Editor
   private lastMarkdown = ''
@@ -556,6 +573,21 @@ export class InkKitEditor {
     epoch: number
   }
   private beforePlainInput?: { from: number; to: number }
+  // Source typed in the source editor that the hidden formatted document has
+  // not taken in yet. The text is already authoritative: snapshots, change
+  // events and the textarea use it, and anything that reads the formatted
+  // document first settles it. Undo steps taken inside it need no document,
+  // so they run on the text alone: `typedSteps` hold the states at the end of
+  // earlier typing, `pendingSource` the latest, and `undoneSteps` what undo
+  // set aside.
+  private pendingSource?: TypedSource
+  private typedSteps: TypedSource[] = []
+  private undoneSteps: TypedSource[] = []
+  // Formatted-history undos taken while source steps were undone, which a
+  // redo replays before it reaches those steps.
+  private formattedUndone = 0
+  private lastSourceInput = 0
+  private syncingSource = false
   private mode: EditingMode = 'formatted'
   private sourcePreservations = new WeakMap<SourceProvenance, Preservation>()
   private sourceTexts = new WeakMap<ProseNode, string>()
@@ -598,6 +630,12 @@ export class InkKitEditor {
         view: () => ({
           update: (view, previous) => {
             if (this.loading || view.state.doc.eq(previous.doc)) return
+            // Settling typed source brings the document up to a revision and a
+            // change event that were already reported.
+            if (this.syncingSource) {
+              this.mediaPolicy()
+              return
+            }
             this.revision += 1
             this.cancelExports()
             this.mediaPolicy()
@@ -883,8 +921,11 @@ export class InkKitEditor {
         : caretState(state),
       table: this.literalSurface ? undefined : tableContext(state),
       commands: {
-        undo: mutable && undoHistory(state),
-        redo: mutable && redoHistory(state),
+        undo: mutable && (!!this.pendingSource || undoHistory(state)),
+        redo:
+          mutable &&
+          (this.undoneSteps.length > 0 ||
+            (!this.pendingSource && redoHistory(state))),
         insertText: mutable,
         paste: mutable,
         replace: mutable,
@@ -929,6 +970,8 @@ export class InkKitEditor {
         filterTransaction: (tr) =>
           this.loading ||
           this.writable ||
+          // Source that was typed while the editor was writable.
+          this.syncingSource ||
           (!tr.docChanged && !tr.storedMarksSet),
         props: {
           editable: () => this.writable && !this.literalSurface,
@@ -966,9 +1009,9 @@ export class InkKitEditor {
     return this.literalSurface ? 'source' : 'formatted'
   }
 
-  private currentText(
-    doc = this.editor.ctx.get(editorViewCtx).state.doc,
-  ): string {
+  private currentText(doc?: ProseNode): string {
+    if (!doc && this.pendingSource) return this.pendingSource.text
+    doc ??= this.editor.ctx.get(editorViewCtx).state.doc
     const cached = this.sourceTexts.get(doc)
     if (cached !== undefined) return cached
     const provenance = doc.attrs[sourceAttribute] as SourceProvenance | null
@@ -992,6 +1035,10 @@ export class InkKitEditor {
     if (mode !== 'source' && mode !== 'formatted')
       throw new RangeError('Editing mode must be source or formatted')
     if (this.formatType === 'txt' || this.mode === mode) return false
+    this.settleSource()
+    // Source steps that were undone cannot be redone from the other mode.
+    this.undoneSteps = []
+    this.formattedUndone = 0
     const view = this.editor.ctx.get(editorViewCtx)
     const focused = this.literalSurface
       ? this.plain.ownerDocument.activeElement === this.plain
@@ -1059,10 +1106,165 @@ export class InkKitEditor {
     isolated: boolean,
     from?: number,
     to?: number,
+    native = false,
   ): boolean {
     if (!this.writable)
       throw new InkKitError('read-only', 'The editor is read-only')
     if (typeof text !== 'string') throw new TypeError('Source must be a string')
+    // Source edits take the same steps whether typed or not; an edit that is
+    // not typing ends the typing step before it and is closed to the next.
+    if (this.literalSurface)
+      return this.deferSource(text, from, to, native, isolated)
+    return this.commitSource(text, isolated, from, to, this.beforePlainInput)
+  }
+
+  /**
+   * Takes typed source without parsing it. Parsing, preservation and replacing
+   * the formatted document cost as much as a document load, so they wait for
+   * the next thing that needs them.
+   */
+  private deferSource(
+    text: string,
+    from: number | undefined,
+    to: number | undefined,
+    native: boolean,
+    closed: boolean,
+  ): boolean {
+    if (text === this.currentText()) return false
+    const length =
+      from === undefined ? text.replace(/\r\n?/g, '\n').length : from
+    const now = Date.now()
+    const previous = this.pendingSource
+    const continuing =
+      previous &&
+      !previous.closed &&
+      !closed &&
+      now - this.lastSourceInput <= sourceGroupDelay
+    if (previous && !continuing) this.rememberTypedStep(previous)
+    this.lastSourceInput = now
+    this.undoneSteps = []
+    this.formattedUndone = 0
+    const pending: TypedSource = {
+      text,
+      from: length,
+      to: to ?? length,
+      before: (continuing ? previous.before : undefined) ??
+        this.beforePlainInput ?? {
+          from: this.plain.selectionStart,
+          to: this.plain.selectionEnd,
+        },
+      closed,
+    }
+    this.pendingSource = pending
+    this.revision += 1
+    this.cancelExports()
+    this.literalMatch = undefined
+    // Text that did not come from the textarea is shown there.
+    if (!native) this.showTypedSource(pending.text, pending.from, pending.to)
+    if (text !== this.lastMarkdown) {
+      this.lastMarkdown = text
+      this.events.changed(text, this.generation)
+    }
+    this.publishCommandState()
+    return true
+  }
+
+  private rememberTypedStep(step: TypedSource): void {
+    this.typedSteps.push(step)
+    if (this.typedSteps.length > sourceStepLimit) this.typedSteps.shift()
+  }
+
+  private showTypedSource(text: string, from: number, to: number): void {
+    this.plain.value = text
+    this.plain.setSelectionRange(
+      Math.min(from, this.plain.value.length),
+      Math.min(to, this.plain.value.length),
+    )
+    this.revealLiteralSelection()
+  }
+
+  /**
+   * Undoes or redoes typed source that the formatted document has not taken
+   * in, on the text alone. Returns whether there was a step to take.
+   */
+  private stepTypedSource(direction: 'undo' | 'redo'): boolean {
+    const current = this.pendingSource
+    let text: string, from: number, to: number
+    if (direction === 'undo') {
+      if (!current) return false
+      this.undoneSteps.push(current)
+      this.pendingSource = this.typedSteps.pop()
+      text = this.pendingSource?.text ?? this.currentText()
+      ;({ from, to } = current.before)
+    } else {
+      const next = this.undoneSteps.pop()
+      if (!next) return false
+      if (current) this.rememberTypedStep(current)
+      this.pendingSource = next
+      text = next.text
+      ;({ from, to } = next)
+    }
+    this.lastSourceInput = 0
+    this.revision += 1
+    this.cancelExports()
+    this.literalMatch = undefined
+    this.showTypedSource(text, from, to)
+    if (text !== this.lastMarkdown) {
+      this.lastMarkdown = text
+      this.events.changed(text, this.generation)
+    }
+    this.publishCommandState()
+    return true
+  }
+
+  /** Brings the formatted document up to the source that was typed. */
+  private settleSource(): void {
+    const pending = this.pendingSource
+    if (!pending) return
+    const steps = this.typedSteps,
+      undone = this.undoneSteps
+    this.pendingSource = undefined
+    this.typedSteps = []
+    this.undoneSteps = []
+    this.syncingSource = true
+    try {
+      if (
+        this.commitSource(
+          pending.text,
+          // A step of its own, whatever edit follows within the group delay.
+          true,
+          pending.from,
+          pending.to,
+          steps[0]?.before ?? pending.before,
+        )
+      ) {
+        const { doc } = this.editor.ctx.get(editorViewCtx).state
+        const applied = doc.attrs[sourceAttribute] as SourceProvenance | null
+        // A plugin that refuses the change must not lose what was typed.
+        if (applied?.text !== pending.text)
+          throw new InkKitError(
+            'preservation',
+            'The typed source could not be applied',
+          )
+        this.sourceTexts.set(doc, pending.text)
+      }
+    } catch (error) {
+      this.pendingSource = pending
+      this.typedSteps = steps
+      this.undoneSteps = undone
+      throw error
+    } finally {
+      this.syncingSource = false
+    }
+  }
+
+  private commitSource(
+    text: string,
+    isolated: boolean,
+    from: number | undefined,
+    to: number | undefined,
+    before: { from: number; to: number } | undefined,
+  ): boolean {
     if (text === this.currentText()) return false
     const view = this.editor.ctx.get(editorViewCtx)
     const normalizedLength = text.replace(/\r\n?/g, '\n').length
@@ -1099,8 +1301,8 @@ export class InkKitEditor {
       const previous: SourceProvenance = Object.freeze({
         text: this.currentText(),
         format: this.formatType,
-        from: this.beforePlainInput?.from ?? this.plain.selectionStart,
-        to: this.beforePlainInput?.to ?? this.plain.selectionEnd,
+        from: before?.from ?? this.plain.selectionStart,
+        to: before?.to ?? this.plain.selectionEnd,
       })
       // History must retain the source caret even when the formatted document has no corresponding position.
       this.loading = true
@@ -1128,13 +1330,30 @@ export class InkKitEditor {
 
   undo(expectedGeneration?: number): boolean {
     this.assertMutation(expectedGeneration)
+    if (this.literalSurface && this.stepTypedSource('undo')) return true
     const view = this.editor.ctx.get(editorViewCtx)
-    return undoHistory(view.state, view.dispatch)
+    const undone = undoHistory(view.state, view.dispatch)
+    if (undone) {
+      // Source steps that were undone come back after the formatted ones.
+      if (this.literalSurface && this.undoneSteps.length) this.formattedUndone++
+      else this.undoneSteps = []
+    }
+    return undone
   }
 
   redo(expectedGeneration?: number): boolean {
     this.assertMutation(expectedGeneration)
     const view = this.editor.ctx.get(editorViewCtx)
+    if (this.literalSurface) {
+      if (this.formattedUndone > 0) {
+        this.formattedUndone--
+        if (redoHistory(view.state, view.dispatch)) return true
+        this.formattedUndone = 0
+      }
+      if (this.stepTypedSource('redo')) return true
+      // Typing after an undo ended the formatted history's redo steps.
+      if (this.pendingSource) return false
+    }
     return redoHistory(view.state, view.dispatch)
   }
 
@@ -1184,12 +1403,13 @@ export class InkKitEditor {
   ): Promise<PrintableDocument> {
     const snapshot = this.snapshot(expectedGeneration)
     const state = this.editor.ctx.get(editorViewCtx).state
+    const doc = this.exportDocument(snapshot.text)
     const output = await this.exportContent(snapshot, async (signal) => {
       if (
         snapshot.format === 'md' &&
         !this.options.images &&
         !this.options.files &&
-        hasAuthoredImagesInLiterals(state.doc.content, (source) =>
+        hasAuthoredImagesInLiterals(doc.content, (source) =>
           this.editor.ctx.get(remarkCtx).parse(source),
         )
       )
@@ -1200,7 +1420,7 @@ export class InkKitEditor {
       return snapshot.format === 'txt'
         ? printableText(snapshot.text)
         : printableMarkdown(
-            state.doc.content,
+            doc.content,
             state.schema,
             this.options.images,
             this.context(),
@@ -1229,6 +1449,18 @@ export class InkKitEditor {
     })
   }
 
+  /**
+   * The document to export. Source typed in the source editor has not reached
+   * the formatted document, which would merge its undo steps, so a document
+   * read from the text stands in without touching history.
+   */
+  private exportDocument(text: string): ProseNode {
+    const { doc } = this.editor.ctx.get(editorViewCtx).state
+    return this.pendingSource && this.formatType === 'md'
+      ? this.editor.ctx.get(parserCtx)(text)
+      : doc
+  }
+
   async clipboardSnapshot(all = true): Promise<ClipboardOutput> {
     const snapshot = this.snapshot()
     const epoch = this.documentEpoch
@@ -1249,7 +1481,12 @@ export class InkKitEditor {
         diagrams: [],
       }
     }
-    const { doc, schema, selection } = this.editor.ctx.get(editorViewCtx).state
+    const { schema, selection } = this.editor.ctx.get(editorViewCtx).state
+    // A partial copy in the source editor reads only the selected source.
+    const doc =
+      all || this.mode !== 'source'
+        ? this.exportDocument(snapshot.text)
+        : this.editor.ctx.get(editorViewCtx).state.doc
     const selectedSource =
       !all && this.mode === 'source'
         ? sourceSelection(
@@ -1443,6 +1680,10 @@ export class InkKitEditor {
     if (this.destroyed) return
     this.destroyed = true
     this.ready = false
+    this.pendingSource = undefined
+    this.typedSteps = []
+    this.undoneSteps = []
+    this.formattedUndone = 0
     this.cancelExports()
     this.mediaPolicy()
     this.pasteController.destroy()
@@ -1779,6 +2020,7 @@ export class InkKitEditor {
           false,
           instance.plain.selectionStart,
           instance.plain.selectionEnd,
+          true,
         )
       } catch (error) {
         events.error?.(
@@ -2006,6 +2248,10 @@ export class InkKitEditor {
     this.outlineEpoch += 1
     this.sourcePreservations = new WeakMap()
     this.sourceTexts = new WeakMap()
+    this.pendingSource = undefined
+    this.typedSteps = []
+    this.undoneSteps = []
+    this.formattedUndone = 0
     this.mode = 'formatted'
     this.plainComposing = false
     this.beforePlainInput = undefined

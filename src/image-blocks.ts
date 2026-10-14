@@ -87,19 +87,6 @@ function cellDepth($pos: ResolvedPos): number {
   return 0
 }
 
-/** A list item that opens with a code fence or another block is held with an empty first paragraph,
- *  which is saved as `<br />` and read back as unsupported source once something follows the block.
- *  Anything added to such an item cannot be saved, so images go after the whole list instead. */
-function opensWithBlock(parent: ProseNode, child: ProseNode): boolean {
-  const first = parent.firstChild
-  return (
-    parent.type.name === 'list_item' &&
-    child !== first &&
-    first?.type.name === 'paragraph' &&
-    first.content.size === 0
-  )
-}
-
 export type ImagePlacement =
   { kind: 'blocks' } | { kind: 'inline' } | { kind: 'after'; pos: number }
 
@@ -127,7 +114,7 @@ export function imagePlacement(state: EditorState): ImagePlacement {
   for (let depth = $to.depth; depth > 0; depth--) {
     const node = $to.node(depth)
     const parent = $to.node(depth - 1)
-    if (node.isInline || opensWithBlock(parent, node)) continue
+    if (node.isInline) continue
     const index = $to.index(depth - 1) + 1
     if (paragraph && parent.canReplaceWith(index, index, paragraph))
       return { kind: 'after', pos: $to.after(depth) }
@@ -164,11 +151,16 @@ export function readParagraph(
   state.close()
   const parent = state.top() as
     { type: NodeType; content: ProseNode[] } | undefined
+  const content = Fragment.fromArray(parent?.content ?? [])
+  // A parent that must open with other content, such as a list item that
+  // opens with a code fence, is filled in front of it when it closes.
+  const filler = parent?.type.contentMatch.fillBefore(content)
   if (
     image &&
     type &&
+    filler &&
     parent?.type.contentMatch
-      .matchFragment(Fragment.fromArray(parent.content))
+      .matchFragment(filler.append(content))
       ?.matchType(type)
   )
     state.addNode(type, image.attrs)
