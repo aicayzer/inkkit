@@ -62,6 +62,17 @@ function literals(
   texts: string[],
 ): Array<Array<[number, number, string]> | undefined> {
   if (!texts.length) return []
+  // GFM reads an address only after `www.`, `http://` or `https://`, or
+  // around `@`, so other text needs no reading.
+  const possible = texts.map((text) => /www\.|https?:\/\/|@/i.test(text))
+  if (!possible.every(Boolean)) {
+    const read = literals(
+      ctx,
+      schema,
+      texts.filter((_, index) => possible[index]),
+    )
+    return texts.map((_, index) => (possible[index] ? read.shift() : []))
+  }
   // A leading word puts each text after a space, where an address may start,
   // and keeps it a paragraph of its own.
   const doc = schema.topNodeType.create(
