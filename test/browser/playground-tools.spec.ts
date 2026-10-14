@@ -110,9 +110,6 @@ test('typing with observation off shows keystroke timing and the buttons follow 
   ).toBeEnabled()
   const timings = (await observe(page)).timings
   expect(timings.keystrokes?.count).toBe(3)
-  await page.getByRole('button', { name: 'Time save' }).click()
-  await expect(page.getByLabel('Timing')).toContainText('Save (snapshot):')
-  expect((await observe(page)).timings.save?.dirty).toBe(true)
 })
 
 test('the status line leaves an error after the next valid edit @playground-tools', async ({

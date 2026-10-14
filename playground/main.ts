@@ -139,7 +139,6 @@ function record(error: unknown) {
   element<HTMLOutputElement>('status').value = entry.message
 }
 const keystrokeTimes: number[] = []
-let saveTime: { ms: number; characters: number; dirty: boolean } | undefined
 function percentile(sorted: number[], fraction: number) {
   return sorted[
     Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))
@@ -157,23 +156,18 @@ function timings() {
           p95: round(percentile(sorted, 0.95)!),
         }
       : null,
-    save: saveTime ?? null,
   }
 }
 function renderTimings() {
-  const { keystrokes, save } = timings()
+  const { keystrokes } = timings()
   element<HTMLOutputElement>('timing').value = [
     keystrokes
       ? `Keystrokes to next frame (last ${keystrokes.count}): last ${keystrokes.last} ms, median ${keystrokes.median} ms, 95th percentile ${keystrokes.p95} ms.`
       : 'No keystrokes measured yet.',
-    save
-      ? `Save (snapshot): ${save.ms} ms for ${save.characters} characters, ${save.dirty ? 'unsaved changes' : 'unchanged'}.`
-      : 'Save not measured yet.',
   ].join(' ')
 }
 function resetTimings() {
   keystrokeTimes.length = 0
-  saveTime = undefined
   renderTimings()
 }
 // Measured from the key press to the frame after it is handled, so long work
@@ -553,18 +547,6 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         settings.editable = editor.editable
         syncUrl()
         break
-      case 'measureSave': {
-        const start = performance.now()
-        const snapshot = editor.snapshot(generation)
-        saveTime = {
-          ms: round(performance.now() - start),
-          characters: snapshot.text.length,
-          dirty: snapshot.dirty,
-        }
-        renderTimings()
-        result = saveTime
-        break
-      }
       case 'textInput':
         result = editor.setTextInputPreferences(
           args.preferences as Parameters<
@@ -746,7 +728,6 @@ click('plain', () => {
   if (!text) throw Error('Type or paste text into the plain text box first')
   return operation('pastePlain', { text })
 })
-click('time-save', () => operation('measureSave'))
 click('generate', () => {
   const count = element<HTMLInputElement>('generate-count').value
   generated = parseGenerate(`paragraphs:${count}`)
