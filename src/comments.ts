@@ -1,6 +1,7 @@
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { isHistoryTransaction } from '@milkdown/kit/prose/history'
+import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { isImageBlock } from './image-blocks'
 import { fromMarkdown } from 'mdast-util-from-markdown'
@@ -500,6 +501,18 @@ export function assertCommentsEndWhereWritten(
       throw new Error('A comment cannot contain text that would end it early')
     allowed.set(key, remaining - 1)
   })
+}
+
+/** Marks a transaction that replaces the document with source given as written. */
+export const sourceReplacement = 'inkkit:sourceReplacement'
+
+/**
+ * Whether an edit is typed or inserted by a person in the formatted editor. A
+ * history step restores a document the editor already accepted, and a source
+ * replacement is the author's own text, so neither is checked.
+ */
+export function isWrittenEdit(tr: Transaction): boolean {
+  return !isHistoryTransaction(tr) && !tr.getMeta(sourceReplacement)
 }
 
 export function isComment(node: ProseNode): boolean {

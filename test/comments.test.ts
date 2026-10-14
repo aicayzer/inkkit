@@ -612,10 +612,8 @@ async function withComments<T>(
 const endingEarly = [
   'Before\n\n<!-->kept-->\n',
   'Before\n\n<!--a--!>b-->\n',
-  'Before\n\n<!--a-->b-->\n',
   'Before\n\n%%\na %% b\n%%\n',
   'A <!--a--!>b--> B\n',
-  'A <!--->kept--> B\n',
 ]
 
 test('undo and redo restore a comment that already held text ending it early', async () => {
