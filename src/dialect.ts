@@ -38,7 +38,7 @@ import {
   exitTable,
 } from '@milkdown/kit/preset/gfm'
 import { $node, $remark } from '@milkdown/kit/utils'
-import { autolinkInputRule } from './autolink'
+import { autolinkInputRule, autolinkLiterals } from './autolink'
 import { sourceAttribute } from './source'
 import {
   linkedSyntax,
@@ -119,11 +119,7 @@ function textAt(
 
 /** A link whose text is its own URL is written as the bare URL, the way it was typed. Only where reading
  *  it back gives the same link again: nothing may run into it at either end. */
-function writesBare(
-  node: Link,
-  parent: Parents | undefined,
-  inCell: boolean,
-): boolean {
+function writesBare(node: Link, parent: Parents | undefined): boolean {
   const [child, ...rest] = node.children
   if (
     node.title ||
@@ -144,21 +140,21 @@ function writesBare(
   const after = textAt(parent, node, 1)
   if (after && (after.type !== 'text' || !afterURL.test(after.value)))
     return false
-  // Spaces that end a cell are written as character references, which a bare URL would run into.
-  return !(
-    inCell &&
-    after?.type === 'text' &&
-    /^[ \t]+$/.test(after.value) &&
-    parent?.children.at(-1) === after
-  )
+  // Spaces at either end of a block are written as character references,
+  // which a bare URL would run into or follow without a space.
+  const edge = (text: PhrasingContent | undefined, at: 0 | -1) =>
+    text?.type === 'text' &&
+    /^[ \t]+$/.test(text.value) &&
+    parent?.children.at(at) === text
+  return !edge(before, 0) && !edge(after, -1)
 }
 
 const link: (typeof defaultHandlers)['link'] = (node, parent, state, info) =>
-  writesBare(node, parent, state.stack.includes('tableCell'))
+  writesBare(node, parent)
     ? node.url
     : defaultHandlers.link(node, parent, state, info)
 link.peek = (node, parent, state) =>
-  writesBare(node, parent, state.stack.includes('tableCell'))
+  writesBare(node, parent)
     ? node.url[0]!
     : defaultHandlers.link.peek(node, parent, state)
 
@@ -451,6 +447,7 @@ export function createDialect(
     normalizedImages,
     imageBlocks,
     autolinkInputRule,
+    autolinkLiterals,
     extendListItemSchemaForTask,
     strikethroughAttr,
     strikethroughSchema,

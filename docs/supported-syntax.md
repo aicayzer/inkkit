@@ -31,6 +31,8 @@ See the sections below for limits and [the API](api.md) for host controls. The [
 
 InkKit supports CommonMark, task lists, strikethrough, autolinks, GFM tables, footnotes and full, collapsed and shortcut reference links. Unresolved references and unsupported constructs remain editable literal source. TXT mode treats every character literally.
 
+A bare URL, `www.` address or email address links to its own text. Editing that text keeps the link following it: while the text is still a bare URL it is saved as one, and where an edit ends it, the rest is saved as plain text. A bare URL next to a space at the edge of a block is saved as `<https://example.com>`, because the space is written as `&#x20;`, which a bare URL would take in.
+
 ## Mermaid
 
 Fences labelled `mermaid` retain editable source beside an offline preview. Supported types are `flowchart`/`graph`, `sequenceDiagram`, `classDiagram`, `stateDiagram`/`stateDiagram-v2`, `erDiagram` and `pie`, using Mermaid 12.1.0 and the default theme and system fonts. Other types remain editable source with a reported preview failure. Rendering is limited to 30,000 source characters and 500 edges; portable PNGs are bounded to 4096 pixels on either axis.

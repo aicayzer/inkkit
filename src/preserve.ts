@@ -456,6 +456,14 @@ function retainSource(
         signature(after.children[after.children.length - 1 - suffix]!)
     )
       suffix++
+    // A bare URL takes in text written against it, so one beside a change is
+    // written again with that change rather than kept as authored.
+    const bare = (node: SourceNode | undefined) =>
+      node?.type === 'link' &&
+      !/^[<[]/.test(source.slice(node.position?.start.offset ?? 0))
+    if (prefix && bare(before.children[prefix - 1])) prefix--
+    if (suffix && bare(before.children[before.children.length - suffix]))
+      suffix--
     // A cell's range includes its pipe and padding, which would hide a space
     // now at the edge of its content from the boundary check.
     const cell =
