@@ -94,10 +94,10 @@ Pasting HTML from a web page, notes app or word processor imports readable conte
 
 Custom elements, `iframe`, `script`, `svg`, `math`, `object` and other unrecognised elements remain literal source, with their content unchanged, including any table inside them, when that source reads back as written. Authored HTML comments import as author comments. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.
 
-HTML import keeps only structure that reads back the same. Before pasted or dropped HTML is inserted, InkKit writes it as Markdown and reads that Markdown back. A part that would read back as different structure, or that would hold a link address that HTML import refuses, is imported in a simpler form that reads back the same:
+HTML import keeps only structure that reads back the same. Before pasted or dropped HTML is inserted, InkKit writes it as Markdown and reads that Markdown back. A part that would read back as different structure, or whose Markdown would hold a link address that HTML import refuses when read as GitHub Flavored Markdown or strict CommonMark, is imported in a simpler form that reads back the same:
 
 - Literal source, including source copied from InkKit, stays literal when it reads back as one block that ends where it was written and holds no refused address. Otherwise it imports as a code block with the same text.
-- A `%%` comment whose text other Markdown apps would read as formatting or links imports as an HTML comment. A comment whose text would end it early, in InkKit or in a browser, imports as plain text.
+- A `%%` comment whose text other Markdown apps would read as formatting or links imports as an HTML comment. A comment whose text would end it early, as described under comments, imports as plain text.
 - A callout title taken from the callout's visible text is saved with its punctuation escaped, so it reads back as the same plain title.
 - A reference or footnote label and a reference definition title are saved on one line, with each line break replaced by a space, and a bracket in a label is escaped. A code fence with an unclosed or invalid fence marker imports as an ordinary fence.
 - Text that Markdown reads as a link, such as a bare web address, imports as that link.
