@@ -227,9 +227,30 @@ export function tableCommand(
     view.dispatch(tr)
     return true
   }
+  if (command === 'addRowBefore' || command === 'addRowAfter') {
+    if (!isInTable(view.state)) return false
+    const { tableStart } = selectedRect(view.state)
+    const add = command === 'addRowBefore' ? addRowBefore : addRowAfter
+    return add(view.state, (tr) => {
+      // GFM keeps alignment once per column, so a new row's cells take the
+      // header's; otherwise they read back aligned and the edit is refused.
+      const table = tr.doc.nodeAt(tableStart - 1)!
+      const map = TableMap.get(table)
+      for (let row = 1; row < map.height; row++)
+        for (let col = 0; col < map.width; col++) {
+          const offset = map.map[row * map.width + col]!
+          const cell = table.nodeAt(offset)!
+          const { alignment } = table.nodeAt(map.map[col]!)!.attrs
+          if (cell.attrs.alignment !== alignment)
+            tr.setNodeMarkup(tableStart + offset, undefined, {
+              ...cell.attrs,
+              alignment,
+            })
+        }
+      view.dispatch(tr)
+    })
+  }
   const actions = {
-    addRowBefore,
-    addRowAfter,
     addColumnBefore,
     addColumnAfter,
     deleteRow,
