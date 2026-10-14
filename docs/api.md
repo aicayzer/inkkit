@@ -66,8 +66,6 @@ Loading releases focus from the editor's active text surface and does not reveal
 
 `editReferenceDefinition(label, destination, title?)` updates the shared link definition and returns whether it exists. Omitted title retains the current title. `format('link', destination)` edits that shared definition when the selection is in a reference link.
 
-Typing in the Markdown source editor does not parse the document. The typed text is authoritative at once: `snapshot()`, the `changed` event, the revision and the textarea all use it. The formatted document takes it in when something needs it: switching to formatted mode, `clipboardSnapshot()`, `printableSnapshot()`, replacement, paste or any other source edit that is not typing. That step is as slow as loading the document, and it is one undo step in the formatted history. Undo and redo of typed source in between work on the text alone; a pause of more than 500 ms in typing ends an undo step.
-
 These operations retain the existing document, generation and composition checks. Footnote and definition editing are disabled in TXT and Markdown source modes. Hosts continue to import only the public facade.
 
 ## Highlights, callouts and comments
@@ -120,6 +118,8 @@ Ordinary paste accepts rectangular tab-separated spreadsheet text and supported 
 `replaceSource(text, expectedGeneration?)` replaces the complete current source as one isolated undo operation, returning `false` for identical source. It accepts unsupported syntax, incomplete Markdown and TXT literally. Snapshots retain the actual complete source, including Markdown spelling changes that render identically. Source input retains unchanged line endings and uses the document’s existing line ending for inserted lines. Switching to formatted editing does not save or canonicalise the source.
 
 `undo(expectedGeneration?)` and `redo(expectedGeneration?)` use the same document history in both editing modes and TXT. Each returns whether it applied a history operation. Revisions advance for actual edits and history operations; dirty state compares exact current source with the loaded source. Loading another document resets history. Composition, pending imports, stale generations and destruction retain the existing guards.
+
+Typing in the Markdown source editor does not parse the document. The typed text is authoritative at once: `snapshot()`, the `changed` event, the revision and the textarea all use it. The formatted document takes it in when something needs it: switching to formatted mode, `clipboardSnapshot()`, `printableSnapshot()`, replacement, paste or any other source edit that is not typing. That step is as slow as loading the document, and it is one undo step in the formatted history. Undo and redo of typed source in between work on the text alone; a pause of more than 500 ms in typing ends an undo step.
 
 Source-mode typing and paste edit source literally; an explicitly supplied clipboard `markdown` takes precedence over plain text. Ordinary whole-document copy and printing retain the existing semantic Markdown exports. A source selection exports its exact selected substring as `ClipboardOutput.markdown`, without unselected definitions. Ordinary text/HTML interprets that selection as a standalone Markdown fragment: complete constructs are semantic, while incomplete and unsupported constructs remain literal. Intersections with complete author comments in the whole document are excluded even when only a comment body is selected. Code and TXT stay literal.
 
