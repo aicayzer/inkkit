@@ -759,3 +759,27 @@ test('reload promptly cancels a held image decoder and releases its object URL',
     },
   )
 })
+
+test('print keeps mail and phone links and drops links with an unsafe address', () =>
+  run(async (editor) => {
+    editor.loadDocument({
+      ...input,
+      text: '[site](https://example.com/) [mail](mailto:ada@example.com) [call](tel:+441234567890) [run](javascript:run) [file](file:///etc/hosts) [rel](notes/today.md)\n',
+    })
+    const printed = await editor.printableSnapshot(1)
+    const links = [
+      ...new DOMParser()
+        .parseFromString(printed.html, 'text/html')
+        .querySelectorAll('a'),
+    ]
+    expect(
+      links.map((link) => [link.textContent, link.getAttribute('href')]),
+    ).toEqual([
+      ['site', 'https://example.com/'],
+      ['mail', 'mailto:ada@example.com'],
+      ['call', 'tel:+441234567890'],
+      ['run', null],
+      ['file', null],
+      ['rel', 'notes/today.md'],
+    ])
+  }))

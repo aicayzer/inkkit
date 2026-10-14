@@ -476,3 +476,312 @@ test('InkKit Markdown wrapper maps image slots after picture is replaced', async
   )
   expect(markdown).toBe('![A](images/2.png)\n\n![B](images/1.png)\n')
 })
+
+// WebKit rewrites a space beside an inline element on its way to the clipboard.
+const converted = (text = '&nbsp;') =>
+  `<span class="Apple-converted-space">${text}</span>`
+const webkitStyle =
+  'style="caret-color: rgb(0, 0, 0); color: rgb(0, 0, 0); font-family: Times; white-space: normal;"'
+
+test('WebKit converted spaces import as ordinary spaces beside links', async () => {
+  const after = await fromHTML(
+    `<meta charset='utf-8'><a href="https://example.com" ${webkitStyle}>The quote</a><span ${webkitStyle}>${converted()}for the record</span>`,
+  )
+  expect(after).toBe('[The quote](https://example.com) for the record\n')
+  expect(after).not.toContain(' ')
+  const before = await fromHTML(
+    `<p><span ${webkitStyle}>See${converted()}</span><a href="https://example.com" ${webkitStyle}>the quote</a></p>`,
+  )
+  expect(before).toBe('See [the quote](https://example.com)\n')
+  expect(before).not.toContain(' ')
+})
+
+test('a run of WebKit converted spaces collapses like ordinary spaces', async () => {
+  const markdown = await fromHTML(
+    `<p>one${converted('&nbsp; &nbsp; ')}<strong>two</strong>${converted('&nbsp;&nbsp;')}three</p>`,
+  )
+  expect(markdown).toBe('one **two** three\n')
+})
+
+test('WebKit converted spaces at the edge of a block add nothing', async () => {
+  expect(
+    await fromHTML(`<p>${converted()}<em>edge</em>${converted()}</p>`),
+  ).toBe('*edge*\n')
+})
+
+test('WebKit converted spaces keep their width in code', async () => {
+  const inline = await fromHTML(
+    `<p>run <code>a${converted('&nbsp;&nbsp;&nbsp;')}b</code> now</p>`,
+  )
+  expect(inline).toBe('run `a   b` now\n')
+  const block = await fromHTML(
+    `<pre><code>if (x) {\n${converted('&nbsp; &nbsp; ')}return${converted()}y\n}</code></pre>`,
+  )
+  expect(block).toContain('if (x) {\n    return y\n}')
+  expect(block).not.toContain(' ')
+  const styled = await fromHTML(
+    `<div style="white-space: pre">a${converted('&nbsp; &nbsp;')}<span>b</span></div>`,
+  )
+  expect(styled.replace(/&#x20;/g, ' ')).toContain('a   b')
+  expect(styled).not.toContain(' ')
+})
+
+test('WebKit converted spaces in a table cell import as ordinary spaces', async () => {
+  const table = (space: string) =>
+    `<p>Intro</p><table><tr><th>Name</th></tr><tr><td>Ada${space}<a href="https://example.test/">Lovelace</a></td></tr></table>`
+  const markdown = await fromHTML(table(converted()))
+  expect(markdown).toBe(await fromHTML(table(' ')))
+  expect(markdown).toContain('Lovelace')
+  expect(markdown).not.toContain('\u00a0')
+})
+
+test('authored non-breaking spaces stay when a converted space is beside them', async () => {
+  expect(await fromHTML('<p>a&nbsp;b</p>')).toBe('a b\n')
+  expect(await fromHTML(`<p>a&nbsp;${converted()}b</p>`)).toBe('a  b\n')
+  expect(
+    await fromHTML(`<p>a${converted()}<span>&nbsp;</span>b&nbsp;&nbsp;c</p>`),
+  ).toBe('a  b  c\n')
+  expect(
+    await fromHTML(
+      '<p><span class="converted-space">&nbsp;</span>x<span>&nbsp;</span>y</p>',
+    ),
+  ).toBe(' x y\n')
+})
+
+test('a converted-space span in literal source is kept as written', async () => {
+  const widget = `<custom-x>a${converted()}b</custom-x>`
+  expect(await fromHTML(widget)).toContain(widget)
+})
+
+test('a spreadsheet cell with a converted space keeps an ordinary space', async () => {
+  const table = (space: string) =>
+    `<table><tbody><tr><td>Ada${space}<a href="https://example.test/">Lovelace</a></td><td>b</td></tr></tbody></table>`
+  const markdown = await fromHTML(table(converted()))
+  expect(markdown).toBe(await fromHTML(table(' ')))
+  expect(markdown).toContain('Lovelace')
+  expect(markdown).not.toContain('\u00a0')
+})
+
+const linkOf = (href: string, text = 'text') =>
+  `<p>before <a href="${href}">${text}</a> after</p>`
+
+test('pasted links keep http, https, mailto, tel, relative and fragment addresses', async () => {
+  for (const href of [
+    'https://example.com/a?b=c#d',
+    'HTTP://EXAMPLE.COM/',
+    'mailto:ada@example.com',
+    'tel:+441234567890',
+    '/notes/today.md',
+    './today.md',
+    '../up/today.md',
+    'today.md',
+    'folder/note.md#heading',
+    '?query=1',
+    '#section',
+    '//example.com/path',
+    ' https://example.com/padded ',
+  ]) {
+    const markdown = await fromHTML(linkOf(href))
+    expect(markdown, href).toMatch(/^before \[text\]\(.+\) after\n$/)
+  }
+})
+
+test('pasted links with script or unknown schemes keep their text without the link', async () => {
+  for (const href of [
+    'javascript:alert(1)',
+    'JavaScript:alert(1)',
+    ' \tjavascript:alert(1)',
+    '\u0001javascript:alert(1)',
+    'java\tscript:alert(1)',
+    'java\nscript:alert(1)',
+    'java\u0000script:alert(1)',
+    'jav&#x61;script:alert(1)',
+    '&#106;avascript:alert(1)',
+    '&#x6A;avascript&colon;alert(1)',
+    '&#0000106avascript:alert(1)',
+    'javascript&#58;alert(1)',
+    '​javascript:alert(1)',
+    'vbscript:msgbox(1)',
+    'data:text/html,<b>x</b>',
+    'DATA:text/html;base64,PGI+eDwvYj4=',
+    'file:///etc/hosts',
+    'ftp://example.com/',
+    'slack://channel?id=1',
+    'x-custom:thing',
+    ':nothing',
+    'blob:https://example.com/id',
+  ]) {
+    expect(await fromHTML(linkOf(href)), href).toBe('before text after\n')
+  }
+})
+
+test('pasted links with a script scheme drop only the link, not its content', async () => {
+  expect(
+    await fromHTML(
+      '<p><a href="javascript:void(0)"><strong>bold</strong> and <em>more</em></a></p>',
+    ),
+  ).toBe('**bold** and *more*\n')
+  expect(
+    await fromHTML(
+      '<p><a href="javascript:void(0)">a <a href="https://example.com/">b</a></a></p>',
+    ),
+  ).toMatch(/^a \[b\]\(https:\/\/example\.com\/\)\n$/)
+  expect(
+    await fromHTML(
+      '<table><tr><th>Link</th></tr><tr><td><a href="vbscript:x">cell</a></td></tr></table><p>after</p>',
+    ),
+  ).toBe('| Link |\n| ---- |\n| cell |\n\nafter\n')
+  expect(
+    await fromHTML(
+      '<ul><li><a href="javascript:x">item</a></li><li><a href="https://example.com/">ok</a></li></ul>',
+    ),
+  ).toBe('- item\n- [ok](https://example.com/)\n')
+})
+
+test('a standalone table with script-scheme links keeps their text without the link', async () => {
+  const markdown = await fromHTML(
+    '<table><tbody><tr><td><a href="javascript:alert(1)">one</a></td><td><a href="https://example.com/">two</a></td></tr></tbody></table>',
+  )
+  expect(markdown).not.toMatch(/javascript/i)
+  expect(markdown).toContain('one')
+  expect(markdown).toContain('[two](https://example.com/)')
+})
+
+test('pasted images never carry their address into the Markdown', async () => {
+  for (const src of [
+    'javascript:alert(1)',
+    '&#106;avascript:alert(1)',
+    'vbscript:x',
+    'data:text/html,<b>x</b>',
+  ]) {
+    const markdown = (
+      await pasted({ html: `<p><img src="${src}" alt="Picture"></p>` })
+    ).markdown
+    expect(markdown, src).not.toMatch(/script|data:/i)
+    expect(markdown, src).toContain('Picture')
+  }
+  expect(
+    (
+      await pasted({
+        html: '<p><a href="javascript:x"><img src="javascript:y" alt="Linked"></a></p>',
+        images: [{ bytes: new Uint8Array([1]), mimeType: 'image/png' }],
+      })
+    ).markdown,
+  ).toBe('![Linked](images/photo.png)\n')
+})
+
+test('Markdown source keeps authored link addresses unchanged', async () => {
+  const source = '[run](javascript:run) and [site](https://example.com/)\n'
+  expect((await pasted({ markdown: source })).markdown).toBe(source)
+  expect((await pasted({ text: source })).markdown).toBe(source)
+  expect(
+    (await pasted({ text: source, html: '<p>ignored</p>', markdown: source }))
+      .markdown,
+  ).toBe(source)
+  expect(
+    (await pasted({ text: source, plainText: true })).markdown.replace(
+      /\\/g,
+      '',
+    ),
+  ).toContain('[run](javascript:run)')
+})
+
+test('a link whose HTML comes from InkKit keeps the authored Markdown unchanged', async () => {
+  const source = '[run](javascript:run)'
+  const markdown = (
+    await pasted({
+      html: `<div data-inkkit-markdown="${source}"><p><a href="https://example.com/">run</a></p></div>`,
+    })
+  ).markdown
+  expect(markdown).toBe(source + '\n')
+})
+
+// A drop or an editor-level HTML insert reaches the schema's parse rules
+// without the paste importer.
+async function dropped(html: string): Promise<string> {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const editor = await Editor.make()
+    .config((ctx) => {
+      ctx.set(rootCtx, root)
+      ctx.set(defaultValueCtx, '')
+      ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
+    })
+    .use(createDialect(true))
+    .create()
+  try {
+    editor.ctx
+      .get(editorViewCtx)
+      .pasteHTML(html, new Event('paste') as ClipboardEvent)
+    return serialize(editor.ctx)
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+}
+
+const definition = (url: string) =>
+  `<div data-inkkit-reference-definition="x" data-inkkit-label="x" data-inkkit-url="${url}" class="inkkit-reference-definition">[x]: ${url}</div>`
+const reference = (href: string) =>
+  `<p><a href="${href}" data-inkkit-reference="x" data-inkkit-label="x" data-inkkit-reference-type="full">text</a></p>`
+
+test('a reference definition in pasted HTML keeps only a safe address', async () => {
+  const kept = await pasted({ html: definition('https://example.com/') })
+  expect(
+    kept.dom.querySelectorAll('.inkkit-reference-definition'),
+  ).toHaveLength(1)
+  for (const url of [
+    'javascript:run',
+    '&#106;avascript:run',
+    'data:text/html,x',
+  ]) {
+    const { dom, markdown } = await pasted({
+      html: `${reference('https://example.com/')}${definition(url)}`,
+    })
+    expect(
+      dom.querySelectorAll('.inkkit-reference-definition'),
+      url,
+    ).toHaveLength(0)
+    expect(markdown, url).not.toMatch(/^\[x\]: (?:javascript|data)/m)
+  }
+})
+
+test('HTML inserted without the importer keeps only safe addresses', async () => {
+  const kept = await dropped(
+    `${reference('https://example.com/')}${definition('https://example.com/')}`,
+  )
+  expect(kept).toContain('[text][x]')
+  expect(kept).toContain('[x]: https://example.com/')
+  for (const url of ['javascript:run', 'JAVASCRIPT:run', 'data:text/html,x']) {
+    const markdown = await dropped(
+      `<p><a href="${url}">plain</a></p>${reference(url)}${definition(url)}`,
+    )
+    expect(markdown, url).not.toMatch(/\]\((?:javascript|data)/i)
+    expect(markdown, url).not.toMatch(/^\[x\]: (?:javascript|data)/im)
+    expect(markdown, url).toContain('plain')
+  }
+})
+
+test('an image source with a script scheme is not kept when HTML is inserted', async () => {
+  expect(await dropped('<p><img src="images/photo.png" alt="Kept"></p>')).toBe(
+    '![Kept](images/photo.png)\n',
+  )
+  for (const src of [
+    'javascript:run',
+    ' JavaScript:run',
+    'java\tscript:run',
+    '&#106;avascript:run',
+    'vbscript:run',
+  ]) {
+    const markdown = await dropped(`<p>a<img src="${src}" alt="Picture">b</p>`)
+    expect(markdown, src).not.toMatch(/script/i)
+    expect(markdown, src).toContain('ab')
+  }
+})
+
+test('a converted space leaves literal source nested in its span unchanged', async () => {
+  const markdown = await fromHTML(
+    '<p>a<span class="Apple-converted-space">&nbsp;<custom-x>&nbsp;</custom-x></span>b</p>',
+  )
+  expect(markdown).toContain('<custom-x>&nbsp;</custom-x>')
+})

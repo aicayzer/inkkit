@@ -39,6 +39,7 @@ import {
 } from '@milkdown/kit/preset/gfm'
 import { $node, $remark } from '@milkdown/kit/utils'
 import { autolinkInputRule } from './autolink'
+import { isScriptAddress } from './link-safety'
 import { sourceAttribute } from './source'
 import {
   linkedSyntax,
@@ -315,8 +316,10 @@ const normalizedImages = imageSchema.extendSchema((base) => (ctx) => {
       {
         tag: 'img[src]',
         getAttrs(dom) {
+          const src = dom.getAttribute('src') ?? ''
+          if (isScriptAddress(src)) return false
           return {
-            src: dom.getAttribute('src') ?? '',
+            src,
             alt: dom.getAttribute('alt') ?? '',
             title: dom.getAttribute('title') ?? '',
           }
