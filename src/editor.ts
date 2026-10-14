@@ -24,6 +24,7 @@ import {
   redo as redoHistory,
 } from '@milkdown/kit/prose/history'
 import { cursor } from './cursor'
+import { blockDropRange } from './drop-placement'
 import {
   blockquoteKeymap,
   blockquoteSchema,
@@ -3027,32 +3028,8 @@ export class InkKitEditor {
 
   private insertBlocks(blocks: ProseNode[], x: number, y: number): void {
     const view = this.editor.ctx.get(editorViewCtx)
-    const { state } = view
-    const hit = view.posAtCoords({ left: x, top: y })
-    const $pos = state.doc.resolve(hit?.pos ?? state.selection.from)
-    const tr = state.tr
-    let at: number
-    if (
-      $pos.depth === 1 &&
-      $pos.parent.isTextblock &&
-      $pos.parent.content.size === 0
-    ) {
-      at = $pos.before(1)
-      tr.replaceWith(at, $pos.after(1), blocks)
-    } else {
-      // A point over a top-level leaf, such as an image, resolves beside it rather than inside.
-      const leaf =
-        $pos.depth === 0 && hit && hit.inside >= 0
-          ? state.doc.resolve(hit.inside)
-          : undefined
-      at =
-        $pos.depth > 0
-          ? $pos.after(1)
-          : leaf?.depth === 0
-            ? hit!.inside + state.doc.nodeAt(hit!.inside)!.nodeSize
-            : $pos.pos
-      tr.insert(at, blocks)
-    }
+    const { from: at, to } = blockDropRange(view, x, y)
+    const tr = view.state.tr.replaceWith(at, to, blocks)
     const end = at + blocks.reduce((size, node) => size + node.nodeSize, 0) - 1
     view.dispatch(
       tr.setSelection(TextSelection.create(tr.doc, end)).scrollIntoView(),

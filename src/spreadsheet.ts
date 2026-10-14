@@ -21,10 +21,16 @@ import {
 
 type Grid = { cells: Fragment[][]; width: number; alignment?: string[] }
 
-export function pasteSpreadsheet(ctx: Ctx, input: ClipboardInput): boolean {
+/** Pastes a spreadsheet at the selection, or at `at` for a drop, which
+ *  always lands outside a table. */
+export function pasteSpreadsheet(
+  ctx: Ctx,
+  input: ClipboardInput,
+  at?: { from: number; to: number },
+): boolean {
   const view = ctx.get(editorViewCtx)
   if (input.plainText || input.markdown != null) return false
-  const inTable = isInTable(view.state)
+  const inTable = !at && isInTable(view.state)
   if (
     input.html &&
     /data-inkkit-(?:markdown|reference|footnote|comment)/i.test(input.html)
@@ -83,10 +89,11 @@ export function pasteSpreadsheet(ctx: Ctx, input: ClipboardInput): boolean {
       ),
     ).content
     const selection = view.state.selection
-    const tr =
-      selection.$from.parent.type.name === 'paragraph' &&
-      selection.empty &&
-      selection.$from.parent.content.size === 0
+    const tr = at
+      ? view.state.tr.replaceWith(at.from, at.to, content)
+      : selection.$from.parent.type.name === 'paragraph' &&
+          selection.empty &&
+          selection.$from.parent.content.size === 0
         ? view.state.tr.replaceWith(
             selection.$from.before(),
             selection.$from.after(),
@@ -114,10 +121,11 @@ export function pasteSpreadsheet(ctx: Ctx, input: ClipboardInput): boolean {
     )
     const table = schema.nodes.table!.create(null, rows)
     const selection = view.state.selection
-    const tr =
-      selection.$from.parent.type.name === 'paragraph' &&
-      selection.empty &&
-      selection.$from.parent.content.size === 0
+    const tr = at
+      ? view.state.tr.replaceWith(at.from, at.to, table)
+      : selection.$from.parent.type.name === 'paragraph' &&
+          selection.empty &&
+          selection.$from.parent.content.size === 0
         ? view.state.tr.replaceWith(
             selection.$from.before(),
             selection.$from.after(),

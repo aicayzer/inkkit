@@ -7,11 +7,12 @@ import {
   Slice,
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
 import { importableSlice } from './html-import'
+import { blockDropRange } from './drop-placement'
 import { isImage } from './image-blocks'
 import {
   collapseClipboardWhitespace,
@@ -90,40 +91,39 @@ export class PasteController {
                 })
                 return false
               },
+              // A drop of HTML from outside the editor imports as a paste of
+              // whole blocks, placed as dropped images are. ProseMirror keeps
+              // moves within the editor and drops of plain text.
               drop: (view, event) => {
-                this.claimed = dropPoint(view, event) != null
-                queueMicrotask(() => {
-                  this.claimed = false
-                })
-                return false
+                const data = event.dataTransfer
+                if (
+                  !data?.getData('text/html') ||
+                  !view.editable ||
+                  view.dragging
+                )
+                  return false
+                event.preventDefault()
+                const target = blockDropRange(
+                  view,
+                  event.clientX,
+                  event.clientY,
+                )
+                view.focus()
+                void this.run(
+                  {
+                    text: data.getData('text/plain'),
+                    html: data.getData('text/html'),
+                    plainText: this.options.literalText?.() ?? false,
+                  },
+                  [...data.files].filter((file) =>
+                    file.type.startsWith('image/'),
+                  ),
+                  target,
+                ).catch((error) => options.onError?.(error))
+                return true
               },
             },
-            // A drop from outside the editor imports as a paste at the drop
-            // point. Moving content within the editor stays ProseMirror's.
-            handleDrop: (view, event) => {
-              this.claimed = false
-              const at = dropPoint(view, event)
-              if (at == null) return false
-              const data = event.dataTransfer!
-              view.dispatch(
-                view.state.tr.setSelection(
-                  TextSelection.near(view.state.doc.resolve(at)),
-                ),
-              )
-              view.focus()
-              void this.run(
-                {
-                  text: data.getData('text/plain'),
-                  html: data.getData('text/html'),
-                  plainText: this.options.literalText?.() ?? false,
-                },
-                [...data.files].filter((file) =>
-                  file.type.startsWith('image/'),
-                ),
-              ).catch((error) => options.onError?.(error))
-              return true
-            },
-            // Drops and pastes that ProseMirror inserts itself.
+            // Pastes and drops that ProseMirror inserts itself.
             transformPasted: (slice, view, plain) =>
               this.claimed || plain || view.dragging
                 ? slice
@@ -189,7 +189,12 @@ export class PasteController {
         'The document changed while images were importing.',
       )
   }
-  private async run(input: ClipboardInput, files: File[] = []): Promise<void> {
+  /** Imports the input at the selection, or in place of `target`. */
+  private async run(
+    input: ClipboardInput,
+    files: File[] = [],
+    target?: Anchor,
+  ): Promise<void> {
     if (this.dead)
       throw new InkKitError('destroyed', 'The editor was destroyed.')
     if (this.pending)
@@ -206,10 +211,11 @@ export class PasteController {
         'composition',
         'Finish composing text before pasting.',
       )
-    const operation: Anchor = {
-      from: view.state.selection.from,
-      to: view.state.selection.to,
-    }
+    const operation: Anchor = target
+      ? { ...target }
+      : { from: view.state.selection.from, to: view.state.selection.to }
+    const inCode = () =>
+      view.state.doc.resolve(this.anchor(operation).from).parent.type.spec.code
     this.active = operation
     this.options.onPendingChanged?.()
     try {
@@ -224,13 +230,15 @@ export class PasteController {
       const schema = view.state.schema
       let slice: Slice
       const plainText =
-        input.plainText ||
-        this.options.literalText?.() ||
-        view.state.selection.$from.parent.type.spec.code
+        input.plainText || this.options.literalText?.() || inCode()
       if (
         !plainText &&
         input.markdown == null &&
-        pasteSpreadsheet(ctx, { ...input, images })
+        pasteSpreadsheet(
+          ctx,
+          { ...input, images },
+          target && this.anchor(operation),
+        )
       )
         return
       const markdown = plainText
@@ -238,7 +246,7 @@ export class PasteController {
         : (input.markdown ??
           (input.html ? markdownFromHTML(input.html) : undefined))
       if (plainText) {
-        if (view.state.selection.$from.parent.type.spec.code) {
+        if (inCode()) {
           const anchor = this.anchor(operation)
           view.dispatch(
             view.state.tr.insertText(input.text, anchor.from, anchor.to),
@@ -597,6 +605,15 @@ export class PasteController {
           slice.openEnd,
         )
       }
+      // A drop inserts whole blocks, so none joins the block beside it.
+      if (target)
+        slice = new Slice(
+          slice.content.firstChild?.isInline
+            ? Fragment.from(schema.nodes.paragraph!.create(null, slice.content))
+            : slice.content,
+          0,
+          0,
+        )
       const insertion = view.state.doc.resolve(anchor.from)
       // An isolated block such as a table cannot fit inside an empty paragraph.
       // Replace that empty block rather than retaining a spurious spacer.
@@ -655,21 +672,6 @@ function claimsPaste(
   } catch {
     return 'plain'
   }
-}
-/**
- * Where a drop of HTML from outside the editor lands, when this controller
- * imports it: not a move within the editor, and not into code, which takes
- * the dropped text as it is.
- */
-function dropPoint(view: EditorView, event: DragEvent): number | undefined {
-  const data = event.dataTransfer
-  if (!data || !view.editable || view.dragging) return undefined
-  if (!data.getData('text/html')) return undefined
-  const found = view.posAtCoords({ left: event.clientX, top: event.clientY })
-  if (!found) return undefined
-  return view.state.doc.resolve(found.pos).parent.type.spec.code
-    ? undefined
-    : found.pos
 }
 // Inside text or an element that holds text, a comment is part of a line.
 function inlineComment(comment: Comment): boolean {

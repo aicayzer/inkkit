@@ -296,3 +296,83 @@ test('a drop and a paste of the same HTML save the same Markdown', async ({
       .toBe(pasted)
   }
 })
+
+// Drops HTML with the pointer at a fraction of the height of the element the
+// selector names, inside the editor.
+async function dropHTMLOn(
+  page: Page,
+  html: string,
+  selector: string,
+  fraction: number,
+) {
+  await page.evaluate(
+    ({ html, selector, fraction }) => {
+      const editor = document.querySelector('.ProseMirror.editor')!
+      const box = editor.querySelector(selector)!.getBoundingClientRect()
+      const data = new DataTransfer()
+      data.setData('text/plain', 'Dropped')
+      data.setData('text/html', html)
+      editor.dispatchEvent(
+        new DragEvent('drop', {
+          dataTransfer: data,
+          clientX: box.left + Math.min(40, box.width / 2),
+          clientY: box.top + box.height * fraction,
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    },
+    { html, selector, fraction },
+  )
+}
+
+for (const [name, source, selector, fraction, kept] of [
+  ['beside a rule', 'First\n\n---\n\nLast\n', 'hr', 0.5, '---'],
+  ['above a rule', 'First\n\n---\n\nLast\n', 'hr', 0, '---'],
+  [
+    'beside an image',
+    'First\n\n![Photo](images/photo.png)\n\nLast\n',
+    '.inkkit-image-block',
+    0.5,
+    '![Photo](images/photo.png)',
+  ],
+  [
+    'on a code block',
+    'First\n\n```\nlet x = 1\n```\n\nLast\n',
+    'pre',
+    0.5,
+    '```\nlet x = 1\n```',
+  ],
+  [
+    'on the top edge of a table',
+    'First\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\nLast\n',
+    'table',
+    0.05,
+    '| A | B |',
+  ],
+  [
+    'in the middle of a paragraph',
+    'First words here\n\nLast\n',
+    'p',
+    0.5,
+    'First words here',
+  ],
+] as const)
+  test(`a drop ${name} inserts blocks without changing what is there`, async ({
+    page,
+  }) => {
+    await openEmpty(page)
+    await page.evaluate(
+      (source) => window.inkkitPlayground.replaceDocument(source, 'md'),
+      source,
+    )
+    await dropHTMLOn(page, '<p>Dropped <b>here</b></p>', selector, fraction)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toContain('Dropped **here**')
+    const text = (await observe(page)).snapshot!.text
+    expect(text).toContain(kept)
+    expect(text).toContain('First')
+    expect(text).toContain('Last')
+    expect(text).toMatch(/^Dropped \*\*here\*\*$/m)
+  })
