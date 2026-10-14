@@ -17,7 +17,8 @@ header h1 {
 header p {
   margin: 0.5rem 0;
 }
-#toolbar {
+#toolbar,
+#debug-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;

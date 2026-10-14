@@ -34,27 +34,6 @@
           <option value="hold">Manual release</option>
         </select></label
       >
-      <label
-        ><input id="files-toggle" type="checkbox" /> Linked file adapters</label
-      >
-      <label
-        ><input id="second-toggle" type="checkbox" /> Second read-only
-        editor</label
-      >
-      <label
-        ><input id="observe" type="checkbox" /> Observe (slows editing)</label
-      >
-      <label
-        >Generate paragraphs
-        <input
-          id="generate-count"
-          type="number"
-          min="1"
-          max="100000"
-          value="4000"
-      /></label>
-      <button id="generate">Generate document</button>
-      <button id="time-save">Time save</button>
       <button id="reset">Reset fixture</button>
       <button id="replace-document">Replace document</button>
       <button id="read-only">Make read-only</button>
@@ -132,6 +111,27 @@
       <div id="editor" aria-label="Fixture editor"></div>
       <div id="second-editor" hidden aria-label="Second fixture editor"></div>
     </main>
+    <nav id="debug-toolbar" aria-label="Debugging controls">
+      <label
+        ><input id="files-toggle" type="checkbox" /> Linked file adapters</label
+      >
+      <label
+        ><input id="second-toggle" type="checkbox" /> Second read-only
+        editor</label
+      >
+      <label><input id="observe" type="checkbox" /> Observe</label>
+      <label
+        >Generate paragraphs
+        <input
+          id="generate-count"
+          type="number"
+          min="1"
+          max="100000"
+          value="4000"
+      /></label>
+      <button id="generate">Generate document</button>
+      <button id="time-save">Time save</button>
+    </nav>
     <output id="status" role="status"></output>
     <output id="timing" aria-label="Timing"></output>
     <details open>
