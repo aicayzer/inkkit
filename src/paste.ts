@@ -19,6 +19,7 @@ import {
   caretAfterInsertion,
 } from './drop-placement'
 import { isImage } from './image-blocks'
+import { hiddenCommentExit } from './hidden-comments'
 import {
   collapseClipboardWhitespace,
   isBlockElement,
@@ -228,6 +229,13 @@ export class PasteController {
         'composition',
         'Finish composing text before pasting.',
       )
+    // Nothing goes inside a hidden comment; it goes after the comment, as a drop would.
+    const exit = target ? undefined : hiddenCommentExit(view.state)
+    if (
+      exit !== undefined &&
+      !view.state.doc.resolve(exit).parent.inlineContent
+    )
+      target = { from: exit, to: exit }
     const operation: Anchor = target
       ? { ...target }
       : { from: view.state.selection.from, to: view.state.selection.to }
@@ -770,6 +778,7 @@ function claimsPaste(
 ): false | 'plain' | 'import' {
   const data = event.clipboardData
   if (!data || !view.editable) return false
+  if (hiddenCommentExit(view.state) !== undefined) return 'import'
   if (view.state.selection.$from.parent.type.spec.code) return false
   const metadata = data.getData('vscode-editor-data')
   if (!metadata) return 'import'

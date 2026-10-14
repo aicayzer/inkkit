@@ -32,6 +32,7 @@ import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { keymap } from '@milkdown/kit/prose/keymap'
 import { $prose } from '@milkdown/kit/utils'
 import { clipboardText } from './clipboard'
+import { removesStructure } from './hidden-comments'
 
 export type TableCommand =
   | 'insert'
@@ -257,7 +258,10 @@ export function tableCommand(
     deleteColumn,
     deleteTable,
   }
-  return actions[command as keyof typeof actions](view.state, view.dispatch)
+  // Removing a row, column or table removes any hidden comments in it.
+  return actions[command as keyof typeof actions](view.state, (tr) =>
+    view.dispatch(tr.setMeta(removesStructure, true)),
+  )
 }
 
 export function dispatchTableOperation(

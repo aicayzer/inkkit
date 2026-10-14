@@ -287,6 +287,8 @@ test.each([
   'a caret or selection in %s places the images after it and splits nothing',
   (_name, source, find, expected) =>
     run(source, (harness) => {
+      // A caret rests inside a comment only while comments are revealed.
+      harness.editor.setCommentsVisible(true)
       harness.select(harness.at(find, 1))
       placesAfter(harness, expected)
       harness.select(harness.at(find, 0), harness.at(find))
