@@ -230,7 +230,7 @@ for (const via of ['paste', 'drop'] as const) {
     })
   })
 
-  test(`comment text from HTML saves as a comment that ends where it was written (${via})`, async () => {
+  test(`comment elements in HTML save as their text (${via})`, async () => {
     await withEditor(async (session) => {
       for (const html of [
         `<p>a<span data-inkkit-comment="obsidian">x\n\n# H ${script}</span>b</p>`,
@@ -250,13 +250,14 @@ for (const via of ['paste', 'drop'] as const) {
         '<p>a<span data-inkkit-comment="obsidian">plain note</span>b</p>',
         via,
       )
-      expect(kept.text).toBe('a%%plain note%%b\n')
+      expect(kept.text).toBe('aplain noteb\n')
       const hidden = await expectReadsBack(
         session,
         '<p>a<span data-inkkit-comment="obsidian">see [l](https://example.test/)</span>b</p>',
         via,
       )
-      expect(hidden.text).toBe('a<!--see [l](https://example.test/)-->b\n')
+      expect(hidden.text).toContain('asee \\[l]')
+      expect(names(hidden.doc)).not.toContain('comment_inline')
       const text = await expectReadsBack(
         session,
         `<p>a<span data-inkkit-comment="obsidian">see ${script}</span>b</p>`,
@@ -415,15 +416,13 @@ test('typing after a dropped table that stays HTML continues after it', async ()
   })
 })
 
-test('typing after a dropped comment goes to the next text, not into the comment', async () => {
+test('typing after a drop that ends in a rule goes to the next text', async () => {
   await withEditor(async (session) => {
-    await insert(session, '<p>a</p><!-- note -->', 'drop', 'one\n\ntwo\n')
+    await insert(session, '<p>a</p><hr>', 'drop', 'one\n\ntwo\n')
     const { state } = session.view
     session.view.dispatch(state.tr.replaceSelectionWith(state.schema.text('Z')))
     expect(refusals(session)).toEqual([])
-    expect(session.editor.snapshot().text).toBe(
-      'a\n\n<!-- note -->\n\nZone\n\ntwo\n',
-    )
+    expect(session.editor.snapshot().text).toBe('a\n\n---\n\nZone\n\ntwo\n')
   })
 })
 
@@ -498,21 +497,30 @@ test('HTML that ProseMirror parses itself is still checked', async () => {
   })
 })
 
-test('HTML comments in pasted web pages import as author comments', async () => {
+test('HTML comments in pasted or dropped web pages are left out', async () => {
   await withEditor(async (session) => {
-    const block = await expectReadsBack(
-      session,
-      '<p>Before</p><!--author--><p>After</p>',
-      'paste',
-    )
-    expect(block.text).toBe('Before\n\n<!--author-->\n\nAfter\n')
-    expect(names(block.doc)).toContain('comment_block')
-    const inline = await expectReadsBack(
-      session,
-      '<p>a <!--note--> b</p>',
-      'paste',
-    )
-    expect(inline.text).toBe('a <!--note-->b\n')
+    for (const via of ['paste', 'drop'] as const) {
+      const block = await expectReadsBack(
+        session,
+        '<p>Before</p><!--note--><p>After</p>',
+        via,
+      )
+      expect(block.text).toBe('Before\n\nAfter\n')
+      expect(names(block.doc)).not.toContain('comment_block')
+      const inline = await expectReadsBack(
+        session,
+        '<p>a <!--note--> b</p>',
+        via,
+      )
+      expect(inline.text).toBe('a b\n')
+      const nested = await expectReadsBack(
+        session,
+        '<p>a</p><x-widget>shown<!--note--></x-widget><table><tr><td><!--note-->cell</td><td>x</td></tr><tr><td>y</td></tr></table>',
+        via,
+      )
+      expect(nested.text).not.toContain('note')
+      expect(nested.text).toContain('shown')
+    }
     // A browser ends this comment at once, so the rest is text.
     const ended = await expectReadsBack(
       session,
@@ -789,6 +797,19 @@ test("InkKit's own copied and dragged HTML imports as the same structure", async
       new Event('paste') as ClipboardEvent,
     )
     expect(session.errors).toEqual([])
-    expect(structure(session.view.state.doc)).toBe(structure(expected))
+    // Dragged HTML keeps what it shows: comments arrive as their text and a
+    // footnote definition that does not show its label as its body.
+    const dragged = session.view.state.doc
+    expect(names(dragged)).not.toContain('comment_inline')
+    expect(names(dragged)).not.toContain('footnote_definition')
+    for (const name of [
+      'literal_markdown',
+      'inkkit_callout',
+      'code_block',
+      'reference_definition',
+    ])
+      expect(names(dragged)).toContain(name)
+    expect(dragged.textContent).toContain('secret')
+    expect(dragged.textContent).toContain('The note.')
   })
 })

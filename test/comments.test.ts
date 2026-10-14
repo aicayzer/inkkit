@@ -4,7 +4,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import { InkKitEditor, type ImageAdapter } from '../src/index'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
-import { Fragment } from '@milkdown/kit/prose/model'
+import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { withEditor } from './harness'
 import { serialize } from '../src/dialect'
@@ -620,6 +620,8 @@ test('undo and redo restore a comment that already held text ending it early', a
   for (const source of endingEarly)
     await withComments(source, ({ editor, view, errors, commentRange }) => {
       const label = JSON.stringify(source)
+      // Removing a comment from a caret needs comments revealed.
+      editor.setCommentsVisible(true)
       const { from, to } = commentRange()
       view.dispatch(view.state.tr.delete(from, to))
       const deleted = editor.snapshot().text
@@ -638,6 +640,8 @@ test('history stays usable after a comment holding such text is restored', async
   await withComments(
     'Before\n\n<!-->kept-->\n',
     ({ editor, view, errors, commentRange }) => {
+      // Removing a comment from a caret needs comments revealed.
+      editor.setCommentsVisible(true)
       const { from, to } = commentRange()
       view.dispatch(view.state.tr.delete(from, to))
       view.dispatch(view.state.tr.insertText('Z', 1, 1))
@@ -672,6 +676,8 @@ test('typing that ends a comment early is still refused after history steps', as
   await withComments(
     'Before\n\n<!--note-->\n',
     ({ editor, view, errors, commentRange }) => {
+      // Removing a comment from a caret needs comments revealed.
+      editor.setCommentsVisible(true)
       const { from, to } = commentRange()
       view.dispatch(view.state.tr.delete(from, to))
       expect(editor.undo()).toBe(true)
@@ -679,6 +685,70 @@ test('typing that ends a comment early is still refused after history steps', as
       view.dispatch(view.state.tr.insertText('-->', at, at))
       expect(editor.snapshot().text).toBe('Before\n\n<!--note-->\n')
       expect(errors).toHaveLength(1)
+    },
+  )
+})
+
+// The browser can drop a hidden comment beside composed text; these build the
+// composition transaction it would produce.
+function compose(
+  view: EditorView,
+  caret: 'before' | 'after',
+  replace: (comment: { from: number; to: number; node: ProseNode }) => {
+    from: number
+    to: number
+    content: Fragment
+  },
+) {
+  let comment: { from: number; to: number; node: ProseNode } | undefined
+  view.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'comment_inline')
+      comment = { from: pos, to: pos + node.nodeSize, node }
+  })
+  const at = caret === 'before' ? comment!.from : comment!.to
+  view.dispatch(
+    view.state.tr.setSelection(TextSelection.create(view.state.doc, at)),
+  )
+  const { from, to, content } = replace(comment!)
+  view.dispatch(
+    view.state.tr.replaceWith(from, to, content).setMeta('composition', 1),
+  )
+}
+
+for (const [caret, expected] of [
+  ['before', 'Inline か<!-- secret --> here.\n'],
+  ['after', 'Inline <!-- secret -->か here.\n'],
+] as const)
+  test(`a composition that drops a hidden comment with the caret ${caret} it puts the comment back on its side`, async () => {
+    await withComments(
+      'Inline <!-- secret --> here.\n',
+      ({ editor, view, errors }) => {
+        compose(view, caret, ({ from, to }) => ({
+          from,
+          to,
+          content: Fragment.from(view.state.schema.text('か')),
+        }))
+        expect(editor.snapshot().text).toBe(expected)
+        expect(errors).toEqual([])
+      },
+    )
+  })
+
+test('a composition that rewrites a hidden comment along with its text does not save it twice', async () => {
+  await withComments(
+    'Inline <!-- secret --> here.\n',
+    ({ editor, view, errors }) => {
+      compose(view, 'after', ({ from, to, node }) => ({
+        from: from - 1,
+        to: to + 1,
+        content: Fragment.from([
+          view.state.schema.text(' '),
+          node,
+          view.state.schema.text('か '),
+        ]),
+      }))
+      expect(editor.snapshot().text).toBe('Inline <!-- secret -->か here.\n')
+      expect(errors).toEqual([])
     },
   )
 })

@@ -158,6 +158,21 @@ test.each([
   '<table><tr><!--PRIVATE--><th>head</th></tr><tr><td>cell</td></tr></table>',
   '<table><tr><th>head<!--PRIVATE--></th></tr><tr><td>cell</td></tr></table>',
   '<table>\n<!--\nPRIVATE\n-->\n<tr><th>head</th></tr><tr><td>cell</td></tr>\n</table>',
+])(
+  'a table whose HTML comments made it unsupported pastes as a table without them: %s',
+  (table) =>
+    run('', async (editor) => {
+      await editor.paste({
+        text: 'Before\nhead\ncell\nAfter',
+        html: `<p>Before</p>${table}<p>After</p>`,
+      })
+      expect(editor.snapshot().text).toBe(
+        'Before\n\n| head |\n| ---- |\n| cell |\n\nAfter\n',
+      )
+    }),
+)
+
+test.each([
   '<table><caption>CAPTION</caption><colgroup><col span="2"></colgroup><tr><th>head</th><th>other</th></tr><tr><td>cell</td><td>second</td></tr></table>',
   '<table><tr><th colspan="2">merged</th></tr><tr><td>first</td><td>second</td></tr></table>',
   '<table><tr><th>head</th></tr><tr><td><table><tr><td>nested</td></tr></table></td></tr></table>',
@@ -171,18 +186,26 @@ test.each([
   '<table><tr><th>head</th></tr><tr><td><p>first<br>second</p></td></tr></table>',
   '<table><caption><!--PRIVATE-->CAPTION</caption><tr><th>head</th></tr><tr><td><img src="image:opaque" alt="IMAGE"></td></tr></table>',
 ])(
-  'mixed clipboard preserves unsupported table source and private comments: %s',
+  'mixed clipboard preserves unsupported table source without its HTML comments: %s',
   (table) =>
     run('', async (editor, ctx) => {
       const html = `<p>Before</p>${table}<p>After</p>`
       const template = document.createElement('template')
       template.innerHTML = table
+      const walker = document.createTreeWalker(
+        template.content,
+        NodeFilter.SHOW_COMMENT,
+      )
+      const comments: Node[] = []
+      while (walker.nextNode()) comments.push(walker.currentNode)
+      for (const comment of comments) comment.parentNode!.removeChild(comment)
       const captured = template.content.querySelector('table')!.outerHTML
       await editor.paste({ text: 'Before\nhead\ncell\nAfter', html })
       const view = ctx.get(editorViewCtx)
       const saved = editor.snapshot().text
       const pasted = view.state.doc.toJSON()
       expect(saved).toContain(captured)
+      expect(saved).not.toContain('PRIVATE')
       expect(view.state.doc.firstChild!.textContent).toBe('Before')
       expect(view.state.doc.lastChild!.textContent).toBe('After')
       const copy = await editor.clipboardSnapshot()

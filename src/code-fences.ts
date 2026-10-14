@@ -36,6 +36,12 @@ function readFence(value: unknown): Fence | null {
     : null
 }
 
+/** Whether a fence's info string is only the language its block shows. */
+export function showsFenceInfo(fence: unknown, language: unknown): boolean {
+  const read = readFence(fence)
+  return !read || read.info.trim() === String(language ?? '')
+}
+
 export const remarkCodeFences = $remark(
   'codeFences',
   () => () => (tree: Root, file: { value: unknown }) => {
@@ -92,7 +98,14 @@ export const preservingCodeBlocks = codeBlockSchema.extendSchema(
             } catch {
               /* Ordinary code stays usable without provenance. */
             }
-            return { language: dom.dataset.language ?? '', authoredFence }
+            // A language is one word, as an info string gives it.
+            const language =
+              (dom.dataset.language ?? '').trim().split(/\s+/)[0] ?? ''
+            // The info string is the language the block shows, so words
+            // after it in the attribute are not kept.
+            if (authoredFence && !showsFenceInfo(authoredFence, language))
+              authoredFence = { ...authoredFence, info: language }
+            return { language, authoredFence }
           },
         },
       ],

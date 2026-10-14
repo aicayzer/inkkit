@@ -528,15 +528,17 @@ test('sort keys use readable clipboard content excluding author comments and ret
     },
   ))
 
-test('unsupported HTML table outside a table retains complete captured source, comments and coherent undo', () =>
+test('unsupported HTML table outside a table retains its captured source without HTML comments, and coherent undo', () =>
   run(async (editor, ctx) => {
     editor.loadDocument({ ...input, text: '' })
     const html =
       '<table><caption>Do not drop</caption><colgroup><col span="2"></colgroup><tr><td>first</td><td>second<!--private--></td></tr></table>'
+    const shown = html.replace('<!--private-->', '')
     await editor.paste({ text: 'first\tsecond', html })
-    expect(editor.snapshot().text).toContain(html)
+    expect(editor.snapshot().text).toContain(shown)
+    expect(editor.snapshot().text).not.toContain('private')
     const copied = await editor.clipboardSnapshot()
-    expect(copied.markdown).toContain(html)
+    expect(copied.markdown).toContain(shown)
     expect(copied.text).not.toContain('private')
     expect(copied.html).not.toContain('private')
     const saved = editor.snapshot().text
@@ -577,11 +579,13 @@ test('unsupported standalone image tables retain their complete raw structure wi
       html,
       images: [{ bytes: new Uint8Array([1]), mimeType: 'image/png' }],
     })
+    const shown = html.replace('<!--private-->', '')
     const saved = editor.snapshot().text
-    expect(saved).toContain(html)
+    expect(saved).toContain(shown)
+    expect(saved).not.toContain('private')
     expect(ctx.get(editorViewCtx).dom.querySelector('img')).toBeNull()
     const copy = await editor.clipboardSnapshot()
-    expect(copy.markdown).toContain(html)
+    expect(copy.markdown).toContain(shown)
     expect(copy.text).not.toContain('private')
     expect(copy.html).not.toContain('private')
     const view = ctx.get(editorViewCtx)

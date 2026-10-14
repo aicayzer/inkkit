@@ -76,6 +76,16 @@ Put the body on subsequent quoted lines. Fold markers must directly follow the c
 
 Complete HTML `<!--comments-->` and Obsidian `%%comments%%` are editable author content, including inline and multiline comments. They start hidden; hosts can reveal them with `setCommentsVisible(true)`. Markdown snapshots and explicit Markdown copy retain comments. Ordinary text, HTML, clipboard metadata and print omit them even when revealed. Code and TXT remain literal; incomplete comment syntax remains literal. HTML is never executed.
 
+While comments are hidden, editing beside them keeps them:
+
+- Backspace and Delete, including word and line deletion and any other modifier key held with them, remove the visible text next to a hidden comment and keep the comment.
+- At the edge of a paragraph, Backspace and Delete join the visible blocks on either side of a hidden block comment and put the comment after the joined block. If no visible block is on that side, or the join would put text inside a hidden comment, nothing changes.
+- Arrow keys and other caret movement never place the caret inside a hidden comment, and hiding comments moves a caret that is inside one to the visible text beside it. The exception is a note with no visible text, such as one that holds only a comment: the caret stays in the comment. There, Backspace, Delete and Enter do nothing, and typed, composed, pasted or inserted text goes into a new paragraph after the comment.
+- Any other edit from a caret that would remove a hidden comment, such as one the browser makes itself, is refused with a `preservation` error and changes nothing. A composition that the browser ends by removing a comment keeps the comment.
+- Deleting, cutting or typing over a selection removes the hidden comments inside the selection along with the text around them, and Undo restores them. A hidden comment at either end of the selection is beside the selected text and is kept. A selection that crosses the break between two paragraphs also removes any hidden block comment between them, even when it holds no other text. To remove a comment on its own, reveal comments first.
+
+Markdown reads a line that starts with an HTML comment as an HTML block, so an edit that would leave an HTML comment at the start of a paragraph, or leave a paragraph that holds only a comment, is refused with a `preservation` error.
+
 The formatted editor refuses an edit that would end a comment early, and the `error` event reports a `preservation` error. An HTML renderer ends an HTML comment at `-->` or `--!>`, and reads a comment that starts with `>` or `->` as empty, so comment text can't contain those markers or start with them. A `%%` comment ends at the next `%%`, so its text can't contain `%%`, and an inline `%%` comment can't end with `%`. Other dashes, arrows and percent signs are accepted. A comment that already contains such text loads unchanged, and edits outside it are accepted. Undo, redo, `replaceSource` and source mode restore or supply text as written and aren't checked.
 
 Comment delimiters inside footnote identifiers or link destinations are literal identifier or destination text. They are not author comments. Footnote body comments follow the ordinary comment rules.
@@ -96,7 +106,7 @@ Dropping HTML from outside the editor imports it the same way, so a drop and a p
 - Links keep their address only when it is relative, a fragment or a query, or its scheme is `http`, `https`, `mailto` or `tel`, in any letter case. Other addresses, such as `javascript:`, `data:`, `file:` and app-specific schemes, keep the link text and formatting without the link. So does an address with a control character, other than spaces, tabs and line breaks at its ends. An address is read the way a browser reads it, after HTML entities are decoded. The address of a reference definition in HTML follows the same rule. Images in pasted HTML are not saved by address: the host's image adapter stores the pixels and returns the reference, and an image source that uses a script scheme is never kept. Markdown source, whether typed or pasted as Markdown, keeps the addresses as authored. Elements that remain literal source, described below, keep their content as written.
 - Tables beside other content import with these elements in their cells. A table with an `input` in a cell, such as a checkbox, stays literal source, because the control and its state cannot be kept in a cell. A table copied on its own follows the spreadsheet paste rules below, which do not accept these elements.
 
-Custom elements, `iframe`, `script`, `svg`, `math`, `object` and other unrecognised elements remain literal source, with their content unchanged, including any table inside them, when that source reads back as written. Authored HTML comments import as author comments. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.
+Custom elements, `iframe`, `script`, `svg`, `math`, `object` and other unrecognised elements remain literal source, with their content unchanged apart from HTML comments, including any table inside them, when that source reads back as written. HTML comments are left out everywhere in pasted or dropped HTML, including inside literal source, because a page does not show them. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.
 
 Plain text and explicit Markdown are read as Markdown. A paragraph at the start or end of the pasted text joins the text at the caret, so a pasted phrase stays in the sentence it's pasted into. Spaces written before or after the text of that paragraph, on the same line, are kept where the line continues on that side of the caret. They're dropped at the start or end of a line, and spaces on a pasted line with no text are dropped too. Any other block, such as a heading, list or code block, is inserted as its own block.
 
@@ -112,6 +122,18 @@ HTML import keeps only structure that reads back the same. Before pasted or drop
 - Any other part that would read back differently first loses InkKit's metadata, such as a reference label or callout, then its formatting, keeping its text.
 
 Code blocks and literal source are inserted as their own blocks, not joined to the paragraph at the insertion point.
+
+Pasted or dropped HTML adds nothing to a note that it does not show:
+
+- HTML comments, `template`, `noscript` and `noembed` contents, and elements hidden with the `hidden` attribute or an inline `display: none` style are left out.
+- An element that InkKit writes for an author comment imports as the text it shows, not as a comment, which would start hidden.
+- HTML copied from InkKit also carries the Markdown it was copied from, which keeps reference links, their definitions and footnotes. InkKit pastes that Markdown only when, after the checks above, InkKit's clipboard HTML for it reads as the HTML it came with: the same text, formatting, addresses, images and structure. Markdown that holds comments, comment syntax in a reference or footnote label, or a code fence whose info string says more than the block's language, is not used.
+- From that Markdown, InkKit keeps a reference definition only when a pasted link uses it with the same address and title, and keeps only the first definition of each label. A wiki link stays a link only when it shows its own target; one written with other text pastes as that text. A file embed pastes as the image the HTML shows.
+- A reference definition, footnote reference or wiki link element keeps its InkKit metadata only when its text is what that metadata shows. A footnote definition keeps its label only when it starts with that label, `[label] `, as InkKit's clipboard HTML writes it. A callout keeps its authored title only when that title shows as its visible title. A code block's language is the first word of its `data-language`, and the block keeps the fence marker that InkKit records with that language as its info string. A diagram figure pastes its Mermaid source only when it holds just the diagram image, whose text alternative is that source. Otherwise each imports as what it shows.
+- A pasted or dropped callout starts expanded, so a folded body is not hidden: `-` is imported as `+`.
+- When HTML imports as nothing, the plain text that came with it is pasted instead.
+
+Ordinary copy leaves out reference definitions, because the links copied with them show their addresses. Definitions copied on their own are copied as their text, `[label]: address "title"`, and paste back as definitions.
 
 Raw HTML kept in a note, whether pasted or typed, is saved as written and is not checked for unsafe addresses or scripts. An app that renders notes must sanitize raw HTML itself.
 

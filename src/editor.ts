@@ -163,6 +163,11 @@ import {
   setCommentVisibility,
   sourceReplacement,
 } from './comments'
+import {
+  assertHiddenCommentsKept,
+  hiddenCommentExit,
+  insertAfterHiddenComment,
+} from './hidden-comments'
 import { scrollOutward, scrollWholePixels } from './scroll'
 import { PasteController } from './paste'
 import { selectionPlugin } from './selection'
@@ -1616,7 +1621,11 @@ export class InkKitEditor {
       this.replaceLiteralSelection(text, true, this.formatType === 'md')
     } else {
       const view = this.editor.ctx.get(editorViewCtx)
-      if (view.state.selection.$from.parent.type.spec.code) {
+      const inHiddenComment = hiddenCommentExit(view.state) !== undefined
+      if (
+        view.state.selection.$from.parent.type.spec.code &&
+        !inHiddenComment
+      ) {
         view.dispatch(
           view.state.tr
             .insertText(text.replace(/\r\n?/g, '\n'))
@@ -1654,9 +1663,12 @@ export class InkKitEditor {
           return
         }
         const paragraph = schema.nodes.paragraph!.create(null, children)
-        const transaction = view.state.tr
-          .replaceSelection(new Slice(Fragment.from(paragraph), 1, 1))
-          .scrollIntoView()
+        const transaction = inHiddenComment
+          ? insertAfterHiddenComment(view.state, Fragment.from(paragraph))
+          : view.state.tr
+              .replaceSelection(new Slice(Fragment.from(paragraph), 1, 1))
+              .scrollIntoView()
+        if (!transaction) return
         try {
           this.currentText(transaction.doc)
         } catch (error) {
@@ -1856,6 +1868,8 @@ export class InkKitEditor {
             const next = this.state.apply(tr)
             if (!instance.loading) {
               try {
+                if (!instance.literalSurface)
+                  assertHiddenCommentsKept(this.state, tr, next.doc)
                 instance.assertPreserved(
                   this.state.doc,
                   next.doc,

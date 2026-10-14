@@ -1,7 +1,12 @@
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { isHistoryTransaction } from '@milkdown/kit/prose/history'
-import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
+import {
+  Plugin,
+  PluginKey,
+  type EditorState,
+  type Transaction,
+} from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { isImageBlock } from './image-blocks'
 import { fromMarkdown } from 'mdast-util-from-markdown'
@@ -386,22 +391,9 @@ function commentNode(inline: boolean) {
     code: true,
     defining: true,
     attrs: { syntax: { default: 'html' }, block: { default: !inline } },
-    parseDOM: [
-      {
-        tag: `${inline ? 'span' : 'div'}[data-inkkit-comment]`,
-        preserveWhitespace: 'full',
-        getAttrs(dom) {
-          const syntax =
-            dom.getAttribute('data-inkkit-comment') === 'obsidian'
-              ? 'obsidian'
-              : 'html'
-          // Text that would end the comment early would leave the rest as
-          // Markdown, so it stays plain text.
-          if (commentTextEndsEarly(syntax, dom.textContent ?? '')) return false
-          return { syntax }
-        },
-      },
-    ],
+    // A comment element in inserted HTML shows its text, so it imports as
+    // that text rather than as a comment, which starts hidden.
+    parseDOM: [],
     toDOM: (node) => [
       inline ? 'span' : 'div',
       {
@@ -456,6 +448,9 @@ export const commentVisibility = $prose(
       },
     }),
 )
+export function commentsVisible(state: EditorState): boolean {
+  return visibilityKey.getState(state) ?? false
+}
 export function setCommentVisibility(view: EditorView, visible: boolean): void {
   if (visibilityKey.getState(view.state) === visible) return
   view.dispatch(
@@ -526,7 +521,7 @@ export function isComment(node: ProseNode): boolean {
 }
 
 // Authored reference metadata can retain comments after their visible nodes are removed.
-function commentProvenance(value: unknown): boolean {
+export function commentProvenance(value: unknown): boolean {
   if (typeof value !== 'string') return false
   const visit = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.some(visit)

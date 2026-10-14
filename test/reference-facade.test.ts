@@ -450,3 +450,20 @@ test('explicit Markdown replacing a reference selection retains independent inco
     expect(links.Revised).toBe('https://example.com/original')
     expect(links.Retained).toBe('https://example.com/destination')
   }))
+
+test('a reference definition copied on its own copies as its text and pastes back', () =>
+  run(async (editor, ctx) => {
+    editor.loadDocument({ ...input, text: 'Text\n\n[Ref]: /target "Title"\n' })
+    const view = ctx.get(editorViewCtx)
+    const doc = view.state.doc
+    view.dispatch(
+      view.state.tr.setSelection(
+        NodeSelection.create(doc, doc.content.size - doc.lastChild!.nodeSize),
+      ),
+    )
+    const output = await editor.clipboardSnapshot(false)
+    expect(output.text).toBe('[Ref]: /target "Title"')
+    editor.loadDocument({ ...input, generation: 2, text: '' })
+    await editor.paste({ text: output.text, html: output.html })
+    expect(editor.snapshot().text).toBe('[Ref]: /target "Title"\n')
+  }))
