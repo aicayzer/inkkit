@@ -23,7 +23,7 @@ import {
   undo as undoHistory,
   redo as redoHistory,
 } from '@milkdown/kit/prose/history'
-import { cursor } from '@milkdown/kit/plugin/cursor'
+import { cursor } from './cursor'
 import {
   blockquoteKeymap,
   blockquoteSchema,

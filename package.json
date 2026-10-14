@@ -71,6 +71,7 @@
     "micromark-extension-highlight-mark": "1.2.0",
     "micromark-util-normalize-identifier": "^2.0.1",
     "micromark-util-types": "^2.0.3",
+    "prosemirror-drop-indicator": "0.1.4",
     "prosemirror-search": "^1.1.1"
   },
   "devDependencies": {
