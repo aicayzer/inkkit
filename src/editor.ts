@@ -582,6 +582,9 @@ export class InkKitEditor {
   private pendingSource?: TypedSource
   private typedSteps: TypedSource[] = []
   private undoneSteps: TypedSource[] = []
+  // Formatted-history undos taken while source steps were undone, which a
+  // redo replays before it reaches those steps.
+  private formattedUndone = 0
   private lastSourceInput = 0
   private syncingSource = false
   private mode: EditingMode = 'formatted'
@@ -1032,6 +1035,9 @@ export class InkKitEditor {
       throw new RangeError('Editing mode must be source or formatted')
     if (this.formatType === 'txt' || this.mode === mode) return false
     this.settleSource()
+    // Source steps that were undone cannot be redone from the other mode.
+    this.undoneSteps = []
+    this.formattedUndone = 0
     const view = this.editor.ctx.get(editorViewCtx)
     const focused = this.literalSurface
       ? this.plain.ownerDocument.activeElement === this.plain
@@ -1136,6 +1142,7 @@ export class InkKitEditor {
     if (previous && !continuing) this.rememberTypedStep(previous)
     this.lastSourceInput = now
     this.undoneSteps = []
+    this.formattedUndone = 0
     const pending: TypedSource = {
       text,
       from: length,
@@ -1322,20 +1329,30 @@ export class InkKitEditor {
 
   undo(expectedGeneration?: number): boolean {
     this.assertMutation(expectedGeneration)
-    if (this.stepTypedSource('undo')) return true
+    if (this.literalSurface && this.stepTypedSource('undo')) return true
     const view = this.editor.ctx.get(editorViewCtx)
     const undone = undoHistory(view.state, view.dispatch)
-    // The steps set aside belong to the document that was just replaced.
-    if (undone) this.undoneSteps = []
+    if (undone) {
+      // Source steps that were undone come back after the formatted ones.
+      if (this.literalSurface && this.undoneSteps.length) this.formattedUndone++
+      else this.undoneSteps = []
+    }
     return undone
   }
 
   redo(expectedGeneration?: number): boolean {
     this.assertMutation(expectedGeneration)
-    if (this.stepTypedSource('redo')) return true
-    // Typing after an undo ended the formatted history's redo steps.
-    if (this.pendingSource) return false
     const view = this.editor.ctx.get(editorViewCtx)
+    if (this.literalSurface) {
+      if (this.formattedUndone > 0) {
+        this.formattedUndone--
+        if (redoHistory(view.state, view.dispatch)) return true
+        this.formattedUndone = 0
+      }
+      if (this.stepTypedSource('redo')) return true
+      // Typing after an undo ended the formatted history's redo steps.
+      if (this.pendingSource) return false
+    }
     return redoHistory(view.state, view.dispatch)
   }
 
@@ -1665,6 +1682,7 @@ export class InkKitEditor {
     this.pendingSource = undefined
     this.typedSteps = []
     this.undoneSteps = []
+    this.formattedUndone = 0
     this.cancelExports()
     this.mediaPolicy()
     this.pasteController.destroy()
@@ -2232,6 +2250,7 @@ export class InkKitEditor {
     this.pendingSource = undefined
     this.typedSteps = []
     this.undoneSteps = []
+    this.formattedUndone = 0
     this.mode = 'formatted'
     this.plainComposing = false
     this.beforePlainInput = undefined

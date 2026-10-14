@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { editorViewCtx } from '@milkdown/kit/core'
+import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { InkKitEditor, type EditorEvents } from '../src/index'
 
@@ -434,3 +434,129 @@ test('source taken into the formatted document stays apart from the next formatt
     expect(editor.undo()).toBe(true)
     expect(editor.snapshot().text).toBe(text)
   }))
+
+function typeFormatted(ctx: Ctx, character: string) {
+  const view = ctx.get(editorViewCtx)
+  view.dispatch(view.state.tr.insertText(character, 1, 1))
+}
+
+test('redo does not carry source steps into the formatted view', () =>
+  run((editor, plain, ctx, changes) => {
+    vi.useFakeTimers()
+    const text = paragraphs(3)
+    startSource(editor, plain, text, 9)
+    type(plain, 'a')
+    type(plain, '1')
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(text)
+    editor.setEditingMode('formatted', 3)
+    expect(editor.commandState().commands.redo).toBe(false)
+    expect(editor.redo()).toBe(false)
+    typeFormatted(ctx, 'Q')
+    const edited = editor.snapshot().text
+    expect(edited).toContain('QParagraph 0')
+    expect(edited).not.toContain('a1')
+    expect(changes.at(-1)).toBe(edited)
+    editor.setEditingMode('source', 3)
+    expect(plain.value).toBe(edited.replaceAll('\r\n', '\n'))
+  }))
+
+test('undo and redo run through formatted history and source steps in order', () =>
+  run((editor, plain, ctx) => {
+    vi.useFakeTimers()
+    const text = paragraphs(3)
+    editor.loadDocument({ ...document1, text })
+    typeFormatted(ctx, 'X')
+    const withX = editor.snapshot().text
+    pause()
+    editor.setEditingMode('source', 3)
+    plain.setSelectionRange(plain.value.length, plain.value.length)
+    type(plain, 'Y')
+    const withY = plain.value
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(withX)
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(text)
+    expect(editor.redo()).toBe(true)
+    expect(plain.value).toBe(withX)
+    expect(editor.redo()).toBe(true)
+    expect(plain.value).toBe(withY)
+    expect(editor.redo()).toBe(false)
+    expect(editor.snapshot().text).toBe(withY)
+  }))
+
+// A small deterministic generator, so a failure names its seed.
+function random(seed: number) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0
+    let value = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+test('random typing, undo, redo and mode switches keep every view of the text in agreement', async () => {
+  for (let seed = 1; seed <= 60; seed++) {
+    const next = random(seed)
+    const log: string[] = [`seed ${seed}:`]
+    await run((editor, plain, ctx, changes) => {
+      vi.useFakeTimers()
+      const text = paragraphs(4)
+      editor.loadDocument({ ...document1, text })
+      const view = ctx.get(editorViewCtx)
+      const agree = () => {
+        const saved = editor.snapshot().text.replaceAll('\r\n', '\n')
+        if (editor.editingMode === 'source') {
+          expect(plain.value, log.join(' ')).toBe(saved)
+        } else {
+          expect(view.state.doc.textContent, log.join(' ')).toBe(
+            ctx.get(parserCtx)(saved).textContent,
+          )
+        }
+        expect(changes.at(-1) ?? text, log.join(' ')).toBe(
+          editor.snapshot().text,
+        )
+      }
+      for (let step = 0; step < 40; step++) {
+        const choice = next()
+        const source = editor.editingMode === 'source'
+        if (choice < 0.3) {
+          const character = String.fromCharCode(97 + Math.floor(next() * 26))
+          log.push(`type:${character}`)
+          if (source) {
+            plain.setSelectionRange(3, 3)
+            type(plain, character)
+          } else typeFormatted(ctx, character)
+        } else if (choice < 0.4) {
+          log.push('pause')
+          pause()
+        } else if (choice < 0.55) {
+          log.push('undo')
+          const available = editor.commandState().commands.undo
+          expect(editor.undo(), log.join(' ')).toBe(available)
+        } else if (choice < 0.7) {
+          log.push('redo')
+          const available = editor.commandState().commands.redo
+          expect(editor.redo(), log.join(' ')).toBe(available)
+        } else if (choice < 0.8) {
+          log.push('switch')
+          editor.setEditingMode(source ? 'formatted' : 'source')
+        } else if (choice < 0.9 && source) {
+          log.push('paste')
+          editor.pasteAsPlainText('P')
+        } else {
+          // Undo as far as it goes, then redo the same number of times.
+          log.push('roundtrip')
+          const before = editor.snapshot().text
+          let undone = 0
+          while (editor.undo()) undone++
+          for (let count = 0; count < undone; count++)
+            expect(editor.redo(), log.join(' ')).toBe(true)
+          expect(editor.snapshot().text, log.join(' ')).toBe(before)
+        }
+        agree()
+      }
+    })
+    vi.useRealTimers()
+  }
+})

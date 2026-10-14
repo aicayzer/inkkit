@@ -91,3 +91,65 @@ test('a paste after typing is its own undo step and typing is not merged', async
   await page.keyboard.press('ControlOrMeta+Z')
   await expect(area).toHaveValue(original)
 })
+
+test('redo from source mode does not carry its steps into the formatted view', async ({
+  page,
+}) => {
+  const area = await openSource(page, 20)
+  await page.keyboard.type('a1')
+  await operation(page, 'undo')
+  await expect(area).toHaveValue(original)
+  await operation(page, 'editingMode', { mode: 'formatted' })
+  expect(await operation(page, 'redo')).toBe(false)
+  const editor = page.locator('.ProseMirror.editor')
+  await editor.click()
+  await page.keyboard.press('ControlOrMeta+ArrowUp')
+  await page.keyboard.type('Q')
+  const text = (await observe(page)).snapshot!.text
+  expect(text).toContain('QParagraph 0')
+  expect(text).not.toContain('a1')
+  await operation(page, 'editingMode', { mode: 'source' })
+  expect(await area.inputValue()).toBe(text)
+})
+
+test('undo and redo cross between formatted history and source steps in order', async ({
+  page,
+}) => {
+  await page.goto('/?fixture=everyday&configuration=rich')
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.inkkitPlayground?.observe().snapshot?.documentId,
+      ),
+    )
+    .toBe('fixture:everyday')
+  await page.evaluate(
+    (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+    original,
+  )
+  const editor = page.locator('.ProseMirror.editor')
+  await editor.click()
+  await page.keyboard.press('ControlOrMeta+ArrowUp')
+  await page.keyboard.type('X')
+  await page.waitForTimeout(700)
+  await operation(page, 'editingMode', { mode: 'source' })
+  const area = page.locator('textarea.inkkit-plain')
+  await area.focus()
+  await area.evaluate((element) => {
+    const area = element as HTMLTextAreaElement
+    area.setSelectionRange(area.value.length, area.value.length)
+  })
+  await page.keyboard.type('Y')
+  const withY = await area.inputValue()
+  const withX = withY.slice(0, -1)
+  expect(withX.startsWith('XParagraph 0')).toBe(true)
+  expect(await operation(page, 'undo')).toBe(true)
+  await expect(area).toHaveValue(withX)
+  expect(await operation(page, 'undo')).toBe(true)
+  await expect(area).toHaveValue(original)
+  expect(await operation(page, 'redo')).toBe(true)
+  await expect(area).toHaveValue(withX)
+  expect(await operation(page, 'redo')).toBe(true)
+  await expect(area).toHaveValue(withY)
+  expect(await operation(page, 'redo')).toBe(false)
+})
