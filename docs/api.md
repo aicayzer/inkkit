@@ -149,8 +149,13 @@ The mounted root receives `.inkkit-root`. Package rules, including table styles,
 | `--inkkit-paragraph-spacing`                                                                                                                  | About two-thirds of the editor font size.                                                              |
 | `--inkkit-accent-color`, `--inkkit-text-color`                                                                                                | `#0a84ff`, `CanvasText`.                                                                               |
 | `--inkkit-muted-color`, `--inkkit-rule-color`, `--inkkit-code-background`                                                                     | System text mixed with transparency for secondary text, borders and code background.                   |
-| `--inkkit-code-comment`, `--inkkit-code-keyword`, `--inkkit-code-string`, `--inkkit-code-number`, `--inkkit-code-title`, `--inkkit-code-attr` | Syntax highlighting colours.                                                                           |
+| `--inkkit-code-comment`, `--inkkit-code-keyword`, `--inkkit-code-string`, `--inkkit-code-number`, `--inkkit-code-title`, `--inkkit-code-attr` | Syntax highlighting colors. The defaults follow the editor color scheme.                               |
+| `--inkkit-diagram-background`, `--inkkit-diagram-text-color`, `--inkkit-diagram-error-color`                                                  | `#fff`, `#222`, `#9b2424` for the diagram preview card and its error text.                             |
 | `--inkkit-focus-width`, `--inkkit-focus-color`, `--inkkit-focus-offset`                                                                       | `2px`, editor accent, `-2px`; footnote links default to current text colour and `2px` offset.          |
+
+The editor color scheme is `--inkkit-color-scheme`, or the system setting when it is `light dark`. Default syntax colors use the light or dark palette of that scheme, so a host that forces `light` or `dark` gets matching code colors whatever the system setting.
+
+Diagram previews always use Mermaid's default light theme, whatever the editor color scheme, because the same rendering becomes the PNG for clipboard output and print. The preview card is therefore light by default in both schemes. The diagram tokens change the card around the diagram, not the colors inside it. Because the theme does not follow the scheme, a rendered diagram is cached by its source alone.
 
 Inherited legacy `--accent`, `--text`, `--muted`, `--rule`, `--code-bg`, `--mono` and `--reading-width` remain fallbacks when their new tokens are absent. Each editor root can have independent styling.
 
