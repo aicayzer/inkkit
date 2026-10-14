@@ -1,6 +1,6 @@
 # InkKit
 
-InkKit is an MIT TypeScript Markdown editor for the web and for apps that host a web view, published to npm as `@aicayzer/inkkit`. It is built on Milkdown and ProseMirror. MAPP, Memos, Memos WithMarfa and PadPad bundle it into one offline page in a `WKWebView`; each is a separate repository.
+InkKit is an MIT TypeScript Markdown editor for the web and for apps that host a web view, published to npm as `@aicayzer/inkkit`. It is built on Milkdown and ProseMirror. Memos and PadPad bundle it into one offline page in a `WKWebView`; each is a separate repository.
 
 ## What belongs in InkKit and what belongs in the host
 
@@ -18,10 +18,10 @@ The host owns everything outside the editor root, and anything that needs storag
 - Files, saving, autosave policy, sync, and what to do when a snapshot fails.
 - Image and file bytes, references, display URLs, permissions and cleanup, through `ImageAdapter`, `FileAdapter` and `WikiLinkAdapter`.
 - Windows, toolbars, menus, the search field, headers, titles and metadata. InkKit takes shortcut choices through `keymap`, localized text through `labels` and appearance through tokens.
-- Writing the native clipboard, Print and PDF dialogs, and opening links and files (`openLink`, `FileAdapter.open`, `contextMenu`).
+- Writing the native clipboard, Print and PDF dialogs, and opening links and files (`openLink`, `WikiLinkAdapter.open`, `FileAdapter.open`, `FileAdapter.contextMenu`).
 - Marfa and anything specific to one app.
 
-To place a new case: if two hosts would build it the same way and it needs no storage, platform or product knowledge, it belongs in InkKit. Otherwise InkKit offers an adapter, event, option or token and the host decides. A host that works around a gap, by matching an error message, toggling a class InkKit's CSS reads or styling `.ProseMirror`, shows a facade gap: fix the facade rather than document the workaround.
+To place a new case: if two hosts would build it the same way and it needs no storage, platform or product knowledge, it belongs in InkKit. Otherwise InkKit offers an adapter, event, option or token and the host decides. A host workaround, such as matching an error message, toggling a class InkKit's CSS reads or styling `.ProseMirror`, points to a gap in the facade. Fix the facade instead of documenting the workaround.
 
 Rules that follow from the boundary:
 
@@ -80,7 +80,7 @@ Report problems that a host or a person would meet: changed source, unsafe impor
 
 ### Boundary and public API
 
-- Flag host knowledge in `src/`: app names, Marfa, storage paths, network access, `window.webkit`, or a private display URL in exported output. Flag a Mermaid import reachable from `src/core.ts`.
+- Flag host knowledge in `src/`: app names, Marfa, storage paths, network access, `window.webkit`, or a private display URL in exported output. Flag an import of the `mermaid` package reachable from `src/core.ts`.
 - Flag a change to the exports, options, adapter types, events, error codes, labels or tokens without the matching `docs/api.md` change, and a removal or rename without migration notes for current hosts.
 - Flag a new failure reported to the host as a plain `Error` instead of an `InkKitError` code.
 
