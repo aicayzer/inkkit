@@ -1656,7 +1656,7 @@ export class InkKitEditor {
       .use(
         options.rendering?.codeHighlighting === false
           ? []
-          : (await import('./highlight')).highlightPlugin,
+          : (await import('./highlight.js')).highlightPlugin,
       )
       .use(
         options.rendering?.diagramPreview === false || !diagramsAvailable()

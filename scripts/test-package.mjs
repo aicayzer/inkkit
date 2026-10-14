@@ -1,5 +1,6 @@
 import {
   mkdtemp,
+  readdir,
   readFile,
   writeFile,
   mkdir,
@@ -37,6 +38,20 @@ export async function checkConsumer(packageSpec, version) {
     offlineBundleBytes: Buffer.byteLength(main.html),
     coreOfflineBundleSha256: sha256(core.html),
     coreOfflineBundleBytes: Buffer.byteLength(core.html),
+  }
+}
+
+// Node and webpack resolve relative ES module imports only with their
+// extension, as the package is "type": "module".
+async function checkRelativeImports(dist) {
+  for (const file of await readdir(dist)) {
+    if (!/\.(?:js|d\.ts)$/.test(file)) continue
+    const text = await readFile(join(dist, file), 'utf8')
+    for (const [, , specifier] of text.matchAll(
+      /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"]*)\1/g,
+    ))
+      if (!specifier.endsWith('.js'))
+        throw new Error(`${file} imports ${specifier} without its extension`)
   }
 }
 
@@ -78,6 +93,7 @@ async function buildConsumer(packageSpec, version, entry) {
     )
     if (installed.name !== '@aicayzer/inkkit' || installed.version !== version)
       throw new Error('Clean consumer installed an unexpected package version')
+    await checkRelativeImports(join(temp, 'node_modules/@aicayzer/inkkit/dist'))
     await writeFile(
       join(temp, 'index.html'),
       '<html><body><div id="editor"></div><script type="module" src="/main.ts"></script></body></html>',
