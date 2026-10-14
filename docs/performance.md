@@ -145,3 +145,23 @@ When diagrams are enabled, the main-entry page still contains every diagram type
 A module graph of the main-entry page attributes 9.36 MB of rendered modules (before minification) to Mermaid. Of that, 6.23 MB is reachable only through diagram types, layouts and maths that InkKit refuses before rendering, mostly ELK (2.54 MB), other Mermaid diagram modules (1.62 MB), Cytoscape (0.87 MB) and KaTeX (0.48 MB). As an experiment, a host build plugin replaced those 48 dynamically imported modules with empty modules. The page fell from 6.1 MB to 2.7 MB (gzip 0.73 MB), and the six supported types still rendered in Chromium.
 
 InkKit does not ship that plugin. It works by rewriting Mermaid's unexported chunk files, whose names and boundaries can change in any Mermaid release, and it applies only to hosts that build with Vite or Rollup. Pruning safely needs either a Mermaid entry point that registers selected diagram types or a separate decision to maintain such a plugin with InkKit's Mermaid pin.
+
+## Source-mode typing, October 14, 2026
+
+Typing in the Markdown source editor used to parse the whole document, build a new `Preservation`, replace the whole hidden formatted document, serialize it again, and measure a copy of the full text appended to `document.body`. A keystroke cost about as much as loading the document. Now a keystroke only updates the typed source: the text stays authoritative, the change is reported at once, and the formatted document takes it in the next time something needs it (switching to formatted mode, an export or print, a replacement, a paste, or any source edit that is not typing). Undo and redo of typed source work on the text alone until then.
+
+Same machine and method as above: Chrome 155 through Playwright, development source, installed Chrome, ten `keyboard.insertText('x')` operations in the middle of the source editor, mean per input. Input runs from `beforeinput` to the synchronous `changed` callback; frame runs from `beforeinput` to the next animation frame. The bare textarea column is the same text in a plain `<textarea>` with no editor, which is what the browser itself spends on a keystroke. The baseline is main at `c29f4fe`. Run `node scripts/measure-preservation.mjs BASELINE_CHECKOUT source` to repeat it.
+
+| Source document              | Characters | Bare textarea (ms) | Input before / after (ms) | Frame before / after (ms) |
+| ---------------------------- | ---------: | -----------------: | ------------------------: | ------------------------: |
+| 1,000 plain paragraphs       |    347,000 |                5.4 |                 385 / 7.3 |                385 / 15.2 |
+| 4,000 plain paragraphs       |  1,388,000 |                 94 |              1,659 / 94.8 |             1,659 / 101.6 |
+| 1,000 paragraphs with a link |    366,000 |                5.4 |                 724 / 6.9 |                724 / 14.3 |
+
+At 4,000 paragraphs the remaining cost is the browser's own: a bare textarea with the same text takes about as long. The editor adds about 2 ms at 1,000 paragraphs.
+
+Buffered native typing arrives through `insertText` rather than the textarea, so the editor must reveal the caret itself, which measures a copy of the text. That path fell from 388 ms to 25.8 ms at 1,000 paragraphs and from 1,597 ms to 99 ms at 4,000. It still creates the measuring copy for each call.
+
+Taking in the typed source costs what loading does, once: leaving source mode after the ten keystrokes took 400 ms at 1,000 paragraphs, 1,620 ms at 4,000 and 776 ms with links (22, 84 and 38 ms before, when each keystroke had already paid). Nothing waits on a timer, so typing never pauses for it; the cost falls on the first mode switch, export, print, replacement or paste after typing.
+
+The formatted history receives the typed source as a single step when it is taken in. Before that, undo and redo step through the typing on the text: a pause of more than 500 ms ends a step, as in the formatted editor, and the last 100 steps are kept.

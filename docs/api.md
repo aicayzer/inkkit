@@ -66,6 +66,8 @@ Loading releases focus from the editor's active text surface and does not reveal
 
 `editReferenceDefinition(label, destination, title?)` updates the shared link definition and returns whether it exists. Omitted title retains the current title. `format('link', destination)` edits that shared definition when the selection is in a reference link.
 
+Typing in the Markdown source editor does not parse the document. The typed text is authoritative at once: `snapshot()`, the `changed` event, the revision and the textarea all use it. The formatted document takes it in when something needs it: switching to formatted mode, `clipboardSnapshot()`, `printableSnapshot()`, replacement, paste or any other source edit that is not typing. That step is as slow as loading the document, and it is one undo step in the formatted history. Undo and redo of typed source in between work on the text alone; a pause of more than 500 ms in typing ends an undo step.
+
 These operations retain the existing document, generation and composition checks. Footnote and definition editing are disabled in TXT and Markdown source modes. Hosts continue to import only the public facade.
 
 ## Highlights, callouts and comments

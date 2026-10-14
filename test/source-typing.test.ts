@@ -1,0 +1,320 @@
+import { afterEach, expect, test, vi } from 'vitest'
+import { editorViewCtx } from '@milkdown/kit/core'
+import type { Ctx } from '@milkdown/kit/ctx'
+import { InkKitEditor, type EditorEvents } from '../src/index'
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
+async function run(
+  callback: (
+    editor: InkKitEditor,
+    plain: HTMLTextAreaElement,
+    ctx: Ctx,
+    changes: string[],
+  ) => void | Promise<void>,
+  events: Partial<EditorEvents> = {},
+) {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const changes: string[] = []
+  const editor = await InkKitEditor.mount(
+    root,
+    {
+      changed: (text) => changes.push(text),
+      stateChanged() {},
+      copy() {},
+      openLink() {},
+      ...events,
+    },
+    {},
+  )
+  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  try {
+    await callback(editor, root.querySelector('textarea')!, ctx, changes)
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+}
+
+const paragraphs = (count: number) =>
+  Array.from({ length: count }, (_, index) => `Paragraph ${index} text.`).join(
+    '\n\n',
+  ) + '\n'
+const document1 = {
+  documentId: 'typing',
+  generation: 3,
+  format: 'md' as const,
+}
+
+// What the browser does for a typed character: the textarea changes first,
+// then reports it.
+function type(plain: HTMLTextAreaElement, character: string) {
+  const at = plain.selectionStart
+  plain.dispatchEvent(
+    new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText' }),
+  )
+  plain.value = plain.value.slice(0, at) + character + plain.value.slice(at)
+  plain.setSelectionRange(at + character.length, at + character.length)
+  plain.dispatchEvent(
+    new InputEvent('input', { bubbles: true, inputType: 'insertText' }),
+  )
+}
+
+function startSource(
+  editor: InkKitEditor,
+  plain: HTMLTextAreaElement,
+  text: string,
+  at = text.length,
+) {
+  editor.loadDocument({ ...document1, text })
+  editor.setEditingMode('source', 3)
+  plain.setSelectionRange(at, at)
+}
+
+test('a source keystroke leaves the formatted document, history and body alone', () =>
+  run((editor, plain, ctx, changes) => {
+    const text = paragraphs(200)
+    startSource(editor, plain, text, 20)
+    const view = ctx.get(editorViewCtx)
+    const doc = view.state.doc
+    const append = vi.spyOn(document.body, 'append')
+    const before = editor.snapshot().revision
+    type(plain, 'x')
+    type(plain, 'y')
+    expect(view.state.doc).toBe(doc)
+    expect(append).not.toHaveBeenCalled()
+    expect(plain.value).toBe(text.slice(0, 20) + 'xy' + text.slice(20))
+    expect(editor.snapshot()).toMatchObject({
+      text: text.slice(0, 20) + 'xy' + text.slice(20),
+      revision: before + 2,
+      dirty: true,
+    })
+    expect(changes).toEqual([
+      text.slice(0, 20) + 'x' + text.slice(20),
+      text.slice(0, 20) + 'xy' + text.slice(20),
+    ])
+  }))
+
+test('leaving source mode, exports and the formatted view use the latest typed source', () =>
+  run(async (editor, plain, ctx) => {
+    const text = paragraphs(5)
+    startSource(editor, plain, text, 9)
+    type(plain, 'Z')
+    expect((await editor.clipboardSnapshot()).text).toContain('ParagraphZ 0')
+    type(plain, 'Q')
+    expect((await editor.printableSnapshot()).html).toContain('ParagraphZQ 0')
+    type(plain, 'R')
+    const revision = editor.snapshot().revision
+    expect(editor.setEditingMode('formatted', 3)).toBe(true)
+    expect(ctx.get(editorViewCtx).dom.textContent).toContain('ParagraphZQR 0')
+    expect(editor.snapshot()).toMatchObject({ revision, dirty: true })
+    expect(editor.snapshot().text).toBe(
+      text.slice(0, 9) + 'ZQR' + text.slice(9),
+    )
+  }))
+
+test('undo and redo take typed source as one step and restore the caret', () =>
+  run((editor, plain) => {
+    const text = paragraphs(5)
+    startSource(editor, plain, text, 9)
+    expect(editor.commandState().commands.undo).toBe(false)
+    type(plain, 'a')
+    type(plain, 'b')
+    type(plain, 'c')
+    expect(editor.commandState().commands).toMatchObject({
+      undo: true,
+      redo: false,
+    })
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe(text)
+    expect(plain.value).toBe(text)
+    expect([plain.selectionStart, plain.selectionEnd]).toEqual([9, 9])
+    expect(editor.commandState().commands).toMatchObject({
+      undo: false,
+      redo: true,
+    })
+    expect(editor.redo()).toBe(true)
+    expect(plain.value).toBe(text.slice(0, 9) + 'abc' + text.slice(9))
+    expect(editor.snapshot().text).toBe(plain.value)
+  }))
+
+test('typing after undo discards the redo step', () =>
+  run((editor, plain) => {
+    const text = paragraphs(3)
+    startSource(editor, plain, text, 4)
+    type(plain, 'a')
+    editor.undo()
+    type(plain, 'b')
+    expect(editor.commandState().commands.redo).toBe(false)
+    expect(editor.redo()).toBe(false)
+    expect(editor.snapshot().text).toBe(text.slice(0, 4) + 'b' + text.slice(4))
+  }))
+
+test('loading another document drops typed source that was not settled', () =>
+  run((editor, plain) => {
+    startSource(editor, plain, paragraphs(3), 9)
+    type(plain, 'x')
+    editor.loadDocument({ ...document1, generation: 4, text: 'Other\n' })
+    expect(editor.snapshot()).toMatchObject({ text: 'Other\n', dirty: false })
+    expect(plain.value).toBe('Other\n')
+  }))
+
+test('typing keeps CRLF endings across keystrokes before the document settles', () =>
+  run((editor, plain) => {
+    const text = 'One\r\n\r\nTwo\r\n'
+    startSource(editor, plain, text, 3)
+    type(plain, 'a')
+    plain.setSelectionRange(plain.value.length, plain.value.length)
+    type(plain, '\n')
+    expect(editor.snapshot().text).toBe('Onea\r\n\r\nTwo\r\n\r\n')
+    editor.setEditingMode('formatted')
+    expect(editor.snapshot().text).toBe('Onea\r\n\r\nTwo\r\n\r\n')
+  }))
+
+test('a rejected parse during settling keeps the typed source', () =>
+  run((editor, plain) => {
+    const text = paragraphs(3)
+    startSource(editor, plain, text, 4)
+    type(plain, 'a')
+    const typed = plain.value
+    const settle = vi
+      .spyOn(
+        editor as unknown as { commitSource: () => boolean },
+        'commitSource',
+      )
+      .mockImplementationOnce(() => {
+        throw new Error('parse failed')
+      })
+    expect(() => editor.setEditingMode('formatted')).toThrow('parse failed')
+    expect(editor.snapshot().text).toBe(typed)
+    expect(plain.value).toBe(typed)
+    settle.mockRestore()
+    expect(editor.setEditingMode('formatted')).toBe(true)
+    expect(editor.snapshot().text).toBe(typed)
+  }))
+
+test('a read-only editor refuses typed source', () =>
+  run((editor, plain) => {
+    const text = paragraphs(3)
+    startSource(editor, plain, text, 4)
+    editor.setEditable(false)
+    plain.value = 'changed'
+    plain.dispatchEvent(new InputEvent('input', { bubbles: true }))
+    expect(plain.value).toBe(text)
+    expect(editor.snapshot().text).toBe(text)
+  }))
+
+// Typing separated by a pause is a separate undo step, as in the formatted
+// editor.
+const pause = () => vi.advanceTimersByTime(600)
+
+test('typing separated by pauses undoes and redoes one step at a time', () =>
+  run((editor, plain, ctx) => {
+    vi.useFakeTimers()
+    const text = paragraphs(5)
+    startSource(editor, plain, text, 9)
+    const view = ctx.get(editorViewCtx)
+    const doc = view.state.doc
+    type(plain, 'a')
+    pause()
+    plain.setSelectionRange(30, 30)
+    type(plain, 'b')
+    pause()
+    type(plain, 'c')
+    const first = text.slice(0, 9) + 'a' + text.slice(9)
+    const second = first.slice(0, 30) + 'b' + first.slice(30)
+    const third = second.slice(0, 31) + 'c' + second.slice(31)
+    expect(plain.value).toBe(third)
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(second)
+    expect([plain.selectionStart, plain.selectionEnd]).toEqual([31, 31])
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(first)
+    expect([plain.selectionStart, plain.selectionEnd]).toEqual([30, 30])
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(text)
+    expect(editor.snapshot().text).toBe(text)
+    expect([plain.selectionStart, plain.selectionEnd]).toEqual([9, 9])
+    expect(editor.commandState().commands.undo).toBe(false)
+    expect(editor.undo()).toBe(false)
+    expect(view.state.doc).toBe(doc)
+    expect(editor.commandState().commands.redo).toBe(true)
+    expect(editor.redo()).toBe(true)
+    expect(plain.value).toBe(first)
+    expect(editor.redo()).toBe(true)
+    expect(plain.value).toBe(second)
+    pause()
+    type(plain, 'd')
+    expect(editor.commandState().commands.redo).toBe(false)
+    expect(editor.redo()).toBe(false)
+    expect(editor.snapshot().text).toBe(plain.value)
+  }))
+
+test('undoing typed source back to the document continues into earlier history', () =>
+  run((editor, plain) => {
+    vi.useFakeTimers()
+    const text = paragraphs(5)
+    startSource(editor, plain, text, 9)
+    type(plain, 'a')
+    editor.setEditingMode('formatted', 3)
+    editor.setEditingMode('source', 3)
+    plain.setSelectionRange(9, 9)
+    pause()
+    type(plain, 'b')
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(text.slice(0, 9) + 'a' + text.slice(9))
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(text)
+    expect(editor.undo()).toBe(false)
+  }))
+
+test('typed source that was settled is one step of the formatted history', () =>
+  run((editor, plain) => {
+    vi.useFakeTimers()
+    const text = paragraphs(5)
+    startSource(editor, plain, text, 9)
+    type(plain, 'a')
+    pause()
+    type(plain, 'b')
+    editor.setEditingMode('formatted', 3)
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe(text)
+    expect(editor.redo()).toBe(true)
+    expect(editor.snapshot().text).toBe(text.slice(0, 9) + 'ab' + text.slice(9))
+  }))
+
+test('older undo steps merge when more than the limit have been typed', () =>
+  run((editor, plain) => {
+    vi.useFakeTimers()
+    const text = paragraphs(3)
+    startSource(editor, plain, text, 9)
+    for (let index = 0; index < 120; index++) {
+      type(plain, 'x')
+      pause()
+    }
+    let undone = 0
+    while (editor.undo()) undone++
+    expect(undone).toBeGreaterThan(90)
+    expect(undone).toBeLessThanOrEqual(120)
+    expect(plain.value).toBe(text)
+    expect(editor.snapshot().text).toBe(text)
+  }))
+
+test('source typed before the editor became read-only still reaches the formatted view', () =>
+  run((editor, plain, ctx) => {
+    const text = paragraphs(3)
+    startSource(editor, plain, text, 9)
+    type(plain, 'x')
+    editor.setEditable(false)
+    expect(editor.setEditingMode('formatted', 3)).toBe(true)
+    const typed = text.slice(0, 9) + 'x' + text.slice(9)
+    expect(editor.snapshot().text).toBe(typed)
+    expect(ctx.get(editorViewCtx).dom.textContent).toContain('Paragraphx 0')
+    editor.setEditable(true)
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe(text)
+  }))
