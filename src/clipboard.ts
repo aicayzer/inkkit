@@ -9,6 +9,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { shareableFragment } from './comments'
 import { diagramImage } from './mermaid'
 import { fileReference } from './linked-syntax'
+import { definitionText } from './references'
 import { portableFile, portableFileImage } from './portable-files'
 import { withFileSignal } from './files'
 import type {
@@ -19,6 +20,16 @@ import type {
   ImageAdapter,
   FileAdapter,
 } from './types'
+
+// Definitions copied with the text that uses them are left out, as its links
+// show their addresses. Definitions copied on their own are what was copied.
+function onlyDefinitions(content: Fragment): boolean {
+  let only = content.childCount > 0
+  content.forEach((node) => {
+    if (node.type.name !== 'reference_definition') only = false
+  })
+  return only
+}
 
 export interface ClipboardContent {
   text: string
@@ -34,8 +45,13 @@ export function clipboardText(
 ): string {
   content = shareableFragment(content)
   const blocks: string[] = []
+  const definitions = onlyDefinitions(content)
   content.forEach((node) => {
-    if (node.type.name !== 'reference_definition')
+    if (definitions)
+      blocks.push(
+        definitionText(node.attrs.label, node.attrs.url, node.attrs.title),
+      )
+    else if (node.type.name !== 'reference_definition')
       blocks.push(nodeText(node, missingImages, fileDescriptions))
   })
   const inline = content.firstChild?.isInline ?? false
@@ -145,10 +161,11 @@ export function clipboardContent(
     serializer.marks,
   )
   container.append(safe.serializeFragment(content))
-  for (const definition of container.querySelectorAll(
-    '[data-inkkit-reference-definition]',
-  ))
-    definition.remove()
+  if (!onlyDefinitions(content))
+    for (const definition of container.querySelectorAll(
+      '[data-inkkit-reference-definition]',
+    ))
+      definition.remove()
   for (const reference of container.querySelectorAll(
     '[data-inkkit-footnote-reference]',
   )) {
