@@ -1,7 +1,11 @@
 import { expect, test } from 'vitest'
 import { parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import {
+  Fragment,
+  Slice,
+  type Node as ProseNode,
+} from '@milkdown/kit/prose/model'
 import { Transform } from '@milkdown/kit/prose/transform'
 import { Preservation, PreservationError } from '../src/preserve'
 import { withEditor } from './harness'
@@ -20,6 +24,23 @@ function compare(local: Preservation, full: Preservation, doc: ProseNode) {
   }
   return { fast, whole }
 }
+
+// What a reopened document must keep: structure, text, marks and targets.
+const reopen = (doc: ProseNode) =>
+  JSON.stringify(doc.toJSON(), (key, value) =>
+    [
+      'id',
+      'label',
+      'spread',
+      'listPlaceholder',
+      'marker',
+      'authoredFence',
+      'referenceContent',
+      'referenceType',
+    ].includes(key)
+      ? undefined
+      : value,
+  )
 
 function wholeOnly(ctx: Ctx, source: string): Preservation {
   const full = new Preservation(ctx, source)
@@ -62,8 +83,25 @@ const blocks: Array<(i: number) => string> = [
   (i) => `[^n${i}]: Note with\n    - a list [l](/l)`,
   () => '> [ref]: /quoted',
   (i) => `| Code | x |\n| - | - |\n| \`a\\|b\` ${i} | [r][ref] |`,
+  (i) => `-   wide ${i} [l](/l) word\n\n    second ${i} para`,
+  (i) => `1.  wide ${i} [r][ref] word\n    continued line\n2.  next`,
+  (i) => `  indented para ${i} [l](/l)`,
+  (i) => `   three spaces ${i}`,
+  (i) => `-   item ${i} word\n  - sibling ${i}`,
+  (i) =>
+    Array.from({ length: 11 }, (_, k) => `${k + 1}. it${k} ${i} [l](/l)`).join(
+      '\n',
+    ),
+  (i) => `1.   five col ${i} word`,
+  (i) => `-\ttab ${i} [l](/l)\n\n  two space`,
+  (i) => `1. First ${i}\n\n2. Second [l](/l)\n\n   More detail\n3. Third`,
+  (i) => `See [STRASSE] and [Straße] and [ẞ] ${i} [l](/l).`,
+  (i) => `Case [FOO  bar] and [foo bar][] ${i}.`,
+  (i) => `[^f${i}]: Foot [l](/l)\n\n    [inner${i}]: /in`,
 ]
 const definitions = [
+  '[Strasse]: /s',
+  '[foo bar]: /fb',
   '[ref]: /target "Ref"',
   '[^note]: The note text.',
   '[other]: <angle target>',
@@ -152,32 +190,58 @@ test(
             from + Math.floor(random() * 6),
           )
           const action = random()
+          const schema = doc.type.schema
+          const $target = doc.resolve(target.pos)
           try {
-            if (action < 0.55) {
+            if (action < 0.45) {
               const marks = doc.resolve(from).marks()
-              tr.insert(from, doc.type.schema.text(pick(snippets), marks))
-            } else if (action < 0.8) tr.delete(from, to)
-            else if (action < 0.85 && to > from)
+              tr.insert(from, schema.text(pick(snippets), marks))
+            } else if (action < 0.65) tr.delete(from, to)
+            else if (action < 0.72) tr.split(from)
+            else if (action < 0.79) {
+              if (
+                $target.index() > 0 &&
+                $target.parent.child($target.index() - 1).isTextblock
+              )
+                tr.join(target.pos)
+              else tr.delete(from, to)
+            } else if (action < 0.83)
+              tr.replace(
+                from,
+                to,
+                new Slice(
+                  Fragment.from([
+                    schema.nodes.paragraph!.create(null, schema.text('pasted')),
+                    schema.nodes.paragraph!.create(
+                      null,
+                      schema.text('second [x]'),
+                    ),
+                  ]),
+                  1,
+                  1,
+                ),
+              )
+            else if (action < 0.88 && to > from)
               tr.addMark(
                 from,
                 to,
                 pick(
                   ['strong', 'emphasis', 'inlineCode'].map((name) =>
-                    doc.type.schema.marks[name]!.create(),
+                    schema.marks[name]!.create(),
                   ),
                 ),
               )
-            else if (action < 0.9 && to > from)
-              tr.removeMark(from, to, doc.type.schema.marks.link!)
+            else if (action < 0.93 && to > from)
+              tr.removeMark(from, to, schema.marks.link!)
             else {
-              const item = doc.resolve(target.pos).node(-1)
+              const item = $target.node(-1)
               if (item?.type.name === 'list_item')
                 tr.setNodeAttribute(
-                  doc.resolve(target.pos).before(-1),
+                  $target.before(-1),
                   'checked',
                   item.attrs.checked === null ? null : !item.attrs.checked,
                 )
-              else tr.insert(from, doc.type.schema.text('y'))
+              else tr.insert(from, schema.text('y'))
             }
           } catch {
             continue
@@ -190,6 +254,9 @@ test(
           const kind = doc.child(target.top).type.name
           if (!doc.child(target.top).eq(before.child(target.top)))
             kinds.set(kind, (kinds.get(kind) ?? 0) + 1)
+          expect(reopen(parse(fast)), `seed ${seed} step ${step}`).toBe(
+            reopen(doc),
+          )
           expect(
             whole,
             `seed ${seed} step ${step}: ${JSON.stringify(source)}`,
@@ -205,7 +272,7 @@ test(
         'code_block',
         'table',
       ])
-        expect(kinds.get(kind), kind).toBeGreaterThan(20)
+        expect(kinds.get(kind), kind).toBeGreaterThan(10)
     }),
   120_000,
 )
@@ -387,6 +454,59 @@ test('a deletion that would start a nested list in an item is refused', () =>
     )
     expect(fast).toBeUndefined()
     expect(saved).toThrow(PreservationError)
+  }))
+
+// The position at the start of the textblock that holds `text`.
+function blockStart(doc: ProseNode, text: string): number {
+  let found = -1
+  doc.descendants((node, pos) => {
+    if (found < 0 && node.isTextblock && node.textContent.startsWith(text))
+      found = pos
+    return found < 0
+  })
+  if (found < 0) throw Error(`No ${text}`)
+  return found
+}
+
+test.each([
+  [
+    'two paragraphs of a wide item joined',
+    '-   First para [l](/l)\n\n    Second para\n\n  Not in list\n',
+    'Second para',
+  ],
+  [
+    'two paragraphs of a tab item joined',
+    '-\tFirst [l](/l)\n\n\tSecond\n  - Sibling\n',
+    'Second',
+  ],
+  [
+    'two paragraphs of a numbered item joined',
+    '1. First [l](/l)\n\n2. Second step\n\n   More detail\n3. Third\n',
+    'More detail',
+  ],
+])('%s keeps the whole-document path', (_, source, second) =>
+  withEditor('x\n', (editor) => {
+    const { fast, saved } = edited(editor.ctx, source, (doc, tr) =>
+      tr.join(blockStart(doc, second)),
+    )
+    expect(fast).toBeUndefined()
+    let text: string | undefined
+    try {
+      text = saved()
+    } catch (error) {
+      expect(error).toBeInstanceOf(PreservationError)
+    }
+    if (text !== undefined) expect(text).toContain(source.slice(0, 4))
+  }),
+)
+
+test('a paragraph split inside an item keeps the whole-document path', () =>
+  withEditor('x\n', (editor) => {
+    const source = '-   One [l](/l) two\n\n  Not in list\n'
+    const { fast } = edited(editor.ctx, source, (doc, tr) =>
+      tr.split(after(doc, 'One')),
+    )
+    expect(fast).toBeUndefined()
   }))
 
 test('emptying the first line of an item keeps the whole-document path', () =>

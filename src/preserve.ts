@@ -5,6 +5,7 @@ import type { Root } from 'mdast'
 import { serialize } from './dialect'
 import { restoreCodeEndings, finalCodeEnding } from './code-fences'
 import { sourceFrontmatter } from './literals'
+import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 
 interface Block {
   start: number
@@ -566,6 +567,25 @@ function loose(list: SourceNode, text: string): boolean {
   return gaps(items) || items.some((item) => gaps(item.children ?? []))
 }
 
+// How a reference label is matched to a definition. Footnote labels, which
+// start with `^`, are a separate set.
+function definitionLabel(label: string): string {
+  return label.startsWith('^')
+    ? '^' + normalizeIdentifier(label.slice(1))
+    : normalizeIdentifier(label)
+}
+
+// Whether two nodes have the same blocks, leaving inline content aside.
+function sameBlocks(left: ProseNode, right: ProseNode): boolean {
+  if (left.type !== right.type || left.isTextblock !== right.isTextblock)
+    return false
+  if (left.isTextblock) return true
+  if (left.childCount !== right.childCount) return false
+  for (let index = 0; index < left.childCount; index++)
+    if (!sameBlocks(left.child(index), right.child(index))) return false
+  return true
+}
+
 // Canonical Markdown keeps authored CRLF inside literal blocks and code fences.
 function withEnding(text: string, lineEnding: string): string {
   return lineEnding === '\n' ? text : text.replace(/\r?\n/g, lineEnding)
@@ -933,11 +953,10 @@ export class Preservation {
     ProseNode,
     { index: number; item: number; text: string }
   >()
-  private definitionContext?: { text: string; blocks: number; nodes: number }
-  // Undefined when a definition sits inside a quote or list, where appending
-  // the top-level ones would not reproduce the document. A definition inside
-  // a footnote definition is appended with it.
-  private readonly definitionSources?: string[]
+  private readonly definitionNodes = new Map<string, number>()
+  // Undefined when a definition sits inside another block, where appending
+  // the top-level ones would not reproduce the document.
+  private readonly definitionSources?: Array<{ label: string; text: string }>
 
   constructor(
     private readonly ctx: Ctx,
@@ -990,15 +1009,19 @@ export class Preservation {
           (child) => definition(child) || nested(child),
         )
       const top = rawTree.children as unknown as SourceNode[]
-      if (!top.some((node) => !definition(node) && nested(node)))
-        this.definitionSources = top
-          .filter(definition)
-          .map((node) =>
-            source.slice(
-              node.position!.start.offset! + offset,
-              node.position!.end.offset! + offset,
-            ),
+      if (!top.some(nested))
+        this.definitionSources = top.filter(definition).map((node) => {
+          const raw = source.slice(
+            node.position!.start.offset! + offset,
+            node.position!.end.offset! + offset,
           )
+          // A footnote reference is never validated alone, so only its label
+          // matters, and its body need not be parsed on every keystroke.
+          const label = /^\[((?:\\[\s\S]|[^\\\]])*)\]:/.exec(raw)![1]!
+          return node.type === 'footnoteDefinition'
+            ? { label: definitionLabel(label), text: `[${label}]: x` }
+            : { label: definitionLabel(label), text: raw }
+        })
     } catch (cause) {
       if (cause instanceof PreservationError) throw cause
       throw new PreservationError('Cannot read Markdown for preservation', {
@@ -1088,18 +1111,25 @@ export class Preservation {
   // Every definition in the source, in order. A block's links can depend on
   // definitions and nothing else outside it, so parsing it with these gives
   // the meaning it has in the document.
-  private definitions():
-    { text: string; blocks: number; nodes: number } | undefined {
+  // The definitions a block's text can refer to: only a bracketed label that
+  // matches one can resolve, so the others need not be parsed with it.
+  private definitions(
+    text: string,
+  ): { text: string; blocks: number; nodes: number } | undefined {
     if (this.definitionSources === undefined) return undefined
-    if (!this.definitionContext) {
-      const text = this.definitionSources.join('\n\n')
-      this.definitionContext = {
-        text,
-        blocks: this.definitionSources.length,
-        nodes: text ? this.ctx.get(parserCtx)(text).childCount : 0,
-      }
+    const labels = new Set<string>()
+    for (const match of text.matchAll(/\[((?:\\[\s\S]|[^\\[\]])*)\]/g))
+      labels.add(definitionLabel(match[1]!))
+    const sources = this.definitionSources
+      .filter((source) => labels.has(source.label))
+      .map((source) => source.text)
+    const appended = sources.join('\n\n')
+    let nodes = this.definitionNodes.get(appended)
+    if (nodes === undefined) {
+      nodes = appended ? this.ctx.get(parserCtx)(appended).childCount : 0
+      this.definitionNodes.set(appended, nodes)
     }
-    return this.definitionContext
+    return { text: appended, blocks: sources.length, nodes }
   }
 
   // The block's text followed by what it can depend on elsewhere in the
@@ -1110,7 +1140,7 @@ export class Preservation {
     // HTML and %% comments can span blocks.
     if (/<|%%/.test(text)) return undefined
     if (!text.includes('[')) return { text, blocks: 1, nodes: 1 }
-    const definitions = this.definitions()
+    const definitions = this.definitions(text)
     if (!definitions) return undefined
     return definitions.text
       ? {
@@ -1197,7 +1227,7 @@ export class Preservation {
       (!['paragraph', 'heading', 'table'].includes(node.type.name) ||
         !Preservation.plainInline(node) ||
         !Preservation.plainInline(before) ||
-        /<|%%/.test(this.source.slice(block.start, block.end)))
+        !this.inContext(this.source.slice(block.start, block.end)))
     )
       return undefined
     const form = this.formOf(node)
@@ -1308,9 +1338,12 @@ export class Preservation {
     const end = ast.position!.end.offset!
     if (
       !item.sameMarkup(before) ||
+      !sameBlocks(item, before) ||
       !Preservation.plainInline(item) ||
       !Preservation.plainInline(before) ||
-      /<|%%/.test(source.slice(start, end))
+      // The authored item is compared with the edit, so it must read the same
+      // in this context too.
+      !this.inContext(source.slice(start, end))
     )
       return undefined
     const local = this.canonicalTree(
@@ -1325,8 +1358,8 @@ export class Preservation {
     )
     const after = local?.node.children?.[0]
     if (!local || local.node.children!.length !== 1 || !after) return undefined
-    // Whether an item is spread depends on the blank lines around it, which
-    // typing inside it does not change.
+    // Whether an item is spread depends on the blank lines around it, which an
+    // edit that keeps its blocks does not change.
     let text = retainSource(
       ast,
       { ...after, spread: ast.spread },
@@ -1335,6 +1368,11 @@ export class Preservation {
       this.lineEnding,
     )
     if (marker) text = relabel(text, [0], marker)
+    // The marker and the spaces after it set the column that continuation
+    // lines, and blocks after the list, are read against.
+    const content = ast.children?.[0]?.position?.start.offset
+    if (content == null || !text.startsWith(source.slice(start, content)))
+      return undefined
     // An item with nothing on its first line has a different content column.
     if (/^(?:[-*+]|\d{1,9}[.)])[ \t]*(?:\r?\n|$)/.test(text)) return undefined
     const indent = source.slice(source.lastIndexOf('\n', start - 1) + 1, start)

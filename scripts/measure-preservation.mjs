@@ -56,6 +56,7 @@ for (const [name, root, port] of [
       [4000, 'middle-task'],
       [1000, 'middle-code'],
       [1000, 'middle-table'],
+      [2000, 'middle-footnote'],
     ]) {
       const setup = await page.evaluate(
         async ({ root, blocks, kind }) => {
@@ -134,6 +135,13 @@ for (const [name, root, port] of [
               '```ts\nconst value = items.map((item) => item.name);\n```\n\n'.repeat(
                 blocks,
               ),
+            'middle-footnote': () =>
+              shortLinks +
+              Array.from(
+                { length: blocks },
+                (_, i) =>
+                  `[^n${i}]: A footnote ${i} with [a link](/f/${i}) and more words to read.\n\n`,
+              ).join(''),
             'middle-table': () =>
               Array.from(
                 { length: blocks },
