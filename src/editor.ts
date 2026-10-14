@@ -100,6 +100,7 @@ import {
   normaliseLabel,
   referenceDefinitions,
   footnoteDefinitions,
+  singleLine,
 } from './references'
 import {
   selectionMarkdown,
@@ -3223,7 +3224,7 @@ export class InkKitEditor {
       view.state.tr.setNodeMarkup(definition.pos, undefined, {
         ...definition.node.attrs,
         url: destination,
-        title: title ?? definition.node.attrs.title,
+        title: title == null ? definition.node.attrs.title : singleLine(title),
       }),
     )
     return true

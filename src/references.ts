@@ -56,6 +56,33 @@ function contentShape(value: unknown): string {
   return JSON.stringify(clean(value))
 }
 
+/** Replaces each line break, with the whitespace around it, by one space. */
+export function singleLine(value: string): string {
+  return value.replace(/[ \t]*[\r\n][ \t\r\n]*/g, ' ')
+}
+
+/**
+ * A label is written as its authored text, so one that did not come from
+ * Markdown could close its brackets early or span lines. Line breaks become
+ * one space and an unescaped bracket is escaped; an authored label has neither
+ * and is returned unchanged.
+ */
+function writableLabel(label: unknown): string {
+  const flat = singleLine(String(label))
+  let written = ''
+  for (let index = 0; index < flat.length; index++) {
+    const character = flat[index]!
+    if (character === '\\') {
+      written += character
+      if (index + 1 < flat.length) written += flat[++index]
+      else written += '\\'
+    } else if (character === '[' || character === ']')
+      written += `\\${character}`
+    else written += character
+  }
+  return written
+}
+
 const labelPlaceholder = 'inkkit-authored-label'
 const authoredLinkReference: Handle & { peek?: Handle } = (
   untyped,
@@ -83,11 +110,11 @@ const authoredLinkReference: Handle & { peek?: Handle } = (
     node.referenceType !== 'full' &&
     (unchanged || normaliseLabel(display) === normaliseLabel(node.identifier))
   )
-    return `[${unchanged ? node.label : display}]${node.referenceType === 'collapsed' ? '[]' : ''}`
+    return `[${unchanged ? writableLabel(node.label) : display}]${node.referenceType === 'collapsed' ? '[]' : ''}`
   // Raw entity and escape spelling participates in reference matching.
   return (
     full.slice(0, -labelPlaceholder.length - 2) +
-    `[${node.label ?? node.identifier}]`
+    `[${writableLabel(node.label ?? node.identifier)}]`
   )
 }
 authoredLinkReference.peek = () => '['
@@ -102,12 +129,12 @@ const authoredDefinition: Handle = (node, parent, state, info) =>
     )
     .replace(
       `[${labelPlaceholder}]:`,
-      `[${String(node.label ?? node.identifier)}]:`,
+      `[${writableLabel(node.label ?? node.identifier)}]:`,
     )
 
 const footnoteHandlers = gfmFootnoteToMarkdown().handlers!
 const authoredFootnoteReference: Handle & { peek?: Handle } = (node) =>
-  `[^${String(node.label ?? node.identifier)}]`
+  `[^${writableLabel(node.label ?? node.identifier)}]`
 authoredFootnoteReference.peek = () => '['
 const authoredFootnoteDefinition: Handle = (node, parent, state, info) =>
   footnoteHandlers.footnoteDefinition!(
@@ -117,7 +144,7 @@ const authoredFootnoteDefinition: Handle = (node, parent, state, info) =>
     info,
   ).replace(
     `[^${labelPlaceholder}]:`,
-    `[^${String(node.label ?? node.identifier)}]:`,
+    `[^${writableLabel(node.label ?? node.identifier)}]:`,
   )
 
 function remarkReferences(this: Processor) {
@@ -319,7 +346,13 @@ export const referenceDefinition = $node('reference_definition', () => ({
   toMarkdown: {
     match: (node) => node.type.name === 'reference_definition',
     runner: (state, node) => {
-      state.addNode('definition', undefined, undefined, { ...node.attrs })
+      // A line break in a definition title is written as it is, and a blank
+      // line would end the definition.
+      const title = node.attrs.title
+      state.addNode('definition', undefined, undefined, {
+        ...node.attrs,
+        title: typeof title === 'string' ? singleLine(title) : title,
+      })
     },
   },
 }))
