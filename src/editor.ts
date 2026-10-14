@@ -24,6 +24,7 @@ import {
   redo as redoHistory,
 } from '@milkdown/kit/prose/history'
 import { cursor } from './cursor'
+import { insertTextChunk } from './text-input'
 import { blockDropRange } from './drop-placement'
 import {
   blockquoteKeymap,
@@ -470,13 +471,14 @@ const listItemShiftTab = $prose(() => keymap({ 'Shift-Tab': liftItem }))
 // A control chord that nothing handles reaches the page as its ASCII control character
 // (Control-N as U+000E), which the web view would insert as text.
 const controlCharacters = /^[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]+$/
-const dropControlCharacters = $prose(
+const textInputPolicy = $prose(
   () =>
     new Plugin({
-      key: new PluginKey('dropControlCharacters'),
+      key: new PluginKey('inkkitTextInput'),
       props: {
-        handleTextInput: (_view, _from, _to, text) =>
-          controlCharacters.test(text),
+        handleTextInput: (view, from, to, text, deflt) =>
+          controlCharacters.test(text) ||
+          insertTextChunk(view, from, to, text, deflt),
       },
     }),
 )
@@ -1905,7 +1907,7 @@ export class InkKitEditor {
       .use(quoteBackspace)
       .use(listItemBackspace)
       .use(listItemShiftTab)
-      .use(dropControlCharacters)
+      .use(textInputPolicy)
       .use(codeCopyPlugin((text) => events.copy(text)))
       .use(placeholderPlugin)
       .use(
@@ -2983,7 +2985,7 @@ export class InkKitEditor {
     )
   }
 
-  /** Buffered native typing follows the same input rules as direct typing. */
+  /** Buffered native typing: input rules apply as if its last character were typed after the rest. */
   insertText(text: string, generation: number): boolean {
     this.assertAlive()
     if (

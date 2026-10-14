@@ -2,7 +2,6 @@ import { commandsCtx, remarkCtx } from '@milkdown/kit/core'
 import { markRule } from '@milkdown/kit/prose'
 import { toggleMark } from '@milkdown/kit/prose/commands'
 import { InputRule } from '@milkdown/kit/prose/inputrules'
-import { EditorState, TextSelection } from '@milkdown/kit/prose/state'
 import {
   $command,
   $inputRule,
@@ -113,33 +112,7 @@ export const highlightInputRule = $inputRule((ctx) => {
     }
     walk(tree)
     if (!valid) return null
-    const { from, to } = state.selection
-    const typed = match[0].slice(from - start)
-    if (typed.length <= 1 && state.selection.empty)
-      return apply(state, match, start, end)
-
-    // Milkdown's mark rule expects only the final character to be absent.
-    // Prepare buffered input without applying plugins or dispatching twice.
-    const tr = state.tr.insertText(typed.slice(0, -1), from, to)
-    const preparedEnd = from + typed.length - 1
-    const prepared = EditorState.create({
-      schema: state.schema,
-      doc: tr.doc,
-      selection: TextSelection.create(tr.doc, preparedEnd),
-      storedMarks: state.storedMarks,
-    })
-    const transformed = apply(prepared, match, start, preparedEnd)
-    if (!transformed) return null
-    transformed.steps.forEach((step) => tr.step(step))
-    tr.setSelection(
-      TextSelection.create(
-        tr.doc,
-        transformed.selection.from,
-        transformed.selection.to,
-      ),
-    )
-    tr.setStoredMarks(transformed.storedMarks)
-    return tr
+    return apply(state, match, start, end)
   })
 })
 
