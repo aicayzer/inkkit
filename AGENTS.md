@@ -33,13 +33,14 @@ Rules that follow from the boundary:
 
 ## Build and verify
 
-Use Node.js 26 and the pnpm version in `package.json`.
+Use Node.js 22.14 or later (CI runs 26) and the pnpm version in `package.json`.
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm check            # typecheck, Vitest, build, packed-consumer test
 pnpm format:check     # Prettier; `pnpm format` rewrites
 pnpm build:playground
+pnpm test:built-playground  # opens the built page; needs the build first
 ```
 
 - One unit file: `pnpm exec vitest run test/<name>.test.ts`.
