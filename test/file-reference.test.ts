@@ -48,6 +48,17 @@ const forms: [string, FileReference][] = [
     },
   ],
   [
+    // Markdown resolves a backslash escape before InkKit sees the address, so
+    // an escaped `#` still starts the fragment.
+    String.raw`![](My\#Notes.pdf)`,
+    {
+      kind: 'path',
+      reference: 'My#Notes.pdf',
+      target: 'My',
+      fragment: 'Notes.pdf',
+    },
+  ],
+  [
     '![](plain.png)',
     { kind: 'path', reference: 'plain.png', target: 'plain.png' },
   ],
@@ -134,11 +145,11 @@ test('FileReference gives the target without its fragment for every syntax form'
     cards[0]!
       .querySelector<HTMLButtonElement>('.inkkit-file-name button')!
       .click()
-    cards[7]!.dispatchEvent(
+    cards[8]!.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, clientX: 4, clientY: 8 }),
     )
     expect(opened).toEqual([forms[0]![1]])
-    expect(menus).toEqual([forms[7]![1]])
+    expect(menus).toEqual([forms[8]![1]])
     expect(editor.snapshot().text).toBe(text)
   } finally {
     await editor.destroy()
