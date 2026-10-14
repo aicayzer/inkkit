@@ -75,9 +75,11 @@ export function validateDiagram(source: string): Annotations {
   const found = annotations(source)
   // Mermaid can load image bytes before sanitising its result, so resource and
   // configuration syntax is refused anywhere in the source, labels included.
-  // Statements are checked separately, in Mermaid's parse result.
+  // Statements are checked separately, in Mermaid's parse result. The `---`
+  // check reads only its own line's indent: `^\s*---` refuses the same sources
+  // but rescans every following blank line from each line start.
   if (
-    /%%\{|^\s*---|<\s*[a-z!/?]|&(?:#\w+|[a-z]+);|@\{|\$\$|(?:https?|data|file|javascript|vbscript|blob):|\/\/|url\s*\(|image-set\s*\(|cross-fade\s*\(|@import|\\/im.test(
+    /%%\{|^[^\S\n\r\u2028\u2029]*---|<\s*[a-z!/?]|&(?:#\w+|[a-z]+);|@\{|\$\$|(?:https?|data|file|javascript|vbscript|blob):|\/\/|url\s*\(|image-set\s*\(|cross-fade\s*\(|@import|\\/im.test(
       found.rest,
     )
   )

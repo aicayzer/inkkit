@@ -160,6 +160,9 @@ for (const attack of [
   'flowchart LR\nA[Click]-->B;  %%{init: {}}%%',
   '%%{init: {"securityLevel":"loose"}}%%\nflowchart LR\nA-->B',
   '---\nconfig:\n  securityLevel: loose\n---\nflowchart LR\nA-->B',
+  'flowchart LR\nA-->B\n\n\t ---\nconfig: {}\n---',
+  'flowchart LR\r\nA-->B\r\n\r\n  ---',
+  'flowchart LR\nA-->B\u2028 ---',
   'flowchart LR\nA[<img src="https://example.com/a.png">]',
   'flowchart LR\nA[&#x3c;script&#x3e;]',
   'flowchart LR\nA@{ img: "https://example.com/a.png" }',
@@ -178,6 +181,20 @@ for (const attack of [
     await expect(renderDiagram(attack)).rejects.toThrow()
     expect(renderer.render).not.toHaveBeenCalled()
   })
+
+test('a run of blank lines takes the configuration check no longer than a line of text', () => {
+  const time = (filler: string) => {
+    const source = 'flowchart LR\nA --- B\n' + filler.repeat(29_000)
+    const start = performance.now()
+    expect(() => validateDiagram(source)).not.toThrow()
+    return performance.now() - start
+  }
+  time('x')
+  const lines = time('x')
+  const blank = time('\n')
+  // Rescanning the blank lines that follow each line start took 400 ms here.
+  expect(blank).toBeLessThan(lines * 5 + 50)
+})
 
 test('safe SVG strips executable elements, resources and handlers but keeps fragment markers', () => {
   const result = safeDiagramSVG(
