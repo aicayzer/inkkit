@@ -1,10 +1,8 @@
 import { afterAll } from 'vitest'
 
-// Milkdown starts a three second timeout for each editor timer and never
-// cancels it, even once the timer has resolved. A timeout that fires after the
-// file's environment is torn down calls the then missing global
-// removeEventListener, which fails the run as an unhandled error in whichever
-// file was last. Clearing what is still pending when the file ends stops that.
+// @milkdown/ctx 7.22.1 never cancels the three second timeout it starts for
+// each editor timer. One that fires after jsdom is torn down calls the missing
+// global removeEventListener, and Vitest fails the run with an unhandled error.
 const pending = new Set<ReturnType<typeof setTimeout>>()
 const startTimeout = globalThis.setTimeout
 globalThis.setTimeout = ((
