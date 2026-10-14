@@ -171,3 +171,19 @@ test('HTML from WebKit pastes its converted spaces as ordinary spaces', async ({
       '[The quote](https://example.com) for the record. See [this](https://example.com/b) and `a b`, but keep this.\n',
     )
 })
+
+test('pasted links with a script scheme keep their text without the link', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  await pasteHTML(
+    page,
+    '<p>Do <a href="javascript:void(0)">not run</a>, <a href="&#106;avascript:void(0)">not this</a>, <a href="data:text/html,x">or data</a>, but <a href="https://example.com/">open</a> and <a href="mailto:ada@example.com">write</a>.</p>',
+  )
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(
+      'Do not run, not this, or data, but [open](https://example.com/) and [write](mailto:ada@example.com).\n',
+    )
+  await expect(page.locator('.ProseMirror a')).toHaveCount(2)
+})

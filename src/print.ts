@@ -1,6 +1,7 @@
 import type { Fragment, Node, Schema } from '@milkdown/kit/prose/model'
 import { clipboardContent } from './clipboard'
 import { shareableFragment } from './comments'
+import { isSafeLinkTarget } from './link-safety'
 import { fileReference } from './linked-syntax'
 import { sourceFrontmatter } from './literals'
 import { diagramImage, renderDiagram } from './mermaid'
@@ -268,13 +269,9 @@ const printClasses = new Set([
 ])
 
 function safeLink(value: string): string | undefined {
-  if (/[\u0000-\u001f\u007f\\]/.test(value)) return undefined
+  if (value.includes('\\') || !isSafeLinkTarget(value)) return undefined
   const href = value.trim()
   if (!href) return undefined
-  // A colon in the first path component denotes a scheme, including an
-  // obfuscated one. Relative paths can still contain colons after a slash.
-  if (/^[^/?#]*:/.test(href) && !/^(https?:|mailto:)/i.test(href))
-    return undefined
   return href.replaceAll(' ', '%20')
 }
 

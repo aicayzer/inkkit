@@ -561,3 +561,137 @@ test('a spreadsheet cell with a converted space keeps an ordinary space', async 
   expect(markdown).toContain('Lovelace')
   expect(markdown).not.toContain('\u00a0')
 })
+
+const linkOf = (href: string, text = 'text') =>
+  `<p>before <a href="${href}">${text}</a> after</p>`
+
+test('pasted links keep http, https, mailto, tel, relative and fragment addresses', async () => {
+  for (const href of [
+    'https://example.com/a?b=c#d',
+    'HTTP://EXAMPLE.COM/',
+    'mailto:ada@example.com',
+    'tel:+441234567890',
+    '/notes/today.md',
+    './today.md',
+    '../up/today.md',
+    'today.md',
+    'folder/note.md#heading',
+    '?query=1',
+    '#section',
+    '//example.com/path',
+    ' https://example.com/padded ',
+  ]) {
+    const markdown = await fromHTML(linkOf(href))
+    expect(markdown, href).toMatch(/^before \[text\]\(.+\) after\n$/)
+  }
+})
+
+test('pasted links with script or unknown schemes keep their text without the link', async () => {
+  for (const href of [
+    'javascript:alert(1)',
+    'JavaScript:alert(1)',
+    ' \tjavascript:alert(1)',
+    '\u0001javascript:alert(1)',
+    'java\tscript:alert(1)',
+    'java\nscript:alert(1)',
+    'java\u0000script:alert(1)',
+    'jav&#x61;script:alert(1)',
+    '&#106;avascript:alert(1)',
+    '&#x6A;avascript&colon;alert(1)',
+    '&#0000106avascript:alert(1)',
+    'javascript&#58;alert(1)',
+    '​javascript:alert(1)',
+    'vbscript:msgbox(1)',
+    'data:text/html,<b>x</b>',
+    'DATA:text/html;base64,PGI+eDwvYj4=',
+    'file:///etc/hosts',
+    'ftp://example.com/',
+    'slack://channel?id=1',
+    'x-custom:thing',
+    ':nothing',
+    'blob:https://example.com/id',
+  ]) {
+    expect(await fromHTML(linkOf(href)), href).toBe('before text after\n')
+  }
+})
+
+test('pasted links with a script scheme drop only the link, not its content', async () => {
+  expect(
+    await fromHTML(
+      '<p><a href="javascript:void(0)"><strong>bold</strong> and <em>more</em></a></p>',
+    ),
+  ).toBe('**bold** and *more*\n')
+  expect(
+    await fromHTML(
+      '<p><a href="javascript:void(0)">a <a href="https://example.com/">b</a></a></p>',
+    ),
+  ).toMatch(/^a \[b\]\(https:\/\/example\.com\/\)\n$/)
+  expect(
+    await fromHTML(
+      '<table><tr><th>Link</th></tr><tr><td><a href="vbscript:x">cell</a></td></tr></table><p>after</p>',
+    ),
+  ).toBe('| Link |\n| ---- |\n| cell |\n\nafter\n')
+  expect(
+    await fromHTML(
+      '<ul><li><a href="javascript:x">item</a></li><li><a href="https://example.com/">ok</a></li></ul>',
+    ),
+  ).toBe('- item\n- [ok](https://example.com/)\n')
+})
+
+test('a standalone table with script-scheme links keeps their text without the link', async () => {
+  const markdown = await fromHTML(
+    '<table><tbody><tr><td><a href="javascript:alert(1)">one</a></td><td><a href="https://example.com/">two</a></td></tr></tbody></table>',
+  )
+  expect(markdown).not.toMatch(/javascript/i)
+  expect(markdown).toContain('one')
+  expect(markdown).toContain('[two](https://example.com/)')
+})
+
+test('pasted images never carry their address into the Markdown', async () => {
+  for (const src of [
+    'javascript:alert(1)',
+    '&#106;avascript:alert(1)',
+    'vbscript:x',
+    'data:text/html,<b>x</b>',
+  ]) {
+    const markdown = (
+      await pasted({ html: `<p><img src="${src}" alt="Picture"></p>` })
+    ).markdown
+    expect(markdown, src).not.toMatch(/script|data:/i)
+    expect(markdown, src).toContain('Picture')
+  }
+  expect(
+    (
+      await pasted({
+        html: '<p><a href="javascript:x"><img src="javascript:y" alt="Linked"></a></p>',
+        images: [{ bytes: new Uint8Array([1]), mimeType: 'image/png' }],
+      })
+    ).markdown,
+  ).toBe('![Linked](images/photo.png)\n')
+})
+
+test('Markdown source keeps authored link addresses unchanged', async () => {
+  const source = '[run](javascript:run) and [site](https://example.com/)\n'
+  expect((await pasted({ markdown: source })).markdown).toBe(source)
+  expect((await pasted({ text: source })).markdown).toBe(source)
+  expect(
+    (await pasted({ text: source, html: '<p>ignored</p>', markdown: source }))
+      .markdown,
+  ).toBe(source)
+  expect(
+    (await pasted({ text: source, plainText: true })).markdown.replace(
+      /\\/g,
+      '',
+    ),
+  ).toContain('[run](javascript:run)')
+})
+
+test('a link whose HTML comes from InkKit keeps the authored Markdown unchanged', async () => {
+  const source = '[run](javascript:run)'
+  const markdown = (
+    await pasted({
+      html: `<div data-inkkit-markdown="${source}"><p><a href="https://example.com/">run</a></p></div>`,
+    })
+  ).markdown
+  expect(markdown).toBe(source + '\n')
+})

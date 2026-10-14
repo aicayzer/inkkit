@@ -1,4 +1,5 @@
 import { editorLabels } from './labels'
+import { isSafeLinkTarget } from './link-safety'
 import { $node, $remark, $prose } from '@milkdown/kit/utils'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
@@ -195,8 +196,12 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
         tag: 'a[href]',
         getAttrs(dom) {
           const element = dom as HTMLElement
+          const href = element.getAttribute('href') ?? ''
+          // Imported HTML keeps the text of a link it cannot trust. Markdown
+          // source does not pass through here, so authored addresses stay.
+          if (!isSafeLinkTarget(href)) return false
           return {
-            href: element.getAttribute('href') ?? '',
+            href,
             title: element.getAttribute('title'),
             label: element.getAttribute('data-inkkit-label'),
             identifier: element.getAttribute('data-inkkit-reference'),
