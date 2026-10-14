@@ -7,12 +7,33 @@ import { $prose } from '@milkdown/kit/utils'
 
 const lowlight = createLowlight(common)
 
+// highlight.js takes time that grows with the square of the text for some
+// input in several grammars: one long word in ini or TypeScript, or lines of
+// plain words in C, where the slow match runs on across lines. Neither a line
+// nor a token limit bounds it, so a block longer than this stays plain. At
+// this length the slowest input found takes about 110 ms in Chromium and
+// WebKit, and ordinary code takes a few milliseconds.
+export const highlightLimit = 5_000
+
+// The length limit bounds one block; this bounds a load or an edit that
+// reaches many blocks. Once highlighting in one load or edit has taken this
+// many milliseconds, the blocks it has not reached stay plain until they are
+// edited. A note of ordinary code reaches it only with about a megabyte of
+// code; docs/performance.md has the measurements.
+export const highlightBudget = 200
+
 // Colors are decorations over the plain text, so the markdown is untouched;
 // a block without a known language stays plain.
-function blockDecorations(node: ProseNode, pos: number): Decoration[] {
+function blockDecorations(
+  node: ProseNode,
+  pos: number,
+  deadline: number,
+): Decoration[] {
   const language = String(node.attrs.language ?? '').toLowerCase()
   const found: Decoration[] = []
   if (!language || !lowlight.registered(language)) return found
+  if (node.content.size > highlightLimit || performance.now() > deadline)
+    return found
   let offset = pos + 1
   const walk = (children: RootContent[], classes: string[]) => {
     for (const child of children) {
@@ -34,11 +55,12 @@ function blockDecorations(node: ProseNode, pos: number): Decoration[] {
 }
 
 function decorations(doc: ProseNode): DecorationSet {
+  const deadline = performance.now() + highlightBudget
   const found: Decoration[] = []
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
     if (node.type.name === 'code_block')
-      for (const decoration of blockDecorations(node, pos))
+      for (const decoration of blockDecorations(node, pos, deadline))
         found.push(decoration)
     return false
   })
@@ -72,6 +94,7 @@ function touched(tr: Transaction): [number, number][] {
 // rebuilding the set: DecorationSet.remove compares every removed decoration
 // with every other in its block, which is quadratic in a large block.
 function update(mapped: DecorationSet, tr: Transaction): DecorationSet {
+  const deadline = performance.now() + highlightBudget
   const stale: [number, number][] = []
   const fresh: Decoration[] = []
   const seen = new Set<number>()
@@ -91,7 +114,7 @@ function update(mapped: DecorationSet, tr: Transaction): DecorationSet {
     })
     stale.push([start, end])
     for (const [node, pos] of blocks)
-      for (const decoration of blockDecorations(node, pos))
+      for (const decoration of blockDecorations(node, pos, deadline))
         fresh.push(decoration)
   }
   const found: Decoration[] = []

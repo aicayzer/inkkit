@@ -167,3 +167,29 @@ Same machine and method as above: development source, ten `insertText('x')` oper
 At 4,000 paragraphs in Chrome the remaining keystroke cost is the browser's own: a bare textarea with the same text takes about as long. A paste after typing costs one reveal of the caret, which measures a copy of the text. Buffered native typing arrives through `insertText` rather than the textarea and pays that reveal on every call: 381 to 25 ms at 1,000 paragraphs and 1,565 to 100 ms at 4,000 in Chrome, 442 to 21 ms and 1,781 to 81 ms in WebKit.
 
 Taking in the source costs what loading does, once, when you leave source mode. Nothing waits on a timer, so typing never pauses for it. The formatted history receives all the source steps as a single step. Before that, undo and redo step through the source edits on the text: a pause of more than 500 ms in typing ends a step, an edit that is not typing is a step of its own, and the last 100 steps are kept.
+
+## Long code blocks, October 14, 2026
+
+For some text, highlight.js 11.11.2 takes time that grows with the square of the text's length. A run of one word in an `ini` or `typescript` block is one case. Lines of plain words in a `c`, `cpp`, `arduino` or `csharp` block are another, and there the slow match runs on from line to line, so neither a line limit nor a token limit bounds the cost. A run of one word of 16,000 characters takes 1,127 ms in `ini`, 972 ms in `php` and 619 ms in `typescript` in Node 26, and 16,000 characters of short lines of words take about 1,000 ms in `c`. Ordinary code costs 0.1 to 0.25 microseconds a character.
+
+Two limits now bound highlighting:
+
+- **Block length:** a code block longer than 5,000 characters is not highlighted. At that length, the slowest text found takes about 110 ms to highlight in Chromium and WebKit, and ordinary code takes a few milliseconds.
+- **Time per load or edit:** once highlighting in one load or one edit has taken 200 ms, the blocks it has not reached stay plain until they are edited. This bounds a note with many slow blocks. On the machine below, a note of 200 ordinary TypeScript blocks of 4,714 characters each (947,000 characters) highlights every block in Chromium and 182 to 200 of them in WebKit; a slower device reaches the limit with less code.
+
+The text of an unhighlighted block is still editable and is saved unchanged.
+
+The measurements ran on an M4 Pro MacBook Pro with macOS 27.0.1, in Chromium 156 and Playwright WebKit 27.2, against development source. The baseline is `main` at `f5c4bb2`. Open is `loadDocument()` of a note that holds the block; type is one `insertText('x')` at the end of the block. Values are medians of three runs, in milliseconds, before / after. To repeat them, run `node scripts/measure-highlighting.mjs CHECKOUT` from this checkout once for each checkout, with `INKKIT_PLAYGROUND_PORT` set to a free port.
+
+| Code block                        | Characters | Chromium open | Chromium type | WebKit open | WebKit type |
+| --------------------------------- | ---------: | ------------: | ------------: | ----------: | ----------: |
+| `ini`, one word                   |      4,999 |     119 / 116 |     118 / 114 |   108 / 108 |   107 / 109 |
+| `ini`, one word                   |     20,000 |     1,493 / 6 |     1,559 / 4 |   1,632 / 8 |   1,634 / 3 |
+| `typescript`, one word            |     20,000 |       986 / 6 |       999 / 4 |     501 / 8 |     504 / 3 |
+| `c`, lines of words               |     20,000 |    1,033 / 11 |     1,034 / 8 |    778 / 13 |     783 / 6 |
+| `typescript`, ordinary code       |      4,999 |         6 / 6 |         4 / 4 |       9 / 8 |       5 / 4 |
+| `typescript`, ordinary code       |     20,000 |        20 / 8 |        13 / 6 |     25 / 10 |      11 / 5 |
+| No language, one word             |     20,000 |         5 / 6 |         4 / 4 |       8 / 6 |       3 / 3 |
+| 20 `ini` blocks of one word, each |      4,999 |   2,212 / 251 |     112 / 121 | 2,167 / 251 |   110 / 110 |
+
+Typing in the last of the 20 blocks still highlights that block, so it costs what one block at the length limit costs.
