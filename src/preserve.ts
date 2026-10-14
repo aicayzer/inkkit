@@ -281,6 +281,7 @@ function retainSource(
     after.type === 'code' &&
     before.lang === after.lang
   ) {
+    if ((before.value ?? '') === (after.value ?? '')) return raw
     const opening = /^([ \t>]*)(`{3,}|~{3,})([^\r\n]*)(\r?\n)/.exec(raw)
     if (opening) {
       const lines = raw.slice(opening[0].length).split(/\r?\n/)
@@ -289,11 +290,19 @@ function retainSource(
       )
       const originalLine =
         (before.value ?? '').replace(/\r\n?/g, '\n').split('\n')[0] ?? ''
-      const first = lines[0] ?? ''
-      const gutter = first.endsWith(originalLine)
-        ? first.slice(0, first.length - originalLine.length)
-        : opening[1]!
-      const body = (after.value ?? '').replace(/\r\n?/g, '\n').split('\n')
+      // A fence whose code is empty or starts with a blank line has no line
+      // to take the indent from but its closing one.
+      const first = originalLine ? lines[0] : undefined
+      const gutter =
+        first === undefined
+          ? (closing?.[1] ?? opening[1]!)
+          : first.endsWith(originalLine)
+            ? first.slice(0, first.length - originalLine.length)
+            : opening[1]!
+      // A code block without code is written as a fence with no line inside.
+      const body = after.value
+        ? after.value.replace(/\r\n?/g, '\n').split('\n')
+        : []
       const character = opening[2]![0]!
       let length = opening[2]!.length
       for (const line of body) {
@@ -305,8 +314,8 @@ function retainSource(
         opening[1] +
         fence +
         opening[3] +
-        lineEnding +
-        body.map((line) => gutter + line).join(lineEnding) +
+        body.map((line) => lineEnding + gutter + line).join('') +
+        (closing || body.length ? '' : opening[4]) +
         (closing
           ? lineEnding +
             closing[1] +
