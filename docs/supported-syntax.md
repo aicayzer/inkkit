@@ -76,6 +76,8 @@ Put the body on subsequent quoted lines. Fold markers must directly follow the c
 
 Complete HTML `<!--comments-->` and Obsidian `%%comments%%` are editable author content, including inline and multiline comments. They start hidden; hosts can reveal them with `setCommentsVisible(true)`. Markdown snapshots and explicit Markdown copy retain comments. Ordinary text, HTML, clipboard metadata and print omit them even when revealed. Code and TXT remain literal; incomplete comment syntax remains literal. HTML is never executed.
 
+A comment inside emphasis, strong, strikethrough, highlight or a link stays inside it: the text on both sides keeps that formatting, on screen and when saved.
+
 While comments are hidden, editing beside them keeps them:
 
 - Backspace and Delete, including word and line deletion and any other modifier key held with them, remove the visible text next to a hidden comment and keep the comment.
