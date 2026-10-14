@@ -516,7 +516,8 @@ export function assertHiddenCommentsKept(
     !touchesComment(tr)
   )
     return
-  if (commentCount(after) < commentCount(state.doc))
+  // Fewer comments loses one; more means one was written twice.
+  if (commentCount(after) !== commentCount(state.doc))
     throw new Error('A hidden comment cannot be removed from beside it')
 }
 
@@ -554,13 +555,35 @@ function restoreComposedOver(
     )
   )
     return null
+  let missing = commentCount(before.doc) - commentCount(state.doc)
+  if (missing <= 0) return null
   const mapping = new Mapping()
   for (const tr of transactions) mapping.appendMapping(tr.mapping)
+  // A replaced range can write a comment back; only one that did not come back is restored.
+  const present = new Map<string, number>()
+  const key = (node: ProseNode) =>
+    `${node.type.name}:${node.attrs.syntax}:${node.textContent}`
+  state.doc.descendants((node) => {
+    if (!isComment(node)) return true
+    present.set(key(node), (present.get(key(node)) ?? 0) + 1)
+    return false
+  })
   const removed: [number, ProseNode][] = []
   before.doc.descendants((node, pos) => {
     if (!isComment(node)) return true
-    if (node.isInline && mapping.mapResult(pos + 1).deleted)
-      removed.push([mapping.map(pos, -1), node])
+    if (!node.isInline || !mapping.mapResult(pos + 1).deleted) return false
+    const kept = present.get(key(node)) ?? 0
+    if (kept) present.set(key(node), kept - 1)
+    else if (missing > 0) {
+      missing--
+      // A comment after the caret stays after the composed text.
+      removed.push([
+        pos >= before.selection.head
+          ? mapping.map(pos + node.nodeSize, 1)
+          : mapping.map(pos, -1),
+        node,
+      ])
+    }
     return false
   })
   if (!removed.length) return null
