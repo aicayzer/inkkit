@@ -83,6 +83,8 @@ Pasting HTML from a web page, notes app or word processor imports readable conte
 
 Custom elements, `iframe`, `script`, `svg`, `math`, `object`, authored comments and other unrecognised elements remain literal source, with their content unchanged, including any table inside them. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.
 
+HTML that carries InkKit's own metadata is checked before it is saved. A comment that contains its own closing marker, and a code fence with an unclosed or invalid fence marker, import as ordinary content. A reference or footnote label and a reference definition title are saved on one line, with each line break replaced by a space, and a bracket in a label is escaped.
+
 Raw HTML kept in a note, whether pasted or typed, is saved as written and is not checked for unsafe addresses or scripts. An app that renders notes must sanitize raw HTML itself.
 
 ## Spreadsheet clipboard

@@ -389,12 +389,17 @@ function commentNode(inline: boolean) {
       {
         tag: `${inline ? 'span' : 'div'}[data-inkkit-comment]`,
         preserveWhitespace: 'full',
-        getAttrs: (dom) => ({
-          syntax:
+        getAttrs(dom) {
+          const syntax =
             dom.getAttribute('data-inkkit-comment') === 'obsidian'
               ? 'obsidian'
-              : 'html',
-        }),
+              : 'html'
+          // Text holding its own terminator would end the comment early and
+          // leave the rest as Markdown, so it stays plain text.
+          const terminator = syntax === 'obsidian' ? '%%' : '-->'
+          if (dom.textContent?.includes(terminator)) return false
+          return { syntax }
+        },
       },
     ],
     toDOM: (node) => [
