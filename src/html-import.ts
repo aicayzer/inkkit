@@ -32,7 +32,8 @@ import { singleLine } from './references'
 // same structure in InkKit, and where no reading of it holds an address that
 // HTML import refuses. InkKit's own syntax, such as wiki links, literal source
 // and comments, is read differently by other apps, so the saved Markdown is
-// also read the way GitHub Flavored Markdown and strict CommonMark read it.
+// also read as GitHub Flavored Markdown, as strict CommonMark, and as
+// CommonMark with raw HTML turned off.
 
 const standard = () => ({
   extensions: [
@@ -51,6 +52,11 @@ const standard = () => ({
   ],
 })
 
+// An app that turns raw HTML off reads the Markdown inside HTML as text.
+const withoutRawHTML = {
+  extensions: [{ disable: { null: ['htmlFlow', 'htmlText'] } }],
+}
+
 function standardTree(markdown: string): Root {
   return fromMarkdown(markdown, standard())
 }
@@ -67,7 +73,11 @@ function safeAddresses(markdown: string): boolean {
     if (node.type === 'image' && isScriptAddress(node.url)) return false
     return !('children' in node) || node.children.every(visit)
   }
-  return visit(standardTree(markdown)) && visit(fromMarkdown(markdown))
+  return (
+    visit(standardTree(markdown)) &&
+    visit(fromMarkdown(markdown)) &&
+    visit(fromMarkdown(markdown, withoutRawHTML))
+  )
 }
 
 class Check {

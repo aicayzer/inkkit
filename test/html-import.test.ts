@@ -74,7 +74,7 @@ const structure = (doc: Node) =>
   semanticSignature(doc.type.create(null, doc.content))
 
 /** Addresses that HTML import refuses, in a GitHub Flavored Markdown or
- *  strict CommonMark reading of the Markdown. */
+ *  strict CommonMark reading of the Markdown, or one with raw HTML off. */
 function unsafeAddresses(markdown: string): string[] {
   const found: string[] = []
   const visit = (node: Nodes) => {
@@ -97,6 +97,11 @@ function unsafeAddresses(markdown: string): string[] {
     }),
   )
   visit(fromMarkdown(markdown))
+  visit(
+    fromMarkdown(markdown, {
+      extensions: [{ disable: { null: ['htmlFlow', 'htmlText'] } }],
+    }),
+  )
   return found
 }
 
@@ -222,10 +227,16 @@ for (const via of ['paste', 'drop'] as const) {
       expect(kept.text).toBe('a%%plain note%%b\n')
       const hidden = await expectReadsBack(
         session,
+        '<p>a<span data-inkkit-comment="obsidian">see [l](https://example.test/)</span>b</p>',
+        via,
+      )
+      expect(hidden.text).toBe('a<!--see [l](https://example.test/)-->b\n')
+      const text = await expectReadsBack(
+        session,
         `<p>a<span data-inkkit-comment="obsidian">see ${script}</span>b</p>`,
         via,
       )
-      expect(hidden.text).toBe(`a<!--see ${script}-->b\n`)
+      expect(text.text).toBe('asee \\[l]\\(javascript:alert(1))b\n')
     })
   })
 
@@ -417,7 +428,7 @@ test('generated HTML with InkKit metadata and untidy text reads back as inserted
 }, 60000)
 
 test('Markdown typed or pasted as Markdown source keeps its text', async () => {
-  const source = `a %%${script}%% <!--x -- y-->\n\n<b>x</b> ${script}\n\n> [!NOTE] T *e*\n> body\n\n[^1]: javascript:alert(1)\n`
+  const source = `a %%${script}%% <!--x -- y-->\n\n<b>x</b> ${script}\n\n> [!NOTE] T *e*\n> body\n\n<div>\n[y](javascript:alert(1))\n</div>\n\nc<!--[y](javascript:alert(1))-->d\n\n[^1]: javascript:alert(1)\n`
   await withEditor(async (session) => {
     load(session)
     await session.editor.paste({ text: source, markdown: source })
@@ -462,6 +473,22 @@ test('a wiki link from HTML saves no address that other readers would follow', a
     },
     { wikiLinks: { open() {} } },
   )
+})
+
+test('Markdown kept inside HTML saves no address that a reader without raw HTML would follow', async () => {
+  await withEditor(async (session) => {
+    for (const via of ['paste', 'drop'] as const)
+      for (const html of [
+        '<p>a<span data-inkkit-comment="html">[y](javascript:alert(1))</span>b</p>',
+        '<p>a<span data-inkkit-comment="obsidian">&lt;javascript:alert(1)&gt;</span>b</p>',
+        '<p>a</p><pre class="literal-markdown">&lt;div&gt;\n[y](javascript:alert(1))\n&lt;/div&gt;</pre><p>b</p>',
+        '<p>a</p><pre class="literal-markdown">&lt;x-a&gt;\n[y](javascript:alert(1))\n&lt;/x-a&gt;</pre><p>b</p>',
+      ]) {
+        const { doc } = await expectReadsBack(session, html, via)
+        expect(names(doc), html).not.toContain('literal_markdown')
+        expect(names(doc), html).not.toContain('comment_inline')
+      }
+  })
 })
 
 test('a footnote from HTML saves no address that strict CommonMark would follow', async () => {

@@ -262,7 +262,7 @@ for (const via of ['paste', 'drop'] as const)
     await expect
       .poll(async () => (await observe(page)).snapshot!.text)
       .toBe(
-        'a\n\n```\n<b>x</b> [l](javascript:void(0))\n```\n\nb<!--see [l](javascript:void(0))-->\n\nVisit https://example.com/ now\n' +
+        'a\n\n```\n<b>x</b> [l](javascript:void(0))\n```\n\nbsee \\[l]\\(javascript:void(0))\n\nVisit https://example.com/ now\n' +
           // A drop lands before the empty paragraph, which stays as a spacer.
           (via === 'drop' ? '\n<br />\n' : ''),
       )
