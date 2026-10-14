@@ -22,6 +22,7 @@ import {
 } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { commentsVisible, isComment, isWrittenEdit } from './comments'
+import { mac } from './modifier'
 
 // A hidden comment is drawn `display: none`. Browsers delete such an element
 // along with the character beside it, often without a `beforeinput` event, so
@@ -30,9 +31,6 @@ import { commentsVisible, isComment, isWrittenEdit } from './comments'
 type Direction = -1 | 1
 type Unit = 'character' | 'word' | 'lineboundary'
 
-const mac =
-  typeof navigator !== 'undefined' &&
-  /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
 // Any other chord with Backspace or Delete deletes one character, so no

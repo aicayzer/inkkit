@@ -188,6 +188,7 @@ import {
   type OutlineContext,
 } from './outline'
 import { taskListPlugin, toggleTaskList } from './tasks'
+import { modHeld, trackLinkModifier } from './modifier'
 import { diagramsAvailable, isMermaid, mermaidPreview } from './mermaid'
 import {
   hasAuthoredImagesInLiterals,
@@ -607,6 +608,7 @@ export class InkKitEditor {
   private root!: HTMLElement
   private ownsRootClass = false
   private clickHandler?: (event: MouseEvent) => void
+  private untrackLinkModifier?: () => void
   private footnoteKeyHandler?: (event: KeyboardEvent) => void
   private copyHandler?: (event: ClipboardEvent) => void
   private originalSource = ''
@@ -1703,6 +1705,7 @@ export class InkKitEditor {
     this.pasteController.destroy()
     if (this.clickHandler)
       this.root.removeEventListener('click', this.clickHandler)
+    this.untrackLinkModifier?.()
     if (this.footnoteKeyHandler)
       this.root.removeEventListener('keydown', this.footnoteKeyHandler, true)
     if (this.copyHandler) {
@@ -2120,12 +2123,14 @@ export class InkKitEditor {
     instance.clickHandler = (event) => {
       if (activateFootnote(event)) return
       const anchor = (event.target as HTMLElement).closest('a[href]')
-      if (anchor && event.metaKey) {
-        event.preventDefault()
-        events.openLink(anchor.getAttribute('href') ?? '')
-      }
+      if (!anchor || event.button !== 0 || !modHeld(event)) return
+      event.preventDefault()
+      // The renderer blanks an address whose scheme could run code.
+      const href = anchor.getAttribute('href')
+      if (href) events.openLink(href)
     }
     root.addEventListener('click', instance.clickHandler)
+    instance.untrackLinkModifier = trackLinkModifier(root)
     instance.copyHandler = (event) => {
       if (instance.formatType === 'txt') return
       if (instance.mode === 'source') {

@@ -189,11 +189,20 @@ History names are `undo` and `redo`. Table names are `tableInsert`, `tableAddRow
 
 Omitted history bindings keep `Mod-z` for undo and `Mod-y` / `Shift-Mod-z` for redo; an explicit empty array disables configurable defaults for that name. Omitted `tableExit` bindings keep `Mod-Enter` and `Enter` in table context; an explicit empty array disables both. Unbound default history keys are consumed to prevent the browser's separate undo stack from changing source/TXT. The same history bindings apply across formatted/source/TXT surfaces. Formatted and table commands are disabled outside their applicable context and while read-only. Keyboard dispatch follows the same mutation guards as facade calls. Hosts can query command availability to present current shortcut/menu state.
 
+## Opening links
+
+A primary click with Mod held opens a link, in formatted mode, whether or not the editor is editable. Mod is Command on Apple platforms and Control elsewhere: the same key as `Mod` in [keymap](#appearance-labels-and-shortcuts) notation, detected from `navigator.platform` in the same way. On a Mac, Control-click keeps opening the context menu. A click without Mod places the caret as usual.
+
+- **Markdown link:** InkKit calls `events.openLink(href)` with the link's destination. It doesn't call `openLink` when the rendered address is empty. That includes `[text]()` and any address whose scheme isn't `http`, `https`, `mailto`, `tel` or `ftp`, such as `javascript:`, because the editor renders those links without an address. Relative addresses and fragments, such as `notes/a.md` or `#intro`, reach the host as written.
+- **Wiki link:** InkKit calls `WikiLinkAdapter.open`. See [Optional wiki links and files](#optional-wiki-links-and-files).
+
+While Mod is held and the pointer is over the editor root, InkKit's stylesheet shows the pointer cursor over each link that opens. InkKit tracks the key itself, including while focus is in a host control, so hosts don't need key listeners or classes for it. Opening a Markdown link from the keyboard isn't supported yet.
+
 ## Optional wiki links and files
 
 Linked syntax and controlled file views require 0.0.10 or later. `EditorOptions.wikiLinks` and `EditorOptions.files` are independent optional adapters. Omitting both retains the existing simple editor and `ImageAdapter` contract. See [supported syntax](supported-syntax.md#linked-syntax) for the bounded grammar and representation table.
 
-`WikiLinkAdapter.open(reference, context)` receives a `WikiLinkReference` with decoded `target`, optional `fragment` and authored readable `label`. Optional synchronous `resolve(reference, context)` returns `{ missing?: boolean }` for presentation. It does not supply an editor URL. The host owns lookup, permissions and navigation; use source mode to edit the authored target or alias. Command/Ctrl-click or Enter/Space on the focused link invokes `open`, including in read-only mode. No note index, backlink graph or transclusion is created.
+`WikiLinkAdapter.open(reference, context)` receives a `WikiLinkReference` with decoded `target`, optional `fragment` and authored readable `label`. Optional synchronous `resolve(reference, context)` returns `{ missing?: boolean }` for presentation. It does not supply an editor URL. The host owns lookup, permissions and navigation; use source mode to edit the authored target or alias. A primary click with Mod (see [Opening links](#opening-links)) or Enter or Space on the focused link invokes `open`, including in read-only mode. No note index, backlink graph or transclusion is created.
 
 `FileAdapter` provides:
 
