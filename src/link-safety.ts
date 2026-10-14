@@ -1,15 +1,15 @@
-// Schemes a link may keep when HTML is imported. Each opens a mail, phone or
-// web destination and runs no code.
+// Schemes a link may keep in imported HTML and in print export. Each opens a
+// mail, phone or web destination and runs no code.
 const linkSchemes = new Set(['http', 'https', 'mailto', 'tel'])
 
 /**
- * Whether a link address from imported HTML may be kept. Relative paths,
- * queries and fragments pass. An address with a scheme passes only when the
- * scheme is listed, however it is cased. Spaces, tabs and line breaks at the
- * ends are ignored, as in a browser; any other control character, which a
- * browser may skip while it reads the scheme, makes the address unsafe. The
- * text before the first `/`, `?`, `#` or `\` that holds a `:` is read as the
- * scheme, so an unknown or malformed one is refused.
+ * Whether a link address may be kept. Relative paths, queries and fragments
+ * pass, and so does an address whose scheme is listed, in any letter case.
+ * Spaces, tabs and line breaks at the ends are ignored, as in a browser. Any
+ * other control character makes the address unsafe, because a browser may skip
+ * it while it reads the scheme. The scheme is the text before the first `:` in
+ * the part before the first `/`, `?`, `#` or `\`, so an unknown or malformed
+ * scheme is refused.
  */
 export function isSafeLinkTarget(value: string): boolean {
   const target = value.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, '')
