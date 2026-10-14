@@ -242,6 +242,28 @@ function refuseStrayAnnotations(
     throw new Error(refusal)
 }
 
+// The part of Mermaid's API that InkKit calls, so that InkKit's declarations do
+// not depend on Mermaid's.
+interface Mermaid {
+  initialize(config: object): void
+  render(
+    id: string,
+    text: string,
+    container?: Element,
+  ): Promise<{ svg: string }>
+  mermaidAPI: { getDiagramFromText(text: string): Promise<ParsedDiagram> }
+}
+
+let loadMermaid: (() => Promise<Mermaid>) | undefined
+
+// The package's main entry registers Mermaid. The core entry does not, so a
+// host that imports only the core entry does not bundle it.
+export function registerMermaid(load: () => Promise<Mermaid>): void {
+  loadMermaid = load
+}
+
+export const diagramsAvailable = (): boolean => loadMermaid !== undefined
+
 let sequence = 0
 let queue: Promise<unknown> = Promise.resolve()
 const cache = new Map<string, Promise<string>>()
@@ -279,6 +301,13 @@ export function safeDiagramSVG(svg: string): string {
 }
 
 export function renderDiagram(source: string): Promise<string> {
+  const load = loadMermaid
+  if (!load)
+    return Promise.reject(
+      new Error(
+        'Diagram rendering is not included in this build. The source is retained.',
+      ),
+    )
   let names: string[]
   try {
     names = validateDiagram(source).names
@@ -288,7 +317,7 @@ export function renderDiagram(source: string): Promise<string> {
   const previous = cache.get(source)
   if (previous) return previous
   const rendered = queue.then(async () => {
-    const { default: mermaid } = await import('mermaid')
+    const mermaid = await load()
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: 'strict',

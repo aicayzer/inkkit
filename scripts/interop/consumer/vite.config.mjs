@@ -28,5 +28,16 @@ export default defineConfig({
     },
     viteSingleFile(),
   ],
+  resolve: {
+    alias:
+      process.env.INKKIT_CONSUMER_ENTRY === 'core'
+        ? [
+            {
+              find: /^@aicayzer\/inkkit$/,
+              replacement: '@aicayzer/inkkit/core',
+            },
+          ]
+        : [],
+  },
   build: { target: 'safari26', modulePreload: false, cssCodeSplit: false },
 })

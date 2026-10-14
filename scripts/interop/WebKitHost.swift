@@ -162,10 +162,11 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
     var printWeb: WKWebView?
     var printNavigation: CheckedContinuation<Void, Error>?
     var printContinuation: CheckedContinuation<Bool, Never>?
+    var loadStarted = Date()
 
     func applicationDidFinishLaunching(_ note: Notification) {
         guard args.count == 5 else {
-            fputs("Usage: webkit-host BUNDLE export|partial|paste|scenario|print|printable INPUT OUTPUT\n", stderr)
+            fputs("Usage: webkit-host BUNDLE export|partial|paste|scenario|print|printable|startup INPUT OUTPUT\n", stderr)
             exit(1)
         }
         let configuration = WKWebViewConfiguration()
@@ -183,6 +184,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         window.contentView = web
         window.orderFront(nil)
         let url = URL(fileURLWithPath: args[1])
+        loadStarted = Date()
         web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
     }
 
@@ -330,6 +332,18 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
                 if(!window.ready)throw new Error('InkKit mount timed out');
                 return true
                 """)
+            if args[2] == "startup" {
+                // The page reports its own mount time; the host adds the time
+                // from starting the load, including web content process launch.
+                var output = try await js("return { initialReadyMs: window.initialReadyMs, timeOrigin: performance.timeOrigin }") as? [String: Any] ?? [:]
+                if let ready = output["initialReadyMs"] as? Double, let origin = output["timeOrigin"] as? Double {
+                    output["hostReadyMs"] = origin - loadStarted.timeIntervalSince1970 * 1000 + ready
+                }
+                try JSONSerialization.data(withJSONObject: output, options: [.prettyPrinted, .sortedKeys])
+                    .write(to: URL(fileURLWithPath: args[4]))
+                NSApplication.shared.terminate(nil)
+                return
+            }
             let input = try JSONSerialization.jsonObject(
                 with: Data(contentsOf: URL(fileURLWithPath: args[3]))) as! [String: Any]
             let result: Any

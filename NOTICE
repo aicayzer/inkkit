@@ -22,4 +22,5 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 Milkdown and other runtime dependencies retain their own licences. They are
-installed as dependencies.
+installed as dependencies. Mermaid, an optional peer dependency, retains its
+own licence and is installed by hosts that render diagrams.

@@ -22,7 +22,29 @@ const run = (command, args, cwd) =>
 export const sha256 = (bytes) =>
   createHash('sha256').update(bytes).digest('hex')
 
+// Mermaid is an optional peer dependency: the main entry needs it and the core
+// entry must build without it installed.
+const mermaidMarker = 'Syntax error in text'
+
 export async function checkConsumer(packageSpec, version) {
+  const { peerDependencies = {} } = JSON.parse(
+    await readFile('package.json', 'utf8'),
+  )
+  const main = await buildConsumer(packageSpec, version, '', peerDependencies)
+  const core = await buildConsumer(packageSpec, version, '/core', {})
+  if (!main.html.includes(mermaidMarker))
+    throw new Error('The main-entry consumer bundle does not contain Mermaid')
+  if (core.html.includes(mermaidMarker))
+    throw new Error('The core-entry consumer bundle contains Mermaid')
+  return {
+    offlineBundleSha256: sha256(main.html),
+    offlineBundleBytes: Buffer.byteLength(main.html),
+    coreOfflineBundleSha256: sha256(core.html),
+    coreOfflineBundleBytes: Buffer.byteLength(core.html),
+  }
+}
+
+async function buildConsumer(packageSpec, version, entry, peers) {
   const temp = await mkdtemp(join(tmpdir(), 'inkkit-consumer-'))
   try {
     await writeFile(
@@ -30,7 +52,7 @@ export async function checkConsumer(packageSpec, version) {
       JSON.stringify({
         private: true,
         type: 'module',
-        dependencies: { '@aicayzer/inkkit': packageSpec },
+        dependencies: { '@aicayzer/inkkit': packageSpec, ...peers },
         devDependencies: {
           typescript: '7.0.2',
           vite: '8.3.3',
@@ -60,13 +82,25 @@ export async function checkConsumer(packageSpec, version) {
     )
     if (installed.name !== '@aicayzer/inkkit' || installed.version !== version)
       throw new Error('Clean consumer installed an unexpected package version')
+    const mermaidInstalled = await readFile(
+      join(temp, 'node_modules/mermaid/package.json'),
+    ).then(
+      () => true,
+      () => false,
+    )
+    if (mermaidInstalled !== 'mermaid' in peers)
+      throw new Error(
+        mermaidInstalled
+          ? 'Mermaid was installed without being requested'
+          : 'Mermaid was not installed for the main entry',
+      )
     await writeFile(
       join(temp, 'index.html'),
       '<html><body><div id="editor"></div><script type="module" src="/main.ts"></script></body></html>',
     )
     await writeFile(
       join(temp, 'main.ts'),
-      `import {InkKitEditor, InkKitError, type DocumentSnapshot, type ImageAdapter, type PrintableDocument, type PrintableWarning, type TableCommand, type TableOptions, type EditingMode, type Heading, type EditorOptions, type TextInputPreferences, type CommandState, type EditorLabels, type TextRange, type ReadableTextSnapshot, type TextRect, type ViewportOptions, type ViewportSnapshot, type ViewportInsets, type FileAdapter, type FileReference, type FileContext, type FilePresentation, type PortableImage, type WikiLinkAdapter, type WikiLinkReference, type DocumentContext} from '@aicayzer/inkkit';\nimport '@aicayzer/inkkit/style.css';\nconst fileReference: FileReference = {reference:'opaque/photo#page=2',kind:'wiki',fragment:'page=2',label:'Photo',width:320};
+      `import {InkKitEditor, InkKitError, type DocumentSnapshot, type ImageAdapter, type PrintableDocument, type PrintableWarning, type TableCommand, type TableOptions, type EditingMode, type Heading, type EditorOptions, type TextInputPreferences, type CommandState, type EditorLabels, type TextRange, type ReadableTextSnapshot, type TextRect, type ViewportOptions, type ViewportSnapshot, type ViewportInsets, type FileAdapter, type FileReference, type FileContext, type FilePresentation, type PortableImage, type WikiLinkAdapter, type WikiLinkReference, type DocumentContext} from '@aicayzer/inkkit${entry}';\nimport '@aicayzer/inkkit/style.css';\nconst fileReference: FileReference = {reference:'opaque/photo#page=2',kind:'wiki',fragment:'page=2',label:'Photo',width:320};
 const presentations: readonly FilePresentation[] = [{kind:'image',url:'blob:fixture',mimeType:'image/png'}, {kind:'audio',url:'blob:fixture',label:'Voice'}, {kind:'video',url:'blob:fixture'}, {kind:'pdf',url:'blob:fixture',mimeType:'application/pdf'}, {kind:'file',label:'Archive'}, {kind:'missing',label:'Unavailable'}, {kind:'error',message:'Unavailable bytes'}];
 const files: FileAdapter = {
   async resolve(reference:FileReference, context:FileContext):Promise<FilePresentation> {const signal:AbortSignal=context.signal; void context.documentId; void context.generation; void context.operationId; void reference.kind; void reference.fragment; void reference.label; void reference.width; if(signal.aborted) throw new DOMException('Aborted','AbortError'); return presentations[4]!},
@@ -104,7 +138,7 @@ const preferences: TextInputPreferences = {spellcheck:false,autocorrect:false,au
     const html = await readFile(join(temp, 'dist/index.html'), 'utf8')
     if (/<script[^>]+\bsrc=|<link[^>]+\bhref=/i.test(html))
       throw new Error('The web-view consumer is not bundled offline')
-    return { offlineBundleSha256: sha256(html) }
+    return { html }
   } finally {
     await rm(temp, { recursive: true, force: true })
   }
@@ -148,6 +182,7 @@ async function testPackage() {
         'public declarations',
         'CSS export',
         'offline Vite bundle',
+        'core entry without Mermaid',
       ],
     }
     await writeFile(

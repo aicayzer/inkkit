@@ -173,7 +173,7 @@ import {
   type OutlineContext,
 } from './outline'
 import { taskListPlugin, toggleTaskList } from './tasks'
-import { isMermaid, mermaidPreview } from './mermaid'
+import { diagramsAvailable, isMermaid, mermaidPreview } from './mermaid'
 import {
   hasAuthoredImagesInLiterals,
   printableMarkdown,
@@ -1655,7 +1655,7 @@ export class InkKitEditor {
           : (await import('./highlight')).highlightPlugin,
       )
       .use(
-        options.rendering?.diagramPreview === false
+        options.rendering?.diagramPreview === false || !diagramsAvailable()
           ? []
           : mermaidPreview((error) => events.error?.(error)),
       )

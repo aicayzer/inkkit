@@ -35,7 +35,7 @@ A Chromium CPU profile of mixed loading/editing attributed the dominant editing 
 
 Optional presentation plugins can be skipped at mount through `rendering: { codeHighlighting: false, diagramPreview: false }`. Mermaid is imported only after validating an actual render request. Explicit diagram copy/print still renders on demand. These changes reduce execution work for minimal hosts while retaining the default rich behaviour.
 
-No bundle-size reduction is claimed. Single-file offline consumers include optional rendering code even with dynamic imports. Splitting delivery would require a different packaging/host contract; measurements do not justify changing that contract in this consolidation wave. No renderer replacement, arbitrary budget or general plugin platform was introduced. Context-sensitive and structural edits still use whole-document preservation and reopen validation. The October 12 text-block measurements below cover a narrower incremental path. Hosts should evaluate their actual documents using these reproducible baselines.
+No bundle-size reduction is claimed. Single-file offline consumers include optional rendering code even with dynamic imports. Splitting delivery would require a different packaging/host contract; measurements do not justify changing that contract in this consolidation wave. The core entry, added later, is that contract change; see [Builds with and without Mermaid](#builds-with-and-without-mermaid-october-14-2026). No renderer replacement, arbitrary budget or general plugin platform was introduced. Context-sensitive and structural edits still use whole-document preservation and reopen validation. The October 12 text-block measurements below cover a narrower incremental path. Hosts should evaluate their actual documents using these reproducible baselines.
 
 ## Text-block input measurements, October 12, 2026
 
@@ -114,3 +114,29 @@ Ten single-character insertions in the middle of a 4,000-block document, mean pe
 | 4,000 long paragraphs with a link  |  1,464,000 |                          2,573 / 2,603 |                   2,594 / 2,624 |
 
 Matching does not cause the slow rows. An edit inside a paragraph whose source contains `[`, `<` or `%%` (a link, a reference, HTML or a comment) cannot use the independent text-block path, so each keystroke serializes and reopens the complete document. A CPU profile of 2,000 long link paragraphs attributed 1,334 ms per input to `Preservation.serialize`, almost all of it Markdown serialization, parsing and signature comparison across all blocks. Block correspondence did not appear: with one changed block, trimming the equal head and tail leaves one block on each side. The same cost applies to list, table and code edits. A separate probe of a 4,000-item task list measured about 380 ms per input. Reducing it requires validating those blocks locally, which this change does not attempt.
+
+## Builds with and without Mermaid, October 14, 2026
+
+`@aicayzer/inkkit` renders diagrams with Mermaid, which the host installs as a peer dependency. `@aicayzer/inkkit/core` never imports Mermaid. The comparison builds the offline interop consumer from the same candidate archive twice, once per entry, and loads each page ten times in fresh pages and fresh WKWebView processes:
+
+```sh
+swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/webkit-host
+node scripts/measure-startup.mjs CANDIDATE_ARCHIVE _local/startup _local/interop/webkit-host
+```
+
+The script records both pages' hashes and sizes, machine and browser versions and every sample in `startup.json`. Page start-up is the page's own `performance.now()` when the first editor mount completes, which includes parsing and running the whole inline script. WKWebView host start-up adds the time from the host's load request to the page's time origin, including the web content process launch. The measurements ran on an M4 Pro MacBook Pro with macOS 27.0.1, Chromium 156 and Playwright WebKit 27.2. Values are medians in milliseconds.
+
+| Page                   |     Bytes |      Gzip | Chromium | Playwright WebKit | WKWebView page | WKWebView host |
+| ---------------------- | --------: | --------: | -------: | ----------------: | -------------: | -------------: |
+| Main entry, Mermaid    | 6,120,458 | 1,732,655 |      192 |               149 |            123 |            309 |
+| Core entry, no Mermaid | 1,014,444 |   317,746 |       44 |                60 |             42 |            224 |
+
+Leaving Mermaid out removes about 83% of the page and about 80 ms from each WKWebView start-up. A single-file build inlines Mermaid's dynamic imports, so the main entry runs Mermaid's module code at start-up even before any diagram renders. Disabling previews does not avoid that cost; only the core entry does. Memory was not measured.
+
+### Bundling only the supported diagram types
+
+When diagrams are enabled, the main-entry page still contains every diagram type Mermaid 12.1.0 ships, not only the six that `validateDiagram` accepts. Mermaid registers all of its built-in diagram types, layouts and KaTeX when it loads, each behind a dynamic import, and has no public option or entry point that leaves any out. A single-file build inlines all of them.
+
+A module graph of the main-entry page attributes 9.36 MB of rendered modules (before minification) to Mermaid. Of that, 6.23 MB is reachable only through diagram types, layouts and maths that InkKit refuses before rendering, mostly ELK (2.54 MB), other Mermaid diagram modules (1.62 MB), Cytoscape (0.87 MB) and KaTeX (0.48 MB). As an experiment, a host build plugin replaced those 48 dynamically imported modules with empty modules. The page fell from 6.1 MB to 2.7 MB (gzip 0.73 MB), and the six supported types still rendered in Chromium.
+
+InkKit does not ship that plugin. It works by rewriting Mermaid's unexported chunk files, whose names and boundaries can change in any Mermaid release, and it applies only to hosts that build with Vite or Rollup. Pruning safely needs either a Mermaid entry point that registers selected diagram types or a separate decision to maintain such a plugin with InkKit's Mermaid pin.
