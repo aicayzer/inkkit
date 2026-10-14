@@ -101,8 +101,9 @@ const endsInPunctuation = /[.,;:!?*_~]$/
 // What may sit against a bare address without the reader running the two together.
 // GFM reads an address after a space or any punctuation but `/`.
 const beforeURL = /(^|[\s\p{P}\p{S}])$/u
-// Characters that end an address without being escaped where they follow it.
-const afterURL = /^([\s.,;:!?)}]|$)/
+// Text GFM leaves off the end of an address and the writer does not escape:
+// what follows an address up to a space must be only these.
+const trailing = /^["'.,;:!?)\]]*$/
 
 function balanced(url: string): boolean {
   let open = 0
@@ -124,7 +125,7 @@ const blocks = new Set(['paragraph', 'heading', 'tableCell'])
 
 /** A bare address is written bare only where reading it back gives the same link: nothing may run into it at
  *  either end. `ancestors` runs from the root to the link's parent. */
-function writesBare(node: Link, ancestors: Parents[]): boolean {
+function writesBare(node: Link, index: number, ancestors: Parents[]): boolean {
   const [child, ...rest] = node.children
   if (
     node.title ||
@@ -143,20 +144,30 @@ function writesBare(node: Link, ancestors: Parents[]): boolean {
     text.type === 'text' &&
     /^[ \t]+$/.test(text.value) &&
     parent.children.at(at) === text
+  const follows = (parent: Parents, text: PhrasingContent): boolean => {
+    if (text.type !== 'text') return false
+    const run = /^\S*/.exec(text.value)![0]
+    return (
+      trailing.test(run) &&
+      (run.length < text.value.length ||
+        (blocks.has(parent.type) && parent.children.at(-1) === text))
+    )
+  }
   const side = (step: -1 | 1): boolean => {
     let current: Parents | Link = node
     for (let level = ancestors.length - 1; level >= 0; level--) {
       const parent = ancestors[level]!
       const children = parent.children as PhrasingContent[]
-      const sibling =
-        children[children.indexOf(current as PhrasingContent) + step]
+      const at =
+        current === node ? index : children.indexOf(current as PhrasingContent)
+      const sibling = children[at + step]
       if (sibling)
         return (
           sibling.type === 'text' &&
           !edge(parent, sibling, step < 0 ? 0 : -1) &&
           (step < 0
             ? beforeURL.test(sibling.value) && !sibling.value.endsWith('/')
-            : afterURL.test(sibling.value))
+            : follows(parent, sibling))
         )
       if (blocks.has(parent.type)) return true
       if (!wrappers.has(parent.type)) return false
@@ -174,7 +185,19 @@ let bareLinks = new WeakSet<Link>()
 
 const root: (typeof defaultHandlers)['root'] = (node, parent, state, info) => {
   bareLinks = new WeakSet()
+  // Moving spaces out of formatting can leave empty text, and formatting
+  // with nothing in it, written as bare delimiters that would join their
+  // neighbours.
+  const empty = (child: PhrasingContent): boolean =>
+    (child.type === 'text' && child.value === '') ||
+    (wrappers.has(child.type) &&
+      'children' in child &&
+      child.children.every(empty))
   const visit = (current: Parents, ancestors: Parents[]) => {
+    if (current.children.some((child) => empty(child as PhrasingContent)))
+      current.children = current.children.filter(
+        (child) => !empty(child as PhrasingContent),
+      ) as typeof current.children
     const children = current.children as PhrasingContent[]
     children.forEach((child, index) => {
       if (child.type === 'link' && formOf(child)) {
@@ -184,14 +207,77 @@ const root: (typeof defaultHandlers)['root'] = (node, parent, state, info) => {
       if (
         child.type === 'link' &&
         formOf(child) === 'literal' &&
-        writesBare(child, [...ancestors, current])
+        writesBare(child, index, [...ancestors, current])
       )
         bareLinks.add(child)
       if ('children' in child) visit(child, [...ancestors, current])
     })
   }
   visit(node, [])
+  bracketLinks = new WeakSet()
+  keepFormattingClosed(node, true)
   return defaultHandlers.root(node, parent, state, info)
+}
+
+// Links written with brackets although written bare or in angle brackets
+// elsewhere, because formatting around them could not close.
+let bracketLinks = new WeakSet<Link>()
+
+const spaceOrPunctuation = /^[\s\p{P}\p{S}]$/u
+
+// Formatting written around a link in angle brackets opens before `<` and
+// closes after `>`, which Markdown allows only beside a space or punctuation.
+// Where a letter sits there instead, the formatting goes inside a link
+// written with brackets.
+function keepFormattingClosed(current: Parents, block: boolean): void {
+  const children = current.children as PhrasingContent[]
+  children.forEach((child, index) => {
+    const chain: Array<PhrasingContent & { children: PhrasingContent[] }> = []
+    let inner: PhrasingContent = child
+    while (
+      wrappers.has(inner.type) &&
+      'children' in inner &&
+      inner.children.length === 1
+    ) {
+      chain.push(inner as PhrasingContent & { children: PhrasingContent[] })
+      inner = inner.children[0]!
+    }
+    if (chain.length && inner.type === 'link' && formOf(inner)) {
+      const link = inner
+      if (!bareLinks.has(link)) {
+        // Beyond the block is a line end; other nodes end in punctuation.
+        const outside = block ? ' ' : '.'
+        const previous = children[index - 1]
+        const next = children[index + 1]
+        const before = !previous
+          ? outside
+          : previous.type === 'text'
+            ? (previous.value.at(-1) ?? outside)
+            : '.'
+        const after = !next
+          ? outside
+          : next.type === 'text'
+            ? (next.value[0] ?? outside)
+            : '.'
+        if (
+          !spaceOrPunctuation.test(before) ||
+          !spaceOrPunctuation.test(after)
+        ) {
+          let content: PhrasingContent[] = link.children
+          for (const wrapper of [...chain].reverse())
+            content = [{ ...wrapper, children: content } as PhrasingContent]
+          const written: Link = {
+            ...link,
+            children: content as Link['children'],
+          }
+          bracketLinks.add(written)
+          children[index] = written
+          return
+        }
+      }
+    }
+    if ('children' in child) keepFormattingClosed(child, blocks.has(child.type))
+  })
 }
 
 const formOf = (node: Link): LinkForm =>
@@ -226,6 +312,7 @@ function formattedOutside(node: Link): PhrasingContent | undefined {
 type Written = 'bare' | 'angle' | 'brackets'
 
 function written(node: Link): Written {
+  if (bracketLinks.has(node)) return 'brackets'
   const form = formOf(node)
   if (form === 'literal' && bareLinks.has(node)) return 'bare'
   // A link written with brackets keeps them, even when its label is its address.
@@ -345,25 +432,29 @@ const commonmarkWithLiteralReferences = commonmark.filter(
     plugin !== hardbreakClearMarkPlugin,
 )
 
-// A line break inserted inside formatting does not take its marks. This
-// replaces the preset's plugin, which also cleared the marks of breaks inside
-// newly formatted text and, doing so, reset their attributes, turning a soft
-// break into a hard one, at positions read from the first step against the
-// final document.
+// A line break inserted inside formatting does not take its marks, and no
+// line break takes inline code, which cannot hold one. This replaces the
+// preset's plugin, which also cleared the marks of breaks inside newly
+// formatted text and, doing so, reset their attributes, turning a soft break
+// into a hard one, at positions read from the first step against the final
+// document.
 const breaksWithoutMarks = $prose(
   (ctx) =>
     new Plugin({
       key: new PluginKey('inkkitBreaksWithoutMarks'),
       appendTransaction(transactions, oldState, newState) {
-        if (!transactions.some((tr) => tr.getMeta('hardbreak'))) return null
+        if (!transactions.some((tr) => tr.docChanged)) return null
+        const inserted = transactions.some((tr) => tr.getMeta('hardbreak'))
         const start = oldState.doc.content.findDiffStart(newState.doc.content)
         if (start == null) return null
         const end = oldState.doc.content.findDiffEnd(newState.doc.content)!.b
         const type = hardbreakSchema.type(ctx)
         const tr = newState.tr
         newState.doc.nodesBetween(start, Math.max(start, end), (node, pos) => {
-          if (node.type === type && node.marks.length)
-            tr.removeMark(pos, pos + 1)
+          if (node.type !== type) return
+          for (const mark of node.marks)
+            if (inserted || mark.type.spec.code)
+              tr.removeMark(pos, pos + 1, mark.type)
         })
         return tr.steps.length ? tr : null
       },

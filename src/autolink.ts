@@ -1,10 +1,6 @@
 import { parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import {
-  Mark,
-  type Node as ProseNode,
-  type Schema,
-} from '@milkdown/kit/prose/model'
+import { Mark, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import {
   Plugin,
   PluginKey,
@@ -13,6 +9,7 @@ import {
 } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { serialize } from './dialect'
+import { semanticSignature } from './preserve'
 import type { LinkForm } from './link-form'
 
 interface Character {
@@ -52,40 +49,25 @@ function characters(
 const sameMarks = (a: readonly Mark[], b: readonly Mark[]) =>
   a.length === b.length && a.every((mark, index) => mark.eq(b[index]!))
 
-// The links each text reads as once written, as [start, end, href] within
-// it, found by writing the texts as plain paragraphs and reading them back.
-// GFM links addresses in a pass after escapes are read, so escaping cannot
-// keep one plain. Undefined where a text does not read back as itself.
-function literals(
+type Found = Array<[number, number, string]>
+
+// The links each text reads as when written as `sources`, as [start, end,
+// href] within it. Undefined where a source does not read as its text.
+function read(
   ctx: Ctx,
-  schema: Schema,
+  sources: string[],
   texts: string[],
-): Array<Array<[number, number, string]> | undefined> {
+): Array<Found | undefined> {
   if (!texts.length) return []
-  // GFM reads an address only after `www.`, `http://` or `https://`, or
-  // around `@`, so other text needs no reading.
-  const possible = texts.map((text) => /www\.|https?:\/\/|@/i.test(text))
-  if (!possible.every(Boolean)) {
-    const read = literals(
-      ctx,
-      schema,
-      texts.filter((_, index) => possible[index]),
-    )
-    return texts.map((_, index) => (possible[index] ? read.shift() : []))
-  }
   // A leading word puts each text after a space, where an address may start,
   // and keeps it a paragraph of its own.
-  const doc = schema.topNodeType.create(
-    null,
-    texts.map((text) =>
-      schema.nodes.paragraph!.create(null, schema.text(`x ${text}`)),
-    ),
+  const reopened = ctx.get(parserCtx)(
+    sources.map((source) => `x ${source}`).join('\n\n'),
   )
-  const reopened = ctx.get(parserCtx)(serialize(ctx, doc))
   if (reopened.childCount !== texts.length)
     return texts.length === 1
       ? [undefined]
-      : texts.flatMap((text) => literals(ctx, schema, [text]))
+      : texts.flatMap((text, index) => read(ctx, [sources[index]!], [text]))
   return texts.map((text, index) => {
     const paragraph = reopened.child(index)
     if (
@@ -93,7 +75,7 @@ function literals(
       paragraph.textContent !== `x ${text}`
     )
       return undefined
-    const found: Array<[number, number, string]> = []
+    const found: Found = []
     let valid = true
     paragraph.forEach((child, offset) => {
       if (!child.isText) valid = false
@@ -104,6 +86,33 @@ function literals(
     })
     return valid ? found : undefined
   })
+}
+
+// The links each text reads as, found by reading the text with the parser as
+// it is and as typed text is saved, with brackets and backslashes escaped,
+// which decide whether GFM reads an address while parsing or afterwards.
+// Where the two differ, or the text does not read as itself, it is
+// undefined.
+function literals(ctx: Ctx, texts: string[]): Array<Found | undefined> {
+  // GFM reads an address only after `www.`, `http://` or `https://`, or
+  // around `@`, so other text needs no reading.
+  const possible = texts.map((text) => /www\.|https?:\/\/|@/i.test(text))
+  const candidates = texts.filter((_, index) => possible[index])
+  const escaped = candidates.map((text) => text.replace(/[\\`[\]<>]/g, '\\$&'))
+  const raw = read(ctx, candidates, candidates)
+  const changed = candidates.flatMap((text, index) =>
+    escaped[index] === text ? [] : [index],
+  )
+  const written = read(
+    ctx,
+    changed.map((index) => escaped[index]!),
+    changed.map((index) => candidates[index]!),
+  )
+  changed.forEach((index, at) => {
+    if (JSON.stringify(written[at]) !== JSON.stringify(raw[index]))
+      raw[index] = undefined
+  })
+  return texts.map((_, index) => (possible[index] ? raw.shift() : []))
 }
 
 // CommonMark reads an address in angle brackets as a link to it, or to
@@ -129,7 +138,6 @@ interface Wanted {
 // Characters inside a link written with brackets are left as they are.
 function wantedLinks(
   ctx: Ctx,
-  schema: Schema,
   chars: Array<Character | undefined>,
   from: number,
   to: number,
@@ -197,7 +205,6 @@ function wantedLinks(
   }
   const found = literals(
     ctx,
-    schema,
     spans.map(([start, end]) =>
       chars
         .slice(start, end)
@@ -300,77 +307,112 @@ function linked(tr: Transaction, blocks: Block[]): Transaction {
   return tr
 }
 
-// Whether a text block reads back with the same links once written.
+// Whether a text block reads back with the same content once written, as
+// the preservation check compares it.
 function readsBack(ctx: Ctx, tr: Transaction, pos: number): boolean {
   const block = tr.doc.nodeAt(pos)!
-  const paragraph = tr.doc.type.schema.nodes.paragraph!.create(
-    null,
-    block.content,
-  )
-  const reopened = ctx.get(parserCtx)(
-    serialize(ctx, tr.doc.type.create(null, [paragraph])),
-  )
-  const clean = (node: ProseNode) =>
-    JSON.stringify(node.toJSON(), (key, value) =>
-      key === 'form' ? undefined : value,
-    )
-  return (
-    reopened.childCount === 1 &&
-    clean(reopened.firstChild!) === clean(paragraph)
-  )
+  const doc = tr.doc.type.create(null, [
+    tr.doc.type.schema.nodes.paragraph!.create(null, block.content),
+  ])
+  const reopened = ctx.get(parserCtx)(serialize(ctx, doc))
+  return semanticSignature(reopened) === semanticSignature(doc)
 }
 
-// Positions where each transaction changed the document, in the final one.
-function changedWindow(
-  transactions: readonly Transaction[],
-  before: ProseNode,
-  after: ProseNode,
-): [number, number] | undefined {
-  if (!transactions.some((tr) => tr.docChanged)) return undefined
+interface Edited {
+  pos: number
+  block: ProseNode
+  // The edited range, as positions in the new document.
+  from: number
+  to: number
+}
+
+const textblocks = (doc: ProseNode, from: number, to: number) => {
+  const found: Array<{ pos: number; node: ProseNode }> = []
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isTextblock) return true
+    if (!node.type.spec.code) found.push({ pos, node })
+    return false
+  })
+  return found
+}
+
+// The text blocks whose content an update changed, with the range changed in
+// each. A block whose attributes alone changed, such as a heading given its
+// id, is not edited.
+function editedBlocks(before: ProseNode, after: ProseNode): Edited[] {
   const start = before.content.findDiffStart(after.content)
-  if (start == null) return undefined
-  const end = before.content.findDiffEnd(after.content)!.b
-  return [start, Math.max(start, end)]
+  if (start == null) return []
+  let { a: endA, b: endB } = before.content.findDiffEnd(after.content)!
+  const overlap = start - Math.min(endA, endB)
+  if (overlap > 0) {
+    endA += overlap
+    endB += overlap
+  }
+  const old = textblocks(before, start, endA)
+  const now = textblocks(after, start, endB)
+  let prefix = 0
+  while (
+    prefix < old.length &&
+    prefix < now.length &&
+    old[prefix]!.node.content.eq(now[prefix]!.node.content)
+  )
+    prefix++
+  let suffix = 0
+  while (
+    suffix < old.length - prefix &&
+    suffix < now.length - prefix &&
+    old[old.length - 1 - suffix]!.node.content.eq(
+      now[now.length - 1 - suffix]!.node.content,
+    )
+  )
+    suffix++
+  const paired = old.length === now.length
+  return now.slice(prefix, now.length - suffix).map(({ pos, node }, index) => {
+    const previous = paired ? old[prefix + index]!.node : undefined
+    const from = previous?.content.findDiffStart(node.content)
+    if (!previous || from == null)
+      return { pos, block: node, from: pos + 1, to: pos + node.nodeSize - 1 }
+    let { a: endOld, b: endNew } = previous.content.findDiffEnd(node.content)!
+    const shared = from - Math.min(endOld, endNew)
+    if (shared > 0) endNew += shared
+    return { pos, block: node, from: pos + 1 + from, to: pos + 1 + endNew }
+  })
 }
 
 // Bare addresses follow their text, as GFM reads it: an edited address links
 // to its new text while it is still an address, text that stops being one is
 // plain, and an address typed into plain text becomes a link. An address in
 // angle brackets follows its text the same way. Links written with brackets
-// keep their destination. Each change is checked by writing the block and
-// reading it back; if that does not give the same block, nothing changes.
+// keep their destination. Only text an edit reaches is read, so loading a
+// document and edits elsewhere change nothing. Each change is checked by
+// writing the block and reading it back; if that does not give the same
+// block, nothing changes.
 export const autolinkLiterals = $prose(
   (ctx) =>
     new Plugin({
       key: new PluginKey('autolinkLiterals'),
       appendTransaction(transactions, oldState, newState) {
-        const window = changedWindow(transactions, oldState.doc, newState.doc)
-        if (!window) return null
+        if (!transactions.some((tr) => tr.docChanged)) return null
         const blocks: Block[] = []
-        newState.doc.nodesBetween(
-          Math.max(0, window[0] - 1),
-          Math.min(newState.doc.content.size, window[1] + 1),
-          (block, pos) => {
-            if (!block.isTextblock) return true
-            if (block.type.spec.code) return false
-            const chars = characters(block, pos + 1)
-            const index = (at: number) => {
-              const found = chars.findIndex(
-                (char) => char !== undefined && char.pos >= at,
-              )
-              return found < 0 ? chars.length : found
-            }
-            const wanted = wantedLinks(
-              ctx,
-              newState.schema,
-              chars,
-              Math.max(0, index(window[0]) - 1),
-              index(window[1]) + 1,
+        for (const { pos, block, from, to } of editedBlocks(
+          oldState.doc,
+          newState.doc,
+        )) {
+          const chars = characters(block, pos + 1)
+          const index = (at: number) => {
+            const found = chars.findIndex(
+              (char) => char !== undefined && char.pos >= at,
             )
-            if (differs(chars, wanted)) blocks.push({ pos, chars, wanted })
-            return false
-          },
-        )
+            return found < 0 ? chars.length : found
+          }
+          const wanted = wantedLinks(
+            ctx,
+            chars,
+            Math.max(0, index(from) - 1),
+            index(to) + 1,
+          )
+          if (differs(chars, wanted)) blocks.push({ pos, chars, wanted })
+        }
         if (!blocks.length) return null
         let tr = linked(newState.tr, blocks)
         const failed = blocks.filter((block) => !readsBack(ctx, tr, block.pos))

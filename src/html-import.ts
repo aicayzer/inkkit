@@ -329,7 +329,11 @@ function opaque(check: Check, node: Node): Node[] {
 function plainMarks(schema: Schema, marks: readonly Mark[]): readonly Mark[] {
   return marks.map((mark) =>
     mark.type === schema.marks.link
-      ? mark.type.create({ href: mark.attrs.href, title: mark.attrs.title })
+      ? mark.type.create({
+          href: mark.attrs.href,
+          title: mark.attrs.title,
+          form: mark.attrs.form,
+        })
       : mark,
   )
 }

@@ -146,6 +146,30 @@ const typing: [string, string, string, boolean, string, string][] = [
     'See <https://example.com/paths> now.\n',
   ],
   [
+    'far from an address in quotes',
+    'Link "https://example.com/a" and words here\n',
+    'here',
+    true,
+    '!',
+    'Link "https://example.com/a" and words here!\n',
+  ],
+  [
+    'after an entity beside an email-like word',
+    'Contact user@host or &copy; 2024\n',
+    '2024',
+    true,
+    '5',
+    'Contact user@host or &copy; 20245\n',
+  ],
+  [
+    'into an address in underscore emphasis',
+    'Go _https://example.com/path_ now\n',
+    'path',
+    true,
+    's',
+    'Go _https://example.com/paths_ now\n',
+  ],
+  [
     'into a written link whose label is its destination',
     'See [docs](docs) now.\n',
     'docs',
@@ -196,4 +220,20 @@ test('bold and undo over a soft line break keep it soft @preservation', async ({
   observed = await observe(page)
   expect(observed.diagnostics).toEqual([])
   expect(observed.snapshot!.text).toBe('line one\nline two\n')
+})
+
+test('opening a note with a non-ASCII address in a heading leaves it as written @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await operation(page, 'replaceSource', { text: '# https://bücher.de/a\n' })
+  const observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  expect(observed.snapshot!.text).toBe('# https://bücher.de/a\n')
+  await expect(
+    page
+      .getByRole('textbox', { name: 'Formatted Markdown editor', exact: true })
+      .locator('a'),
+  ).toHaveAttribute('href', 'https://bücher.de/a')
 })

@@ -299,6 +299,144 @@ for (const [typed, link] of [
       expect(s.view.dom.querySelector('a')?.getAttribute('href')).toBe(link)
     }))
 
+// 9. Loading changes nothing, and an edit changes nothing outside its range.
+for (const source of [
+  '# https://bücher.de/a\n',
+  'See https://bücher.de/a and https://例え.jp/b now.\n',
+  'See https://example.com/a.b* x\n',
+  'Go _https://example.com/path_ now\n',
+  'Contact user@host or &copy; 2024\n',
+  'Link "https://example.com/a" and words here\n',
+])
+  test(`loading ${JSON.stringify(source)} saves it unchanged`, () =>
+    session(source, async (s) => {
+      const links = s.view.dom.querySelectorAll('a').length
+      await expectSaves(s, source)
+      s.view.dispatch(s.view.state.tr.insertText('z', 1))
+      s.editor.undo()
+      await expectSaves(s, source)
+      expect(s.view.dom.querySelectorAll('a').length).toBe(links)
+    }))
+
+test('an edit and undo after an address followed by an asterisk keep its destination', () =>
+  session('See https://example.com/a.b* x\n', async (s) => {
+    place(s.view, at(s.view, ' x'))
+    type(s.view, 'y')
+    await expectSaves(s, 'See https://example.com/a.b* xy\n')
+    s.editor.undo()
+    await expectSaves(s, 'See https://example.com/a.b* x\n')
+    expect(s.view.dom.querySelector('a')?.getAttribute('href')).toBe(
+      'https://example.com/a.b',
+    )
+  }))
+
+for (const [name, source] of [
+  ['in double quotes', 'Link "https://example.com/a" and words here\n'],
+  ['in single quotes', "Link 'https://example.com/a' and words here\n"],
+  ['an email address in quotes', 'Mail "ada@example.com" and words here\n'],
+  ['followed by an asterisk', 'Link https://example.com/a* and words here\n'],
+  ['followed by an underscore', 'Link https://example.com/a_ and words here\n'],
+  ['followed by a tilde', 'Link https://example.com/a~ and words here\n'],
+  [
+    'followed by an entity',
+    'Link https://example.com/a&copy; and words here\n',
+  ],
+  ['followed by a break', 'Link https://example.com/a<br> and words here\n'],
+  ['in square brackets', 'Link [https://example.com/a] and words here\n'],
+  ['in a non-ASCII domain', 'Link https://bücher.de/a and words here\n'],
+  ['in emphasis', 'Link _https://example.com/a_ and words here\n'],
+  [
+    'in a table cell',
+    '| A | B |\n| --- | --- |\n| "https://example.com/a" | words here |\n',
+  ],
+  [
+    'in square brackets in a table cell',
+    '| A | B |\n| --- | --- |\n| [https://example.com/a] | words here |\n',
+  ],
+] as const)
+  test(`typing far from an address ${name} leaves it as written`, () =>
+    session(source, async (s) => {
+      place(s.view, at(s.view, 'here'))
+      type(s.view, '!')
+      await expectSaves(s, source.replace('here', 'here!'))
+    }))
+
+test('editing text after an entity keeps the entity and other text as written', () =>
+  session('Contact user@host or &copy; 2024\n', async (s) => {
+    place(s.view, at(s.view, '2024'))
+    type(s.view, '5')
+    await expectSaves(s, 'Contact user@host or &copy; 20245\n')
+  }))
+
+test('editing an address in underscore emphasis follows its text', () =>
+  session('Go _https://example.com/path_ now\n', async (s) => {
+    place(s.view, at(s.view, '/path'))
+    type(s.view, 's')
+    await expectSaves(s, 'Go _https://example.com/paths_ now\n')
+    expect(s.view.dom.querySelector('a')?.getAttribute('href')).toBe(
+      'https://example.com/paths',
+    )
+  }))
+
+test('inline code over two lines saves', () =>
+  session('line one\nline two\n', async (s) => {
+    s.view.dispatch(
+      s.view.state.tr.setSelection(
+        TextSelection.create(s.view.state.doc, 3, 15),
+      ),
+    )
+    s.editor.format('code')
+    await expectSaves(s, 'li`ne one`\n`line `two\n')
+  }))
+
+test('deleting the space after a bold address saves', () =>
+  session('**https://example.com/a** b\n', async (s) => {
+    const pos = at(s.view, ' b', false)
+    s.view.dispatch(s.view.state.tr.delete(pos, pos + 1))
+    // Bold cannot close between an address and a letter, so the link takes
+    // brackets with the bold inside.
+    await expectSaves(
+      s,
+      '[**https://example.com/a**](https://example.com/a)b\n',
+    )
+  }))
+
+for (const [name, html, saved] of [
+  [
+    'a pasted link whose text is its address',
+    '<a href="https://example.com/a">https://example.com/a</a>',
+    'https://example.com/a\n',
+  ],
+  [
+    'a pasted link whose text is a relative address',
+    '<a href="docs">docs</a>',
+    '[docs](docs)\n',
+  ],
+] as const)
+  test(`${name} saves as written`, () =>
+    session('', async (s) => {
+      place(s.view, 1)
+      await s.editor.paste({ html, text: html.replace(/<[^>]+>/g, '') })
+      await expectSaves(s, saved)
+    }))
+
+test('a written link copied and pasted keeps its brackets', () =>
+  session('[https://example.com/a](https://example.com/a) x\n', async (s) => {
+    s.view.dispatch(
+      s.view.state.tr.setSelection(
+        TextSelection.create(s.view.state.doc, 1, 22),
+      ),
+    )
+    const copied = await s.editor.clipboardSnapshot()
+    place(s.view, s.view.state.doc.content.size - 1)
+    await s.editor.paste({ html: copied.html, text: copied.text })
+    const { saved } = await s.save()
+    expect(s.errors).toEqual([])
+    expect(saved).toMatch(
+      /^\[https:\/\/example\.com\/a\]\(https:\/\/example\.com\/a\) x\[https:\/\/example\.com\/a\]\(https:\/\/example\.com\/a\)/,
+    )
+  }))
+
 // 8. Many edits in one block. Six times as many addresses must take well
 // under 36 times as long, as they would if each edit read the whole block.
 test('replacing text in thousands of addresses in one paragraph stays quick', async () => {
@@ -335,74 +473,166 @@ const documents = [
   'Go www.example.com and ada@example.com now.\n',
   'See [docs](docs) and <https://example.com> here.\n',
   '- https://example.com/a\n- [x](https://x.org)\n',
-  '| A | B |\n| --- | --- |\n| https://e.com/x | www.e.com |\n',
+  '| A | B |\n| --- | --- |\n| https://e.com/x | "www.e.com" |\n',
   '**Bold** https://example.com/path\nline two\n',
   'Mail <ada@example.com> or *https://example.com* (www.example.com).\n',
+  `Link "https://example.com/a" and 'www.example.com' and "ada@example.com" here.\n`,
+  'See https://bücher.de/a and https://example.com/ü now.\n',
+  'Go _https://example.com/path_ and [https://x.org] now.\n',
+  'Contact user@host or &copy; 2024 https://example.com/a&amp;b and more.\n',
+  'Far https://example.com/a* and https://example.com/b_ and words here.\n',
 ]
 
 const alphabets = {
   'address characters': 'ax./:?=#_-@ ()',
-  'Markdown punctuation': "ax./:?=#_*-@ '()[]<>!~&;",
+  'Markdown punctuation': `ax./:?=#_*-@ '"()[]<>!~&;éü`,
 }
+
+// The text of each block as the person reads it.
+const visible = (view: EditorView) => {
+  const blocks: string[] = []
+  view.state.doc.descendants((node) => {
+    if (!node.isTextblock) return true
+    blocks.push(node.textContent)
+    return false
+  })
+  return blocks.join('\n')
+}
+
+// What changed between two texts: the removed and the inserted text.
+function changed(before: string, after: string): [string, string] {
+  let prefix = 0
+  while (
+    prefix < before.length &&
+    prefix < after.length &&
+    before[prefix] === after[prefix]
+  )
+    prefix++
+  let suffix = 0
+  while (
+    suffix < before.length - prefix &&
+    suffix < after.length - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  )
+    suffix++
+  return [
+    before.slice(prefix, before.length - suffix),
+    after.slice(prefix, after.length - suffix),
+  ]
+}
+
+// Runs of spaces, as table padding can grow by several at once.
+const spaces = (text: string) => text.match(/\s+/g)?.length ?? 0
 
 for (const [alphabet, characters] of Object.entries(alphabets))
   for (const [index, source] of documents.entries())
     test(
-      `random edits with ${alphabet} around links in document ${index + 1} save and reopen`,
+      `random edits with ${alphabet} around links in document ${index + 1} change only what they reach`,
       { timeout: 60000 },
       () =>
         session(source, async (s) => {
+          // Loading changes nothing.
+          expect(s.editor.snapshot().text).toBe(source)
+          // Each edit is also made to the saved text, freshly opened, to see
+          // what a single edit changes.
+          const fresh = await mount()
+          let generation = 1
           let seed = 7919 * (index + 1) + Number(process.env.INKKIT_SEED ?? 0)
           const random = (limit: number) => {
             seed = (seed * 1103515245 + 12345) % 2147483648
             return Math.floor((seed / 2147483648) * limit)
           }
           const log: string[] = []
-          for (let step = 0; step < 150; step++) {
-            const positions: number[] = []
-            s.view.state.doc.descendants((node, pos) => {
-              if (node.isTextblock && !node.content.size)
-                positions.push(pos + 1)
-              if (node.isText)
-                for (let at = 0; at <= node.text!.length; at++)
-                  positions.push(pos + at)
-              return true
-            })
-            const pos = positions[random(positions.length)]!
-            const choice = random(10)
-            const before = s.editor.snapshot().text
-            const errors = s.errors.length
-            if (choice < 6) {
-              const character = characters[random(characters.length)]!
-              log.push(`insert ${JSON.stringify(character)} at ${pos}`)
-              s.view.dispatch(s.view.state.tr.insertText(character, pos))
-            } else if (choice < 9) {
-              const $pos = s.view.state.doc.resolve(pos)
-              const end = Math.min(pos + 1 + random(3), $pos.end())
-              if (end <= pos) continue
-              log.push(`delete ${pos}-${end}`)
-              s.view.dispatch(s.view.state.tr.delete(pos, end))
-            } else {
-              log.push('undo')
-              s.editor.undo()
+          try {
+            for (let step = 0; step < 150; step++) {
+              const positions: number[] = []
+              s.view.state.doc.descendants((node, pos) => {
+                if (node.isTextblock && !node.content.size)
+                  positions.push(pos + 1)
+                if (node.isText)
+                  for (let at = 0; at <= node.text!.length; at++)
+                    positions.push(pos + at)
+                return true
+              })
+              const pos = positions[random(positions.length)]!
+              const choice = random(10)
+              const before = s.editor.snapshot().text
+              const errors = s.errors.length
+              let edit: ((view: EditorView) => void) | undefined
+              if (choice < 6) {
+                const character = [...characters][
+                  random([...characters].length)
+                ]!
+                log.push(`insert ${JSON.stringify(character)} at ${pos}`)
+                edit = (view) =>
+                  view.dispatch(view.state.tr.insertText(character, pos))
+              } else if (choice < 9) {
+                const $pos = s.view.state.doc.resolve(pos)
+                const end = Math.min(pos + 1 + random(3), $pos.end())
+                if (end <= pos) continue
+                log.push(`delete ${pos}-${end}`)
+                edit = (view) => view.dispatch(view.state.tr.delete(pos, end))
+              } else log.push('undo')
+              let reached: string | undefined
+              if (edit) {
+                fresh.editor.loadDocument({
+                  ...input,
+                  generation: ++generation,
+                  text: before,
+                })
+                const freshErrors = fresh.errors.length
+                if (
+                  JSON.stringify(content(fresh.view)) ===
+                  JSON.stringify(content(s.view))
+                ) {
+                  const read = visible(fresh.view)
+                  edit(fresh.view)
+                  const saved = fresh.editor.snapshot().text
+                  // Text the edit did not reach keeps its source: the saved
+                  // text changes across no more spaces than the text read.
+                  const [removed, inserted] = changed(before, saved)
+                  const [removedRead, insertedRead] = changed(
+                    read,
+                    visible(fresh.view),
+                  )
+                  if (
+                    fresh.errors.length === freshErrors &&
+                    (spaces(removed) > spaces(removedRead) + 1 ||
+                      spaces(inserted) > spaces(insertedRead) + 1)
+                  )
+                    reached = `changed ${JSON.stringify(before)} to ${JSON.stringify(saved)}`
+                }
+                edit(s.view)
+              } else s.editor.undo()
+              const refused = s.errors.length > errors
+              const { saved, same } = await s.save()
+              const failure = !same
+                ? 'reopened differently'
+                : refused && saved !== before
+                  ? 'a refused edit changed the saved text'
+                  : reached
+                    ? `an edit changed text it did not reach: ${reached}`
+                    : undefined
+              if ((failure || refused) && process.env.INKKIT_RANDOM_LOG)
+                require('node:fs').appendFileSync(
+                  process.env.INKKIT_RANDOM_LOG,
+                  JSON.stringify({
+                    failure: failure ?? 'refused',
+                    alphabet,
+                    source,
+                    log,
+                    before,
+                    saved,
+                  }) + '\n',
+                )
+              if (failure)
+                throw new Error(
+                  `${failure} after ${log.join(', ')}; saved ${JSON.stringify(saved)}`,
+                )
             }
-            const refused = s.errors.length > errors
-            const { saved, same } = await s.save()
-            const failure = !same
-              ? 'reopened differently'
-              : refused && saved !== before
-                ? 'a refused edit changed the saved text'
-                : undefined
-            if (failure && process.env.INKKIT_RANDOM_LOG)
-              require('node:fs').appendFileSync(
-                process.env.INKKIT_RANDOM_LOG,
-                JSON.stringify({ failure, alphabet, source, log, saved }) +
-                  '\n',
-              )
-            if (failure)
-              throw new Error(
-                `${failure} after ${log.join(', ')}; saved ${JSON.stringify(saved)}`,
-              )
+          } finally {
+            await fresh.editor.destroy()
+            fresh.root.remove()
           }
         }),
     )
