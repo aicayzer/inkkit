@@ -7,11 +7,11 @@ import {
   Slice,
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
-import { importableSlice } from './html-import'
+import { importableSlice, topLevel } from './html-import'
 import { blockDropRange } from './drop-placement'
 import { isImage } from './image-blocks'
 import {
@@ -189,6 +189,20 @@ export class PasteController {
         'The document changed while images were importing.',
       )
   }
+  /**
+   * Inserts dropped content as whole blocks, so none joins the block beside
+   * it, and puts the caret after them.
+   */
+  private insertBlocks(view: EditorView, slice: Slice, range: Anchor): void {
+    const blocks = Fragment.fromArray(
+      topLevel(view.state.schema, slice.content),
+    )
+    const tr = view.state.tr.replaceWith(range.from, range.to, blocks)
+    const end = tr.mapping.map(range.to)
+    view.dispatch(
+      tr.setSelection(Selection.near(tr.doc.resolve(end), -1)).scrollIntoView(),
+    )
+  }
   /** Imports the input at the selection, or in place of `target`. */
   private async run(
     input: ClipboardInput,
@@ -237,7 +251,7 @@ export class PasteController {
         pasteSpreadsheet(
           ctx,
           { ...input, images },
-          target && this.anchor(operation),
+          target && dropRange(view.state.doc, this.anchor(operation)),
         )
       )
         return
@@ -605,16 +619,27 @@ export class PasteController {
           slice.openEnd,
         )
       }
-      // A drop inserts whole blocks, so none joins the block beside it.
-      if (target)
-        slice = new Slice(
-          slice.content.firstChild?.isInline
-            ? Fragment.from(schema.nodes.paragraph!.create(null, slice.content))
-            : slice.content,
-          0,
-          0,
-        )
+      if (target) {
+        this.insertBlocks(view, slice, dropRange(view.state.doc, anchor))
+        return
+      }
       const insertion = view.state.doc.resolve(anchor.from)
+      // Blocks pasted into an empty top-level paragraph take its place whole,
+      // as a drop does; joining the first of them into it could lose a
+      // wrapper whose only content was empty.
+      if (
+        anchor.from === anchor.to &&
+        insertion.depth === 1 &&
+        insertion.parent.type.name === 'paragraph' &&
+        insertion.parent.content.size === 0 &&
+        slice.content.firstChild?.isBlock
+      ) {
+        this.insertBlocks(view, slice, {
+          from: insertion.before(),
+          to: insertion.after(),
+        })
+        return
+      }
       // An isolated block such as a table cannot fit inside an empty paragraph.
       // Replace that empty block rather than retaining a spurious spacer.
       if (
@@ -646,6 +671,20 @@ export class PasteController {
       }
     }
   }
+}
+/**
+ * The range a drop replaces, mapped to the current document. It replaces an
+ * empty paragraph only while that is still empty, so text typed there while
+ * images import is kept, and the drop then follows it.
+ */
+function dropRange(doc: ProseNode, range: Anchor): Anchor {
+  const node = doc.nodeAt(range.from)
+  return range.from < range.to &&
+    node?.type.name === 'paragraph' &&
+    node.content.size === 0 &&
+    range.from + node.nodeSize === range.to
+    ? range
+    : { from: range.to, to: range.to }
 }
 /**
  * Whether `handlePaste` takes the paste, and as what. Valid VS Code metadata

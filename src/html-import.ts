@@ -446,7 +446,7 @@ function openDepth(content: Fragment, open: number, start: boolean): number {
  * The slice's nodes as blocks a document holds, wrapped as insertion would
  * wrap them: inline nodes in a paragraph and list items in a list.
  */
-function topLevel(schema: Schema, content: Fragment): Node[] {
+export function topLevel(schema: Schema, content: Fragment): Node[] {
   const top = schema.topNodeType.contentMatch
   const result: Node[] = []
   let run: Node[] = []
@@ -496,7 +496,8 @@ export function importableSlice(ctx: Ctx, slice: Slice): Slice {
   const inline = first.isInline
   const content = Fragment.fromArray(topLevel(check.schema, slice.content))
   const result = Fragment.fromArray(blocks(check, content))
-  if (result.eq(content)) {
+  // Inline nodes beside blocks were wrapped, so that form is the one to insert.
+  if (result.eq(content) && content.eq(slice.content)) {
     const start = openDepth(slice.content, slice.openStart, true)
     const end = openDepth(slice.content, slice.openEnd, false)
     return start === slice.openStart && end === slice.openEnd

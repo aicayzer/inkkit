@@ -349,6 +349,82 @@ test('a drop and a paste of the same HTML save the same Markdown', async () => {
   )
 })
 
+test('a drop of inline content followed by a block imports as a paste does', async () => {
+  await withEditor(async (session) => {
+    for (const html of [
+      '<span>end of para</span><p>next para</p>',
+      'Lead text<ul><li>a</li></ul>',
+      '<b>x</b><p>p</p>',
+    ])
+      for (const initial of ['', 'First\n\nLast\n']) {
+        const pasted = await insert(session, html, 'paste', initial)
+        const dropped = await insert(session, html, 'drop', initial)
+        expect(refusals(session), html).toEqual([])
+        expect(dropped.text, html).not.toBe(initial)
+        if (!initial) expect(dropped.text, html).toBe(pasted.text)
+      }
+  })
+})
+
+test('a callout with an empty body pasted into an empty note is kept', async () => {
+  await withEditor(async (session) => {
+    for (const via of ['paste', 'drop'] as const) {
+      const { text } = await insert(
+        session,
+        '<blockquote data-inkkit-callout="NOTE"><strong class="inkkit-callout-title">Title</strong><div class="inkkit-callout-body"><p> </p></div></blockquote>',
+        via,
+      )
+      expect(refusals(session)).toEqual([])
+      expect(text, via).toMatch(/^> \[!NOTE\] Title/)
+    }
+  })
+})
+
+test('text typed while a dropped image imports is kept', async () => {
+  let release!: () => void
+  const images = {
+    presentation: (reference: string) => ({ url: `private://${reference}` }),
+    importImage: () =>
+      new Promise<{ reference: string }>((resolve) => {
+        release = () => resolve({ reference: 'images/photo.png' })
+      }),
+    exportImage: async () => ({
+      bytes: new Uint8Array(),
+      mimeType: 'image/png',
+    }),
+  }
+  const pixel =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  await withEditor(
+    async (session) => {
+      load(session)
+      const dropped = drop(session, `<p><img src="${pixel}" alt="Pixel"></p>`)
+      for (let tick = 0; tick < 20 && !release; tick++)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      session.view.dispatch(session.view.state.tr.insertText('Typed', 1))
+      release()
+      await dropped
+      expect(refusals(session)).toEqual([])
+      const text = session.editor.snapshot().text
+      expect(text).toContain('Typed')
+      expect(text).toContain('![Pixel](images/photo.png)')
+    },
+    { images },
+  )
+})
+
+test('after a drop the caret follows the dropped content', async () => {
+  await withEditor(async (session) => {
+    load(session, 'First\n\nLast\n')
+    await drop(session, '<p>Dropped</p>')
+    session.view.dispatch(session.view.state.tr.insertText(' typed'))
+    // jsdom resolves every drop point to the start of the note.
+    expect(session.editor.snapshot().text).toBe(
+      'Dropped typed\n\nFirst\n\nLast\n',
+    )
+  })
+})
+
 test('HTML that ProseMirror parses itself is still checked', async () => {
   await withEditor(async (session) => {
     load(session)
@@ -446,6 +522,7 @@ function generate(next: () => number): string {
   const t = () => escape(raw())
   const a = () => escape(next() < 0.3 ? 'https://example.test/' : raw())
   const templates = [
+    () => `${t()}<b>${t()}</b><p>${t()}</p>`,
     () => `<pre class="literal-markdown">${t()}</pre>`,
     () =>
       `<blockquote data-inkkit-callout="${pick(['NOTE', 'TIP', 'X'])}"${next() < 0.5 ? ` data-inkkit-title="${a()}"` : ''}><strong class="inkkit-callout-title">${t()}</strong><div class="inkkit-callout-body"><p>${t()}</p></div></blockquote>`,

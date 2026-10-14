@@ -357,6 +357,14 @@ for (const [name, source, selector, fraction, kept] of [
     0.5,
     'First words here',
   ],
+  ['beside an empty heading', 'First\n\n#\n\nLast\n', 'h1', 0.5, '\n#\n'],
+  [
+    'beside an empty code block',
+    'First\n\n```\n```\n\nLast\n',
+    'pre',
+    0.5,
+    '```\n```',
+  ],
 ] as const)
   test(`a drop ${name} inserts blocks without changing what is there`, async ({
     page,
@@ -376,3 +384,48 @@ for (const [name, source, selector, fraction, kept] of [
     expect(text).toContain('Last')
     expect(text).toMatch(/^Dropped \*\*here\*\*$/m)
   })
+
+for (const html of [
+  '<span>end of para</span><p>next para</p>',
+  'Lead text<ul><li>a</li></ul>',
+  '<b>x</b><p>p</p>',
+])
+  test(`a drop of inline content followed by a block keeps both: ${html}`, async ({
+    page,
+  }) => {
+    await openEmpty(page)
+    await page.evaluate(() =>
+      window.inkkitPlayground.replaceDocument('First\n\nLast\n', 'md'),
+    )
+    await pasteHTML(page, html)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .not.toBe('First\n\nLast\n')
+    await page.evaluate(() =>
+      window.inkkitPlayground.replaceDocument('First\n\nLast\n', 'md'),
+    )
+    await dropHTMLOn(page, html, 'p', 0.5)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toMatch(html.includes('<ul>') ? /Lead text\n\n- a/ : /end of para|x\*\*/)
+    const text = (await observe(page)).snapshot!.text
+    expect(text).toMatch(/^First$/m)
+    expect(text).toMatch(/^Last$/m)
+  })
+
+test('typing after a drop continues after the dropped content', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  await page.evaluate(() =>
+    window.inkkitPlayground.replaceDocument('First\n\nLast\n', 'md'),
+  )
+  await dropHTMLOn(page, '<p>Dropped</p>', 'p', 0.5)
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toContain('Dropped')
+  await page.keyboard.type(' typed')
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe('First\n\nDropped typed\n\nLast\n')
+})
