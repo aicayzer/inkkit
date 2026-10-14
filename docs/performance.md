@@ -124,14 +124,14 @@ swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/
 node scripts/measure-startup.mjs CANDIDATE_ARCHIVE _local/startup _local/interop/webkit-host
 ```
 
-The script records both pages' hashes and sizes, machine and browser versions and every sample in `startup.json`. Page start-up is the page's own `performance.now()` when the first editor mount completes, which includes parsing and running the whole inline script. WKWebView host start-up adds the time from the host's load request to the page's time origin, including the web content process launch. The candidate archive was packed from commit `be8abc4`. The measurements ran on an M4 Pro MacBook Pro with macOS 27.0.1, Chromium 156 and Playwright WebKit 27.2. Values are medians in milliseconds.
+The script records both pages' hashes and sizes, machine and browser versions and every sample in `startup.json`. Page start-up is the page's own `performance.now()` when the first editor mount completes, which includes parsing and running the whole inline script. WKWebView host start-up adds the time from the host's load request to the page's time origin, including the web content process launch. The candidate archive was packed from commit `d33ee4a`. Both consumers had Mermaid installed. The measurements ran on an M4 Pro MacBook Pro with macOS 27.0.1, Chromium 156 and Playwright WebKit 27.2. Values are medians in milliseconds.
 
 | Page                   |     Bytes |      Gzip | Chromium | Playwright WebKit | WKWebView page | WKWebView host |
 | ---------------------- | --------: | --------: | -------: | ----------------: | -------------: | -------------: |
-| Main entry, Mermaid    | 6,120,458 | 1,732,655 |      196 |               153 |            126 |            307 |
-| Core entry, no Mermaid | 1,014,444 |   317,746 |       47 |                61 |             42 |            221 |
+| Main entry, Mermaid    | 6,122,540 | 1,733,351 |      189 |               146 |            120 |            296 |
+| Core entry, no Mermaid | 1,015,166 |   318,025 |       44 |                63 |             44 |            222 |
 
-Leaving Mermaid out removes about 83% of the page and about 85 ms from each WKWebView start-up. A single-file build inlines Mermaid's dynamic imports, so the main entry runs Mermaid's module code at start-up even before any diagram renders. Disabling previews does not avoid that cost; only the core entry does. Memory was not measured.
+Leaving Mermaid out removes about 83% of the page and about 75 ms from each WKWebView start-up. A single-file build inlines Mermaid's dynamic imports, so the main entry runs Mermaid's module code at start-up even before any diagram renders. Disabling previews does not avoid that cost; only the core entry does. Memory was not measured.
 
 ### Bundling only the supported diagram types
 
