@@ -151,16 +151,60 @@ test('Enter after a URL in the middle of a line splits the paragraph there @pres
   await operation(page, 'reload', { text: 'See https://example.com today\n' })
   await caret(page, 'example.com', true)
   await page.keyboard.press('Enter')
-  let observed = await observe(page)
-  expect(observed.diagnostics).toEqual([])
-  expect(observed.snapshot!.text).toBe('See https://example.com\n\ntoday\n')
-  await expect(editor(page).locator('a')).toHaveText('https://example.com')
-  await page.keyboard.type('Then ')
-  observed = await observe(page)
+  const observed = await observe(page)
   expect(observed.diagnostics).toEqual([])
   expect(observed.snapshot!.text).toBe(
-    'See https://example.com\n\nThen today\n',
+    'See https://example.com\n\n&#x20;today\n',
   )
+  await expect(editor(page).locator('a')).toHaveText('https://example.com')
+})
+
+for (const [name, source, marker] of [
+  ['a URL', 'See https://example.com today\n', 'example.com'],
+  ['a word', 'See example today\n', 'example'],
+] as const)
+  test(`Enter after ${name} in the middle of a line, then Backspace, restores the text exactly @preservation`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture()
+    await operation(page, 'reload', { text: source })
+    await caret(page, marker, true)
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('Backspace')
+    const observed = await observe(page)
+    expect(observed.diagnostics).toEqual([])
+    expect(observed.snapshot!.text).toBe(source)
+  })
+
+test('Enter inside an inline code span keeps the code text @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await operation(page, 'reload', { text: 'Run `foo  bar` now\n' })
+  await caret(page, 'foo', true)
+  await page.keyboard.press('Enter')
+  const observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  expect(observed.snapshot!.text).toBe('Run `foo`\n\n`  bar` now\n')
+})
+
+test('browser text input after Select All inserts exactly its text @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await operation(page, 'reload', {
+    text: 'First words here\n\nSecond words there\n',
+  })
+  await caret(page, 'First', true)
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.insertText('**x**')
+  const observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  // The browser replaces the whole document itself, so no input rule runs.
+  expect(observed.snapshot!.text).toBe('\\*\\*x\\*\\*\n')
 })
 
 test('Enter inside a URL splits the paragraph there and keeps both parts @preservation', async ({

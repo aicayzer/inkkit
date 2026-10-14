@@ -1,13 +1,12 @@
 import {
   EditorState,
-  Plugin,
-  PluginKey,
+  Selection,
   TextSelection,
+  type Plugin,
   type Transaction,
 } from '@milkdown/kit/prose/state'
 import { StepMap } from '@milkdown/kit/prose/transform'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { $prose } from '@milkdown/kit/utils'
 
 const isInputRules = (plugin: Plugin) =>
   (plugin.spec as { isInputRules?: boolean }).isInputRules === true
@@ -36,16 +35,26 @@ export function insertTextChunk(
   const { state } = view
   const $from = state.doc.resolve(from)
   const $to = state.doc.resolve(to)
-  if (
-    !$from.sameParent($to) ||
-    !$from.parent.inlineContent ||
-    $from.parent.type.spec.code
-  )
-    return false
-  const rules = state.plugins.filter(isInputRules)
   const last = characters.at(-1)!
-  const at = from + text.length - last.length
-  const tr = state.tr.insertText(text.slice(0, -last.length), from, to)
+  const rest = text.slice(0, -last.length)
+  // The rest of the text goes in without input rules, joining blocks
+  // where the range spans them, and the last character goes after it.
+  const tr = state.tr.insertText(rest, from, to)
+  const $at = Selection.near(tr.doc.resolve(tr.mapping.map(to)), -1).$head
+  const at = $at.pos
+  if (
+    !$at.parent.inlineContent ||
+    $at.parent.type.spec.code ||
+    $at.parentOffset < rest.length ||
+    $at.parent.textBetween($at.parentOffset - rest.length, $at.parentOffset) !==
+      rest
+  ) {
+    // Where the rest did not land as text before a caret, as in code, no
+    // input rule runs.
+    view.dispatch(deflt().scrollIntoView())
+    return true
+  }
+  const rules = state.plugins.filter(isInputRules)
   const prepared = EditorState.create({
     schema: state.schema,
     doc: tr.doc,
@@ -89,71 +98,3 @@ export function insertTextChunk(
   view.dispatch(tr.scrollIntoView())
   return true
 }
-
-const leadingSpaces = (text: string) => /^[ \t]*/.exec(text)![0].length
-
-/**
- * Enter in the middle of a line starts the new block at the next word. The
- * spaces after the caret would otherwise start it, where Markdown keeps them
- * only as a character reference such as `&#x20;`.
- */
-export const enterSkipsSpaces = $prose(() => {
-  // The state Enter was pressed in, and the spaces after its caret.
-  let pressed: { state: EditorState; spaces: number } | undefined
-  return new Plugin({
-    key: new PluginKey('inkkitEnterSkipsSpaces'),
-    props: {
-      handleKeyDown(view, event) {
-        pressed = undefined
-        if (
-          event.key !== 'Enter' ||
-          event.shiftKey ||
-          event.altKey ||
-          event.metaKey ||
-          event.ctrlKey ||
-          view.composing
-        )
-          return false
-        const { $cursor } = view.state.selection as TextSelection
-        if (!$cursor?.parentOffset || $cursor.parent.type.spec.code)
-          return false
-        const spaces = leadingSpaces(
-          $cursor.parent.textBetween(
-            $cursor.parentOffset,
-            $cursor.parent.content.size,
-            undefined,
-            '\uFFFC',
-          ),
-        )
-        if (!spaces) return false
-        pressed = { state: view.state, spaces }
-        // Enter's handlers dispatch synchronously, before this runs.
-        queueMicrotask(() => (pressed = undefined))
-        return false
-      },
-    },
-    appendTransaction(transactions, oldState, newState) {
-      if (pressed?.state !== oldState) return null
-      const { spaces } = pressed
-      pressed = undefined
-      if (!transactions.some((tr) => tr.docChanged)) return null
-      const { $cursor } = newState.selection as TextSelection
-      if (
-        !$cursor ||
-        $cursor.parentOffset ||
-        !$cursor.parent.inlineContent ||
-        $cursor.parent.type.spec.code
-      )
-        return null
-      const start = leadingSpaces(
-        $cursor.parent.textBetween(
-          0,
-          Math.min(spaces, $cursor.parent.content.size),
-          undefined,
-          '\uFFFC',
-        ),
-      )
-      return start ? newState.tr.delete($cursor.pos, $cursor.pos + start) : null
-    },
-  })
-})

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor } from '../src/index'
 import { semanticSignature } from '../src/preserve'
@@ -229,8 +229,42 @@ test('Backspace after a buffered input rule leaves its text as typed', () =>
     expectSaves(s, 'Plain \\*\\*x\\*\\*words here\n')
   }))
 
-const enter = (s: Session) =>
-  s.editor.keyDown('Enter', 'Enter', false, false, false, false, 1)
+const press = (s: Session, key: string) =>
+  s.editor.keyDown(key, key, false, false, false, false, 1)
+
+// A chunk over a selection replaces it, joining the blocks it spans, and the
+// input rule runs at the joined position.
+test('insertText over a selection across blocks inserts exactly its text', () =>
+  session('First words here\n\nSecond words there\n', (s) => {
+    let from = -1
+    let to = -1
+    s.view.state.doc.descendants((node, pos) => {
+      if (!node.isText) return true
+      if (node.text!.startsWith('First ')) from = pos + 'First '.length
+      if (node.text!.startsWith('Second ')) to = pos + 'Second '.length
+      return false
+    })
+    s.view.dispatch(
+      s.view.state.tr.setSelection(
+        TextSelection.create(s.view.state.doc, from, to),
+      ),
+    )
+    s.editor.insertText('**x**', 1)
+    expectSaves(s, 'First **x**words there\n')
+    s.editor.undo(1)
+    expectSaves(s, 'First words here\n\nSecond words there\n')
+  }))
+
+test('insertText after Select All inserts exactly its text', () =>
+  session('First words here\n\nSecond words there\n', (s) => {
+    s.view.dispatch(
+      s.view.state.tr.setSelection(new AllSelection(s.view.state.doc)),
+    )
+    s.editor.insertText('**x**', 1)
+    expectSaves(s, '**x**\n')
+    s.editor.undo(1)
+    expectSaves(s, 'First words here\n\nSecond words there\n')
+  }))
 
 // [what, source, caret after, saved after Enter]
 const splits: [string, string, string, string][] = [
@@ -238,44 +272,29 @@ const splits: [string, string, string, string][] = [
     'after a URL in the middle of a line',
     'See https://example.com today\n',
     'example.com',
-    'See https://example.com\n\ntoday\n',
+    'See https://example.com\n\n&#x20;today\n',
   ],
   [
     'after a word in the middle of a line',
     'See example today\n',
     'example',
-    'See example\n\ntoday\n',
+    'See example\n\n&#x20;today\n',
   ],
-  [
-    'before several spaces',
-    'See example   today\n',
-    'example',
-    'See example\n\ntoday\n',
-  ],
-  ['in a heading', '# Title more\n', 'Title', '# Title\n\n# more\n'],
-  ['in a list item', '- one two\n', 'one', '- one\n- two\n'],
 ]
 
 for (const [name, source, anchor, saved] of splits)
-  test(`Enter ${name} starts the new block at the next word`, () =>
+  test(`Enter ${name} and Backspace restore the text exactly`, () =>
     session(source, (s) => {
       caret(s.view, anchor)
-      expect(enter(s)).toBe(true)
+      expect(press(s, 'Enter')).toBe(true)
       expectSaves(s, saved)
-      s.editor.undo(1)
+      expect(press(s, 'Backspace')).toBe(true)
       expectSaves(s, source)
     }))
 
-test('Enter after a space keeps the text before the caret as written', () =>
-  session('See example today\n', (s) => {
-    caret(s.view, 'today', false)
-    enter(s)
-    expectSaves(s, 'See example&#x20;\n\ntoday\n')
-  }))
-
-test('Enter at the start of a block keeps the spaces it starts with', () =>
-  session('&#x20;today\n', (s) => {
-    caret(s.view, ' today', false)
-    enter(s)
-    expectSaves(s, '<br />\n\n&#x20;today\n')
+test('Enter inside an inline code span keeps the code text', () =>
+  session('Run `foo  bar` now\n', (s) => {
+    caret(s.view, 'foo')
+    press(s, 'Enter')
+    expectSaves(s, 'Run `foo`\n\n`  bar` now\n')
   }))

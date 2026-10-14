@@ -24,7 +24,7 @@ import {
   redo as redoHistory,
 } from '@milkdown/kit/prose/history'
 import { cursor } from './cursor'
-import { enterSkipsSpaces, insertTextChunk } from './text-input'
+import { insertTextChunk } from './text-input'
 import { blockDropRange } from './drop-placement'
 import {
   blockquoteKeymap,
@@ -1890,7 +1890,6 @@ export class InkKitEditor {
       )
       .use(instance.pasteController.plugin)
       .use(visibleClipboard)
-      .use(enterSkipsSpaces)
       .use(instance.keymapPlugin)
       .use(
         createDialect(
