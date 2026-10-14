@@ -28,7 +28,7 @@ const classAnnotation = new RegExp(
 )
 const stateAnnotation =
   /(?<=^[ \t]*state[ \t]+[^\s<>"]+[ \t]+)<<(fork|join|choice)>>(?=[ \t]*$)/gim
-const stateBrackets = /\[\[(fork|join|choice)\]\]/gi
+const stateBrackets = /^[ \t]*state[ \t].*\[\[(fork|join|choice)\]\]/gim
 
 interface Annotations {
   names: string[]
@@ -54,9 +54,10 @@ function annotations(source: string): Annotations {
     names.push(header === 'stateDiagram' ? name.toLowerCase() : name)
     return ''
   })
-  // Mermaid reads << as an annotation start even when a comment or a space
-  // follows, which the HTML check does not see.
-  if (rest.includes('<<')) throw new Error(refusal)
+  // The class lexer skips a comment between << and an annotation name, where
+  // the HTML check would not see the name.
+  if (header === 'classDiagram' && /<<\s*%%/.test(rest))
+    throw new Error(refusal)
   return { names, rest }
 }
 
@@ -106,16 +107,23 @@ const clickable = (classes: unknown) =>
     .map(String)
     .includes('clickable')
 
-function statementIn(
+const unchecked = () =>
+  new Error('The diagram could not be checked. The source is retained.')
+
+// Visits each object reachable from node once, until visit returns true.
+function walk(
   node: unknown,
-  kinds: string[],
+  visit: (entry: Entry) => boolean | void,
   seen = new Set(),
 ): boolean {
   if (typeof node !== 'object' || node === null || seen.has(node)) return false
   seen.add(node)
-  if (kinds.includes(String((node as Entry).stmt))) return true
-  return Object.values(node).some((value) => statementIn(value, kinds, seen))
+  if (visit(node as Entry)) return true
+  return Object.values(node).some((value) => walk(value, visit, seen))
 }
+
+const statementIn = (node: unknown, kinds: string[]): boolean =>
+  walk(node, (entry) => kinds.includes(String(entry.stmt)))
 
 // Refuses styles, class definitions, link styles, links, click handlers,
 // tooltips, icons and images wherever the grammar accepted them. The names are
@@ -124,18 +132,12 @@ function statementIn(
 function refuseDirectives({ type, db }: ParsedDiagram): void {
   const store = db as Entry
   const field = (name: string): unknown => {
-    if (!(name in store))
-      throw new Error(
-        'The diagram could not be checked. The source is retained.',
-      )
+    if (!(name in store)) throw unchecked()
     return store[name]
   }
   const read = (name: string): unknown => {
     const accessor = field(name)
-    if (typeof accessor !== 'function')
-      throw new Error(
-        'The diagram could not be checked. The source is retained.',
-      )
+    if (typeof accessor !== 'function') throw unchecked()
     return (accessor as () => unknown).call(db)
   }
   let found: boolean
@@ -216,8 +218,6 @@ function refuseStrayAnnotations(
   names: string[],
 ): void {
   if (names.length === 0) return
-  const unchecked = () =>
-    new Error('The diagram could not be checked. The source is retained.')
   const store = db as Entry
   const expected = [...names]
   const parsed: string[] = []
@@ -229,17 +229,12 @@ function refuseStrayAnnotations(
     }
   } else if (type === 'stateDiagram') {
     if (!('rootDoc' in store)) throw unchecked()
-    const seen = new Set()
-    const visit = (node: unknown) => {
-      if (typeof node !== 'object' || node === null || seen.has(node)) return
-      seen.add(node)
-      const { stmt, type } = node as Entry
+    walk(store.rootDoc, ({ stmt, type }) => {
       if (stmt === 'state' && /^(?:fork|join|choice)$/.test(String(type)))
         parsed.push(String(type))
-      Object.values(node).forEach(visit)
-    }
-    visit(store.rootDoc)
-    // [[fork]] syntax makes the same states without angle brackets.
+    })
+    // [[fork]] syntax on a state line makes the same states without angle
+    // brackets.
     for (const [, name] of source.matchAll(stateBrackets))
       expected.push(name!.toLowerCase())
   } else throw new Error(refusal)

@@ -108,6 +108,24 @@ const stateAnnotations: [string, string][] = [
   ],
 ]
 
+const labels: [string, string][] = [
+  ['a state transition label', 'stateDiagram-v2\nA --> B : shift << 2'],
+  ['a state note', 'stateDiagram-v2\nA --> B\nnote right of A : shift << 2'],
+  ['a state description', 'stateDiagram-v2\nA : shift << 2'],
+  ['a class relation label', 'classDiagram\nA --> B : shift << 2'],
+  ['a class member statement', 'classDiagram\nA : shift << 2'],
+  ['a class body member', 'classDiagram\nclass A {\n+shift << 2\n}'],
+  [
+    'a state annotation beside bracket syntax in a comment',
+    'stateDiagram-v2\nstate Split <<fork>>\nSplit --> A\n%% later use [[join]]',
+  ],
+]
+
+for (const [name, diagram] of labels)
+  test(`renders angle brackets that are not an annotation in ${name}`, async () => {
+    expect(await renderDiagram(diagram)).toMatch(/^<svg[\s\S]*<style>/)
+  })
+
 for (const [name, diagram] of stateAnnotations)
   test(`renders a state diagram annotation: ${name}`, async () => {
     expect(await renderDiagram(diagram)).toMatch(/^<svg[\s\S]*<style>/)
@@ -220,8 +238,12 @@ const refused: [string, string][] = [
     'classDiagram\nclass Shape <<interface>> <<abstract>>',
   ],
   [
-    'angle brackets in a state transition label',
-    'stateDiagram-v2\nA --> B : shift << 2',
+    'an annotation split by a comment after a quoted label',
+    'classDiagram\nclass A["x: y"] <<%% note\ninterface>>',
+  ],
+  [
+    'an annotation split by a comment beside an annotation-shaped note line',
+    'classDiagram\nclass Shape\nclass A["x: y"] <<%% note\ninterface>>\nnote for Shape "Shape\n<<interface>> Shape\n"',
   ],
   ['an annotation in a flowchart', 'flowchart TD\nA["<<interface>>"] --> B'],
   ['an annotation-shaped line in a flowchart', 'flowchart TD\n<<interface>> A'],
