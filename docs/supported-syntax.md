@@ -98,7 +98,9 @@ Dropping HTML from outside the editor imports it the same way, so a drop and a p
 
 Custom elements, `iframe`, `script`, `svg`, `math`, `object` and other unrecognised elements remain literal source, with their content unchanged, including any table inside them, when that source reads back as written. Authored HTML comments import as author comments. Plain text, Paste as Plain Text and explicit Markdown are not interpreted as HTML.
 
-Plain text and explicit Markdown are read as Markdown. A paragraph at the start or end of the pasted text joins the text at the caret, so a pasted phrase stays in the sentence it's pasted into. Spaces written before or after that paragraph are kept where the block has content on that side of the caret, and dropped at the start or end of a block. Any other block, such as a heading, list or code block, is inserted as its own block.
+Plain text and explicit Markdown are read as Markdown. A paragraph at the start or end of the pasted text joins the text at the caret, so a pasted phrase stays in the sentence it's pasted into. Spaces written before or after the text of that paragraph, on the same line, are kept where the line continues on that side of the caret. They're dropped at the start or end of a line, and spaces on a pasted line with no text are dropped too. Any other block, such as a heading, list or code block, is inserted as its own block.
+
+After a paste, the caret is after the pasted content, including when the paste replaced a selection, so typing continues after it instead of replacing it. A web address pasted over selected text links that text and puts the caret after the link. Cells pasted into a table stay selected.
 
 HTML import keeps only structure that reads back the same. Before pasted or dropped HTML is inserted, InkKit writes it as Markdown and reads that Markdown back. A part that would read back as different structure, or whose Markdown would hold a link address that HTML import refuses when read as GitHub Flavored Markdown, as strict CommonMark, or as CommonMark with raw HTML turned off, is imported in a simpler form that reads back the same:
 

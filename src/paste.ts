@@ -8,12 +8,16 @@ import {
   type Node as ProseNode,
   type ResolvedPos,
 } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
 import { importableSlice, topLevel } from './html-import'
-import { blockDropRange, caretAfter } from './drop-placement'
+import {
+  blockDropRange,
+  caretAfter,
+  caretAfterInsertion,
+} from './drop-placement'
 import { isImage } from './image-blocks'
 import {
   collapseClipboardWhitespace,
@@ -264,7 +268,9 @@ export class PasteController {
         if (inCode()) {
           const anchor = this.anchor(operation)
           view.dispatch(
-            view.state.tr.insertText(input.text, anchor.from, anchor.to),
+            caretAfterInsertion(
+              view.state.tr.insertText(input.text, anchor.from, anchor.to),
+            ).scrollIntoView(),
           )
           return
         }
@@ -592,10 +598,13 @@ export class PasteController {
         ) {
           const anchor = this.anchor(operation)
           const mark = schema.marks.link.create({ href: text })
+          // The caret goes after the link, so typing never replaces it.
+          const tr = view.state.tr.addMark(anchor.from, anchor.to, mark)
           view.dispatch(
-            view.state.tr
-              .addMark(anchor.from, anchor.to, mark)
-              .removeStoredMark(mark),
+            tr
+              .setSelection(TextSelection.create(tr.doc, anchor.to))
+              .removeStoredMark(mark)
+              .scrollIntoView(),
           )
           return
         }
@@ -652,18 +661,18 @@ export class PasteController {
         slice.content.firstChild.type.spec.isolating
       ) {
         view.dispatch(
-          view.state.tr
-            .replaceRange(
+          caretAfterInsertion(
+            view.state.tr.replaceRange(
               insertion.before(),
               insertion.after(),
               new Slice(slice.content, 0, 0),
-            )
-            .scrollIntoView(),
+            ),
+          ).scrollIntoView(),
         )
       } else
         view.dispatch(
-          view.state.tr
-            .replaceRange(
+          caretAfterInsertion(
+            view.state.tr.replaceRange(
               anchor.from,
               anchor.to,
               source == null
@@ -674,8 +683,8 @@ export class PasteController {
                     view.state.doc.resolve(anchor.from),
                     view.state.doc.resolve(anchor.to),
                   ),
-            )
-            .scrollIntoView(),
+            ),
+          ).scrollIntoView(),
         )
     } finally {
       if (this.active === operation) {

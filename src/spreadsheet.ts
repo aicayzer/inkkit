@@ -12,7 +12,7 @@ import { InkKitError, type ClipboardInput } from './types'
 import { literalCommentSpans } from './comments'
 import { restoreConvertedSpaces } from './paste-html'
 import { importableSlice } from './html-import'
-import { caretAfter } from './drop-placement'
+import { caretAfter, caretAfterInsertion } from './drop-placement'
 import { normalizeTableAlignment } from './table-alignment'
 import {
   dispatchTableOperation,
@@ -90,8 +90,9 @@ export function pasteSpreadsheet(
       ),
     ).content
     const selection = view.state.selection
+    // A drop puts the caret after the dropped block, as other drops do.
     const tr = at
-      ? view.state.tr.replaceWith(at.from, at.to, content)
+      ? caretAfterInsertion(view.state.tr.replaceWith(at.from, at.to, content))
       : selection.$from.parent.type.name === 'paragraph' &&
           selection.empty &&
           selection.$from.parent.content.size === 0

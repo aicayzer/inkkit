@@ -1,6 +1,10 @@
 import { GapCursor } from '@milkdown/kit/prose/gapcursor'
 import type { Node, ResolvedPos } from '@milkdown/kit/prose/model'
-import { Selection, TextSelection } from '@milkdown/kit/prose/state'
+import {
+  Selection,
+  TextSelection,
+  type Transaction,
+} from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 
 /**
@@ -52,5 +56,24 @@ export function caretAfter(doc: Node, pos: number): Selection {
     TextSelection.findFrom($pos, -1, true) ??
     TextSelection.findFrom($pos, 1, true) ??
     Selection.near($pos)
+  )
+}
+
+/**
+ * Puts the caret just after what the transaction's last step inserted, so
+ * typing continues after pasted or dropped content instead of replacing it.
+ */
+export function caretAfterInsertion(tr: Transaction): Transaction {
+  const map = tr.mapping.maps[tr.mapping.maps.length - 1]
+  let end: number | undefined
+  map?.forEach((_from, _to, _newFrom, newTo) => {
+    end ??= newTo
+  })
+  if (end == null) return tr
+  const $end = tr.doc.resolve(end)
+  return tr.setSelection(
+    $end.parent.inlineContent
+      ? TextSelection.create(tr.doc, end)
+      : caretAfter(tr.doc, end),
   )
 }
