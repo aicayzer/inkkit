@@ -9,6 +9,7 @@ import {
 import { isInTable, selectedRect } from '@milkdown/kit/prose/tables'
 import { InkKitError, type ClipboardInput } from './types'
 import { literalCommentSpans } from './comments'
+import { restoreConvertedSpaces } from './paste-html'
 import { normalizeTableAlignment } from './table-alignment'
 import {
   dispatchTableOperation,
@@ -324,6 +325,7 @@ function htmlGrid(schema: Schema, html: string): Grid {
       if (/[\n\r\t]/.test(cell.textContent ?? '')) reject()
       for (const link of cell.querySelectorAll('a'))
         if (!link.hasAttribute('href')) reject()
+      restoreConvertedSpaces(cell)
       const parsed = parser.parse(cell, { preserveWhitespace: true })
       if (parsed.childCount === 0) return Fragment.empty
       if (

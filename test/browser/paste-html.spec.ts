@@ -153,3 +153,21 @@ test('code copied from an editor keeps its indentation', async ({ page }) => {
     )
     .toBe('    return x\n\nRun   a  b\n')
 })
+
+test('HTML from WebKit pastes its converted spaces as ordinary spaces', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  const style =
+    'style="caret-color: rgb(0, 0, 0); font-family: Times; white-space: normal;"'
+  const space = '<span class="Apple-converted-space">&nbsp;</span>'
+  await pasteHTML(
+    page,
+    `<meta charset='utf-8'><a href="https://example.com" ${style}>The quote</a><span ${style}>${space}for the record. See${space}</span><a href="https://example.com/b" ${style}>this</a><span ${style}>${space}and <code>a${space}b</code>, but keep&nbsp;this.</span>`,
+  )
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(
+      '[The quote](https://example.com) for the record. See [this](https://example.com/b) and `a b`, but keep this.\n',
+    )
+})

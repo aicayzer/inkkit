@@ -155,6 +155,23 @@ function declarations(style: string): string[] {
 }
 
 /**
+ * WebKit writes a space beside an inline element to the clipboard as a
+ * non-breaking space in a `span.Apple-converted-space`, to protect it from
+ * the destination's whitespace collapse. Only such a span is converted back:
+ * a non-breaking space anywhere else was authored.
+ */
+export function restoreConvertedSpaces(root: ParentNode): void {
+  for (const span of root.querySelectorAll('span.Apple-converted-space'))
+    restoreConvertedSpace(span)
+}
+
+function restoreConvertedSpace(span: Element): void {
+  const walker = span.ownerDocument.createTreeWalker(span, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode())
+    (node as Text).data = (node as Text).data.replace(/\u00a0/g, ' ')
+}
+
+/**
  * Rewrites common web-page elements to ones the importer already understands.
  * Elements that will stay literal source are not entered, so their content is
  * preserved exactly.
@@ -196,6 +213,11 @@ export function normalizeClipboardHTML(root: Node): void {
       element.replaceWith(block)
     } else {
       if (tag === 'LI') markTask(element)
+      else if (
+        tag === 'SPAN' &&
+        element.classList.contains('Apple-converted-space')
+      )
+        restoreConvertedSpace(element)
       normalizeClipboardHTML(element)
     }
   }

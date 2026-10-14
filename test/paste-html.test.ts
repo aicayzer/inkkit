@@ -476,3 +476,88 @@ test('InkKit Markdown wrapper maps image slots after picture is replaced', async
   )
   expect(markdown).toBe('![A](images/2.png)\n\n![B](images/1.png)\n')
 })
+
+// WebKit rewrites a space beside an inline element on its way to the clipboard.
+const converted = (text = '&nbsp;') =>
+  `<span class="Apple-converted-space">${text}</span>`
+const webkitStyle =
+  'style="caret-color: rgb(0, 0, 0); color: rgb(0, 0, 0); font-family: Times; white-space: normal;"'
+
+test('WebKit converted spaces import as ordinary spaces beside links', async () => {
+  const after = await fromHTML(
+    `<meta charset='utf-8'><a href="https://example.com" ${webkitStyle}>The quote</a><span ${webkitStyle}>${converted()}for the record</span>`,
+  )
+  expect(after).toBe('[The quote](https://example.com) for the record\n')
+  expect(after).not.toContain(' ')
+  const before = await fromHTML(
+    `<p><span ${webkitStyle}>See${converted()}</span><a href="https://example.com" ${webkitStyle}>the quote</a></p>`,
+  )
+  expect(before).toBe('See [the quote](https://example.com)\n')
+  expect(before).not.toContain(' ')
+})
+
+test('a run of WebKit converted spaces collapses like ordinary spaces', async () => {
+  const markdown = await fromHTML(
+    `<p>one${converted('&nbsp; &nbsp; ')}<strong>two</strong>${converted('&nbsp;&nbsp;')}three</p>`,
+  )
+  expect(markdown).toBe('one **two** three\n')
+})
+
+test('WebKit converted spaces at the edge of a block add nothing', async () => {
+  expect(
+    await fromHTML(`<p>${converted()}<em>edge</em>${converted()}</p>`),
+  ).toBe('*edge*\n')
+})
+
+test('WebKit converted spaces keep their width in code', async () => {
+  const inline = await fromHTML(
+    `<p>run <code>a${converted('&nbsp;&nbsp;&nbsp;')}b</code> now</p>`,
+  )
+  expect(inline).toBe('run `a   b` now\n')
+  const block = await fromHTML(
+    `<pre><code>if (x) {\n${converted('&nbsp; &nbsp; ')}return${converted()}y\n}</code></pre>`,
+  )
+  expect(block).toContain('if (x) {\n    return y\n}')
+  expect(block).not.toContain(' ')
+  const styled = await fromHTML(
+    `<div style="white-space: pre">a${converted('&nbsp; &nbsp;')}<span>b</span></div>`,
+  )
+  expect(styled.replace(/&#x20;/g, ' ')).toContain('a   b')
+  expect(styled).not.toContain(' ')
+})
+
+test('WebKit converted spaces in a table cell import as ordinary spaces', async () => {
+  const table = (space: string) =>
+    `<p>Intro</p><table><tr><th>Name</th></tr><tr><td>Ada${space}<a href="https://example.test/">Lovelace</a></td></tr></table>`
+  const markdown = await fromHTML(table(converted()))
+  expect(markdown).toBe(await fromHTML(table(' ')))
+  expect(markdown).toContain('Lovelace')
+  expect(markdown).not.toContain('\u00a0')
+})
+
+test('authored non-breaking spaces stay when a converted space is beside them', async () => {
+  expect(await fromHTML('<p>a&nbsp;b</p>')).toBe('a b\n')
+  expect(await fromHTML(`<p>a&nbsp;${converted()}b</p>`)).toBe('a  b\n')
+  expect(
+    await fromHTML(`<p>a${converted()}<span>&nbsp;</span>b&nbsp;&nbsp;c</p>`),
+  ).toBe('a  b  c\n')
+  expect(
+    await fromHTML(
+      '<p><span class="converted-space">&nbsp;</span>x<span>&nbsp;</span>y</p>',
+    ),
+  ).toBe(' x y\n')
+})
+
+test('a converted-space span in literal source is kept as written', async () => {
+  const widget = `<custom-x>a${converted()}b</custom-x>`
+  expect(await fromHTML(widget)).toContain(widget)
+})
+
+test('a spreadsheet cell with a converted space keeps an ordinary space', async () => {
+  const table = (space: string) =>
+    `<table><tbody><tr><td>Ada${space}<a href="https://example.test/">Lovelace</a></td><td>b</td></tr></tbody></table>`
+  const markdown = await fromHTML(table(converted()))
+  expect(markdown).toBe(await fromHTML(table(' ')))
+  expect(markdown).toContain('Lovelace')
+  expect(markdown).not.toContain('\u00a0')
+})
