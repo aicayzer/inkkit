@@ -145,7 +145,7 @@ export const fencedCodeHandler: NonNullable<Options['handlers']>['code'] = (
   if (!fence) return defaultHandlers.code!(node, parent, state, info)
   const character = fence.marker[0]!
   let length = fence.marker.length
-  const body = node.value.replace(/\r\n?/g, '\n')
+  const body = (node.value ?? '').replace(/\r\n?/g, '\n')
   for (const line of body.split('\n')) {
     const run = new RegExp(`^ {0,3}(${character}+)[ \\t]*$`).exec(line)
     if (run) length = Math.max(length, run[1]!.length + 1)
