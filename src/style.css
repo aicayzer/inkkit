@@ -394,10 +394,6 @@
   color: var(--_inkkit-text);
   background: var(--_inkkit-code-bg);
 }
-.inkkit-root .ProseMirror .inkkit-file-open:focus-visible {
-  outline: 2px solid var(--_inkkit-accent);
-  outline-offset: 1px;
-}
 .inkkit-root .ProseMirror .inkkit-file-open svg {
   width: 0.85em;
   height: 0.85em;
@@ -775,12 +771,6 @@
   font-size: calc(var(--inkkit-font-size, 15px) * 0.75);
 }
 
-.inkkit-root .inkkit-footnote-reference:focus-visible {
-  outline: var(--inkkit-focus-width, 2px) solid
-    var(--inkkit-focus-color, currentColor);
-  outline-offset: var(--inkkit-focus-offset, 2px);
-}
-
 .inkkit-root .inkkit-footnote-definition {
   border-inline-start: 2px solid var(--_inkkit-muted, currentColor);
   padding-inline-start: calc(var(--inkkit-font-size, 15px) * 1);
@@ -903,10 +893,33 @@
   font-size: calc(var(--inkkit-font-size, 15px) * 0.9);
 }
 
-.inkkit-root .ProseMirror:focus-visible,
-.inkkit-root .inkkit-plain:focus-visible,
-.inkkit-root button:focus-visible {
+/* One ring for every control InkKit draws; the editing surfaces can be set apart. */
+.inkkit-root button:focus-visible,
+.inkkit-root .inkkit-file audio:focus-visible,
+.inkkit-root .inkkit-file video:focus-visible {
   outline: var(--inkkit-focus-width, 2px) solid
     var(--inkkit-focus-color, var(--_inkkit-accent));
   outline-offset: var(--inkkit-focus-offset, -2px);
+}
+
+/* Inline references sit in running text, so their ring sits outside it. */
+.inkkit-root .inkkit-footnote-reference:focus-visible,
+.inkkit-root .inkkit-wiki-link:focus-visible {
+  outline: var(--inkkit-focus-width, 2px) solid
+    var(--inkkit-focus-color, currentColor);
+  outline-offset: var(--inkkit-focus-offset, 2px);
+}
+
+.inkkit-root .ProseMirror:focus-visible,
+.inkkit-root .inkkit-plain:focus-visible {
+  outline: var(--inkkit-surface-focus-width, var(--inkkit-focus-width, 2px))
+    solid
+    var(
+      --inkkit-surface-focus-color,
+      var(--inkkit-focus-color, var(--_inkkit-accent))
+    );
+  outline-offset: var(
+    --inkkit-surface-focus-offset,
+    var(--inkkit-focus-offset, -2px)
+  );
 }
