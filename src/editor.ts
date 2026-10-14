@@ -2978,7 +2978,7 @@ export class InkKitEditor {
   }
 
   // A table cell holds one line, so the images sit side by side where the selection was, with no
-  // space between them: a space beside an image in a cell is not kept in the saved Markdown.
+  // space between them: a space beside an image in a cell is saved as `&#x20;`.
   private insertInline(
     images: { path: string; alt: string; title?: string }[],
   ): void {
