@@ -25,14 +25,19 @@ export function sourceFrontmatter(source: string): string | undefined {
   return /^(---|\+\+\+)\r?\n[\s\S]*?\r?\n\1(?:\r?\n|$)/.exec(source)?.[0]
 }
 
+export function lineBreakHTML(value: string): boolean {
+  return ['<br />', '<br>', '<br >', '<br/>'].includes(value.trim())
+}
+
 function restoreInlineBreaks(node: Nodes): void {
+  // A cell cannot hold a line ending, so even a lone break there is content.
   if (
-    (node.type === 'paragraph' || node.type === 'heading') &&
-    node.children.length > 1
+    ((node.type === 'paragraph' || node.type === 'heading') &&
+      node.children.length > 1) ||
+    node.type === 'tableCell'
   ) {
     node.children = node.children.map((child) =>
-      child.type === 'html' &&
-      ['<br />', '<br>', '<br >', '<br/>'].includes(child.value.trim())
+      child.type === 'html' && lineBreakHTML(child.value)
         ? {
             type: 'break',
             data: { inkkitHTMLBreak: true },
@@ -49,20 +54,19 @@ function containsUnsupported(
   inline = false,
 ): boolean {
   // Only a standalone break represents a spacer; inline HTML must remain literal.
-  if (
-    !inline &&
-    node.type === 'html' &&
-    ['<br />', '<br>', '<br >', '<br/>'].includes(node.value.trim())
-  )
-    return false
+  if (!inline && node.type === 'html' && lineBreakHTML(node.value)) return false
   if (node.type === 'paragraph' && node.children.length === 1) {
     const child = node.children[0]
-    if (
-      child?.type === 'html' &&
-      ['<br />', '<br>', '<br >', '<br/>'].includes(child.value.trim())
-    )
-      return false
+    if (child?.type === 'html' && lineBreakHTML(child.value)) return false
   }
+  // GFM ignores cells past the header's count, so a grid cannot show them.
+  if (
+    node.type === 'table' &&
+    node.children.some(
+      (row) => row.children.length > (node.children[0]?.children.length ?? 0),
+    )
+  )
+    return true
   return (
     (unsupported.has(node.type) && !(images && node.type === 'image')) ||
     ('children' in node &&
