@@ -327,24 +327,47 @@ function retainSource(
         signature(after.children[after.children.length - 1 - suffix]!)
     )
       suffix++
+    // A cell's range includes its pipe and padding, which would hide a space
+    // now at the edge of its content from the boundary check.
+    const cell =
+      before.type === 'tableCell' &&
+      before.children.length > 0 &&
+      after.children.length > 0
+    const first = cell ? before.children[0]!.position?.start.offset : start
+    const last = cell ? before.children.at(-1)!.position?.end.offset : end
+    const newFirst = cell ? after.children[0]!.position?.start.offset : newStart
+    const newLast = cell ? after.children.at(-1)!.position?.end.offset : newEnd
     const from = prefix
       ? before.children[prefix - 1]!.position?.end.offset
-      : start
+      : first
     const to = suffix
       ? before.children[before.children.length - suffix]!.position?.start.offset
-      : end
+      : last
     const newFrom = prefix
       ? after.children[prefix - 1]!.position?.end.offset
-      : newStart
+      : newFirst
     const newTo = suffix
       ? after.children[after.children.length - suffix]!.position?.start.offset
-      : newEnd
-    if (from != null && to != null && newFrom != null && newTo != null)
-      return retainBoundaryWhitespace(
-        source.slice(start, from) +
-          withEnding(canonical.slice(newFrom, newTo), lineEnding) +
-          source.slice(to, end),
-        canonical.slice(newStart, newEnd),
+      : newLast
+    if (
+      first != null &&
+      last != null &&
+      newFirst != null &&
+      newLast != null &&
+      from != null &&
+      to != null &&
+      newFrom != null &&
+      newTo != null
+    )
+      return (
+        source.slice(start, first) +
+        retainBoundaryWhitespace(
+          source.slice(first, from) +
+            withEnding(canonical.slice(newFrom, newTo), lineEnding) +
+            source.slice(to, last),
+          canonical.slice(newFirst, newLast),
+        ) +
+        source.slice(last, end)
       )
   }
   return withEnding(canonical.slice(newStart, newEnd), lineEnding)
