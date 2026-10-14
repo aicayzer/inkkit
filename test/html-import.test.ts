@@ -483,10 +483,14 @@ test('generated HTML with InkKit metadata and untidy text reads back as inserted
     async (session) => {
       for (let seed = 1; seed <= 300; seed++) {
         const html = generate(random(seed))
+        const saved: string[] = []
         for (const via of ['paste', 'drop'] as const) {
           const initial = seed % 2 ? '' : 'Before\n\nAfter\n'
           const result = await insert(session, html, via, initial)
           const label = `seed ${seed} ${via}: ${html}\n${result.text}`
+          saved.push(result.text)
+          // A test drop lands at the start, so only an empty note compares.
+          if (via === 'drop' && !initial) expect(saved[1], label).toBe(saved[0])
           // Into an empty document the content always lands. Beside other
           // text, where its first and last blocks merge with what is there,
           // the editor may instead refuse the edit and keep the document.
