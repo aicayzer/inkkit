@@ -206,6 +206,10 @@ New mount-time label overrides are `fileLoading`, `fileMissing`, `fileError`, `f
 
 `EditorOptions.rendering` accepts `codeHighlighting?: boolean` and `diagramPreview?: boolean`. Both default to `true`. Set either to `false` at mount to skip that presentation plugin. Code and diagram source remain editable and retain their authored spelling; mode changes, history and portable output keep the same contracts. Explicit clipboard and printable diagram exports still render on demand, including when previews are disabled. Mermaid loads after source validation on the first actual render; its queue/cache is shared across instances. An offline single-file bundle built from the main entry still includes the rendering code, so disabling previews reduces execution work rather than bytes. To leave Mermaid out of the bundle, use the core entry described in [Builds without diagrams](#builds-without-diagrams). See [measured baselines](performance.md).
 
+Buffered `insertText()` supports multiline text and normalises CRLF/CR to LF in formatted insertion, including code blocks. In ordinary blocks it inherits the active marks and inserts semantic breaks in one history transaction. Source/TXT retain their existing literal insertion rules.
+
+Formatted plain-text insertion preflights source preservation before dispatch. Multiline table-cell text that cannot reopen under the supported table dialect rejects with `preservation`, retaining source, revision, selection and history. This also applies to buffered multiline input; a success never means that an unsaveable document was accepted.
+
 ## Builds without diagrams
 
 The package has two entry points with the same exports:
@@ -213,15 +217,11 @@ The package has two entry points with the same exports:
 - `@aicayzer/inkkit` renders diagrams with Mermaid.
 - `@aicayzer/inkkit/core` never imports Mermaid. Mermaid is still installed as a dependency, but a host that imports only this entry does not bundle it, so each web view parses and holds a much smaller page. See [measurements](performance.md#builds-with-and-without-mermaid-october-14-2026).
 
-With the core entry, `mermaid` fences remain editable code blocks that keep their authored source. No preview is shown, whatever `rendering.diagramPreview` says, and no error is reported while editing. Clipboard output and `printableSnapshot()` keep the diagram source as readable code: clipboard `diagrams` entries carry an `error`, and print reports a `diagram-unavailable` warning, the same fallback as a diagram that cannot render.
+With the core entry, `mermaid` fences remain editable code blocks that keep their authored source. No preview is shown, whatever `rendering.diagramPreview` says, and no error is reported while editing. Clipboard output and `printableSnapshot()` keep the diagram source as readable code, the same fallback as a diagram that cannot render: clipboard `diagrams` entries carry an `error`, `events.error` reports `diagram-unavailable` for each clipboard export that includes a diagram, and print reports a `diagram-unavailable` warning.
 
-Import every InkKit module from the same entry, and the stylesheet from `@aicayzer/inkkit/style.css` with either entry.
+Import from one entry throughout the app. If any module imports `@aicayzer/inkkit`, the bundle includes Mermaid and every editor renders diagrams. The stylesheet import, `@aicayzer/inkkit/style.css`, is the same for both entries.
 
 ```ts
 import { InkKitEditor } from '@aicayzer/inkkit/core'
 import '@aicayzer/inkkit/style.css'
 ```
-
-Buffered `insertText()` supports multiline text and normalises CRLF/CR to LF in formatted insertion, including code blocks. In ordinary blocks it inherits the active marks and inserts semantic breaks in one history transaction. Source/TXT retain their existing literal insertion rules.
-
-Formatted plain-text insertion preflights source preservation before dispatch. Multiline table-cell text that cannot reopen under the supported table dialect rejects with `preservation`, retaining source, revision, selection and history. This also applies to buffered multiline input; a success never means that an unsaveable document was accepted.
