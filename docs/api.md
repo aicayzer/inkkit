@@ -153,7 +153,7 @@ The mounted root receives `.inkkit-root`. Package rules, including table styles,
 | `--inkkit-diagram-background`, `--inkkit-diagram-text-color`, `--inkkit-diagram-error-color`                                                  | `#fff`, `#222`, `#9b2424` for the diagram preview card and its error text.                             |
 | `--inkkit-focus-width`, `--inkkit-focus-color`, `--inkkit-focus-offset`                                                                       | `2px`, editor accent, `-2px`; footnote links default to current text colour and `2px` offset.          |
 
-The editor color scheme is `--inkkit-color-scheme`, or the system setting when it is `light dark`. Default syntax colors use the light or dark palette of that scheme, so a host that forces `light` or `dark` gets matching code colors whatever the system setting.
+The editor color scheme is `--inkkit-color-scheme`, or the system setting when it is `light dark`. Default syntax colors use the light or dark palette of that scheme, so a host that forces `light` or `dark` gets matching code colors whatever the system setting. The defaults use CSS `light-dark()`, which needs Chrome 123, Firefox 120, Safari 17.5 or the WebKit in iOS 17.5 and macOS 14.5. In an older engine, code text takes the editor text color until the host sets the `--inkkit-code-*` tokens.
 
 Diagram previews always use Mermaid's default light theme, whatever the editor color scheme, because the same rendering becomes the PNG for clipboard output and print. The preview card is therefore light by default in both schemes. The diagram tokens change the card around the diagram, not the colors inside it. Because the theme does not follow the scheme, a rendered diagram is cached by its source alone.
 
