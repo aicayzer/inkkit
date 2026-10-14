@@ -246,6 +246,20 @@ test('a parse result without the expected accessors is refused', async () => {
   expect(renderer.render).not.toHaveBeenCalled()
 })
 
+test('annotations are refused when the parse result cannot show them', async () => {
+  renderer.mermaidAPI.getDiagramFromText.mockResolvedValueOnce({
+    type: 'classDiagram',
+    db: {
+      styleClasses: new Map(),
+      getClasses: () => new Map([['Shape', { styles: [] }]]),
+    },
+  })
+  await expect(
+    renderDiagram(`classDiagram\nclass Shape${++sequence} {\n<<interface>>\n}`),
+  ).rejects.toThrow(/could not be checked/)
+  expect(renderer.render).not.toHaveBeenCalled()
+})
+
 test('a parse error is reported without rendering', async () => {
   renderer.mermaidAPI.getDiagramFromText.mockRejectedValueOnce(
     new Error('Parse error on line 2'),
