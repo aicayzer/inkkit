@@ -69,3 +69,25 @@ test('source typing is undone as one step and redone', async ({ page }) => {
     original.slice(0, 20) + 'typed words' + original.slice(20),
   )
 })
+
+test('a paste after typing is its own undo step and typing is not merged', async ({
+  page,
+}) => {
+  const area = await openSource(page, 20)
+  await page.keyboard.type('abc')
+  await page.waitForTimeout(700)
+  await page.keyboard.type('def')
+  await operation(page, 'pastePlain', { text: 'PASTE' })
+  const typed = original.slice(0, 20) + 'abcdef' + original.slice(20)
+  const pasted = typed.slice(0, 26) + 'PASTE' + typed.slice(26)
+  expect((await observe(page)).snapshot!.text).toBe(pasted)
+  await area.focus()
+  await page.keyboard.press('ControlOrMeta+Z')
+  await expect(area).toHaveValue(typed)
+  await page.keyboard.press('ControlOrMeta+Z')
+  await expect(area).toHaveValue(
+    original.slice(0, 20) + 'abc' + original.slice(20),
+  )
+  await page.keyboard.press('ControlOrMeta+Z')
+  await expect(area).toHaveValue(original)
+})

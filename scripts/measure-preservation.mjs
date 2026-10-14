@@ -1,4 +1,4 @@
-import { chromium } from '@playwright/test'
+import { chromium, webkit } from '@playwright/test'
 import { spawn } from 'node:child_process'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -29,7 +29,10 @@ for (const [name, root, port] of [
   )
   let browser
   try {
-    browser = await chromium.launch({ channel: 'chrome', headless: true })
+    browser =
+      process.env.MEASURE_BROWSER === 'webkit'
+        ? await webkit.launch({ headless: true })
+        : await chromium.launch({ channel: 'chrome', headless: true })
     for (let i = 0; i < 100; i++) {
       try {
         if (server.exitCode !== null) throw Error('Measurement server exited')
@@ -409,8 +412,15 @@ for (const [name, root, port] of [
           .querySelector('#probe textarea')
           .value.includes('xxxxxxxxxx'),
         saved: window.measuredEditor.snapshot().text.includes('xxxxxxxxxx'),
-        // Taking in the typed source: the first thing that needs the formatted
-        // document pays for it once, where each keystroke paid before.
+        // The first edit that is not typing after the typing.
+        paste: (() => {
+          window.inputStart = 0
+          const start = performance.now()
+          window.measuredEditor.pasteAsPlainText('pasted')
+          return performance.now() - start
+        })(),
+        // Leaving source mode takes the typed source into the formatted
+        // document, once, where each keystroke paid before.
         leave: (() => {
           const start = performance.now()
           window.measuredEditor.setEditingMode('formatted')

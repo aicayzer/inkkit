@@ -318,3 +318,119 @@ test('source typed before the editor became read-only still reaches the formatte
     expect(editor.undo()).toBe(true)
     expect(editor.snapshot().text).toBe(text)
   }))
+
+test('a paste, a replacement and a cut after typing are undo steps of their own', () =>
+  run(async (editor, plain, ctx) => {
+    vi.useFakeTimers()
+    const text = paragraphs(5)
+    startSource(editor, plain, text, 9)
+    const view = ctx.get(editorViewCtx)
+    const doc = view.state.doc
+    for (const character of ['a', 'b', 'c']) type(plain, character)
+    pause()
+    for (const character of ['d', 'e', 'f']) type(plain, character)
+    pause()
+    for (const character of ['g', 'h', 'i']) type(plain, character)
+    const typed = plain.value
+    expect(typed).toBe(text.slice(0, 9) + 'abcdefghi' + text.slice(9))
+    await editor.paste({ text: 'PASTED' })
+    const pasted = typed.slice(0, 18) + 'PASTED' + typed.slice(18)
+    expect(plain.value).toBe(pasted)
+    expect(editor.snapshot().text).toBe(pasted)
+    // Taking in the text would merge the typing into one undo step.
+    expect(view.state.doc).toBe(doc)
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(typed)
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(text.slice(0, 9) + 'abcdef' + text.slice(9))
+    expect(editor.redo()).toBe(true)
+    expect(editor.redo()).toBe(true)
+    expect(plain.value).toBe(pasted)
+    expect(view.state.doc).toBe(doc)
+  }))
+
+test('replacements, replaceSource and cut take no part in the formatted document', () =>
+  run((editor, plain, ctx) => {
+    vi.useFakeTimers()
+    const text = paragraphs(4)
+    startSource(editor, plain, text, 9)
+    const view = ctx.get(editorViewCtx)
+    const doc = view.state.doc
+    type(plain, 'q')
+    const typed = plain.value
+    expect(editor.replaceAll('Paragraph 2', 'Changed')).toBe(1)
+    const replaced = typed.replace('Paragraph 2', 'Changed')
+    expect(editor.snapshot().text).toBe(replaced)
+    expect(editor.replaceSource('Whole new text\n')).toBe(true)
+    expect(editor.snapshot().text).toBe('Whole new text\n')
+    plain.setSelectionRange(0, 5)
+    const cut = Object.assign(
+      new Event('cut', { bubbles: true, cancelable: true }),
+      { clipboardData: { setData() {} } },
+    )
+    plain.dispatchEvent(cut)
+    expect(view.state.doc).toBe(doc)
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe('Whole new text\n')
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(replaced)
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(typed)
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(text)
+    expect(editor.undo()).toBe(false)
+    expect(view.state.doc).toBe(doc)
+  }))
+
+test('typing after an edit that is not typing starts a new undo step', () =>
+  run(async (editor, plain) => {
+    vi.useFakeTimers()
+    const text = paragraphs(3)
+    startSource(editor, plain, text, 9)
+    await editor.paste({ text: 'P' })
+    const pasted = plain.value
+    type(plain, 'x')
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(pasted)
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(text)
+  }))
+
+test('exports in source mode show the typed text and leave the history and document alone', () =>
+  run(async (editor, plain, ctx) => {
+    vi.useFakeTimers()
+    const text = paragraphs(4)
+    startSource(editor, plain, text, 9)
+    const view = ctx.get(editorViewCtx)
+    const doc = view.state.doc
+    type(plain, 'a')
+    pause()
+    type(plain, 'b')
+    pause()
+    expect((await editor.clipboardSnapshot()).text).toContain('Paragraphab 0')
+    expect((await editor.printableSnapshot()).html).toContain('Paragraphab 0')
+    plain.setSelectionRange(0, 14)
+    const partial = await editor.clipboardSnapshot(false)
+    expect(partial.markdown).toBe(plain.value.slice(0, 14))
+    expect(view.state.doc).toBe(doc)
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(text.slice(0, 9) + 'a' + text.slice(9))
+    expect(editor.undo()).toBe(true)
+    expect(plain.value).toBe(text)
+  }))
+
+test('source taken into the formatted document stays apart from the next formatted edit', () =>
+  run((editor, plain, ctx) => {
+    const text = paragraphs(3)
+    startSource(editor, plain, text, 9)
+    type(plain, 'x')
+    const typed = plain.value
+    editor.setEditingMode('formatted', 3)
+    const view = ctx.get(editorViewCtx)
+    view.dispatch(view.state.tr.insertText('Edited', 1, 1))
+    expect(editor.snapshot().text).toContain('EditedParagraph')
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe(typed)
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe(text)
+  }))

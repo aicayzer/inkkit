@@ -547,6 +547,8 @@ interface TypedSource {
   to: number
   // Where the caret and selection were before this step began.
   before: { from: number; to: number }
+  // An edit that is not typing, which later typing does not join.
+  closed: boolean
 }
 
 export class InkKitEditor {
@@ -1102,9 +1104,10 @@ export class InkKitEditor {
     if (!this.writable)
       throw new InkKitError('read-only', 'The editor is read-only')
     if (typeof text !== 'string') throw new TypeError('Source must be a string')
-    if (!isolated && this.literalSurface)
-      return this.deferSource(text, from, to, native)
-    this.settleSource()
+    // Source edits take the same steps whether typed or not; an edit that is
+    // not typing ends the typing step before it and is closed to the next.
+    if (this.literalSurface)
+      return this.deferSource(text, from, to, native, isolated)
     return this.commitSource(text, isolated, from, to, this.beforePlainInput)
   }
 
@@ -1118,6 +1121,7 @@ export class InkKitEditor {
     from: number | undefined,
     to: number | undefined,
     native: boolean,
+    closed: boolean,
   ): boolean {
     if (text === this.currentText()) return false
     const length =
@@ -1125,7 +1129,10 @@ export class InkKitEditor {
     const now = Date.now()
     const previous = this.pendingSource
     const continuing =
-      previous && now - this.lastSourceInput <= sourceGroupDelay
+      previous &&
+      !previous.closed &&
+      !closed &&
+      now - this.lastSourceInput <= sourceGroupDelay
     if (previous && !continuing) this.rememberTypedStep(previous)
     this.lastSourceInput = now
     this.undoneSteps = []
@@ -1138,6 +1145,7 @@ export class InkKitEditor {
           from: this.plain.selectionStart,
           to: this.plain.selectionEnd,
         },
+      closed,
     }
     this.pendingSource = pending
     this.revision += 1
@@ -1215,7 +1223,8 @@ export class InkKitEditor {
       if (
         this.commitSource(
           pending.text,
-          false,
+          // A step of its own, whatever edit follows within the group delay.
+          true,
           pending.from,
           pending.to,
           steps[0]?.before ?? pending.before,
@@ -1375,14 +1384,14 @@ export class InkKitEditor {
     expectedGeneration?: number,
   ): Promise<PrintableDocument> {
     const snapshot = this.snapshot(expectedGeneration)
-    this.settleSource()
     const state = this.editor.ctx.get(editorViewCtx).state
+    const doc = this.exportDocument(snapshot.text)
     const output = await this.exportContent(snapshot, async (signal) => {
       if (
         snapshot.format === 'md' &&
         !this.options.images &&
         !this.options.files &&
-        hasAuthoredImagesInLiterals(state.doc.content, (source) =>
+        hasAuthoredImagesInLiterals(doc.content, (source) =>
           this.editor.ctx.get(remarkCtx).parse(source),
         )
       )
@@ -1393,7 +1402,7 @@ export class InkKitEditor {
       return snapshot.format === 'txt'
         ? printableText(snapshot.text)
         : printableMarkdown(
-            state.doc.content,
+            doc.content,
             state.schema,
             this.options.images,
             this.context(),
@@ -1422,9 +1431,20 @@ export class InkKitEditor {
     })
   }
 
+  /**
+   * The document to export. Source typed in the source editor has not reached
+   * the formatted document, which would merge its undo steps, so a document
+   * read from the text stands in without touching history.
+   */
+  private exportDocument(text: string): ProseNode {
+    const { doc } = this.editor.ctx.get(editorViewCtx).state
+    return this.pendingSource && this.formatType === 'md'
+      ? this.editor.ctx.get(parserCtx)(text)
+      : doc
+  }
+
   async clipboardSnapshot(all = true): Promise<ClipboardOutput> {
     const snapshot = this.snapshot()
-    this.settleSource()
     const epoch = this.documentEpoch
     if (this.formatType === 'txt') {
       const text = all
@@ -1443,7 +1463,12 @@ export class InkKitEditor {
         diagrams: [],
       }
     }
-    const { doc, schema, selection } = this.editor.ctx.get(editorViewCtx).state
+    const { schema, selection } = this.editor.ctx.get(editorViewCtx).state
+    // A partial copy in the source editor reads only the selected source.
+    const doc =
+      all || this.mode !== 'source'
+        ? this.exportDocument(snapshot.text)
+        : this.editor.ctx.get(editorViewCtx).state.doc
     const selectedSource =
       !all && this.mode === 'source'
         ? sourceSelection(
