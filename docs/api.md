@@ -217,6 +217,8 @@ New mount-time label overrides are `fileLoading`, `fileMissing`, `fileError`, `f
 
 Buffered `insertText()` supports multiline text and normalises CRLF/CR to LF in formatted insertion, including code blocks. In ordinary blocks it inherits the active marks and inserts semantic breaks in one history transaction. Source/TXT retain their existing literal insertion rules.
 
+Buffered `insertText()` inserts exactly the text it's given and changes nothing outside it, in one history step. Markdown input rules apply at most as if the last character had been typed after the rest: `**x**` becomes strong `x`, and `*x* ` stays literal because its last character is a space. Backspace straight afterwards undoes the rule, as it does after typing. Text the browser inserts in one piece, such as dictation or a text replacement, follows the same rule.
+
 Formatted plain-text insertion preflights source preservation before dispatch. Multiline table-cell text that cannot reopen under the supported table dialect rejects with `preservation`, retaining source, revision, selection and history. This also applies to buffered multiline input; a success never means that an unsaveable document was accepted.
 
 ## Builds without diagrams
