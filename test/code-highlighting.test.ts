@@ -420,7 +420,9 @@ test('an edit in a block of many colors at the length limit matches a full recom
   expect(actual(view).length).toBeGreaterThan(256)
 })
 
-async function timeOneEdit(lines: number): Promise<number> {
+// Every number and comma in `1,1,1` has its own color, so a block within the
+// length limit still holds thousands of decorations.
+async function timeOneEdit(characters: number): Promise<number> {
   const host = document.createElement('div')
   document.body.append(host)
   const big = await Editor.make()
@@ -428,7 +430,7 @@ async function timeOneEdit(lines: number): Promise<number> {
       ctx.set(rootCtx, host)
       ctx.set(
         defaultValueCtx,
-        '```ts\n' + 'const a = 1; // c\n'.repeat(lines) + '```\n',
+        '```json\n' + '1,'.repeat(characters / 2) + '\n```\n',
       )
       ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
     })
@@ -437,21 +439,26 @@ async function timeOneEdit(lines: number): Promise<number> {
     .create()
   try {
     const bigView = big.ctx.get(editorViewCtx)
-    const start = performance.now()
-    bigView.dispatch(bigView.state.tr.insertText('x', 3))
-    return performance.now() - start
+    expect(actual(bigView).length).toBe(characters)
+    const times: number[] = []
+    for (let i = 0; i < 5; i++) {
+      const start = performance.now()
+      bigView.dispatch(bigView.state.tr.insertText('2', 3))
+      times.push(performance.now() - start)
+      bigView.dispatch(bigView.state.tr.delete(3, 4))
+    }
+    return times.sort((a, b) => a - b)[2]!
   } finally {
     await big.destroy()
     host.remove()
   }
 }
 
-test('one edit in a very large block takes time linear in its size', async () => {
-  await timeOneEdit(500)
-  const small = await timeOneEdit(2500)
-  const large = await timeOneEdit(10000)
-  // These blocks are past the highlight limit. Linear growth is 4x; a
-  // quadratic pass over the block is 16x.
-  expect(large).toBeLessThan(Math.max(small, 5) * 9)
-  expect(large).toBeLessThan(2000)
+test('one edit in a block of many colors takes time linear in its size', async () => {
+  await timeOneEdit(1200)
+  const small = await timeOneEdit(1200)
+  const large = await timeOneEdit(4800)
+  expect(4800).toBeLessThanOrEqual(highlightLimit)
+  // Linear growth is 4x; removing each stale color separately is about 16x.
+  expect(large).toBeLessThan(Math.max(small, 2) * 9)
 }, 120_000)
