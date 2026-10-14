@@ -184,9 +184,9 @@ function remarkDialect(this: Processor) {
     handlers: {
       text(node, parent, state, info) {
         const value = defaultHandlers.text(node, parent, state, info)
-        // GFM trims literal whitespace at cell edges on reopening. Only a
-        // text node directly in the cell can reach an edge; inside a mark,
-        // link or code span its delimiters stand between it and the pipe.
+        // GFM trims spaces and tabs at the edges of a cell on reopening, so
+        // only the start of its first node and the end of its last need
+        // encoding. Inside a mark or link, delimiters stand before the pipe.
         if (
           !state.stack.includes('tableCell') ||
           (parent?.type !== 'paragraph' && parent?.type !== 'tableCell')
