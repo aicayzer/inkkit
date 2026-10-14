@@ -160,6 +160,7 @@ import {
   setCommentVisibility,
   sourceReplacement,
 } from './comments'
+import { scrollWholePixels } from './scroll'
 import { PasteController } from './paste'
 import { selectionPlugin } from './selection'
 import { search, SearchQuery, setSearchState } from 'prosemirror-search'
@@ -2485,12 +2486,18 @@ export class InkKitEditor {
     let remainingTop = vertical,
       remainingLeft = horizontal
     if (this.literalSurface) {
-      const top = this.plain.scrollTop,
-        left = this.plain.scrollLeft
-      this.plain.scrollTop += vertical
-      this.plain.scrollLeft += horizontal
-      remainingTop -= this.plain.scrollTop - top
-      remainingLeft -= this.plain.scrollLeft - left
+      const style = this.root.ownerDocument.defaultView!.getComputedStyle(
+        this.plain,
+      )
+      // The first or last line sits within the padding plus its own leading,
+      // under half a caret height, so a reveal that ends there shows the edge.
+      const leading = (rect.bottom - rect.top) / 2
+      const remaining = scrollWholePixels(this.plain, vertical, horizontal, {
+        top: (Number.parseFloat(style.paddingTop) || 0) + leading,
+        bottom: (Number.parseFloat(style.paddingBottom) || 0) + leading,
+      })
+      remainingTop = remaining.vertical
+      remainingLeft = remaining.horizontal
     }
     let container: HTMLElement | null = this.viewportContainer ?? this.root
     const document = this.root.ownerDocument
