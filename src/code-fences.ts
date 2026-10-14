@@ -98,7 +98,9 @@ export const preservingCodeBlocks = codeBlockSchema.extendSchema(
             } catch {
               /* Ordinary code stays usable without provenance. */
             }
-            const language = dom.dataset.language ?? ''
+            // A language is one word, as an info string gives it.
+            const language =
+              (dom.dataset.language ?? '').trim().split(/\s+/)[0] ?? ''
             // The info string is the language the block shows, so words
             // after it in the attribute are not kept.
             if (authoredFence && !showsFenceInfo(authoredFence, language))

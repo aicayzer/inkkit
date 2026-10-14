@@ -1084,6 +1084,16 @@ test('a code fence keeps only the language its block shows as its info', async (
 const callout = (attributes: string, title: string) =>
   `<blockquote class="inkkit-callout" data-inkkit-callout="NOTE" data-inkkit-marker="[!NOTE]" ${attributes}><strong class="inkkit-callout-title">${title}</strong><div class="inkkit-callout-body"><p>Body <a href="https://a.test">a</a></p></div></blockquote>`
 
+test('a code block keeps one word of its language', async () => {
+  for (const read of [
+    dropped,
+    async (html: string) => (await pasted({ html })).markdown,
+  ])
+    expect(
+      await read('<pre data-language="js more words"><code>let a</code></pre>'),
+    ).toBe('```js\nlet a\n```\n')
+})
+
 test('a pasted callout keeps the title it shows and starts expanded', async () => {
   for (const read of [
     dropped,
@@ -1113,12 +1123,17 @@ test('a pasted callout keeps the title it shows and starts expanded', async () =
   ).toBe('> [!NOTE]+ Shown\n> Body [a][]\n\n[a]: https://a.test\n')
 })
 
-test('template and noscript contents are left out of pasted HTML', async () => {
+test('content a page does not show is left out of pasted HTML', async () => {
   expect(
     await fromHTML(
-      '<p>a</p><noscript><p>alternative</p></noscript><template><p>inert</p></template><p>b</p>',
+      '<p>a</p><noscript><p>alternative</p></noscript><template><p>inert</p></template><noembed><p>fallback</p></noembed><p>b</p>',
     ),
   ).toBe('a\n\nb\n')
+  expect(
+    await fromHTML(
+      '<p>a<span hidden>one</span><span style="color: red; DISPLAY : None !important">two</span><span style="display:none" hidden>three</span><span style="display: inline">c</span></p><div hidden><p>four</p></div><x-note style="display: none">five</x-note>',
+    ),
+  ).toBe('ac\n')
 })
 
 test('a file embed copied with its HTML pastes as the image the HTML shows', async () => {

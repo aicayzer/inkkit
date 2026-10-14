@@ -26,6 +26,7 @@ import { hiddenCommentExit } from './hidden-comments'
 import {
   collapseClipboardWhitespace,
   isRewrittenElement,
+  displaysNone,
   isRichElement,
   normalizeClipboardHTML,
 } from './paste-html'
@@ -729,11 +730,17 @@ function visibleContent(ctx: Ctx, html: string): DocumentFragment {
   const template = document.createElement('template')
   template.innerHTML = html
   const container = template.content
-  // A page shows neither its HTML comments nor the contents of `template`
-  // and `noscript`, so none of them reaches the note, even inside source
-  // that stays literal.
-  for (const hidden of container.querySelectorAll('template,noscript'))
-    hidden.remove()
+  // A page shows neither its HTML comments, nor `template`, `noscript` and
+  // `noembed` contents, nor elements hidden by attribute or inline style, so
+  // none of them reaches the note, even inside source that stays literal.
+  for (const hidden of container.querySelectorAll(
+    'template,noscript,noembed,[hidden],[style]',
+  ))
+    if (
+      hidden.matches('template,noscript,noembed,[hidden]') ||
+      displaysNone(hidden)
+    )
+      hidden.remove()
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_COMMENT)
   const comments: Node[] = []
   while (walker.nextNode()) comments.push(walker.currentNode)

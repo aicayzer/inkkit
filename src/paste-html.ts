@@ -99,14 +99,27 @@ const keepingWhitespace = new Set([
  * `!important` do not matter. Style sheets are not consulted.
  */
 export function keepsWhitespace(element: Element): boolean {
-  const style = element.getAttribute('style')
-  if (!style) return false
+  return [
+    ...inlineStyle(element, ['white-space', 'white-space-collapse']).values(),
+  ].some((value) =>
+    value.split(/\s+/).some((keyword) => keepingWhitespace.has(keyword)),
+  )
+}
+
+/** Whether the element's own inline style sets `display: none`. */
+export function displaysNone(element: Element): boolean {
+  return inlineStyle(element, ['display']).get('display') === 'none'
+}
+
+/** The winning lowercase value of each named property in the inline style. */
+function inlineStyle(element: Element, names: string[]): Map<string, string> {
   const winning = new Map<string, { value: string; important: boolean }>()
-  for (const declaration of declarations(style)) {
+  const style = element.getAttribute('style')
+  for (const declaration of style ? declarations(style) : []) {
     const colon = declaration.indexOf(':')
     if (colon < 0) continue
     const name = declaration.slice(0, colon).trim().toLowerCase()
-    if (name !== 'white-space' && name !== 'white-space-collapse') continue
+    if (!names.includes(name)) continue
     let value = declaration.slice(colon + 1).trim()
     const important = /!\s*important$/i.test(value)
     if (important) value = value.replace(/!\s*important$/i, '')
@@ -114,9 +127,7 @@ export function keepsWhitespace(element: Element): boolean {
     if (!earlier?.important || important)
       winning.set(name, { value: value.trim().toLowerCase(), important })
   }
-  return [...winning.values()].some(({ value }) =>
-    value.split(/\s+/).some((keyword) => keepingWhitespace.has(keyword)),
-  )
+  return new Map([...winning].map(([name, { value }]) => [name, value]))
 }
 
 // Splits a style attribute at the semicolons that end declarations, ignoring
