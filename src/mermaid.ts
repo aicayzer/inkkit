@@ -54,8 +54,8 @@ function annotations(source: string): Annotations {
     names.push(header === 'stateDiagram' ? name.toLowerCase() : name)
     return ''
   })
-  // The class lexer skips a comment between << and an annotation name, where
-  // the HTML check would not see the name.
+  // The class lexer skips comments, so a comment after << would hide an
+  // annotation name from the HTML check.
   if (header === 'classDiagram' && /<<\s*%%/.test(rest))
     throw new Error(refusal)
   return { names, rest }
