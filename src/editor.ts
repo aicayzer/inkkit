@@ -1024,15 +1024,23 @@ export class InkKitEditor {
     const provenance = doc.attrs[sourceAttribute] as SourceProvenance | null
     if (this.formatType === 'txt')
       return provenance?.text ?? this.originalSource
-    let preservation = this.preservation
-    if (provenance) {
-      preservation = this.sourcePreservations.get(provenance)
-      if (!preservation) {
-        preservation = new Preservation(this.editor.ctx, provenance.text)
-        this.sourcePreservations.set(provenance, preservation)
+    let text: string
+    try {
+      let preservation = this.preservation
+      if (provenance) {
+        preservation = this.sourcePreservations.get(provenance)
+        if (!preservation) {
+          preservation = new Preservation(this.editor.ctx, provenance.text)
+          this.sourcePreservations.set(provenance, preservation)
+        }
       }
+      text = preservation!.serialize(cleanSourceDoc(doc))
+    } catch (error) {
+      throw new InkKitError(
+        'preservation',
+        error instanceof Error ? error.message : 'Cannot preserve Markdown',
+      )
     }
-    const text = preservation!.serialize(cleanSourceDoc(doc))
     this.sourceTexts.set(doc, text)
     return text
   }
@@ -1386,15 +1394,7 @@ export class InkKitEditor {
 
   snapshot(expectedGeneration?: number): DocumentSnapshot {
     this.assertCurrent(expectedGeneration)
-    let text: string
-    try {
-      text = this.currentText()
-    } catch (error) {
-      throw new InkKitError(
-        'preservation',
-        error instanceof Error ? error.message : 'Cannot preserve Markdown',
-      )
-    }
+    const text = this.currentText()
     return {
       documentId: this.documentId,
       generation: this.generation,
@@ -1669,16 +1669,7 @@ export class InkKitEditor {
               .replaceSelection(new Slice(Fragment.from(paragraph), 1, 1))
               .scrollIntoView()
         if (!transaction) return
-        try {
-          this.currentText(transaction.doc)
-        } catch (error) {
-          throw new InkKitError(
-            'preservation',
-            error instanceof Error
-              ? error.message
-              : 'Cannot preserve inserted text',
-          )
-        }
+        this.currentText(transaction.doc)
         view.dispatch(transaction)
       }
     }
