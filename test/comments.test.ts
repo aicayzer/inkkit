@@ -5,6 +5,7 @@ import { InkKitEditor, type ImageAdapter } from '../src/index'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { Fragment } from '@milkdown/kit/prose/model'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { withEditor } from './harness'
 import { serialize } from '../src/dialect'
 import { clipboardContent, clipboardText } from '../src/clipboard'
@@ -558,4 +559,128 @@ test('a comment that already holds such text still loads and survives edits besi
   const result = await typedIntoComment(source, 'x', -2)
   expect(result.errors).toEqual([])
   expect(result.saved).toBe('Beforex\n\n<!-->kept-->\n')
+})
+
+async function withComments<T>(
+  source: string,
+  run: (open: {
+    editor: InkKitEditor
+    view: EditorView
+    errors: string[]
+    commentRange: () => { from: number; to: number }
+  }) => T | Promise<T>,
+): Promise<T> {
+  const errors: string[] = []
+  const root = document.createElement('div')
+  document.body.append(root)
+  const editor = await InkKitEditor.mount(
+    root,
+    {
+      changed() {},
+      stateChanged() {},
+      copy() {},
+      openLink() {},
+      error: (error) => errors.push(error.message),
+    },
+    {},
+  )
+  try {
+    editor.loadDocument({
+      documentId: 'comments',
+      generation: 1,
+      format: 'md',
+      text: source,
+    })
+    const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
+      editorViewCtx,
+    )
+    const commentRange = () => {
+      let found = { from: 0, to: 0 }
+      view.state.doc.descendants((node, pos) => {
+        if (isComment(node)) found = { from: pos, to: pos + node.nodeSize }
+      })
+      return found
+    }
+    return await run({ editor, view, errors, commentRange })
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+}
+
+// Each source holds a comment whose text would end it early for another reader.
+const endingEarly = [
+  'Before\n\n<!-->kept-->\n',
+  'Before\n\n<!--a--!>b-->\n',
+  'Before\n\n<!--a-->b-->\n',
+  'Before\n\n%%\na %% b\n%%\n',
+  'A <!--a--!>b--> B\n',
+  'A <!--->kept--> B\n',
+]
+
+test('undo and redo restore a comment that already held text ending it early', async () => {
+  for (const source of endingEarly)
+    await withComments(source, ({ editor, view, errors, commentRange }) => {
+      const label = JSON.stringify(source)
+      const { from, to } = commentRange()
+      view.dispatch(view.state.tr.delete(from, to))
+      const deleted = editor.snapshot().text
+      expect(deleted, label).not.toBe(source)
+      expect(editor.undo(), label).toBe(true)
+      expect(editor.snapshot().text, label).toBe(source)
+      expect(editor.redo(), label).toBe(true)
+      expect(editor.snapshot().text, label).toBe(deleted)
+      expect(editor.undo(), label).toBe(true)
+      expect(editor.snapshot().text, label).toBe(source)
+      expect(errors, label).toEqual([])
+    })
+})
+
+test('history stays usable after a comment holding such text is restored', async () => {
+  await withComments(
+    'Before\n\n<!-->kept-->\n',
+    ({ editor, view, errors, commentRange }) => {
+      const { from, to } = commentRange()
+      view.dispatch(view.state.tr.delete(from, to))
+      view.dispatch(view.state.tr.insertText('Z', 1, 1))
+      expect(editor.undo()).toBe(true)
+      expect(editor.undo()).toBe(true)
+      expect(editor.snapshot().text).toBe('Before\n\n<!-->kept-->\n')
+      expect(editor.undo()).toBe(false)
+      expect(errors).toEqual([])
+    },
+  )
+})
+
+test('replaceSource accepts comments that would end early, and undo returns to the earlier source', async () => {
+  for (const text of [
+    'Next\n\n<!-->x-->\n',
+    'Next <!--a--!>b--> end\n',
+    '%%\na %% b\n%%\n',
+  ])
+    await withComments('Start\n', ({ editor, errors }) => {
+      expect(editor.replaceSource(text), text).toBe(true)
+      expect(editor.snapshot().text, text).toBe(text)
+      expect(errors, text).toEqual([])
+      expect(editor.undo(), text).toBe(true)
+      expect(editor.snapshot().text, text).toBe('Start\n')
+      expect(editor.redo(), text).toBe(true)
+      expect(editor.snapshot().text, text).toBe(text)
+      expect(errors, text).toEqual([])
+    })
+})
+
+test('typing that ends a comment early is still refused after history steps', async () => {
+  await withComments(
+    'Before\n\n<!--note-->\n',
+    ({ editor, view, errors, commentRange }) => {
+      const { from, to } = commentRange()
+      view.dispatch(view.state.tr.delete(from, to))
+      expect(editor.undo()).toBe(true)
+      const at = commentRange().from + 1 + 2
+      view.dispatch(view.state.tr.insertText('-->', at, at))
+      expect(editor.snapshot().text).toBe('Before\n\n<!--note-->\n')
+      expect(errors).toHaveLength(1)
+    },
+  )
 })
