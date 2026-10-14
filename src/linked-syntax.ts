@@ -6,6 +6,7 @@ import { defaultHandlers, type Handle } from 'mdast-util-to-markdown'
 import type { Code, Extension, Tokenizer, State } from 'micromark-util-types'
 import type { Processor } from 'unified'
 import type { FileReference, WikiLinkReference } from './types'
+import { showsText } from './references'
 
 interface WikiLink extends Literal {
   type: 'inkkitWikiLink'
@@ -250,6 +251,21 @@ export function namedFileMarkdown(
   return tableForm(raw, authoredInTable, inTable)
 }
 
+/**
+ * Whether a wiki link shows its own target, as it does unless it is written
+ * with other text, so a reader sees where it leads.
+ */
+export function showsWikiTarget(link: {
+  target?: unknown
+  fragment?: unknown
+  label?: unknown
+}): boolean {
+  return (
+    link.label ===
+    `${String(link.target ?? '')}${link.fragment != null ? `#${String(link.fragment)}` : ''}`
+  )
+}
+
 export const wikiLinkSchema = $node('inkkit_wiki_link', () => ({
   inline: true,
   group: 'inline',
@@ -270,7 +286,11 @@ export const wikiLinkSchema = $node('inkkit_wiki_link', () => ({
           dom.getAttribute('data-inkkit-wiki-raw') ?? '',
           dom.getAttribute('data-inkkit-wiki-table') === 'true',
         )
-        return parsed && !parsed.embed
+        // Otherwise the element imports as the text it shows.
+        return parsed &&
+          !parsed.embed &&
+          showsWikiTarget(parsed) &&
+          showsText(dom, parsed.label)
           ? {
               raw: parsed.raw,
               target: parsed.target,

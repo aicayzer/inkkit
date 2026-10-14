@@ -391,22 +391,9 @@ function commentNode(inline: boolean) {
     code: true,
     defining: true,
     attrs: { syntax: { default: 'html' }, block: { default: !inline } },
-    parseDOM: [
-      {
-        tag: `${inline ? 'span' : 'div'}[data-inkkit-comment]`,
-        preserveWhitespace: 'full',
-        getAttrs(dom) {
-          const syntax =
-            dom.getAttribute('data-inkkit-comment') === 'obsidian'
-              ? 'obsidian'
-              : 'html'
-          // Text that would end the comment early would leave the rest as
-          // Markdown, so it stays plain text.
-          if (commentTextEndsEarly(syntax, dom.textContent ?? '')) return false
-          return { syntax }
-        },
-      },
-    ],
+    // A comment element in inserted HTML shows its text, so it imports as
+    // that text rather than as a comment, which starts hidden.
+    parseDOM: [],
     toDOM: (node) => [
       inline ? 'span' : 'div',
       {
@@ -534,7 +521,7 @@ export function isComment(node: ProseNode): boolean {
 }
 
 // Authored reference metadata can retain comments after their visible nodes are removed.
-function commentProvenance(value: unknown): boolean {
+export function commentProvenance(value: unknown): boolean {
   if (typeof value !== 'string') return false
   const visit = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.some(visit)

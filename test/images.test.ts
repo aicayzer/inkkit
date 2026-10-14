@@ -507,14 +507,14 @@ test('unsupported HTML elements remain opaque source while surrounding formattin
         .inkkitExecuted,
     ).toBe(before)
   }))
-test('unsupported SVG/math/object and authored HTML comments survive clipboard import safely', async () =>
+test('unsupported SVG/math/object survive clipboard import safely, without HTML comments', async () =>
   run('', async (editor, paste) => {
     await paste.paste({
       text: 'content',
       html: '<p>Before</p><!--keep--><svg><circle cx="5"></circle></svg><math><mi>x</mi></math><object data="private.bin"><p>Fallback</p></object><p>After</p>',
     })
     const markdown = serialize(editor.ctx)
-    expect(markdown).toContain('<!--keep-->')
+    expect(markdown).not.toContain('keep')
     expect(markdown).toContain('<svg>')
     expect(markdown).toContain('<math>')
     expect(markdown).toContain('<object data="private.bin">')

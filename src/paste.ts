@@ -7,11 +7,14 @@ import {
   Slice,
   type Node as ProseNode,
   type ResolvedPos,
+  type Schema,
 } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
+import { clipboardContent } from './clipboard'
+import { semanticSignature } from './preserve'
 import { importableSlice, topLevel } from './html-import'
 import {
   blockDropRange,
@@ -22,8 +25,8 @@ import { isImage } from './image-blocks'
 import { hiddenCommentExit } from './hidden-comments'
 import {
   collapseClipboardWhitespace,
-  isBlockElement,
   isRewrittenElement,
+  displaysNone,
   isRichElement,
   normalizeClipboardHTML,
 } from './paste-html'
@@ -31,6 +34,10 @@ import {
   avoidReferenceCollisions,
   markdownFromHTML,
 } from './reference-clipboard'
+import { normaliseLabel } from './references'
+import { commentProvenance, isComment, literalCommentSpans } from './comments'
+import { showsWikiTarget } from './linked-syntax'
+import { showsFenceInfo } from './code-fences'
 import {
   InkKitError,
   type ClipboardInput,
@@ -268,10 +275,7 @@ export class PasteController {
         )
       )
         return
-      const markdown = plainText
-        ? undefined
-        : (input.markdown ??
-          (input.html ? markdownFromHTML(input.html) : undefined))
+      const markdown = plainText ? undefined : input.markdown
       if (plainText) {
         if (inCode()) {
           const anchor = this.anchor(operation)
@@ -293,155 +297,7 @@ export class PasteController {
           )
         slice = new Slice(Fragment.fromArray(paragraphs), 1, 1)
       } else if (input.html) {
-        // Template contents remain inert while unsupported source is replaced
-        // and managed image references are imported.
-        const template = document.createElement('template')
-        template.innerHTML = input.html
-        const container = template.content
-        // Preserve whole unsupported tables before rewriting their descendants,
-        // so comments retain their source and ordinary-copy privacy.
-        for (const table of [...container.querySelectorAll('table')]) {
-          if (table.parentElement?.closest('table')) continue
-          // Inside an element that stays literal source, the whole element is
-          // kept as written, so its tables are not rewritten or judged here.
-          if (!insideRewrittenContent(table)) continue
-          if (schema.nodes.table) {
-            // Judge the table as it will import, so wrappers such as `u` or
-            // `label` in a cell do not make it literal. A table that is still
-            // unsupported keeps its original source. An input in a cell would
-            // be dropped with its state, so that table stays source too.
-            const trial = table.cloneNode(true) as HTMLTableElement
-            const holder = table.ownerDocument.createDocumentFragment()
-            holder.append(trial)
-            normalizeClipboardHTML(holder)
-            if (
-              !table.querySelector('td input,th input') &&
-              !unsupportedClipboardTable(trial)
-            ) {
-              table.replaceWith(trial)
-              continue
-            }
-          }
-          const preserved = ctx.get(parserCtx)(table.outerHTML)
-          table.replaceWith(
-            DOMSerializer.fromSchema(schema).serializeFragment(
-              preserved.content,
-            ),
-          )
-        }
-        for (const warning of container.querySelectorAll(
-          '[data-inkkit-diagram-error]',
-        ))
-          warning.remove()
-        for (const diagram of container.querySelectorAll(
-          'figure[data-inkkit-mermaid]',
-        )) {
-          const source = diagram.getAttribute('data-inkkit-mermaid') ?? ''
-          if (source.length > 30000) continue
-          const pre = document.createElement('pre')
-          pre.dataset.language = 'mermaid'
-          const fence = diagram.getAttribute('data-inkkit-fence')
-          if (fence) pre.setAttribute('data-inkkit-fence', fence)
-          const code = document.createElement('code')
-          code.className = 'language-mermaid'
-          code.textContent = source
-          pre.append(code)
-          diagram.replaceWith(pre)
-        }
-        if (markdown == null) {
-          // Native destinations can keep node metadata after dropping the
-          // Markdown wrapper and its definitions. Import their visible HTML.
-          for (const element of container.querySelectorAll(
-            '[data-inkkit-reference],[data-inkkit-footnote-reference],[data-inkkit-footnote-definition]',
-          )) {
-            for (const name of [
-              'data-inkkit-reference',
-              'data-inkkit-footnote-reference',
-              'data-inkkit-footnote-definition',
-              'data-inkkit-label',
-              'data-inkkit-reference-type',
-              'data-inkkit-reference-content',
-            ])
-              element.removeAttribute(name)
-          }
-        }
-        // Native HTML clipboards add encoding metadata and fragment markers.
-        normalizeClipboardHTML(container)
-        // Obsidian's reading view also copies its title and collapse controls
-        // with document HTML.
-        for (const control of container.querySelectorAll(
-          'div.mod-header.mod-ui,div.mod-footer.mod-ui',
-        )) {
-          if (
-            control.querySelector(
-              '.inline-title[contenteditable],.embedded-backlinks',
-            )
-          )
-            control.remove()
-        }
-        for (const heading of container.querySelectorAll(
-          'h1[data-heading],h2[data-heading],h3[data-heading],h4[data-heading],h5[data-heading],h6[data-heading]',
-        )) {
-          for (const control of heading.querySelectorAll(
-            ':scope > span.heading-collapse-indicator.collapse-indicator.collapse-icon',
-          )) {
-            if (
-              control.querySelector(':scope > svg.svg-icon.right-triangle') &&
-              !control.textContent?.trim()
-            )
-              control.remove()
-          }
-        }
-        for (const control of container.querySelectorAll(
-          'pre > button.copy-code-button',
-        )) {
-          if (control.querySelector('svg.svg-icon')) control.remove()
-        }
-        for (const element of [...container.querySelectorAll('*')]) {
-          if (!container.contains(element) || isRichElement(element)) continue
-          const literal = document.createElement('pre')
-          literal.className = 'literal-markdown'
-          literal.textContent = element.outerHTML
-          element.replaceWith(literal)
-        }
-        for (const table of [...container.querySelectorAll('table')]) {
-          if (table.parentElement?.closest('table')) continue
-          const rows = [...table.querySelectorAll('tr')]
-          const unsupported =
-            !schema.nodes.table || unsupportedClipboardTable(table)
-          if (!unsupported && !table.querySelector('th')) {
-            for (const cell of rows[0]?.querySelectorAll(':scope > td') ?? []) {
-              const heading = document.createElement('th')
-              for (const attribute of [...cell.attributes])
-                heading.setAttribute(attribute.name, attribute.value)
-              heading.append(...cell.childNodes)
-              cell.replaceWith(heading)
-            }
-          }
-          if (unsupported) {
-            const literal = document.createElement('pre')
-            literal.className = 'literal-markdown'
-            literal.textContent = table.outerHTML
-            table.replaceWith(literal)
-          }
-        }
-        collapseClipboardWhitespace(container)
-        // An authored comment is read in Markdown as an InkKit comment, so it
-        // imports as one, after whitespace collapse has passed it by.
-        const walker = document.createTreeWalker(
-          container,
-          NodeFilter.SHOW_COMMENT,
-        )
-        const comments: Comment[] = []
-        while (walker.nextNode()) comments.push(walker.currentNode as Comment)
-        for (const comment of comments) {
-          const element = document.createElement(
-            inlineComment(comment) ? 'span' : 'div',
-          )
-          element.setAttribute('data-inkkit-comment', 'html')
-          element.textContent = comment.data
-          comment.replaceWith(element)
-        }
+        const container = visibleContent(ctx, input.html)
         const imported = new Map<string, string>()
         const elements = [...container.querySelectorAll('img')]
         const uniqueSources = new Set(
@@ -494,55 +350,69 @@ export class PasteController {
             )
           }
         }
-        if (markdown != null) {
-          const parsed = ctx.get(parserCtx)(markdown)
-          let imageIndex = 0
-          const hydrate = (node: ProseNode): ProseNode => {
-            if (isImage(node)) {
-              const slot = /^inkkit-clipboard-image:(\d+)$/.exec(
-                String(node.attrs.src),
-              )
-              const position = slot ? Number(slot[1]) : imageIndex++
-              const element = elements.some((element) =>
-                element.hasAttribute('data-inkkit-image-slot'),
-              )
-                ? elements.find(
-                    (element) =>
-                      Number(
-                        element.getAttribute(
-                          'data-inkkit-authored-image-slot',
-                        ) ?? element.getAttribute('data-inkkit-image-slot'),
-                      ) === position,
-                  )
-                : elements[position]
-              if (!element || !container.contains(element)) {
-                const text = schema.text(
-                  `[${node.attrs.alt || 'Image'}: image unavailable]`,
+        let imageIndex = 0
+        const hydrate = (node: ProseNode): ProseNode => {
+          if (isImage(node)) {
+            const slot = /^inkkit-clipboard-image:(\d+)$/.exec(
+              String(node.attrs.src),
+            )
+            const position = slot ? Number(slot[1]) : imageIndex++
+            const element = elements.some((element) =>
+              element.hasAttribute('data-inkkit-image-slot'),
+            )
+              ? elements.find(
+                  (element) =>
+                    Number(
+                      element.getAttribute('data-inkkit-authored-image-slot') ??
+                        element.getAttribute('data-inkkit-image-slot'),
+                    ) === position,
                 )
-                return node.isBlock
-                  ? schema.nodes.paragraph!.create(null, text)
-                  : text
-              }
-              return node.type.create(
-                { ...node.attrs, src: element.getAttribute('src') },
-                null,
-                node.marks,
+              : elements[position]
+            if (!element || !container.contains(element)) {
+              const text = schema.text(
+                `[${node.attrs.alt || 'Image'}: image unavailable]`,
               )
+              return node.isBlock
+                ? schema.nodes.paragraph!.create(null, text)
+                : text
             }
-            if (node.isText) return node
-            const children: ProseNode[] = []
-            node.forEach((child) => children.push(hydrate(child)))
-            return node.copy(Fragment.fromArray(children))
+            return node.type.create(
+              { ...node.attrs, src: element.getAttribute('src') },
+              null,
+              node.marks,
+            )
           }
-          slice = joinable(hydrate(parsed).content)
+          if (node.isText) return node
+          const children: ProseNode[] = []
+          node.forEach((child) => children.push(hydrate(child)))
+          return node.copy(Fragment.fromArray(children))
+        }
+        if (markdown != null) {
+          slice = joinable(hydrate(ctx.get(parserCtx)(markdown)).content)
           source = markdown
-        } else
-          slice = importableSlice(
-            ctx,
-            ProseParser.fromSchema(schema).parseSlice(container, {
-              preserveWhitespace: true,
-            }),
-          )
+        } else {
+          const parsed = ProseParser.fromSchema(schema).parseSlice(container, {
+            preserveWhitespace: true,
+          })
+          // InkKit's own copies carry the Markdown they were copied from,
+          // which keeps reference links, definitions and footnotes. It is
+          // used only where it holds what the HTML shows.
+          const copied = markdownFromHTML(input.html)
+          const described =
+            copied == null
+              ? undefined
+              : copiedContent(ctx, hydrate(ctx.get(parserCtx)(copied)), parsed)
+          if (described) {
+            slice = joinable(described)
+            source = copied
+          } else {
+            slice = importableSlice(ctx, parsed)
+            // HTML that shows nothing importable, such as a copied reference
+            // definition, pastes the text that came with it.
+            if (!slice.content.size && input.text.trim())
+              slice = plainSlice(schema, input.text)
+          }
+        }
       } else if (images.length) {
         const nodes = []
         if (input.text)
@@ -703,6 +573,327 @@ export class PasteController {
   }
 }
 /**
+ * The content of Markdown copied with its HTML, as the HTML importer accepts
+ * it, when InkKit's clipboard HTML for it reads as the HTML that was pasted:
+ * the same text, formatting, addresses, images and structure. Copied HTML
+ * does not show comments, reference labels, definitions or the target of a
+ * wiki link written with other text, so the content is refused where it
+ * holds comments, and keeps only definitions and wiki links that the HTML
+ * shows through their links.
+ */
+function copiedContent(
+  ctx: Ctx,
+  copied: ProseNode,
+  visible: Slice,
+): Fragment | undefined {
+  const schema = copied.type.schema
+  const imported = importableSlice(
+    ctx,
+    new Slice(withShownLinks(copied).content, 0, 0),
+  ).content
+  if (holdsHidden(imported)) return undefined
+  const accepted = withShownDefinitions(imported)
+  if (!accepted.childCount) return undefined
+  const shown = visibleContent(ctx, clipboardContent(accepted, schema).html)
+  // Copied HTML holds images without their sources, in document order.
+  const sources: string[] = []
+  accepted.descendants((node) => {
+    if (isImage(node)) sources.push(String(node.attrs.src))
+  })
+  for (const [index, image] of shown.querySelectorAll('img').entries())
+    image.setAttribute('src', sources[index] ?? '')
+  const reread = ProseParser.fromSchema(schema).parseSlice(shown, {
+    preserveWhitespace: true,
+  })
+  return shownAs(schema, reread.content) === shownAs(schema, visible.content)
+    ? accepted
+    : undefined
+}
+/**
+ * The document as the HTML can show it: a wiki link whose text is not its
+ * target becomes that text, a named file embed becomes the image it shows,
+ * and a folded callout starts expanded.
+ */
+function withShownLinks(node: ProseNode): ProseNode {
+  if (node.type.name === 'inkkit_wiki_link')
+    return showsWikiTarget(node.attrs)
+      ? node
+      : node.type.schema.text(String(node.attrs.label || 'Link'))
+  if (isImage(node))
+    return node.attrs.inkkitFileRaw == null
+      ? node
+      : node.type.create(
+          {
+            ...node.attrs,
+            inkkitFileRaw: null,
+            inkkitFileTarget: null,
+            inkkitFileFragment: null,
+            inkkitFileWidth: null,
+            inkkitFileInTable: false,
+          },
+          null,
+          node.marks,
+        )
+  if (node.isText || node.isLeaf) return node
+  const children: ProseNode[] = []
+  node.forEach((child) => children.push(withShownLinks(child)))
+  const content = Fragment.fromArray(children)
+  return node.type.name === 'inkkit_callout' && node.attrs.fold === '-'
+    ? node.type.create({ ...node.attrs, fold: '+' }, content, node.marks)
+    : node.copy(content)
+}
+/**
+ * Whether content holds something its HTML cannot show: a comment, comment
+ * syntax in a label, or a code fence whose info string says more than its
+ * language.
+ */
+function holdsHidden(content: Fragment): boolean {
+  let found = false
+  const labelled = (label: unknown) =>
+    typeof label === 'string' && literalCommentSpans(label).length > 0
+  content.descendants((node) => {
+    if (
+      isComment(node) ||
+      (node.type.name === 'code_block' &&
+        !showsFenceInfo(node.attrs.authoredFence, node.attrs.language)) ||
+      (/^(?:reference|footnote)_/.test(node.type.name) &&
+        labelled(node.attrs.label)) ||
+      node.marks.some(
+        (mark) =>
+          mark.type.name === 'link' &&
+          (labelled(mark.attrs.label) ||
+            commentProvenance(mark.attrs.referenceContent)),
+      )
+    )
+      found = true
+    return !found
+  })
+  return found
+}
+/**
+ * The content with only the first definition of each label that a link in it
+ * uses with the same address and title, so every definition kept is one the
+ * pasted HTML shows through that link.
+ */
+function withShownDefinitions(content: Fragment): Fragment {
+  const shown = new Set<string>()
+  const key = (identifier: unknown, url: unknown, title: unknown) =>
+    JSON.stringify([
+      normaliseLabel(String(identifier)),
+      String(url),
+      title || null,
+    ])
+  content.descendants((node) => {
+    for (const mark of node.marks)
+      if (mark.type.name === 'link' && mark.attrs.identifier)
+        shown.add(key(mark.attrs.identifier, mark.attrs.href, mark.attrs.title))
+  })
+  const kept = new Set<string>()
+  const filter = (fragment: Fragment): Fragment => {
+    const children: ProseNode[] = []
+    fragment.forEach((child) => {
+      if (child.type.name === 'reference_definition') {
+        const identifier = normaliseLabel(String(child.attrs.identifier))
+        if (
+          kept.has(identifier) ||
+          !shown.has(key(identifier, child.attrs.url, child.attrs.title))
+        )
+          return
+        kept.add(identifier)
+        children.push(child)
+      } else
+        children.push(
+          child.isText || child.isLeaf
+            ? child
+            : child.copy(filter(child.content)),
+        )
+    })
+    return Fragment.fromArray(children)
+  }
+  return filter(content)
+}
+/** What imported content shows, whether it is inline or blocks. */
+function shownAs(schema: Schema, content: Fragment): string {
+  return semanticSignature(
+    schema.topNodeType.create(null, topLevel(schema, content)),
+  )
+}
+/**
+ * Pasted HTML as the importer reads it: inert, with unsupported tables and
+ * elements kept as literal source, clipboard and app wrappers removed,
+ * whitespace collapsed and comments made InkKit comments. Images keep their
+ * sources for the caller to import.
+ */
+function visibleContent(ctx: Ctx, html: string): DocumentFragment {
+  const schema = ctx.get(editorViewCtx).state.schema
+  // Template contents remain inert while unsupported source is replaced.
+  const template = document.createElement('template')
+  template.innerHTML = html
+  const container = template.content
+  // A page shows neither its HTML comments, nor `template`, `noscript` and
+  // `noembed` contents, nor elements hidden by attribute or inline style, so
+  // none of them reaches the note, even inside source that stays literal.
+  for (const hidden of container.querySelectorAll(
+    'template,noscript,noembed,[hidden],[style]',
+  ))
+    if (
+      hidden.matches('template,noscript,noembed,[hidden]') ||
+      displaysNone(hidden)
+    )
+      hidden.remove()
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_COMMENT)
+  const comments: Node[] = []
+  while (walker.nextNode()) comments.push(walker.currentNode)
+  for (const comment of comments) comment.parentNode?.removeChild(comment)
+  // Preserve whole unsupported tables before rewriting their descendants.
+  for (const table of [...container.querySelectorAll('table')]) {
+    if (table.parentElement?.closest('table')) continue
+    // Inside an element that stays literal source, the whole element is
+    // kept as written, so its tables are not rewritten or judged here.
+    if (!insideRewrittenContent(table)) continue
+    if (schema.nodes.table) {
+      // Judge the table as it will import, so wrappers such as `u` or
+      // `label` in a cell do not make it literal. A table that is still
+      // unsupported keeps its original source. An input in a cell would
+      // be dropped with its state, so that table stays source too.
+      const trial = table.cloneNode(true) as HTMLTableElement
+      const holder = table.ownerDocument.createDocumentFragment()
+      holder.append(trial)
+      normalizeClipboardHTML(holder)
+      if (
+        !table.querySelector('td input,th input') &&
+        !unsupportedClipboardTable(trial)
+      ) {
+        table.replaceWith(trial)
+        continue
+      }
+    }
+    const preserved = ctx.get(parserCtx)(table.outerHTML)
+    table.replaceWith(
+      DOMSerializer.fromSchema(schema).serializeFragment(preserved.content),
+    )
+  }
+  for (const warning of container.querySelectorAll(
+    '[data-inkkit-diagram-error]',
+  ))
+    warning.remove()
+  for (const diagram of container.querySelectorAll(
+    'figure[data-inkkit-mermaid]',
+  )) {
+    const source = diagram.getAttribute('data-inkkit-mermaid') ?? ''
+    // The source is taken only from a figure holding just the diagram image
+    // that shows it as its text alternative; otherwise the figure imports as
+    // what it shows.
+    const image = diagram.querySelector(':scope > img')
+    if (
+      source.length > 30000 ||
+      diagram.childElementCount !== 1 ||
+      diagram.textContent?.trim() ||
+      image?.getAttribute('alt') !== `Mermaid diagram: ${source}`
+    )
+      continue
+    const pre = document.createElement('pre')
+    pre.dataset.language = 'mermaid'
+    const fence = diagram.getAttribute('data-inkkit-fence')
+    if (fence) pre.setAttribute('data-inkkit-fence', fence)
+    const code = document.createElement('code')
+    code.className = 'language-mermaid'
+    code.textContent = source
+    pre.append(code)
+    diagram.replaceWith(pre)
+  }
+  // Reference and footnote metadata on elements needs definitions that HTML
+  // does not carry, and native destinations keep it after dropping them.
+  // The visible HTML imports without it.
+  for (const element of container.querySelectorAll(
+    '[data-inkkit-reference],[data-inkkit-footnote-reference],[data-inkkit-footnote-definition]',
+  )) {
+    for (const name of [
+      'data-inkkit-reference',
+      'data-inkkit-footnote-reference',
+      'data-inkkit-footnote-definition',
+      'data-inkkit-label',
+      'data-inkkit-reference-type',
+      'data-inkkit-reference-content',
+    ])
+      element.removeAttribute(name)
+  }
+  // Native HTML clipboards add encoding metadata and fragment markers.
+  normalizeClipboardHTML(container)
+  // Obsidian's reading view also copies its title and collapse controls
+  // with document HTML.
+  for (const control of container.querySelectorAll(
+    'div.mod-header.mod-ui,div.mod-footer.mod-ui',
+  )) {
+    if (
+      control.querySelector(
+        '.inline-title[contenteditable],.embedded-backlinks',
+      )
+    )
+      control.remove()
+  }
+  for (const heading of container.querySelectorAll(
+    'h1[data-heading],h2[data-heading],h3[data-heading],h4[data-heading],h5[data-heading],h6[data-heading]',
+  )) {
+    for (const control of heading.querySelectorAll(
+      ':scope > span.heading-collapse-indicator.collapse-indicator.collapse-icon',
+    )) {
+      if (
+        control.querySelector(':scope > svg.svg-icon.right-triangle') &&
+        !control.textContent?.trim()
+      )
+        control.remove()
+    }
+  }
+  for (const control of container.querySelectorAll(
+    'pre > button.copy-code-button',
+  )) {
+    if (control.querySelector('svg.svg-icon')) control.remove()
+  }
+  for (const element of [...container.querySelectorAll('*')]) {
+    if (!container.contains(element) || isRichElement(element)) continue
+    const literal = document.createElement('pre')
+    literal.className = 'literal-markdown'
+    literal.textContent = element.outerHTML
+    element.replaceWith(literal)
+  }
+  for (const table of [...container.querySelectorAll('table')]) {
+    if (table.parentElement?.closest('table')) continue
+    const rows = [...table.querySelectorAll('tr')]
+    const unsupported = !schema.nodes.table || unsupportedClipboardTable(table)
+    if (!unsupported && !table.querySelector('th')) {
+      for (const cell of rows[0]?.querySelectorAll(':scope > td') ?? []) {
+        const heading = document.createElement('th')
+        for (const attribute of [...cell.attributes])
+          heading.setAttribute(attribute.name, attribute.value)
+        heading.append(...cell.childNodes)
+        cell.replaceWith(heading)
+      }
+    }
+    if (unsupported) {
+      const literal = document.createElement('pre')
+      literal.className = 'literal-markdown'
+      literal.textContent = table.outerHTML
+      table.replaceWith(literal)
+    }
+  }
+  collapseClipboardWhitespace(container)
+  return container
+}
+/** Literal text as one paragraph per line, open to join the caret's text. */
+function plainSlice(schema: Schema, text: string): Slice {
+  const paragraphs = text
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) =>
+      schema.nodes.paragraph!.create(
+        null,
+        line ? schema.text(line) : undefined,
+      ),
+    )
+  return new Slice(Fragment.fromArray(paragraphs), 1, 1)
+}
+/**
  * Parsed Markdown as a slice whose paragraphs at either end join the text at
  * the caret, as typed text does. Any other block at an end stays whole, so a
  * heading, list or code block still splits the paragraph it lands in.
@@ -793,22 +984,6 @@ function claimsPaste(
   } catch {
     return 'plain'
   }
-}
-// Inside text or an element that holds text, a comment is part of a line.
-function inlineComment(comment: Comment): boolean {
-  const parent = comment.parentElement
-  if (parent && /^(?:P|H[1-6]|TD|TH|LI|DT|DD)$/.test(parent.tagName))
-    return true
-  if (parent && isRichElement(parent) && !isBlockElement(parent)) return true
-  for (const sibling of comment.parentNode?.childNodes ?? [])
-    if (
-      (sibling.nodeType === Node.TEXT_NODE && sibling.textContent?.trim()) ||
-      (sibling.nodeType === Node.ELEMENT_NODE &&
-        isRichElement(sibling as Element) &&
-        !isBlockElement(sibling as Element))
-    )
-      return true
-  return false
 }
 function insideRewrittenContent(element: Element): boolean {
   for (

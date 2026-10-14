@@ -57,6 +57,11 @@ function plainHeader(
     : undefined
 }
 
+/** The title a callout shows when it has none of its own. */
+function kindName(kind: string): string {
+  return kind.toLowerCase().replace(/^./, (letter) => letter.toUpperCase())
+}
+
 const calloutHandler: Handle = (untyped, parent, state, info) => {
   const node = untyped as Callout
   const body = defaultHandlers.blockquote(
@@ -203,15 +208,29 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
           dom.getAttribute('data-inkkit-callout') ?? ''
         ).toUpperCase()
         const marker = dom.getAttribute('data-inkkit-marker') ?? `[!${kind}]`
-        const fold = dom.getAttribute('data-inkkit-fold') ?? ''
+        // Inserted content starts expanded, so a folded body is not hidden.
+        const authoredFold = dom.getAttribute('data-inkkit-fold') ?? ''
+        const fold = authoredFold === '-' ? '+' : authoredFold
         // A title read from the visible text is written with its punctuation
-        // escaped, so it reads back as the same plain text.
+        // escaped, so it reads back as the same plain text. The authored
+        // title is kept only when it shows as that text.
         const visibleTitle = singleLine(
           dom.querySelector('.inkkit-callout-title')?.textContent ?? '',
         ).trim()
+        const authoredTitle = dom.getAttribute('data-inkkit-title')
+        const shownTitle = (source: string) => {
+          const header = plainHeader(ctx.get(remarkCtx), `${marker} ${source}`)
+          return header == null
+            ? undefined
+            : singleLine(header.slice(marker.length + 1)).trim() ||
+                kindName(kind)
+        }
         const titleSource =
-          dom.getAttribute('data-inkkit-title') ??
-          visibleTitle.replace(/[!-/:-@[-`{-~]/g, '\\$&')
+          authoredTitle != null &&
+          !/[\r\n]/.test(authoredTitle) &&
+          shownTitle(authoredTitle) === visibleTitle
+            ? authoredTitle
+            : visibleTitle.replace(/[!-/:-@[-`{-~]/g, '\\$&')
         const titleHeader = plainHeader(
           ctx.get(remarkCtx),
           `${marker} ${titleSource}`,
@@ -247,10 +266,7 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
     [
       'strong',
       { class: 'inkkit-callout-title' },
-      node.attrs.title ||
-        String(node.attrs.kind)
-          .toLowerCase()
-          .replace(/^./, (letter) => letter.toUpperCase()),
+      node.attrs.title || kindName(String(node.attrs.kind)),
     ],
     ['div', { class: 'inkkit-callout-body' }, 0],
   ],

@@ -113,11 +113,11 @@ test('plain title entities render semantically while authored spelling survives 
   })
 })
 
-test('ordinary rich callout paste retains authored empty and entity title forms', async () => {
-  for (const source of [
-    '> [!NOTE]\n> Body\n',
-    '> [!note]- A &amp; B\n> Body\n',
-  ]) {
+test('ordinary rich callout paste retains authored empty and entity title forms, expanded', async () => {
+  for (const [source, expected] of [
+    ['> [!NOTE]\n> Body\n', '> [!NOTE]\n> Body\n'],
+    ['> [!note]- A &amp; B\n> Body\n', '> [!note]+ A &amp; B\n> Body\n'],
+  ] as const) {
     await run(source, async (editor) => {
       const copied = await editor.clipboardSnapshot()
       editor.loadDocument({
@@ -127,7 +127,7 @@ test('ordinary rich callout paste retains authored empty and entity title forms'
         text: '',
       })
       await editor.paste({ text: copied.text, html: copied.html })
-      expect(editor.snapshot().text).toBe(source)
+      expect(editor.snapshot().text).toBe(expected)
     })
   }
 })
