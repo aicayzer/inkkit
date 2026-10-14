@@ -134,8 +134,12 @@ interface Wanted {
   form: LinkForm
 }
 
-// Where a link is wanted on each character of an edited window of a block.
-// Characters inside a link written with brackets are left as they are.
+// Where a link is wanted on each character of a block that an edit reaches:
+// the runs that hold the changed characters `from` to `to`, or touch them
+// with no space between. A run a space separates from the change is left as
+// it is, since its text may come from character references or escapes the
+// editor does not hold. Characters inside a link written with brackets are
+// left as they are.
 function wantedLinks(
   ctx: Ctx,
   chars: Array<Character | undefined>,
@@ -187,7 +191,7 @@ function wantedLinks(
     const char = chars[index]
     if (!free(index) || /\s/.test(char!.text)) {
       // A space never belongs to an address that follows its text.
-      if (free(index) && index >= from && index <= to && char!.link)
+      if (free(index) && index >= from - 1 && index <= to && char!.link)
         wanted.set(index, null)
       index++
       continue
@@ -405,12 +409,7 @@ export const autolinkLiterals = $prose(
             )
             return found < 0 ? chars.length : found
           }
-          const wanted = wantedLinks(
-            ctx,
-            chars,
-            Math.max(0, index(from) - 1),
-            index(to) + 1,
-          )
+          const wanted = wantedLinks(ctx, chars, index(from), index(to))
           if (differs(chars, wanted)) blocks.push({ pos, chars, wanted })
         }
         if (!blocks.length) return null

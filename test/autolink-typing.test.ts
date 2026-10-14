@@ -361,6 +361,29 @@ for (const [name, source] of [
       await expectSaves(s, source.replace('here', 'here!'))
     }))
 
+for (const [source, anchor, typed, saved] of [
+  [
+    'See www.example.com&copy; 2026 notes\n',
+    '2026',
+    'x',
+    'See www.example.com&copy; x2026 notes\n',
+  ],
+  [
+    'Start https://a.com/x&amp; middle words\n',
+    'middle',
+    'Q',
+    'Start https://a.com/x&amp; Qmiddle words\n',
+  ],
+  ['me@a.com&#x41; middle\n', 'middle', 'Q', 'me@a.com&#x41; Qmiddle\n'],
+  ['me@a.com\\_ middle\n', 'middle', 'Q', 'me@a.com\\_ Qmiddle\n'],
+] as const)
+  test(`typing after a space beside ${JSON.stringify(source)} leaves the address before it as written`, () =>
+    session(source, async (s) => {
+      place(s.view, at(s.view, anchor, false))
+      type(s.view, typed)
+      await expectSaves(s, saved)
+    }))
+
 test('editing text after an entity keeps the entity and other text as written', () =>
   session('Contact user@host or &copy; 2024\n', async (s) => {
     place(s.view, at(s.view, '2024'))

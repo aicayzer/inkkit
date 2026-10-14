@@ -146,6 +146,14 @@ const typing: [string, string, string, boolean, string, string][] = [
     'See <https://example.com/paths> now.\n',
   ],
   [
+    'after a space beside an address that ends in a character reference',
+    'See www.example.com&copy; 2026 notes\n',
+    '2026',
+    false,
+    'x',
+    'See www.example.com&copy; x2026 notes\n',
+  ],
+  [
     'far from an address in quotes',
     'Link "https://example.com/a" and words here\n',
     'here',
@@ -185,7 +193,7 @@ for (const [name, source, marker, after, text, saved] of typing)
     openFixture,
   }) => {
     await openFixture()
-    await operation(page, 'replaceSource', { text: source })
+    await operation(page, 'reload', { text: source })
     await caret(page, marker, after)
     await page.keyboard.type(text)
     const observed = await observe(page)
@@ -227,7 +235,7 @@ test('opening a note with a non-ASCII address in a heading leaves it as written 
   openFixture,
 }) => {
   await openFixture()
-  await operation(page, 'replaceSource', { text: '# https://bücher.de/a\n' })
+  await operation(page, 'reload', { text: '# https://bücher.de/a\n' })
   const observed = await observe(page)
   expect(observed.diagnostics).toEqual([])
   expect(observed.snapshot!.text).toBe('# https://bücher.de/a\n')
