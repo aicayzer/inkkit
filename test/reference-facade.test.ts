@@ -479,6 +479,11 @@ const definitionEdits: Array<[string, string, string]> = [
   ['[r]: </old>\n', 'a\\', '[r]: <a\\\\>\n'],
   ['[r]: /old\n', 'a&amp;b', '[r]: a\\&amp;b\n'],
   ['[r]: /old\r\n', 'My Notes/file.md', '[r]: <My Notes/file.md>\r\n'],
+  ['[r]: /old\n', 'a b', '[r]: <a b>\n'],
+  ['[r]: /old\n', '写真\u3000一.png', '[r]: 写真\u3000一.png\n'],
+  ['[r]: /old\n', 'a\u00a0b', '[r]: a\u00a0b\n'],
+  ['[r]: /a\u3000b\n', '/new', '[r]: /new\n'],
+  ['[r]: /a\u00a0b "T"\n', 'c\u00a0d', '[r]: c\u00a0d "T"\n'],
 ]
 
 for (const [definition, destination, saved] of definitionEdits)
@@ -545,4 +550,22 @@ test('an inline link destination that starts with an angle bracket saves and reo
         if (mark.type.name === 'link') hrefs.push(mark.attrs.href)
     })
     expect(hrefs).toEqual(['<x>'])
+  }))
+
+test('a definition edit preserves the edited document once', () =>
+  run((editor) => {
+    editor.loadDocument({ ...input, text: 'See [x][r].\n\n[r]: /old\n' })
+    const serialize = Preservation.prototype.serialize
+    let calls = 0
+    Preservation.prototype.serialize = function (doc) {
+      calls++
+      return serialize.call(this, doc)
+    }
+    try {
+      expect(editor.editReferenceDefinition('r', '/new')).toBe(true)
+      expect(editor.snapshot().text).toBe('See [x][r].\n\n[r]: /new\n')
+    } finally {
+      Preservation.prototype.serialize = serialize
+    }
+    expect(calls).toBe(1)
   }))

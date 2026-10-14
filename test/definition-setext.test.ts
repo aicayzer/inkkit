@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { TextSelection } from '@milkdown/kit/prose/state'
 import { InkKitEditor } from '../src/index'
 import { Preservation, PreservationError } from '../src/preserve'
 
@@ -143,3 +144,33 @@ test('source-mode heading navigation goes to the heading, not the definition bef
     const plain = document.querySelector('textarea')!
     expect(plain.selectionStart).toBe(source.indexOf('bar'))
   }))
+
+for (const [name, source, expected] of [
+  [
+    'at the start of the line',
+    '[a]: /a\nbar\n===\n\n[a]\n',
+    '[a]: /a\n## bar\n\n[a]\n',
+  ],
+  ['after a tab', '[a]: /a\n\tbar\n===\n\n[a]\n', '[a]: /a\n## bar\n\n[a]\n'],
+  ['after spaces', '[a]: /a\n  bar\n===\n\n[a]\n', '[a]: /a\n## bar\n\n[a]\n'],
+  [
+    'in a quote',
+    '> [a]: /a\n> bar\n> ===\n\n[a]\n',
+    '> [a]: /a\n> ## bar\n\n[a]\n',
+  ],
+] as const)
+  test(`a setext heading after a definition, ${name}, changes level`, () =>
+    run((editor, ctx, errors) => {
+      editor.loadDocument({ ...input, text: source })
+      const view = ctx.get(editorViewCtx)
+      let at = -1
+      view.state.doc.descendants((node, pos) => {
+        if (at < 0 && node.type.name === 'heading') at = pos + 1
+      })
+      view.dispatch(
+        view.state.tr.setSelection(TextSelection.create(view.state.doc, at)),
+      )
+      editor.format('heading', 2)
+      expect(errors).toEqual([])
+      expect(reopens(editor, ctx)).toBe(expected)
+    }))

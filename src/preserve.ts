@@ -7,7 +7,6 @@ import { linkForm } from './link-form'
 import { restoreCodeEndings, finalCodeEnding } from './code-fences'
 import { lineBreakHTML, sourceFrontmatter } from './literals'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
-import { ownStarts } from './source-tree'
 
 interface Block {
   start: number
@@ -784,7 +783,7 @@ function retainSource(
     before.title === after.title
   ) {
     const parts = (text: string) =>
-      /^(\[[\s\S]*?\]:[ \t]*(?:\r?\n[ \t]*)?)(<(?:\\[\s\S]|[^\\<>\n])*>|\S+)([\s\S]*)$/.exec(
+      /^(\[[\s\S]*?\]:[ \t]*(?:\r?\n[ \t]*)?)(<(?:\\[\s\S]|[^\\<>\n])*>|[^ \t\r\n]+)([\s\S]*)$/.exec(
         text,
       )
     const authored = parts(raw)
@@ -1605,7 +1604,7 @@ export class Preservation {
       const processor = ctx.get(remarkCtx)
       const offset = source.startsWith('\uFEFF') ? 1 : 0
       const body = source.slice(offset)
-      const rawTree = ownStarts(processor.parse(source) as Root, body)
+      const rawTree = processor.parse(source) as Root
       const tree = processor.runSync(structuredClone(rawTree), {
         value: body,
       }) as Root
@@ -1799,10 +1798,7 @@ export class Preservation {
   ): { canonical: string; node: SourceNode } | undefined {
     const local = this.inContext(text)
     if (!local) return undefined
-    const tree = ownStarts(
-      this.ctx.get(remarkCtx).parse(local.text) as Root,
-      local.text,
-    )
+    const tree = this.ctx.get(remarkCtx).parse(local.text) as Root
     return tree.children.length === local.blocks
       ? {
           canonical: local.text,
@@ -2176,10 +2172,7 @@ export class Preservation {
       doc.forEach((node) => current.push(this.formOf(node)))
       const forms = this.blocks.map((block) => block.form)
       const processor = this.ctx.get(remarkCtx)
-      const currentRawTree = ownStarts(
-        processor.parse(canonical) as Root,
-        canonical,
-      )
+      const currentRawTree = processor.parse(canonical) as Root
       const currentTree = processor.runSync(structuredClone(currentRawTree), {
         value: canonical,
       }) as Root

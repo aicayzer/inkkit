@@ -1,35 +1,42 @@
-interface PositionedNode {
-  position?: { start: { offset?: number }; end: { offset?: number } }
-  children?: PositionedNode[]
-}
+import type { Nodes, Root } from 'mdast'
 
 /**
  * Moves the start of each block that begins inside the block before it to
- * where its own text begins, and returns the tree.
+ * the start of its own first line, after any container markers.
  *
  * micromark starts a setext heading where the paragraph it was read from
  * started, which is before any link reference definitions that paragraph
- * opened with, so the heading's range would include them.
+ * opened with, so the heading's range would include them. That start is in
+ * the column the paragraph's lines start in, so the heading's first line
+ * starts there too, unless it is a lazy line that starts further left.
  */
-export function ownStarts<T>(tree: T, text: string): T {
-  const visit = (node: PositionedNode) => {
+export function ownStarts(tree: Root): undefined {
+  const visit = (node: Nodes) => {
+    if (!('children' in node)) return
     let previousEnd: number | undefined
-    for (const child of node.children ?? []) {
-      const start = child.position?.start.offset
-      if (start != null && previousEnd != null && start < previousEnd) {
-        const own = child.children?.[0]?.position?.start.offset
+    for (const child of node.children) {
+      const start = child.position?.start
+      const own =
+        'children' in child ? child.children[0]?.position?.start : undefined
+      if (
+        start?.offset != null &&
+        previousEnd != null &&
+        start.offset < previousEnd &&
+        own?.offset != null &&
+        own.offset >= previousEnd
+      ) {
+        // A column counts the characters before it on its line.
+        const column = Math.min(start.column, own.column)
         child.position!.start = {
-          ...child.position!.start,
-          offset:
-            own != null && own >= previousEnd
-              ? own
-              : text.indexOf('\n', previousEnd) + 1 || previousEnd,
+          line: own.line,
+          column,
+          offset: own.offset - (own.column - column),
         }
       }
       visit(child)
       previousEnd = child.position?.end.offset ?? previousEnd
     }
   }
-  visit(tree as PositionedNode)
-  return tree
+  visit(tree)
+  return undefined
 }

@@ -5,7 +5,6 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { clipboardText } from './clipboard'
 import { revealCalloutAncestors } from './callouts'
-import { ownStarts } from './source-tree'
 import { InkKitError } from './types'
 
 export interface Heading {
@@ -42,12 +41,11 @@ function formattedLocations(doc: ProseNode): LocatedHeading[] {
 }
 function sourceLocations(ctx: Ctx, source: string): LocatedHeading[] {
   const processor = ctx.get(remarkCtx)
-  const bom = source.startsWith('\uFEFF') ? 1 : 0
-  const tree = processor.runSync(
-    ownStarts(processor.parse(source), source.slice(bom)),
-    { value: source },
-  ) as unknown as SourceNode
+  const tree = processor.runSync(processor.parse(source), {
+    value: source,
+  }) as unknown as SourceNode
   const positions: { position: number; level: number }[] = []
+  const bom = source.startsWith('\uFEFF') ? 1 : 0
   const visit = (node: SourceNode) => {
     if (node.type === 'heading' && node.position?.start.offset != null)
       positions.push({

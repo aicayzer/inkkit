@@ -598,6 +598,9 @@ export class InkKitEditor {
   private mode: EditingMode = 'formatted'
   private sourcePreservations = new WeakMap<SourceProvenance, Preservation>()
   private sourceTexts = new WeakMap<ProseNode, string>()
+  // A transaction already applied and preserved, so dispatching it reuses
+  // that state rather than preserving a fresh copy of the same document.
+  private checked?: { transaction: Transaction; state: EditorState }
   private outlineEpoch = 0
   private ready = false
   private destroyed = false
@@ -1856,7 +1859,10 @@ export class InkKitEditor {
         ctx.update(editorViewOptionsCtx, (options) => ({
           ...options,
           dispatchTransaction: function (this: EditorView, tr) {
-            const next = this.state.apply(tr)
+            const checked = instance.checked
+            instance.checked = undefined
+            const next =
+              checked?.transaction === tr ? checked.state : this.state.apply(tr)
             if (!instance.loading) {
               try {
                 if (!instance.literalSurface)
@@ -3516,7 +3522,9 @@ export class InkKitEditor {
     })
     // Checked with the reference updates that follow it, before it is
     // applied, so an edit that cannot be saved changes nothing.
-    this.currentText(view.state.applyTransaction(transaction).state.doc)
+    const state = view.state.apply(transaction)
+    this.currentText(state.doc)
+    this.checked = { transaction, state }
     view.dispatch(transaction)
     return true
   }
