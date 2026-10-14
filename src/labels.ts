@@ -32,6 +32,10 @@ export interface EditorLabels {
   filePreviewUnavailable: string
   filePDFPreview: string
   wikiMissing: string
+  /** Name of an author comment, which stays out of the readable text. */
+  comment: string
+  /** Name of a block of Markdown InkKit keeps as authored and does not render. */
+  preservedMarkdown: string
 }
 
 export const defaultLabels: Readonly<EditorLabels> = {
@@ -62,6 +66,8 @@ export const defaultLabels: Readonly<EditorLabels> = {
   filePreviewUnavailable: 'Preview unavailable',
   filePDFPreview: 'Open to view this PDF',
   wikiMissing: 'Link unavailable',
+  comment: 'Author comment',
+  preservedMarkdown: 'Preserved Markdown',
 }
 
 export const labelsCtx = $ctx<Readonly<EditorLabels>, 'inkkitLabels'>(

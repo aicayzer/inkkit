@@ -172,6 +172,13 @@ export function clipboardContent(
     reference.removeAttribute('tabindex')
     reference.removeAttribute('role')
   }
+  // The editor's roles and names describe its own view, not the copied text.
+  for (const element of container.querySelectorAll(
+    '[data-inkkit-footnote-definition], .literal-markdown',
+  )) {
+    element.removeAttribute('role')
+    element.removeAttribute('aria-label')
+  }
   for (const definition of container.querySelectorAll(
     '[data-inkkit-footnote-definition]',
   )) {
