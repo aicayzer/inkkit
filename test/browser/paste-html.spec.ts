@@ -262,11 +262,37 @@ for (const via of ['paste', 'drop'] as const)
     await expect
       .poll(async () => (await observe(page)).snapshot!.text)
       .toBe(
-        'a\n\n```\n<b>x</b> [l](javascript:void(0))\n```\n\nbsee \\[l]\\(javascript:void(0))\n\nVisit https://example.com/ now\n' +
-          // A drop lands before the empty paragraph, which stays as a spacer.
-          (via === 'drop' ? '\n<br />\n' : ''),
+        'a\n\n```\n<b>x</b> [l](javascript:void(0))\n```\n\nbsee \\[l]\\(javascript:void(0))\n\nVisit https://example.com/ now\n',
       )
     await expect(page.locator('.ProseMirror pre.literal-markdown')).toHaveCount(
       0,
     )
   })
+
+test('a drop and a paste of the same HTML save the same Markdown', async ({
+  page,
+}) => {
+  const pixel =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  for (const html of [
+    '<p>Read <a href="https://example.com/">the notes</a> and <a href="javascript:void(0)">this</a>.</p>',
+    `<p>Before</p><p><img src="${pixel}" alt="Pixel"></p><p>After</p>`,
+    '<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>',
+    '<p>Before</p><x-widget title="t">kept</x-widget><p>After</p>',
+    '<ol><li>a</li></ol><ol start="5"><li>b</li></ol>',
+    '<ol><li>a<ol><li>b</li></ol></li></ol>',
+    '<p>a</p><pre><code></code></pre><p>b</p>',
+  ]) {
+    await openEmpty(page)
+    await pasteHTML(page, html)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text, { message: html })
+      .not.toBe('')
+    const pasted = (await observe(page)).snapshot!.text
+    await openEmpty(page)
+    await dropHTML(page, html)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text, { message: html })
+      .toBe(pasted)
+  }
+})

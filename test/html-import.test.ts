@@ -123,8 +123,34 @@ async function insert(
       ),
     )
   if (via === 'paste') await session.editor.paste({ text: 'text', html })
-  else session.view.pasteHTML(html, new Event('paste') as ClipboardEvent)
+  else await drop(session, html)
   return { text: session.editor.snapshot().text, doc: session.view.state.doc }
+}
+
+/** Drops HTML on the editor as a browser does, and waits for the import. */
+async function drop(session: Session, html: string, files: File[] = []) {
+  const event = new Event('drop', { bubbles: true, cancelable: true })
+  const data: Record<string, string> = {
+    'text/plain': 'text',
+    'text/html': html,
+  }
+  Object.defineProperties(event, {
+    dataTransfer: {
+      value: {
+        getData: (type: string) => data[type] ?? '',
+        types: Object.keys(data),
+        files,
+      },
+    },
+    clientX: { value: 0 },
+    clientY: { value: 0 },
+  })
+  session.view.dom.dispatchEvent(event)
+  const controller = (
+    session.editor as unknown as { pasteController: { pending: boolean } }
+  ).pasteController
+  for (let tick = 0; tick < 100 && controller.pending; tick++)
+    await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 async function expectReadsBack(
@@ -282,6 +308,57 @@ test('a bare web address in pasted text imports as the link it reads back as', a
         'Visit https://example.com/a **today** or [www.example.com](http://www.example.com)\n\n\\[https://example.test/: x]\n',
       )
     }
+  })
+})
+
+test('a drop and a paste of the same HTML save the same Markdown', async () => {
+  const pixel =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  const images = {
+    presentation: (reference: string) => ({ url: `private://${reference}` }),
+    importImage: async () => ({ reference: 'images/photo.png' }),
+    exportImage: async () => ({
+      bytes: new Uint8Array(),
+      mimeType: 'image/png',
+    }),
+  }
+  await withEditor(
+    async (session) => {
+      for (const html of [
+        '<p>Read <a href="https://example.com/">the notes</a> and <a href="javascript:alert(1)">this</a>.</p>',
+        `<p>Before</p><p><img src="${pixel}" alt="Pixel"></p><p>After</p>`,
+        '<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>',
+        '<p>Before</p><x-widget title="t">kept</x-widget><p>After</p>',
+        '<ol><li>a</li></ol><ol start="5"><li>b</li></ol>',
+        '<ol><li>a<ol><li>b</li></ol></li></ol>',
+        '<p>a</p><pre><code></code></pre><p>b</p>',
+        '<p>a <!--note--> b</p>',
+        '<p>  spaced\n   text  </p>',
+      ]) {
+        const pasted = await insert(session, html, 'paste')
+        expect(refusals(session), html).toEqual([])
+        const dropped = await insert(session, html, 'drop')
+        expect(refusals(session), html).toEqual([])
+        expect(dropped.text, html).toBe(pasted.text)
+        expect(pasted.text.trim(), html).not.toBe('')
+        if (html.includes('<img'))
+          expect(dropped.text).toContain('![Pixel](images/photo.png)')
+      }
+    },
+    { images },
+  )
+})
+
+test('HTML that ProseMirror parses itself is still checked', async () => {
+  await withEditor(async (session) => {
+    load(session)
+    session.view.pasteHTML(
+      '<p>a</p><pre class="literal-markdown">&lt;b&gt;x&lt;/b&gt; [l](javascript:alert(1))</pre>',
+      new Event('paste') as ClipboardEvent,
+    )
+    const text = session.editor.snapshot().text
+    expect(unsafeAddresses(text)).toEqual([])
+    expect(names(session.view.state.doc)).not.toContain('literal_markdown')
   })
 })
 

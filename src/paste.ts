@@ -7,7 +7,7 @@ import {
   Slice,
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
@@ -90,8 +90,40 @@ export class PasteController {
                 })
                 return false
               },
+              drop: (view, event) => {
+                this.claimed = dropPoint(view, event) != null
+                queueMicrotask(() => {
+                  this.claimed = false
+                })
+                return false
+              },
             },
-            // Drops and pastes that ProseMirror inserts itself.
+            // A drop from outside the editor imports as a paste at the drop
+            // point. Moving content within the editor stays ProseMirror's.
+            handleDrop: (view, event) => {
+              this.claimed = false
+              const at = dropPoint(view, event)
+              if (at == null) return false
+              const data = event.dataTransfer!
+              view.dispatch(
+                view.state.tr.setSelection(
+                  TextSelection.near(view.state.doc.resolve(at)),
+                ),
+              )
+              view.focus()
+              void this.run(
+                {
+                  text: data.getData('text/plain'),
+                  html: data.getData('text/html'),
+                  plainText: this.options.literalText?.() ?? false,
+                },
+                [...data.files].filter((file) =>
+                  file.type.startsWith('image/'),
+                ),
+              ).catch((error) => options.onError?.(error))
+              return true
+            },
+            // Pastes that ProseMirror inserts itself.
             transformPasted: (slice, view, plain) =>
               this.claimed || plain || view.dragging
                 ? slice
@@ -623,6 +655,21 @@ function claimsPaste(
   } catch {
     return 'plain'
   }
+}
+/**
+ * Where a drop of HTML from outside the editor lands, when this controller
+ * imports it: not a move within the editor, and not into code, which takes
+ * the dropped text as it is.
+ */
+function dropPoint(view: EditorView, event: DragEvent): number | undefined {
+  const data = event.dataTransfer
+  if (!data || !view.editable || view.dragging) return undefined
+  if (!data.getData('text/html')) return undefined
+  const found = view.posAtCoords({ left: event.clientX, top: event.clientY })
+  if (!found) return undefined
+  return view.state.doc.resolve(found.pos).parent.type.spec.code
+    ? undefined
+    : found.pos
 }
 // Inside text or an element that holds text, a comment is part of a line.
 function inlineComment(comment: Comment): boolean {
