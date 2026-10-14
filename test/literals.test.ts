@@ -72,6 +72,14 @@ test('safe inline HTML breaks reopen as visible breaks and other HTML stays lite
   })
 })
 
+test('an authored inline break in a table cell is kept', async () => {
+  const source =
+    '| a      | b             |\n| ------ | ------------- |\n| x<br>y | https://e.com |\n'
+  await withEditor(source, (editor) => {
+    expect(serialize(editor.ctx)).toBe(source)
+  })
+})
+
 test('HTML images preserve absent titles', async () => {
   await withEditor('', (editor) => {
     const { schema } = editor.ctx.get(editorViewCtx).state
