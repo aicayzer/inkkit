@@ -64,8 +64,8 @@ export function singleLine(value: string): string {
 /**
  * A label is written as its authored text, so one that did not come from
  * Markdown could close its brackets early or span lines. Line breaks become
- * one space and an unescaped bracket is escaped; an authored label has neither
- * and is returned unchanged.
+ * one space and an unescaped bracket is escaped. An authored label has no
+ * unescaped bracket, and source preservation keeps an unedited one as written.
  */
 function writableLabel(label: unknown): string {
   const flat = singleLine(String(label))
