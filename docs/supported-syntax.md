@@ -39,7 +39,7 @@ Before rendering, InkKit refuses author configuration (`%%{` directives and fron
 
 Annotations are the one exception to the HTML restriction, in the positions where Mermaid reads them:
 
-- Class diagrams accept an annotation name of letters, digits, underscores, spaces and hyphens, such as `<<interface>>`, `<<abstract>>`, `<<service>>` or `<<enumeration>>`. It can stand on its own line in a class body, start a line before a class name (`<<interface>> Shape`) or follow a class name (`class Shape <<interface>>`).
+- Class diagrams accept an annotation name of ASCII letters, digits, underscores, spaces and hyphens, such as `<<interface>>`, `<<abstract>>`, `<<service>>` or `<<enumeration>>`. It can stand on its own line in a class body, start a line before a class name (`<<interface>> Shape`) or follow a class name (`class Shape <<interface>>`).
 - State diagrams accept `<<fork>>`, `<<join>>` and `<<choice>>` at the end of a `state Name` line.
 
 Anywhere else, including labels, notes, messages and other diagram types, `<<name>>` is refused like other HTML. Class and state diagrams also refuse any other `<<`. After parsing, InkKit refuses the diagram if Mermaid did not read each accepted annotation as an annotation, for example one on a line inside a multi-line note.
