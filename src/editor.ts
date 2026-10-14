@@ -2125,7 +2125,7 @@ export class InkKitEditor {
       const anchor = (event.target as HTMLElement).closest('a[href]')
       if (!anchor || event.button !== 0 || !modHeld(event)) return
       event.preventDefault()
-      // The renderer blanks an address whose scheme could run code.
+      // The renderer blanks an address whose scheme isn't on its allow-list.
       const href = anchor.getAttribute('href')
       if (href) events.openLink(href)
     }
