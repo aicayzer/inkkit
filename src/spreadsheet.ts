@@ -70,12 +70,14 @@ export function pasteSpreadsheet(
     for (const span of literalCommentSpans(input.html)) {
       if (span.start > cursor)
         children.push(schema.text(input.html.slice(cursor, span.start)))
-      children.push(
-        schema.nodes.comment_inline!.create(
-          { syntax: span.syntax, block: Boolean(span.block) },
-          span.value ? schema.text(span.value) : null,
-        ),
-      )
+      // A page does not show its HTML comments, so they are left out.
+      if (span.syntax !== 'html')
+        children.push(
+          schema.nodes.comment_inline!.create(
+            { syntax: span.syntax, block: Boolean(span.block) },
+            span.value ? schema.text(span.value) : null,
+          ),
+        )
       cursor = span.end
     }
     if (cursor < input.html.length)

@@ -25,7 +25,6 @@ import { isImage } from './image-blocks'
 import { hiddenCommentExit } from './hidden-comments'
 import {
   collapseClipboardWhitespace,
-  isBlockElement,
   isRewrittenElement,
   isRichElement,
   normalizeClipboardHTML,
@@ -701,8 +700,10 @@ function visibleContent(ctx: Ctx, html: string): DocumentFragment {
   const template = document.createElement('template')
   template.innerHTML = html
   const container = template.content
-  // Preserve whole unsupported tables before rewriting their descendants,
-  // so comments retain their source and ordinary-copy privacy.
+  // A page does not show its HTML comments, so none reaches the note, even
+  // inside source that stays literal.
+  withoutComments(container)
+  // Preserve whole unsupported tables before rewriting their descendants.
   for (const table of [...container.querySelectorAll('table')]) {
     if (table.parentElement?.closest('table')) continue
     // Inside an element that stays literal source, the whole element is
@@ -835,20 +836,16 @@ function visibleContent(ctx: Ctx, html: string): DocumentFragment {
     }
   }
   collapseClipboardWhitespace(container)
-  // An authored comment is read in Markdown as an InkKit comment, so it
-  // imports as one, after whitespace collapse has passed it by.
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_COMMENT)
-  const comments: Comment[] = []
-  while (walker.nextNode()) comments.push(walker.currentNode as Comment)
-  for (const comment of comments) {
-    const element = document.createElement(
-      inlineComment(comment) ? 'span' : 'div',
-    )
-    element.setAttribute('data-inkkit-comment', 'html')
-    element.textContent = comment.data
-    comment.replaceWith(element)
-  }
   return container
+}
+/** Removes every comment, including those in the contents of templates. */
+function withoutComments(root: DocumentFragment): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT)
+  const comments: Node[] = []
+  while (walker.nextNode()) comments.push(walker.currentNode)
+  for (const comment of comments) comment.parentNode?.removeChild(comment)
+  for (const template of root.querySelectorAll('template'))
+    withoutComments(template.content)
 }
 /** Literal text as one paragraph per line, open to join the caret's text. */
 function plainSlice(schema: Schema, text: string): Slice {
@@ -954,22 +951,6 @@ function claimsPaste(
   } catch {
     return 'plain'
   }
-}
-// Inside text or an element that holds text, a comment is part of a line.
-function inlineComment(comment: Comment): boolean {
-  const parent = comment.parentElement
-  if (parent && /^(?:P|H[1-6]|TD|TH|LI|DT|DD)$/.test(parent.tagName))
-    return true
-  if (parent && isRichElement(parent) && !isBlockElement(parent)) return true
-  for (const sibling of comment.parentNode?.childNodes ?? [])
-    if (
-      (sibling.nodeType === Node.TEXT_NODE && sibling.textContent?.trim()) ||
-      (sibling.nodeType === Node.ELEMENT_NODE &&
-        isRichElement(sibling as Element) &&
-        !isBlockElement(sibling as Element))
-    )
-      return true
-  return false
 }
 function insideRewrittenContent(element: Element): boolean {
   for (

@@ -209,7 +209,7 @@ test('elements that stay opaque keep their descendants untouched', async () => {
   expect(markdown).toContain(
     '<iframe src="https://example.test/frame"></iframe>',
   )
-  expect(markdown).toContain('<!--author-->')
+  expect(markdown).not.toContain('author')
   expect(markdown).not.toMatch(/StartFragment|EndFragment/)
 })
 
@@ -1043,4 +1043,10 @@ test('a diagram figure pastes its source only when its image shows that source',
       `<figure data-inkkit-mermaid="graph TD; A-->B"><img src="${pixel}" alt="Mermaid diagram: graph TD; A--&gt;B"><figcaption>Shown caption</figcaption></figure>`,
     ),
   ).toContain('Shown caption')
+})
+
+test('HTML inserted without the importer leaves out HTML comments', async () => {
+  expect(await dropped('<p>a<!--note-->b</p><!--note--><p>c</p>')).toBe(
+    'ab\n\nc\n',
+  )
 })

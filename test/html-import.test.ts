@@ -498,21 +498,30 @@ test('HTML that ProseMirror parses itself is still checked', async () => {
   })
 })
 
-test('HTML comments in pasted web pages import as author comments', async () => {
+test('HTML comments in pasted or dropped web pages are left out', async () => {
   await withEditor(async (session) => {
-    const block = await expectReadsBack(
-      session,
-      '<p>Before</p><!--author--><p>After</p>',
-      'paste',
-    )
-    expect(block.text).toBe('Before\n\n<!--author-->\n\nAfter\n')
-    expect(names(block.doc)).toContain('comment_block')
-    const inline = await expectReadsBack(
-      session,
-      '<p>a <!--note--> b</p>',
-      'paste',
-    )
-    expect(inline.text).toBe('a <!--note-->b\n')
+    for (const via of ['paste', 'drop'] as const) {
+      const block = await expectReadsBack(
+        session,
+        '<p>Before</p><!--note--><p>After</p>',
+        via,
+      )
+      expect(block.text).toBe('Before\n\nAfter\n')
+      expect(names(block.doc)).not.toContain('comment_block')
+      const inline = await expectReadsBack(
+        session,
+        '<p>a <!--note--> b</p>',
+        via,
+      )
+      expect(inline.text).toBe('a b\n')
+      const nested = await expectReadsBack(
+        session,
+        '<p>a</p><x-widget>shown<!--note--></x-widget><table><tr><td><!--note-->cell</td><td>x</td></tr><tr><td>y</td></tr></table>',
+        via,
+      )
+      expect(nested.text).not.toContain('note')
+      expect(nested.text).toContain('shown')
+    }
     // A browser ends this comment at once, so the rest is text.
     const ended = await expectReadsBack(
       session,

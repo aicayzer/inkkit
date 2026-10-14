@@ -119,3 +119,18 @@ for (const via of ['paste', 'drop'] as const)
       .poll(async () => (await observe(page)).snapshot!.text)
       .toBe('Shown text, here.\n')
   })
+
+test('HTML comments in pasted HTML are left out', async ({ page }) => {
+  await load(page, '')
+  await transfer(page, 'paste', {
+    text: 'Shown text',
+    html: '<p>Shown<!--note--> text</p><!--note-->',
+  })
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe('Shown text\n')
+  await page.evaluate(() =>
+    window.inkkitPlayground.operation('commentsVisible', { visible: true }),
+  )
+  expect((await observe(page)).snapshot!.text).not.toContain('note')
+})
