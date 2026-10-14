@@ -13,7 +13,7 @@ import type { DecorationSet, EditorView } from '@milkdown/kit/prose/view'
 import { common } from 'lowlight'
 import type { RootContent } from 'hast'
 import { dialect, stringifyOptions } from '../src/dialect'
-import { highlightPlugin } from '../src/highlight'
+import { highlightLimit, highlightPlugin } from '../src/highlight'
 
 const calls = vi.hoisted(() => ({ count: 0 }))
 
@@ -47,6 +47,7 @@ function expected(doc: ProseNode): Span[] {
     if (node.type.name !== 'code_block') return true
     const language = String(node.attrs.language ?? '').toLowerCase()
     if (!language || !reference.registered(language)) return false
+    if (node.textContent.length > highlightLimit) return false
     let offset = pos + 1
     const walk = (children: RootContent[], classes: string[]) => {
       for (const child of children) {
@@ -395,6 +396,30 @@ test('random edits, language changes, conversions and history always match a ful
   }
 })
 
+test('an edit in a block of many colors at the length limit matches a full recompute', () => {
+  const line = 'const a = 1; // c\n'
+  const text = line.repeat(highlightLimit / line.length + 1)
+  const block = view.state.schema.nodes.code_block!.create(
+    { language: 'ts' },
+    view.state.schema.text(text.slice(0, highlightLimit - 1)),
+  )
+  view.dispatch(view.state.tr.insert(find('Between'), block))
+  expect(actual(view).length).toBeGreaterThan(256)
+  insertAt(find('const a = 1; //') + 1, 'x')
+  expect(actual(view)).toEqual(expected(view.state.doc))
+  insertAt(find('xconst a = 1; //') + 1, 'y')
+  expect(actual(view)).toEqual(expected(view.state.doc))
+  expect(
+    actual(view).some(
+      ([from]) => from > find('yxconst') && from < find('Between'),
+    ),
+  ).toBe(false)
+  const typed = find('yxconst') + 1
+  view.dispatch(view.state.tr.delete(typed, typed + 1))
+  expect(actual(view)).toEqual(expected(view.state.doc))
+  expect(actual(view).length).toBeGreaterThan(256)
+})
+
 async function timeOneEdit(lines: number): Promise<number> {
   const host = document.createElement('div')
   document.body.append(host)
@@ -425,7 +450,8 @@ test('one edit in a very large block takes time linear in its size', async () =>
   await timeOneEdit(500)
   const small = await timeOneEdit(2500)
   const large = await timeOneEdit(10000)
-  // Linear growth is 4x; a quadratic pass over the block's decorations is 16x.
+  // These blocks are past the highlight limit. Linear growth is 4x; a
+  // quadratic pass over the block is 16x.
   expect(large).toBeLessThan(Math.max(small, 5) * 9)
   expect(large).toBeLessThan(2000)
 }, 120_000)
