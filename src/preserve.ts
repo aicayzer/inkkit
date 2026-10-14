@@ -1300,6 +1300,17 @@ function withoutHeadingId(node: ProseNode): ProseNode {
     : node
 }
 
+// Whether two nodes read as the same Markdown: equal apart from heading IDs,
+// which the editor sets after loading.
+function sameMarkdown(left: ProseNode, right: ProseNode): boolean {
+  if (left === right) return true
+  if (left.isText || left.childCount !== right.childCount) return left.eq(right)
+  if (!withoutHeadingId(left).sameMarkup(withoutHeadingId(right))) return false
+  for (let index = 0; index < left.childCount; index++)
+    if (!sameMarkdown(left.child(index), right.child(index))) return false
+  return true
+}
+
 const MATCHING_BUDGET = 1_000_000
 const SIMILARITY_BUDGET = 4_000_000
 
@@ -1677,7 +1688,7 @@ export class Preservation {
     let run: number[] = []
     for (let index = 0; index <= doc.childCount; index++) {
       const node = index < doc.childCount ? doc.child(index) : undefined
-      if (!node || node.eq(this.baseline.child(index))) {
+      if (!node || sameMarkdown(node, this.baseline.child(index))) {
         if (run.length > 1 && !this.pairedInPlace(doc, run)) return undefined
         run = []
         continue
@@ -1919,7 +1930,7 @@ export class Preservation {
     let previous = block.start
     for (let at = 0; at < node.childCount; at++) {
       const item = node.child(at)
-      if (item.eq(before.child(at))) continue
+      if (sameMarkdown(item, before.child(at))) continue
       let retained = this.itemEdits.get(item)
       if (retained?.index !== index || retained.item !== at) {
         const text = this.localItem(
@@ -2146,7 +2157,7 @@ export class Preservation {
   }
 
   serialize(doc: ProseNode): string {
-    if (doc.eq(this.baseline)) return this.source
+    if (sameMarkdown(doc, this.baseline)) return this.source
     try {
       const local = this.localEdits(doc)
       if (local !== undefined) return local
