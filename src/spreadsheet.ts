@@ -34,7 +34,7 @@ export function pasteSpreadsheet(
   const inTable = !at && isInTable(view.state)
   if (
     input.html &&
-    /data-inkkit-(?:markdown|reference|footnote|comment)/i.test(input.html)
+    /data-inkkit-(?:reference|footnote|comment)/i.test(input.html)
   ) {
     if (inTable && /<table[\s>]/i.test(input.html)) reject()
     return false

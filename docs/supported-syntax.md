@@ -123,6 +123,15 @@ HTML import keeps only structure that reads back the same. Before pasted or drop
 
 Code blocks and literal source are inserted as their own blocks, not joined to the paragraph at the insertion point.
 
+Pasted or dropped HTML adds nothing to a note that it does not show:
+
+- HTML copied from InkKit also carries the Markdown it was copied from, which keeps reference links, their definitions and footnotes. InkKit pastes that Markdown only when, after the checks above, InkKit's clipboard HTML for it reads as the HTML it came with: the same text, formatting, addresses, images and structure. Markdown that holds comments, or comment syntax in a reference or footnote label, is not used.
+- From that Markdown, InkKit keeps a reference definition only when a pasted link uses it with the same address and title, and keeps only the first definition of each label. A wiki link stays a link only when it shows its own target; one written with other text pastes as that text.
+- A reference definition, footnote reference or wiki link element keeps its InkKit metadata only when its text is what that metadata shows. A diagram figure pastes its Mermaid source only when it holds just the diagram image, whose text alternative is that source. Otherwise each imports as what it shows.
+- When HTML imports as nothing, the plain text that came with it is pasted instead.
+
+Ordinary copy leaves out reference definitions, because the links copied with them show their addresses. Definitions copied on their own are copied as their text, `[label]: address "title"`, and paste back as definitions.
+
 Raw HTML kept in a note, whether pasted or typed, is saved as written and is not checked for unsafe addresses or scripts. An app that renders notes must sanitize raw HTML itself.
 
 ## Spreadsheet clipboard

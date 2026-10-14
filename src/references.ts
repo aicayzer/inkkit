@@ -334,6 +334,21 @@ const associationAttrs = {
   identifier: { default: '' },
 }
 
+/** Whether an element reads as `text`, with whitespace collapsed as shown. */
+export function showsText(dom: HTMLElement, text: string): boolean {
+  const shown = (value: string) => value.replace(/\s+/g, ' ').trim()
+  return shown(dom.textContent ?? '') === shown(text)
+}
+
+/** A reference definition as its element shows it. */
+export function definitionText(
+  label: unknown,
+  url: unknown,
+  title: unknown,
+): string {
+  return `[${String(label)}]: ${String(url)}${title ? ` "${String(title)}"` : ''}`
+}
+
 export const referenceDefinition = $node('reference_definition', () => ({
   group: 'block',
   atom: true,
@@ -348,14 +363,22 @@ export const referenceDefinition = $node('reference_definition', () => ({
       tag: '[data-inkkit-reference-definition]',
       getAttrs(dom) {
         const url = dom.getAttribute('data-inkkit-url') ?? ''
-        if (!isSafeLinkTarget(url)) return false
+        const label = dom.getAttribute('data-inkkit-label') ?? ''
+        const title = dom.getAttribute('data-inkkit-title')
+        // A definition is kept only as the text it shows; otherwise the
+        // element imports as that text.
+        if (
+          !isSafeLinkTarget(url) ||
+          !showsText(dom, definitionText(label, url, title))
+        )
+          return false
         return {
-          label: dom.getAttribute('data-inkkit-label') ?? '',
+          label,
           identifier:
             dom.getAttribute('data-inkkit-reference-definition') ?? '',
           url,
           // Saved on one line, as the writer would save it.
-          title: nullableSingleLine(dom.getAttribute('data-inkkit-title')),
+          title: nullableSingleLine(title),
         }
       },
     },
@@ -369,7 +392,7 @@ export const referenceDefinition = $node('reference_definition', () => ({
       'data-inkkit-url': node.attrs.url,
       'data-inkkit-title': node.attrs.title,
     },
-    `[${node.attrs.label}]: ${node.attrs.url}${node.attrs.title ? ` "${node.attrs.title}"` : ''}`,
+    definitionText(node.attrs.label, node.attrs.url, node.attrs.title),
   ],
   parseMarkdown: {
     match: (node) => node.type === 'definition',
@@ -405,10 +428,17 @@ export const footnoteReference = $node('footnote_reference', (ctx) => ({
   parseDOM: [
     {
       tag: 'sup[data-inkkit-footnote-reference]',
-      getAttrs: (dom) => ({
-        label: dom.getAttribute('data-inkkit-label') ?? '',
-        identifier: dom.getAttribute('data-inkkit-footnote-reference') ?? '',
-      }),
+      // A reference is kept only as the label it shows.
+      getAttrs: (dom) => {
+        const label = dom.getAttribute('data-inkkit-label') ?? ''
+        return showsText(dom, label)
+          ? {
+              label,
+              identifier:
+                dom.getAttribute('data-inkkit-footnote-reference') ?? '',
+            }
+          : false
+      },
     },
   ],
   toDOM: (node) => [

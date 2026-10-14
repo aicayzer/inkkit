@@ -73,13 +73,16 @@ async function saved(html: string, via: 'paste' | 'drop') {
 }
 
 const hostile = '&#10;&#10;[l](https://example.test/q) &lt;b&gt;h&lt;/b&gt;'
-const definition = (attributes: string) =>
-  `<div data-inkkit-reference-definition="x" data-inkkit-label="x" data-inkkit-url="https://example.test/" ${attributes}>d</div>`
+const definition = (attributes: string, text = 'd') =>
+  `<div data-inkkit-reference-definition="x" data-inkkit-label="x" data-inkkit-url="https://example.test/" ${attributes}>${text}</div>`
 
 for (const via of ['paste', 'drop'] as const) {
   test(`a definition title with line breaks saves as one definition (${via})`, async () => {
     const result = await saved(
-      definition(`data-inkkit-title="a${hostile}"`),
+      definition(
+        `data-inkkit-title="a${hostile}"`,
+        `[x]: https://example.test/ "a${hostile}"`,
+      ),
       via,
     )
     expect(result.reread).toEqual(result.inserted)

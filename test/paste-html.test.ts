@@ -25,6 +25,7 @@ const pixel =
 async function pasted(
   input: Partial<ClipboardInput>,
   images: ImageAdapter = adapter,
+  wikiLinks = false,
 ): Promise<{ markdown: string; dom: HTMLElement }> {
   const root = document.createElement('div')
   document.body.append(root)
@@ -44,7 +45,7 @@ async function pasted(
       ctx.set(defaultValueCtx, '')
       ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
     })
-    .use(createDialect(true))
+    .use(createDialect(true, wikiLinks))
     .use(imageView(images))
     .use(paste.plugin)
     .create()
@@ -450,14 +451,17 @@ const counting = (): ImageAdapter => {
   }
 }
 const pixelTwo = pixel.replace('AAAADUlEQVR4', 'AAAADUlEQVR5')
-const wrapper = (inner: string) =>
-  `<div data-inkkit-markdown="${'![A](inkkit-clipboard-image:0)\n\n![B](inkkit-clipboard-image:1)'.replace(/\n/g, '&#10;')}">${inner}</div>`
+const wrapper = (
+  inner: string,
+  markdown = '![A](inkkit-clipboard-image:0)\n\n![B](inkkit-clipboard-image:1)',
+) =>
+  `<div data-inkkit-markdown="${markdown.replace(/\n/g, '&#10;')}">${inner}</div>`
 
 test('InkKit Markdown wrapper keeps image order through picture and figure', async () => {
   const { markdown } = await pasted(
     {
       html: wrapper(
-        `<figure><picture><source srcset="a.webp"><img src="${pixel}" alt="A"></picture><figcaption>One</figcaption></figure><p><img src="${pixelTwo}" alt="B"></p>`,
+        `<figure><picture><source srcset="a.webp"><img src="${pixel}" alt="A"></picture></figure><p><img src="${pixelTwo}" alt="B"></p>`,
       ),
     },
     counting(),
@@ -470,11 +474,24 @@ test('InkKit Markdown wrapper maps image slots after picture is replaced', async
     {
       html: wrapper(
         `<figure><picture><source srcset="a.webp"><img data-inkkit-image-slot="1" src="${pixelTwo}" alt="B"></picture></figure><p><img data-inkkit-image-slot="0" src="${pixel}" alt="A"></p>`,
+        '![B](inkkit-clipboard-image:1)\n\n![A](inkkit-clipboard-image:0)',
       ),
     },
     counting(),
   )
-  expect(markdown).toBe('![A](images/2.png)\n\n![B](images/1.png)\n')
+  expect(markdown).toBe('![B](images/1.png)\n\n![A](images/2.png)\n')
+})
+
+test('images keep the order the pasted HTML shows', async () => {
+  const { markdown } = await pasted(
+    {
+      html: wrapper(
+        `<p><img data-inkkit-image-slot="1" src="${pixelTwo}" alt="B"></p><p><img data-inkkit-image-slot="0" src="${pixel}" alt="A"></p>`,
+      ),
+    },
+    counting(),
+  )
+  expect(markdown).toBe('![B](images/1.png)\n\n![A](images/2.png)\n')
 })
 
 // WebKit rewrites a space beside an inline element on its way to the clipboard.
@@ -686,19 +703,222 @@ test('Markdown source keeps authored link addresses unchanged', async () => {
   ).toContain('[run](javascript:run)')
 })
 
-test('a link whose HTML comes from InkKit keeps the authored Markdown unchanged', async () => {
-  const source = '[run](javascript:run)'
-  const markdown = (
-    await pasted({
-      html: `<div data-inkkit-markdown="${source}"><p><a href="https://example.com/">run</a></p></div>`,
-    })
-  ).markdown
-  expect(markdown).toBe(source + '\n')
+// HTML in the shape InkKit writes to the clipboard: its visible content with
+// the Markdown it was copied from in an attribute.
+const withMarkdown = (markdown: string, inner: string) =>
+  `<div data-inkkit-markdown="${markdown
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/\n/g, '&#10;')}">${inner}</div>`
+const linked = (text: string, href: string, label: string) =>
+  `<a href="${href}" data-inkkit-reference="${label.toLowerCase()}" data-inkkit-label="${label}" data-inkkit-reference-type="full">${text}</a>`
+
+test('pasted HTML saves the content it shows, not Markdown that describes other content', async () => {
+  const markdown = [
+    '[other](https://other.example/)',
+    '[docs][d]',
+    '[d]: https://other.example/',
+    '<div>block</div>',
+  ].join('\n\n')
+  for (const html of [
+    `<p>Shown text, <span data-inkkit-markdown="${markdown.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/\n/g, '&#10;')}">here</span>.</p>`,
+    withMarkdown(markdown, '<p>Shown text, here.</p>'),
+  ]) {
+    const saved = (await pasted({ text: 'Shown text, here.', html })).markdown
+    expect(saved, html).toBe('Shown text, here.\n')
+  }
+})
+
+test('a link in pasted HTML keeps the address it shows', async () => {
+  for (const markdown of [
+    '[run](javascript:run)',
+    '[run](https://other.example/)',
+    '[run][r]\n\n[r]: https://other.example/',
+  ])
+    expect(
+      (
+        await pasted({
+          html: withMarkdown(
+            markdown,
+            '<p><a href="https://example.com/">run</a></p>',
+          ),
+        })
+      ).markdown,
+      markdown,
+    ).toBe('[run](https://example.com/)\n')
+})
+
+test('Markdown copied with its HTML keeps references only where the HTML importer accepts them', async () => {
+  const visible = `<p>${linked('docs', 'https://example.com/', 'D')} and ${linked('more', 'https://example.com/', 'D')}</p>`
+  expect(
+    (
+      await pasted({
+        html: withMarkdown(
+          '[docs][D] and [more][D]\n\n[D]: https://example.com/\n',
+          visible,
+        ),
+      })
+    ).markdown,
+  ).toBe('[docs][D] and [more][D]\n\n[D]: https://example.com/\n')
+  // Definitions no link uses are not shown, so they are not kept.
+  expect(
+    (
+      await pasted({
+        html: withMarkdown(
+          '[docs][D] and [more][D]\n\n[D]: https://example.com/\n\n[unused]: https://other.example/\n',
+          visible,
+        ),
+      })
+    ).markdown,
+  ).toBe('[docs][D] and [more][D]\n\n[D]: https://example.com/\n')
+  for (const url of [
+    'javascript:run',
+    '&#106;avascript:run',
+    'data:text/html,x',
+  ])
+    expect(
+      (
+        await pasted({
+          html: withMarkdown(
+            `[docs][D] and [more][D]\n\n[D]: ${url}\n`,
+            `<p>${linked('docs', url, 'D')} and ${linked('more', url, 'D')}</p>`,
+          ),
+        })
+      ).markdown,
+      url,
+    ).toBe('docs and more\n')
+})
+
+test('raw HTML copied with its HTML is kept only where the HTML shows it as source', async () => {
+  expect(
+    (
+      await pasted({
+        html: withMarkdown(
+          'Text [a][]\n\n<aside>note</aside>\n\n[a]: https://a.test\n',
+          `<p>Text ${linked('a', 'https://a.test', 'a')}</p>`,
+        ),
+      })
+    ).markdown,
+  ).toBe('Text [a](https://a.test)\n')
+  expect(
+    (
+      await pasted({
+        html: withMarkdown(
+          'Text [a][]\n\n<div>block</div>\n\n[a]: https://a.test\n',
+          `<p>Text ${linked('a', 'https://a.test', 'a')}</p><pre class="literal-markdown">&lt;div&gt;block&lt;/div&gt;</pre>`,
+        ),
+      })
+    ).markdown,
+  ).toBe('Text [a][]\n\n<div>block</div>\n\n[a]: https://a.test\n')
+  // A reference written in literal source is not a link the HTML shows.
+  expect(
+    (
+      await pasted({
+        html: withMarkdown(
+          'Text <b>raw</b> [a][]\n\n[a]: https://a.test\n',
+          '<pre class="literal-markdown">Text &lt;b&gt;raw&lt;/b&gt; [a][]</pre>',
+        ),
+      })
+    ).markdown,
+  ).toBe('Text <b>raw</b> [a][]\n')
+})
+
+test('comments copied with HTML are kept only where the HTML holds them', async () => {
+  const visible = `<p>Text ${linked('a', 'https://a.test', 'a')}</p>`
+  for (const markdown of [
+    'Text [a][]%%note%%\n\n[a]: https://a.test\n',
+    'Text [a][]<!--note-->\n\n[a]: https://a.test\n',
+  ])
+    expect(
+      (await pasted({ html: withMarkdown(markdown, visible) })).markdown,
+      markdown,
+    ).toBe('Text [a](https://a.test)\n')
+})
+
+test('Markdown copied with its HTML keeps only the first definition of a label', async () => {
+  expect(
+    (
+      await pasted({
+        html: withMarkdown(
+          '[docs][D]\n\n[D]: https://example.com/\n\n[D]: https://other.example/\n',
+          `<p>${linked('docs', 'https://example.com/', 'D')}</p>`,
+        ),
+      })
+    ).markdown,
+  ).toBe('[docs][D]\n\n[D]: https://example.com/\n')
+})
+
+test('a label with comment syntax keeps the link as the HTML shows it', async () => {
+  for (const markdown of [
+    '[docs][a<!--note-->]\n\n[a<!--note-->]: https://example.com/\n',
+    '[docs][a%%note%%]\n\n[a%%note%%]: https://example.com/\n',
+  ])
+    expect(
+      (
+        await pasted({
+          html: withMarkdown(
+            markdown,
+            `<p>${linked('docs', 'https://example.com/', 'a')}</p>`,
+          ),
+        })
+      ).markdown,
+      markdown,
+    ).toBe('[docs](https://example.com/)\n')
+})
+
+test('a wiki link copied with its HTML stays a link only where it shows its target', async () => {
+  const visible = (text: string) =>
+    `<p><span>${text}</span> and ${linked('a', 'https://a.test', 'a')}</p>`
+  expect(
+    (
+      await pasted(
+        {
+          html: withMarkdown(
+            '[[Page]] and [a][]\n\n[a]: https://a.test\n',
+            visible('Page'),
+          ),
+        },
+        adapter,
+        true,
+      )
+    ).markdown,
+  ).toBe('[[Page]] and [a][]\n\n[a]: https://a.test\n')
+  expect(
+    (
+      await pasted(
+        {
+          html: withMarkdown(
+            '[[Target|Shown]] and [a][]\n\n[a]: https://a.test\n',
+            visible('Shown'),
+          ),
+        },
+        adapter,
+        true,
+      )
+    ).markdown,
+  ).toBe('Shown and [a][]\n\n[a]: https://a.test\n')
+})
+
+test('HTML that imports as nothing pastes the text that came with it', async () => {
+  expect(
+    (await pasted({ text: 'Shown text', html: '<meta charset="utf-8">' }))
+      .markdown,
+  ).toBe('Shown text\n')
+})
+
+test('a table with Markdown beside it pastes as the same table without it', async () => {
+  const table =
+    '<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>'
+  expect(
+    (await pasted({ html: withMarkdown('| A |\n| - |\n| x |', table) }))
+      .markdown,
+  ).toBe((await pasted({ html: `<div>${table}</div>` })).markdown)
 })
 
 // A drop or an editor-level HTML insert reaches the schema's parse rules
 // without the paste importer.
-async function dropped(html: string): Promise<string> {
+async function dropped(html: string, wikiLinks = false): Promise<string> {
   const root = document.createElement('div')
   document.body.append(root)
   const editor = await Editor.make()
@@ -707,7 +927,7 @@ async function dropped(html: string): Promise<string> {
       ctx.set(defaultValueCtx, '')
       ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
     })
-    .use(createDialect(true))
+    .use(createDialect(true, wikiLinks))
     .create()
   try {
     editor.ctx
@@ -784,4 +1004,43 @@ test('a converted space leaves literal source nested in its span unchanged', asy
     '<p>a<span class="Apple-converted-space">&nbsp;<custom-x>&nbsp;</custom-x></span>b</p>',
   )
   expect(markdown).toContain('<custom-x>&nbsp;</custom-x>')
+})
+
+test('InkKit elements import as the text they show when their attributes differ', async () => {
+  const definitionHTML = (text: string) =>
+    `<div data-inkkit-reference-definition="x" data-inkkit-label="x" data-inkkit-url="https://example.com/">${text}</div>`
+  const footnote = (text: string) =>
+    `<p>a<sup data-inkkit-footnote-reference="n" data-inkkit-label="n">${text}</sup></p><div data-inkkit-footnote-definition="n" data-inkkit-label="n"><p>body</p></div>`
+  const wiki = (raw: string, text: string) =>
+    `<p><span data-inkkit-wiki="x" data-inkkit-wiki-raw="${raw}">${text}</span></p>`
+  for (const read of [
+    (html: string) => dropped(html, true),
+    async (html: string) => (await pasted({ html }, adapter, true)).markdown,
+  ]) {
+    expect(await read(definitionHTML('[x]: https://example.com/'))).toBe(
+      '[x]: https://example.com/\n',
+    )
+    expect(await read(definitionHTML('Shown text'))).toBe('Shown text\n')
+    expect(await read(wiki('[[Page]]', 'Page'))).toBe('[[Page]]\n')
+    expect(await read(wiki('[[Page]]', 'Shown'))).toBe('Shown\n')
+    expect(await read(wiki('[[Target|Shown]]', 'Shown'))).toBe('Shown\n')
+  }
+  expect(await dropped(footnote('n'))).toBe('a[^n]\n\n[^n]: body\n')
+  expect(await dropped(footnote('Shown'))).toBe('aShown\n\n[^n]: body\n')
+})
+
+test('a diagram figure pastes its source only when its image shows that source', async () => {
+  const figure = (alt: string) =>
+    `<figure data-inkkit-mermaid="graph TD; A-->B"><img src="${pixel}" alt="${alt}"></figure>`
+  expect(await fromHTML(figure('Mermaid diagram: graph TD; A--&gt;B'))).toBe(
+    '```mermaid\ngraph TD; A-->B\n```\n',
+  )
+  expect(await fromHTML(figure('Shown image'))).toBe(
+    '![Shown image](images/photo.png)\n',
+  )
+  expect(
+    await fromHTML(
+      `<figure data-inkkit-mermaid="graph TD; A-->B"><img src="${pixel}" alt="Mermaid diagram: graph TD; A--&gt;B"><figcaption>Shown caption</figcaption></figure>`,
+    ),
+  ).toContain('Shown caption')
 })

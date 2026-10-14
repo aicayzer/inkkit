@@ -534,7 +534,7 @@ export function isComment(node: ProseNode): boolean {
 }
 
 // Authored reference metadata can retain comments after their visible nodes are removed.
-function commentProvenance(value: unknown): boolean {
+export function commentProvenance(value: unknown): boolean {
   if (typeof value !== 'string') return false
   const visit = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.some(visit)
