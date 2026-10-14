@@ -70,28 +70,64 @@ const sameList = (before: SourceNode, after: SourceNode): boolean =>
   after.type === 'list' &&
   before.ordered === after.ordered
 
-// Canonical items written into an authored list take its marker, which they
-// would otherwise split away from.
-function canonicalItems(
-  before: SourceNode,
-  after: SourceNode,
-  items: SourceNode[],
-  source: string,
+interface Neighbour {
+  ordered: unknown
+  marker: string
+}
+
+// Canonical Markdown written into authored source. Items written into an
+// authored list take its marker, which they would otherwise split away from.
+// A list written beside an authored list takes a marker that list does not
+// use, which it would otherwise merge with.
+function canonicalSlice(
+  marker: string | undefined,
+  children: SourceNode[],
   canonical: string,
   from: number,
   to: number,
+  previous?: Neighbour,
+  next?: Neighbour,
 ): string {
-  const text = canonical.slice(from, to)
-  const marker = sameList(before, after)
-    ? authoredMarker(before, source)
-    : undefined
-  return marker
-    ? relabel(
-        text,
-        items.map((item) => item.position!.start.offset! - from),
-        marker,
-      )
-    : text
+  let text = canonical.slice(from, to)
+  const offsets = (list: SourceNode) =>
+    (list.children ?? []).map((item) => item.position!.start.offset! - from)
+  if (marker)
+    return relabel(
+      text,
+      children.map((item) => item.position!.start.offset! - from),
+      marker,
+    )
+  children.forEach((child, index) => {
+    if (child.type !== 'list') {
+      previous = undefined
+      return
+    }
+    const avoid = [previous, index === children.length - 1 ? next : undefined]
+      .filter((neighbour) => neighbour?.ordered === child.ordered)
+      .map((neighbour) => neighbour!.marker)
+    const own = markerAt(
+      canonical,
+      child.children![0]!.position!.start.offset!,
+    )?.marker
+    const choice = [
+      own,
+      ...(child.ordered ? ['.', ')'] : ['-', '*', '+']),
+    ].find((candidate) => candidate && !avoid.includes(candidate))
+    if (choice) text = relabel(text, offsets(child), choice)
+    previous = { ordered: child.ordered, marker: choice ?? own ?? '' }
+  })
+  return text
+}
+
+// The authored list a child is, as a neighbour of canonical Markdown.
+function authoredNeighbour(
+  before: SourceNode | undefined,
+  after: SourceNode | undefined,
+  source: string,
+): Neighbour | undefined {
+  if (!before || !after || !sameList(before, after)) return undefined
+  const marker = authoredMarker(before, source)
+  return marker ? { ordered: before.ordered, marker } : undefined
 }
 
 function retainText(
@@ -303,6 +339,9 @@ function retainSource(
     ownShape(before) === ownShape(after)
   )
     return raw
+  const marker = sameList(before, after)
+    ? authoredMarker(before, source)
+    : undefined
   if (
     before.type === after.type &&
     ownShape(before) === ownShape(after) &&
@@ -311,7 +350,8 @@ function retainSource(
     before.children.length === after.children.length
   ) {
     let output = '',
-      previous = start
+      at = start
+    let previous: Neighbour | undefined
     const retained = new Set<number>()
     before.children.forEach((child, index) => {
       const incoming = after.children![index]!
@@ -330,14 +370,32 @@ function retainSource(
         childEnd = child.position?.end.offset
       if (childStart == null || childEnd == null)
         throw new PreservationError('A source token has no location')
-      let retainedSource = retainSource(
-        original,
-        incoming,
-        source,
-        canonical,
-        lineEnding,
-        inTable || before.type === 'tableCell',
-      )
+      let retainedSource =
+        incoming.type === 'list' && !sameList(original, incoming)
+          ? withEnding(
+              canonicalSlice(
+                undefined,
+                [incoming],
+                canonical,
+                incoming.position!.start.offset!,
+                incoming.position!.end.offset!,
+                previous,
+                authoredNeighbour(
+                  before.children![index + 1],
+                  after.children![index + 1],
+                  source,
+                ),
+              ),
+              lineEnding,
+            )
+          : retainSource(
+              original,
+              incoming,
+              source,
+              canonical,
+              lineEnding,
+              inTable || before.type === 'tableCell',
+            )
       if (before.type === 'tableRow' && movedIndex >= 0) {
         // Cell positions own different pipe boundaries at the row edges.
         const originalFrom = original.children?.[0]?.position?.start.offset
@@ -360,14 +418,22 @@ function retainSource(
                 lineEnding,
               )
       }
-      const marker = sameList(before, after)
-        ? authoredMarker(before, source)
-        : undefined
       if (marker) retainedSource = relabel(retainedSource, [0], marker)
-      output += source.slice(previous, childStart) + retainedSource
-      previous = childEnd
+      previous =
+        incoming.type !== 'list'
+          ? undefined
+          : (authoredNeighbour(original, incoming, source) ?? {
+              ordered: incoming.ordered,
+              marker:
+                markerAt(
+                  retainedSource,
+                  /^[ \t]*/.exec(retainedSource)![0].length,
+                )?.marker ?? '',
+            })
+      output += source.slice(at, childStart) + retainedSource
+      at = childEnd
     })
-    return output + source.slice(previous, end)
+    return output + source.slice(at, end)
   }
   if (
     before.type === after.type &&
@@ -427,14 +493,22 @@ function retainSource(
         retainBoundaryWhitespace(
           source.slice(first, from) +
             withEnding(
-              canonicalItems(
-                before,
-                after,
+              canonicalSlice(
+                marker,
                 after.children.slice(prefix, after.children.length - suffix),
-                source,
                 canonical,
                 newFrom,
                 newTo,
+                authoredNeighbour(
+                  before.children[prefix - 1],
+                  after.children[prefix - 1],
+                  source,
+                ),
+                authoredNeighbour(
+                  before.children[before.children.length - suffix],
+                  after.children[after.children.length - suffix],
+                  source,
+                ),
               ),
               lineEnding,
             ) +
@@ -444,17 +518,22 @@ function retainSource(
         source.slice(last, end)
       )
   }
-  return withEnding(
-    canonicalItems(
-      before,
-      after,
-      after.children ?? [],
-      source,
-      canonical,
-      newStart,
-      newEnd,
-    ),
-    lineEnding,
+  // A list can end after blank lines that its container gave it; keep the
+  // authored ones rather than add the canonical ones beside them.
+  const lastAfter = after.children?.at(-1)?.position?.end.offset
+  const lastBefore = before.children?.at(-1)?.position?.end.offset
+  const trailing = marker != null && lastAfter != null && lastBefore != null
+  return (
+    withEnding(
+      canonicalSlice(
+        marker,
+        after.children ?? [],
+        canonical,
+        newStart,
+        trailing ? lastAfter : newEnd,
+      ),
+      lineEnding,
+    ) + (trailing ? source.slice(lastBefore, end) : '')
   )
 }
 
@@ -1016,13 +1095,22 @@ export class Preservation {
         if (elsewhere.has(this.blocks[at]!.form)) return false
       return true
     }
-    // An unchanged list moved on both sides changes before one still beside
-    // its source neighbour on one side.
+    // An unchanged list changes only to part from a list with its marker across
+    // a boundary that a move disturbed, and one moved on both sides first.
     const cost = (index: number): number => {
       if (kept[index] === 'canonical') return 1
       if (kept[index] === 'edited') return 10
-      const sides = Number(inPlace(index, -1)) + Number(inPlace(index, 1))
-      return [50, 150, Infinity][sides]!
+      const own = marker(index)
+      const sides = ([-1, 1] as const).map((step) => inPlace(index, step))
+      const collides = ([-1, 1] as const).some(
+        (step, side) =>
+          !sides[side] &&
+          kind(index + step) === kind(index) &&
+          marker(index + step) === own,
+      )
+      return collides
+        ? [50, 150][Number(sides[0]) + Number(sides[1])]!
+        : Infinity
     }
     for (let start = 0; start < pieces.length;) {
       const list = kind(start)

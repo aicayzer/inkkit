@@ -110,6 +110,47 @@ test.each([
   }),
 )
 
+test.each([
+  [
+    'a new sublist beside a * sublist in an item',
+    '- a\n  * x\n  * y\n- b\n',
+    '- a\n  * x\n  * y\n  - z\n- b\n',
+    '- a\n  * x\n  * y\n  - z\n- b\n',
+  ],
+  [
+    'a new list between - and * lists in a quote',
+    '> - a\n>\n> * b\n',
+    '> - a\n>\n> + x\n>\n> * b\n',
+    '> - a\n>\n> + x\n>\n> * b\n',
+  ],
+  [
+    'a quoted paragraph replaced by a list beside a * list',
+    '> * a\n>\n> para\n',
+    '> * a\n>\n> - b\n',
+    '> * a\n>\n> - b\n',
+  ],
+  [
+    'a quoted list after a - list',
+    '> - a\n>\n> End\n',
+    '> - a\n>\n> * b\n>\n> End\n',
+    '> - a\n>\n> * b\n>\n> End\n',
+  ],
+])('%s inside a container saves', (_, before, after, expected) =>
+  withEditor('x\n', (editor) => {
+    expect(save(editor.ctx, before, after)).toBe(expected)
+  }),
+)
+
+test('a deletion between two unchanged lists is refused even when unrelated blocks move', () =>
+  withEditor('x\n', (editor) => {
+    const parse = editor.ctx.get(parserCtx)
+    const source = '- a\n\nP\n\n- b\n\nQ\n\nR\n'
+    for (const after of ['- a\n\n* b\n\nQ\n\nR\n', '- a\n\n* b\n\nR\n\nQ\n'])
+      expect(() =>
+        new Preservation(editor.ctx, source).serialize(parse(after)),
+      ).toThrow(PreservationError)
+  }))
+
 test('an unchanged list is never relabelled to make room for a new one', () =>
   withEditor('x\n', (editor) => {
     // Only two ordered delimiters exist, and both neighbours keep theirs.
@@ -322,20 +363,29 @@ test(
         const movedFrom = new Set(
           [...moved].map((index) => after[index]!.origin),
         )
-        // A move beside a list, or away from between two, may relabel it.
+        // A boundary a move disturbed: a moved neighbour, or a moved block
+        // that lay between the two in the source.
+        const disturbed = (index: number, other: number) => {
+          if (moved.has(other)) return true
+          if (!after[other] || !unchanged(other)) return false
+          const [low, high] = [
+            after[index]!.origin!,
+            after[other]!.origin!,
+          ].sort((x, y) => x - y)
+          for (let at = low! + 1; at < high!; at++)
+            if (movedFrom.has(at)) return true
+          return false
+        }
+        // An unchanged list may change marker only to part from a list across
+        // a disturbed boundary; other blocks may be the moved one.
         const free = (index: number) =>
           moved.has(index) ||
-          [index - 1, index + 1].some((other) => {
-            if (moved.has(other)) return true
-            if (!after[other] || !unchanged(other)) return false
-            const [low, high] = [
-              after[index]!.origin!,
-              after[other]!.origin!,
-            ].sort((x, y) => x - y)
-            for (let at = low! + 1; at < high!; at++)
-              if (movedFrom.has(at)) return true
-            return false
-          })
+          [index - 1, index + 1].some(
+            (other) =>
+              disturbed(index, other) &&
+              (!after[index]!.kind ||
+                after[other]?.kind === after[index]!.kind),
+          )
         let text: string
         try {
           text = save(editor.ctx, source, edited)
