@@ -5,6 +5,7 @@ import {
   Fragment,
   type Node as ProseNode,
   type NodeType,
+  type ResolvedPos,
 } from '@milkdown/kit/prose/model'
 import {
   NodeSelection,
@@ -17,6 +18,7 @@ import {
   type Transaction,
 } from '@milkdown/kit/prose/state'
 import type { ParserState } from '@milkdown/kit/transformer'
+import { CellSelection } from '@milkdown/kit/prose/tables'
 import { $nodeSchema, $prose } from '@milkdown/kit/utils'
 
 export const imageBlockName = 'image_block'
@@ -75,6 +77,34 @@ export function isImageBlock(node: ProseNode | null | undefined): boolean {
 
 function accepts(parent: ProseNode, index: number, type: NodeType): boolean {
   return parent.canReplaceWith(index, index + 1, type)
+}
+
+const cellTypes = new Set(['table_cell', 'table_header'])
+
+function cellDepth($pos: ResolvedPos): number {
+  for (let depth = $pos.depth; depth > 0; depth--)
+    if (cellTypes.has($pos.node(depth).type.name)) return depth
+  return 0
+}
+
+/** Where `insertImages` can put images at a selection: `blocks` splits the selection's block to place
+ *  one block per image, `inline` places them in the one line of a table cell, which cannot hold
+ *  blocks. Anything else is a selection that has no place for an image: code, comments and other
+ *  literal source, a selection across cells, or one that starts or ends in a cell and not the other. */
+export function imagePlacement(
+  state: EditorState,
+): 'blocks' | 'inline' | undefined {
+  const image = state.schema.nodes.image
+  const { selection } = state
+  if (!image || selection instanceof CellSelection) return undefined
+  const { $from, $to } = selection
+  for (const { parent } of [$from, $to])
+    if (parent.inlineContent && !parent.type.contentMatch.matchType(image))
+      return undefined
+  const from = cellDepth($from)
+  const to = cellDepth($to)
+  if (!from && !to) return 'blocks'
+  return from && to && $from.sameParent($to) ? 'inline' : undefined
 }
 
 /** The image a paragraph holds as its only content, without marks, which makes the paragraph a

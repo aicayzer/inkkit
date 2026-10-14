@@ -108,7 +108,7 @@ import {
   withReferenceMetadata,
 } from './reference-clipboard'
 import { imageView } from './images'
-import { isImage, isImageBlock } from './image-blocks'
+import { imagePlacement, isImage, isImageBlock } from './image-blocks'
 import { GapCursor } from '@milkdown/kit/prose/gapcursor'
 import { wikiLinkView } from './wiki-view'
 import { withFileSignal } from './files'
@@ -880,7 +880,8 @@ export class InkKitEditor {
         paste: mutable,
         replace: mutable,
         replaceSource: mutable,
-        insertImages: formatted && !!this.options.images,
+        insertImages:
+          formatted && !!this.options.images && !!imagePlacement(state),
         insertPaths: mutable,
         insertFootnote: formatted,
         editReferenceDefinition:
@@ -2936,6 +2937,17 @@ export class InkKitEditor {
       )
     const view = this.editor.ctx.get(editorViewCtx)
     const { schema } = view.state
+    const at = x != null && y != null
+    const placement = at ? 'blocks' : imagePlacement(view.state)
+    if (!placement)
+      throw new InkKitError(
+        'invalid-range',
+        'The selection has no place for an image',
+      )
+    if (placement === 'inline') {
+      this.insertInline(images)
+      return
+    }
     // One paragraph per image: each is read back as a standalone image block where one fits.
     const blocks = images.map((image) =>
       schema.nodes.paragraph!.create(
@@ -2962,6 +2974,27 @@ export class InkKitEditor {
       return after == null
     })
     if (after != null) tr.setSelection(TextSelection.create(tr.doc, after))
+    view.dispatch(tr.scrollIntoView())
+  }
+
+  // A table cell holds one line, so the images sit side by side where the selection was, with no
+  // space between them: a space beside an image in a cell is not kept in the saved Markdown.
+  private insertInline(
+    images: { path: string; alt: string; title?: string }[],
+  ): void {
+    const view = this.editor.ctx.get(editorViewCtx)
+    const { state } = view
+    const oneLine = (text: string) => text.replace(/\s*[\r\n]+\s*/g, ' ')
+    const nodes = images.map((image) =>
+      state.schema.nodes.image!.create({
+        src: image.path,
+        alt: oneLine(image.alt),
+        title: oneLine(image.title ?? ''),
+      }),
+    )
+    const { from, to } = state.selection
+    const tr = state.tr.replaceWith(from, to, nodes)
+    tr.setSelection(TextSelection.create(tr.doc, from + nodes.length))
     view.dispatch(tr.scrollIntoView())
   }
 

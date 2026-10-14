@@ -84,13 +84,24 @@ The optional `ImageAdapter` provides:
 - `importImage({ bytes, mimeType, filename?, source? }, context)`: stores captured bytes and returns a reference. `source` associates bytes with an HTML image URL when available.
 - `exportImage(reference, context)`: returns bytes and MIME type for portable clipboard output.
 
-A paragraph that holds only one image behaves as its own block. Text can't be placed on its line: typing, Enter, paste or composition beside it writes a new paragraph before or after it, and typing, Enter or composition with it selected writes one after it. Paste with the image selected replaces it. Arrow keys select the image on the way past it, and Backspace or Delete next to it selects it before deleting it. A click beside the image puts the caret after it. `insertImages()` inserts one block per image and leaves the caret after the last one. An image that shares its paragraph with text, is linked, emphasised, strong, struck through or highlighted, or sits in a table cell or at the start of a list item, stays inline in its paragraph; with a file adapter, its card displays on its own line. Each form keeps its authored Markdown.
+A paragraph that holds only one image behaves as its own block. Text can't be placed on its line: typing, Enter, paste or composition beside it writes a new paragraph before or after it, and typing, Enter or composition with it selected writes one after it. Paste with the image selected replaces it. Arrow keys select the image on the way past it, and Backspace or Delete next to it selects it before deleting it. A click beside the image puts the caret after it. `insertImages()` inserts one block per image and leaves the caret after the last one; see [Inserting images](#inserting-images) for tables and other places it can't insert. An image that shares its paragraph with text, is linked, emphasised, strong, struck through or highlighted, or sits in a table cell or at the start of a list item, stays inline in its paragraph; with a file adapter, its card displays on its own line. Each form keeps its authored Markdown.
 
 The operation context contains document ID, generation and operation ID. Validate it in native callbacks. Alt text, title and the existing `alt|width` convention remain editor metadata. The adapter owns storage, access control and networking. InkKit contains no Marfa types or storage-path assumptions.
 
 Keep imported bytes available while the captured operation is pending and after insertion, including before the host saves its document. Retention and orphan cleanup belong to the host; a sweep based only on saved Markdown can miss an in-flight import or an unsaved edit. Reject stale callbacks without inserting their references into a replacement document.
 
 The `events.error` callback reports asynchronous failures. Hosts with native clipboards use `events.clipboard` to receive ordinary image and diagram selections as portable clipboard output. Return a promise that resolves only after the native clipboard write succeeds; reject it on failure. Image and diagram Cut await this acknowledgement before removing source content. Encode byte arrays explicitly when crossing a WebKit JSON bridge.
+
+### Inserting images
+
+`insertImages(images, x?, y?)` puts the images where the selection is, or at the drop point when you pass `x` and `y`. It checks the selection before it changes anything.
+
+- **Paragraph, heading, list item, quote, callout or footnote:** inserts one image block per image, replacing a selection and splitting the paragraph around a caret. The caret ends after the last image.
+- **Table cell:** a cell holds one line and no blocks, so the images go inline in the cell, in order and on one line, replacing a selection inside the cell. Alt text and titles are collapsed to one line. The images sit next to each other with no space between them, because a space beside an image in a cell isn't kept in the saved Markdown. The caret ends after the last image, the rest of the table keeps its authored spelling, and one undo removes all the images.
+- **Anywhere else:** `insertImages()` throws an `InkKitError` with code `invalid-range` and changes nothing. That covers a selection in a code block, Mermaid diagram, author comment, front matter or other source that is kept as written; a selection that spans table cells or selects cells; and a selection that starts in a table cell and ends outside it.
+- **Drop point:** with `x` and `y`, images are always placed as blocks, after the top-level block at that point or in place of an empty paragraph, so a point over a table puts them below the table. The selection isn't checked.
+
+`commandState().commands.insertImages` is `false` for a selection that would be rejected, and when there is no image adapter or the editor is in source or TXT mode. A call without an image adapter throws `image-unavailable`.
 
 ## Table refinements
 
