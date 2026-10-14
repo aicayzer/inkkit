@@ -145,3 +145,25 @@ When diagrams are enabled, the main-entry page still contains every diagram type
 A module graph of the main-entry page attributes 9.36 MB of rendered modules (before minification) to Mermaid. Of that, 6.23 MB is reachable only through diagram types, layouts and maths that InkKit refuses before rendering, mostly ELK (2.54 MB), other Mermaid diagram modules (1.62 MB), Cytoscape (0.87 MB) and KaTeX (0.48 MB). As an experiment, a host build plugin replaced those 48 dynamically imported modules with empty modules. The page fell from 6.1 MB to 2.7 MB (gzip 0.73 MB), and the six supported types still rendered in Chromium.
 
 InkKit does not ship that plugin. It works by rewriting Mermaid's unexported chunk files, whose names and boundaries can change in any Mermaid release, and it applies only to hosts that build with Vite or Rollup. Pruning safely needs either a Mermaid entry point that registers selected diagram types or a separate decision to maintain such a plugin with InkKit's Mermaid pin.
+
+## Source-mode typing, October 14, 2026
+
+Typing in the Markdown source editor used to parse the whole document, build a new `Preservation`, replace the whole hidden formatted document, serialize it again, and measure a copy of the full text appended to `document.body`. A keystroke cost about as much as loading the document, and so did the first paste, cut or replacement after typing. Now every source edit, typing or not, only updates the text: the text stays authoritative, the change is reported at once, and each edit is an undo step on the text. The formatted document takes the source in when you leave source mode. Exports (`clipboardSnapshot()`, `printableSnapshot()`) read a throwaway document made from the text and leave history alone; a partial source copy reads only the selected source.
+
+Same machine and method as above: development source, ten `insertText('x')` operations in the middle of the source editor, mean per input, in Chrome 155 and in WebKit 27.2 (Playwright's build), both through Playwright. Input runs from `beforeinput` to the synchronous `changed` callback. Paste is `pasteAsPlainText` straight after the ten keystrokes. Leave is `setEditingMode('formatted')` after them. The bare column is the same text in a plain `<textarea>` with no editor, which is what the browser itself spends on a keystroke. The baseline is main at `faa349b`. Run `node scripts/measure-preservation.mjs BASELINE_CHECKOUT source` to repeat it, with `MEASURE_BROWSER=webkit` for WebKit.
+
+| Chrome, source document                       | Bare textarea | Keystroke before / after | Paste before / after | Leave before / after |
+| --------------------------------------------- | ------------: | -----------------------: | -------------------: | -------------------: |
+| 1,000 plain paragraphs (347,000 characters)   |        5.2 ms |             378 / 7.1 ms |          380 / 24 ms |          22 / 390 ms |
+| 4,000 plain paragraphs (1,388,000 characters) |       81.0 ms |          1,629 / 93.3 ms |        1,555 / 98 ms |        84 / 1,570 ms |
+| 1,000 paragraphs with a link                  |        5.3 ms |             707 / 6.4 ms |          711 / 28 ms |          31 / 731 ms |
+
+| WebKit, source document      | Bare textarea | Keystroke before / after | Paste before / after | Leave before / after |
+| ---------------------------- | ------------: | -----------------------: | -------------------: | -------------------: |
+| 1,000 plain paragraphs       |        3.5 ms |             381 / 6.8 ms |          367 / 22 ms |          11 / 369 ms |
+| 4,000 plain paragraphs       |       14.5 ms |          1,741 / 25.1 ms |        1,609 / 82 ms |        43 / 1,524 ms |
+| 1,000 paragraphs with a link |        4.1 ms |             802 / 6.6 ms |          828 / 21 ms |          26 / 802 ms |
+
+At 4,000 paragraphs in Chrome the remaining keystroke cost is the browser's own: a bare textarea with the same text takes about as long. A paste after typing costs one reveal of the caret, which measures a copy of the text. Buffered native typing arrives through `insertText` rather than the textarea and pays that reveal on every call: 381 to 25 ms at 1,000 paragraphs and 1,565 to 100 ms at 4,000 in Chrome, 442 to 21 ms and 1,781 to 81 ms in WebKit.
+
+Taking in the source costs what loading does, once, when you leave source mode. Nothing waits on a timer, so typing never pauses for it. The formatted history receives all the source steps as a single step. Before that, undo and redo step through the source edits on the text: a pause of more than 500 ms in typing ends a step, an edit that is not typing is a step of its own, and the last 100 steps are kept.
