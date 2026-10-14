@@ -41,7 +41,7 @@ test('focus tokens set the ring on every control InkKit draws @linked-files', as
     ['footnote reference', page.locator('.inkkit-footnote-reference')],
     ['audio', page.locator('audio')],
     ['video', page.locator('video')],
-    ['code copy', page.locator('.inkkit-root button').first()],
+    ['callout toggle', page.locator('[data-inkkit-callout-toggle]')],
   ]
   for (const [name, locator] of controls) {
     // A key press first, so every engine treats the focus as keyboard focus.
