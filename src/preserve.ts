@@ -283,8 +283,9 @@ function retainSource(
       )
       const originalLine =
         (before.value ?? '').replace(/\r\n?/g, '\n').split('\n')[0] ?? ''
-      // An empty fence has no line to take the indent from but its closing one.
-      const first = before.value ? lines[0] : undefined
+      // A fence whose code is empty or starts with a blank line has no line
+      // to take the indent from but its closing one.
+      const first = originalLine ? lines[0] : undefined
       const gutter =
         first === undefined
           ? (closing?.[1] ?? opening[1]!)
@@ -307,6 +308,7 @@ function retainSource(
         fence +
         opening[3] +
         body.map((line) => lineEnding + gutter + line).join('') +
+        (closing || body.length ? '' : opening[4]) +
         (closing
           ? lineEnding +
             closing[1] +

@@ -123,6 +123,49 @@ for (const [name, source, typed] of [
       expect(editor.snapshot().text).toBe(source)
     }))
 
+test('clearing then typing into a list item whose code starts with a blank line keeps the code inside the fence', () =>
+  withNote((editor, ctx, errors) => {
+    editor.loadDocument({
+      ...input,
+      generation: 1,
+      text: '- Item\n\n  ```\n\n  code\n  ```\n',
+    })
+    const view = ctx.get(editorViewCtx)
+    let from = 0,
+      to = 0
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'code_block') {
+        from = pos + 1
+        to = pos + node.nodeSize - 1
+      }
+    })
+    view.dispatch(view.state.tr.delete(from, to))
+    view.dispatch(view.state.tr.insertText('x', from))
+    expect(errors).toEqual([])
+    expect(editor.snapshot().text).toBe('- Item\n\n  ```\n  x\n  ```\n')
+  }))
+
+test('clearing an unclosed fence keeps its line ending', () =>
+  withNote((editor, ctx, errors) => {
+    editor.loadDocument({
+      ...input,
+      generation: 1,
+      text: 'Before\n\n```\ncode\n',
+    })
+    const view = ctx.get(editorViewCtx)
+    let from = 0,
+      to = 0
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'code_block') {
+        from = pos + 1
+        to = pos + node.nodeSize - 1
+      }
+    })
+    view.dispatch(view.state.tr.delete(from, to))
+    expect(errors).toEqual([])
+    expect(editor.snapshot().text).toBe('Before\n\n```\n')
+  }))
+
 test('editing beside an empty code block in a list item keeps the fence', () =>
   withNote((editor, ctx, errors) => {
     const source = '- Item\n\n  ```\n  ```\n'
