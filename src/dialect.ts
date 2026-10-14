@@ -119,7 +119,11 @@ function textAt(
 
 /** A link whose text is its own URL is written as the bare URL, the way it was typed. Only where reading
  *  it back gives the same link again: nothing may run into it at either end. */
-function writesBare(node: Link, parent: Parents | undefined): boolean {
+function writesBare(
+  node: Link,
+  parent: Parents | undefined,
+  inCell: boolean,
+): boolean {
   const [child, ...rest] = node.children
   if (
     node.title ||
@@ -140,15 +144,21 @@ function writesBare(node: Link, parent: Parents | undefined): boolean {
   const after = textAt(parent, node, 1)
   if (after && (after.type !== 'text' || !afterURL.test(after.value)))
     return false
-  return true
+  // Spaces that end a cell are written as character references, which a bare URL would run into.
+  return !(
+    inCell &&
+    after?.type === 'text' &&
+    /^[ \t]+$/.test(after.value) &&
+    parent?.children.at(-1) === after
+  )
 }
 
 const link: (typeof defaultHandlers)['link'] = (node, parent, state, info) =>
-  writesBare(node, parent)
+  writesBare(node, parent, state.stack.includes('tableCell'))
     ? node.url
     : defaultHandlers.link(node, parent, state, info)
 link.peek = (node, parent, state) =>
-  writesBare(node, parent)
+  writesBare(node, parent, state.stack.includes('tableCell'))
     ? node.url[0]!
     : defaultHandlers.link.peek(node, parent, state)
 

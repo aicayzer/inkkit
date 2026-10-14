@@ -331,3 +331,24 @@ test('typing a space at the start of a table cell before an image saves an entit
     }),
   ).toBe('| H | Other |\n| --- | --- |\n| &#x20;![a](s.png)&#x20; | b |\n')
 })
+
+test('a space typed after a URL at the end of a table cell saves without joining the URL', async () => {
+  const table = '| H | Other |\n| --- | --- |\n| see | b |\n'
+  expect(
+    await typed(table, (_editor, view) => {
+      caret(view, { text: 'see', offset: 3 })
+      // What the autolink input rule leaves after a URL and a space.
+      const { schema } = view.state
+      const link = schema.marks.link!.create({ href: 'https://example.com' })
+      view.dispatch(
+        view.state.tr.insert(view.state.selection.from, [
+          schema.text(' '),
+          schema.text('https://example.com', [link]),
+          schema.text(' '),
+        ]),
+      )
+    }),
+  ).toBe(
+    '| H | Other |\n| --- | --- |\n| see <https://example.com>&#x20; | b |\n',
+  )
+})
