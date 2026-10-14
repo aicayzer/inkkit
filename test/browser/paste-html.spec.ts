@@ -141,6 +141,21 @@ test('a checkbox in a table cell keeps its checked state', async ({ page }) => {
     .toBe(`Intro\n\n${table}\n`)
 })
 
+test('a pasted table with formatted text in its cells saves plain spaces', async ({
+  page,
+}) => {
+  await openEmpty(page)
+  await pasteHTML(
+    page,
+    '<table><tr><th>h</th><th>i</th></tr><tr><td><b>z</b> w</td><td><code>a</code> c</td></tr><tr><td>w <b>z</b></td><td><em>z</em> w</td></tr></table>',
+  )
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(
+      '| h       | i     |\n| :------ | :---- |\n| **z** w | `a` c |\n| w **z** | *z* w |\n',
+    )
+})
+
 test('code copied from an editor keeps its indentation', async ({ page }) => {
   await openEmpty(page)
   await pasteHTML(

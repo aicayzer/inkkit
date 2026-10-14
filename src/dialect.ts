@@ -174,12 +174,24 @@ function remarkDialect(this: Processor) {
     handlers: {
       text(node, parent, state, info) {
         const value = defaultHandlers.text(node, parent, state, info)
-        // GFM trims literal whitespace at cell edges on reopening.
-        return state.stack.includes('tableCell')
-          ? value.replace(/^[ \t]+|[ \t]+$/g, (spaces) =>
-              spaces.replaceAll(' ', '&#x20;').replaceAll('\t', '&#x9;'),
-            )
-          : value
+        // GFM trims literal whitespace at cell edges on reopening. Only a
+        // text node directly in the cell can reach an edge; inside a mark,
+        // link or code span its delimiters stand between it and the pipe.
+        if (
+          !state.stack.includes('tableCell') ||
+          (parent?.type !== 'paragraph' && parent?.type !== 'tableCell')
+        )
+          return value
+        const siblings = parent.children
+        const encode = (spaces: string) =>
+          spaces.replaceAll(' ', '&#x20;').replaceAll('\t', '&#x9;')
+        return value
+          .replace(/^[ \t]+/, (spaces) =>
+            siblings[0] === node ? encode(spaces) : spaces,
+          )
+          .replace(/[ \t]+$/, (spaces) =>
+            siblings.at(-1) === node ? encode(spaces) : spaces,
+          )
       },
       thematicBreak(node, parent, state) {
         const value = defaultHandlers.thematicBreak(node, parent, state)
