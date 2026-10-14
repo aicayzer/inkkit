@@ -271,6 +271,18 @@ test.each([
     'code',
     '- item\n\n  ```\n  code\n  ```\n\n  ![A](a.png)\n\n  ![B](b.png)\n\nNext\n',
   ],
+  [
+    'a code block that opens a list item',
+    '- ```\n  code\n  ```\n- two\n',
+    'code',
+    '- ```\n  code\n  ```\n- two\n\n![A](a.png)\n\n![B](b.png)\n',
+  ],
+  [
+    'a code block that opens an item of a loose list',
+    '- ```\n  code\n  ```\n\n- two\n',
+    'code',
+    '- ```\n  code\n  ```\n\n- two\n\n![A](a.png)\n\n![B](b.png)\n',
+  ],
 ])(
   'a caret or selection in %s places the images after it and splits nothing',
   (_name, source, find, expected) =>

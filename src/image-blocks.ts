@@ -87,6 +87,19 @@ function cellDepth($pos: ResolvedPos): number {
   return 0
 }
 
+/** A list item that opens with a code fence or another block is held with an empty first paragraph,
+ *  which is saved as `<br />` and read back as unsupported source once something follows the block.
+ *  Anything added to such an item cannot be saved, so images go after the whole list instead. */
+function opensWithBlock(parent: ProseNode, child: ProseNode): boolean {
+  const first = parent.firstChild
+  return (
+    parent.type.name === 'list_item' &&
+    child !== first &&
+    first?.type.name === 'paragraph' &&
+    first.content.size === 0
+  )
+}
+
 export type ImagePlacement =
   { kind: 'blocks' } | { kind: 'inline' } | { kind: 'after'; pos: number }
 
@@ -112,12 +125,11 @@ export function imagePlacement(state: EditorState): ImagePlacement {
   if (!unfit && !from && !to) return { kind: 'blocks' }
   if (!unfit && from && to && $from.sameParent($to)) return { kind: 'inline' }
   for (let depth = $to.depth; depth > 0; depth--) {
-    if ($to.node(depth).isInline) continue
+    const node = $to.node(depth)
+    const parent = $to.node(depth - 1)
+    if (node.isInline || opensWithBlock(parent, node)) continue
     const index = $to.index(depth - 1) + 1
-    if (
-      paragraph &&
-      $to.node(depth - 1).canReplaceWith(index, index, paragraph)
-    )
+    if (paragraph && parent.canReplaceWith(index, index, paragraph))
       return { kind: 'after', pos: $to.after(depth) }
   }
   return { kind: 'after', pos: state.doc.content.size }
