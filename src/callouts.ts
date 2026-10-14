@@ -1,5 +1,6 @@
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { editorLabels } from './labels'
+import { singleLine } from './references'
 import { remarkCtx } from '@milkdown/kit/core'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -208,30 +209,34 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
         ).toUpperCase()
         const marker = dom.getAttribute('data-inkkit-marker') ?? `[!${kind}]`
         const fold = dom.getAttribute('data-inkkit-fold') ?? ''
-        const titleSource = dom.getAttribute('data-inkkit-title')
         const placeholder = dom.getAttribute('data-inkkit-list-placeholder')
         const previous = dom.previousElementSibling
-        const titleHeader =
-          titleSource == null
-            ? undefined
-            : plainHeader(ctx.get(remarkCtx), `${marker} ${titleSource}`)
+        // A title read from the visible text is written with its punctuation
+        // escaped, so it reads back as the same plain text.
+        const visibleTitle = singleLine(
+          dom.querySelector('.inkkit-callout-title')?.textContent ?? '',
+        ).trim()
+        const titleSource =
+          dom.getAttribute('data-inkkit-title') ??
+          visibleTitle.replace(/[!-/:-@[-`{-~]/g, '\\$&')
+        const titleHeader = plainHeader(
+          ctx.get(remarkCtx),
+          `${marker} ${titleSource}`,
+        )
         if (
           !kinds.has(kind) ||
           !/^\[![A-Za-z]+\]$/.test(marker) ||
           marker.slice(2, -1).toUpperCase() !== kind ||
           !['', '+', '-'].includes(fold) ||
-          (titleSource != null &&
-            (/[\r\n]/.test(titleSource) || titleHeader == null))
+          /[\r\n]/.test(titleSource) ||
+          titleHeader == null
         )
           return false
         return {
           kind,
           marker,
           fold,
-          title:
-            titleHeader == null
-              ? (dom.querySelector('.inkkit-callout-title')?.textContent ?? '')
-              : titleHeader.slice(marker.length + 1).trimEnd(),
+          title: titleHeader.slice(marker.length + 1).trimEnd(),
           titleSource,
           listPlaceholder:
             placeholder == null

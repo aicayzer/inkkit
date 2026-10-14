@@ -8,11 +8,14 @@ import {
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
+import { importableSlice } from './html-import'
 import { isImage } from './image-blocks'
 import {
   collapseClipboardWhitespace,
+  isBlockElement,
   isRewrittenElement,
   isRichElement,
   normalizeClipboardHTML,
@@ -50,6 +53,7 @@ export class PasteController {
   private active?: Anchor
   private readonly key = new PluginKey<MappedAnchor | null>('inkkitPaste')
   private dead = false
+  private claimed = false
   get pending(): boolean {
     return this.active != null
   }
@@ -76,31 +80,34 @@ export class PasteController {
             },
           },
           props: {
+            handleDOMEvents: {
+              paste: (view, event) => {
+                // ProseMirror parses the clipboard before asking handlePaste,
+                // and this controller then imports it again itself.
+                this.claimed = claimsPaste(view, event) !== false
+                queueMicrotask(() => {
+                  this.claimed = false
+                })
+                return false
+              },
+            },
+            // Drops and pastes that ProseMirror inserts itself.
+            transformPasted: (slice, view, plain) =>
+              this.claimed || plain || view.dragging
+                ? slice
+                : importableSlice(this.options.ctx(), slice),
             handlePaste: (view, event) => {
-              const data = event.clipboardData
-              if (!data || !view.editable) return false
-              if (view.state.selection.$from.parent.type.spec.code) return false
+              this.claimed = false
+              const claim = claimsPaste(view, event)
+              if (claim === false) return false
+              const data = event.clipboardData!
               const text = data.getData('text/plain')
               const html = data.getData('text/html')
-              const metadata = data.getData('vscode-editor-data')
-              if (metadata) {
-                try {
-                  const value: unknown = JSON.parse(metadata)
-                  if (
-                    !value ||
-                    typeof value !== 'object' ||
-                    !('mode' in value) ||
-                    typeof value.mode !== 'string'
-                  )
-                    throw new Error('Invalid VS Code clipboard metadata')
-                  // Retain the provider's code-language behaviour for valid metadata.
-                  return false
-                } catch {
-                  void this.paste({ text, plainText: true }).catch((error) =>
-                    options.onError?.(error),
-                  )
-                  return true
-                }
+              if (claim === 'plain') {
+                void this.paste({ text, plainText: true }).catch((error) =>
+                  options.onError?.(error),
+                )
+                return true
               }
               const files = [...data.files].filter((file) =>
                 file.type.startsWith('image/'),
@@ -328,18 +335,6 @@ export class PasteController {
           literal.textContent = element.outerHTML
           element.replaceWith(literal)
         }
-        const walker = document.createTreeWalker(
-          container,
-          NodeFilter.SHOW_COMMENT,
-        )
-        const comments: Comment[] = []
-        while (walker.nextNode()) comments.push(walker.currentNode as Comment)
-        for (const comment of comments) {
-          const literal = document.createElement('pre')
-          literal.className = 'literal-markdown'
-          literal.textContent = `<!--${comment.data}-->`
-          comment.replaceWith(literal)
-        }
         for (const table of [...container.querySelectorAll('table')]) {
           if (table.parentElement?.closest('table')) continue
           const rows = [...table.querySelectorAll('tr')]
@@ -362,6 +357,22 @@ export class PasteController {
           }
         }
         collapseClipboardWhitespace(container)
+        // An authored comment is read in Markdown as an InkKit comment, so it
+        // imports as one, after whitespace collapse has passed it by.
+        const walker = document.createTreeWalker(
+          container,
+          NodeFilter.SHOW_COMMENT,
+        )
+        const comments: Comment[] = []
+        while (walker.nextNode()) comments.push(walker.currentNode as Comment)
+        for (const comment of comments) {
+          const element = document.createElement(
+            inlineComment(comment) ? 'span' : 'div',
+          )
+          element.setAttribute('data-inkkit-comment', 'html')
+          element.textContent = comment.data
+          comment.replaceWith(element)
+        }
         const imported = new Map<string, string>()
         const elements = [...container.querySelectorAll('img')]
         const uniqueSources = new Set(
@@ -456,9 +467,12 @@ export class PasteController {
           }
           slice = new Slice(hydrate(parsed).content, 0, 0)
         } else
-          slice = ProseParser.fromSchema(schema).parseSlice(container, {
-            preserveWhitespace: true,
-          })
+          slice = importableSlice(
+            ctx,
+            ProseParser.fromSchema(schema).parseSlice(container, {
+              preserveWhitespace: true,
+            }),
+          )
       } else if (images.length) {
         const nodes = []
         if (input.text)
@@ -583,6 +597,48 @@ export class PasteController {
       }
     }
   }
+}
+/**
+ * Whether `handlePaste` takes the paste, and as what. Valid VS Code metadata
+ * keeps the provider's code-language behaviour; invalid metadata pastes plain
+ * text.
+ */
+function claimsPaste(
+  view: EditorView,
+  event: ClipboardEvent,
+): false | 'plain' | 'import' {
+  const data = event.clipboardData
+  if (!data || !view.editable) return false
+  if (view.state.selection.$from.parent.type.spec.code) return false
+  const metadata = data.getData('vscode-editor-data')
+  if (!metadata) return 'import'
+  try {
+    const value: unknown = JSON.parse(metadata)
+    return value &&
+      typeof value === 'object' &&
+      'mode' in value &&
+      typeof value.mode === 'string'
+      ? false
+      : 'plain'
+  } catch {
+    return 'plain'
+  }
+}
+// Inside text or an element that holds text, a comment is part of a line.
+function inlineComment(comment: Comment): boolean {
+  const parent = comment.parentElement
+  if (parent && /^(?:P|H[1-6]|TD|TH|LI|DT|DD)$/.test(parent.tagName))
+    return true
+  if (parent && isRichElement(parent) && !isBlockElement(parent)) return true
+  for (const sibling of comment.parentNode?.childNodes ?? [])
+    if (
+      (sibling.nodeType === Node.TEXT_NODE && sibling.textContent?.trim()) ||
+      (sibling.nodeType === Node.ELEMENT_NODE &&
+        isRichElement(sibling as Element) &&
+        !isBlockElement(sibling as Element))
+    )
+      return true
+  return false
 }
 function insideRewrittenContent(element: Element): boolean {
   for (

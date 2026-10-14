@@ -23,10 +23,33 @@ const text = async (page: Page) => (await observe(page)).snapshot!.text
 const selectedImage = (page: Page) =>
   page.locator('.inkkit-image-block.ProseMirror-selectednode')
 
+/** Waits until the page stops scrolling. WebKit reveals a typed caret a frame or more after the
+ *  keystroke, so a point measured before then is no longer over the same content when it is used. */
+async function scrollSettled(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let previous = NaN
+        let still = 0
+        const frame = () => {
+          const top = document
+            .querySelector('.ProseMirror')!
+            .getBoundingClientRect().top
+          still = top === previous ? still + 1 : 0
+          previous = top
+          if (still >= 3) resolve()
+          else requestAnimationFrame(frame)
+        }
+        requestAnimationFrame(frame)
+      }),
+  )
+}
+
 /** Puts a real caret in the paragraph holding `content`, at its start or end, and waits until the
  *  editor has read it. */
 async function caretIn(page: Page, content: string, side: 'start' | 'end') {
   const line = page.locator('.ProseMirror p', { hasText: content })
+  await scrollSettled(page)
   const box = (await line.boundingBox())!
   await page.mouse.click(
     side === 'start' ? box.x + 1 : box.x + box.width - 1,
@@ -45,6 +68,7 @@ async function caretIn(page: Page, content: string, side: 'start' | 'end') {
 async function clickBesideImage(page: Page, index = 0) {
   const card = page.locator('.inkkit-image-block > .image').nth(index)
   const row = page.locator('.inkkit-image-block').nth(index)
+  await scrollSettled(page)
   const cardBox = (await card.boundingBox())!
   const rowBox = (await row.boundingBox())!
   expect(rowBox.x + rowBox.width).toBeGreaterThan(
@@ -173,6 +197,7 @@ test('inserting images leaves the caret below the last one, by API and at a drop
   expect(await text(page)).toBe(
     'Start\n\n![One](images/one.png)\n\n![Two](images/two.png)\n\nTyped\n\n![Fixture](images/native.png)\n',
   )
+  await scrollSettled(page)
   const last = (await page.locator('.inkkit-image-block').last().boundingBox())!
   await operation(page, 'insertImages', {
     images: [{ path: 'images/drop.png', alt: 'Drop' }],

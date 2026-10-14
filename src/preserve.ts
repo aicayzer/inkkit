@@ -619,7 +619,7 @@ function blockForm(ctx: Ctx, node: ProseNode): string {
   return form(serialize(ctx, node.type.schema.topNodeType.create(null, [node])))
 }
 
-function semanticSignature(doc: ProseNode): string {
+export function semanticSignature(doc: ProseNode): string {
   const clean = (value: Record<string, unknown>): Record<string, unknown> => {
     if (value.type === 'inkkit_wiki_link' && value.attrs) {
       const {
