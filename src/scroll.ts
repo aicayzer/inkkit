@@ -1,4 +1,5 @@
-const outward = (distance: number) =>
+/** Rounds a distance away from zero, to a whole number of pixels. */
+export const scrollOutward = (distance: number) =>
   distance > 0 ? Math.ceil(distance) : Math.floor(distance)
 
 /**
@@ -15,7 +16,7 @@ export function scrollWholePixels(
 ): { vertical: number; horizontal: number } {
   const top = element.scrollTop,
     left = element.scrollLeft
-  const target = top + outward(vertical)
+  const target = top + scrollOutward(vertical)
   const last = element.scrollHeight - element.clientHeight
   // Only padding is left beyond the target, so show it: a reveal that stops
   // at the first or last line would otherwise hide that padding.
@@ -25,7 +26,7 @@ export function scrollWholePixels(
       : vertical > 0 && last > 0 && target >= last - padding.bottom
         ? last
         : target
-  element.scrollLeft += outward(horizontal)
+  element.scrollLeft += scrollOutward(horizontal)
   const remaining = (distance: number, moved: number) =>
     distance > 0 ? Math.max(0, distance - moved) : Math.min(0, distance - moved)
   return {

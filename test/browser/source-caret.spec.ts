@@ -12,8 +12,8 @@ const distant =
 
 // Textareas expose no caret geometry, so the caret is measured in a hidden
 // copy of the text, as the native consumer does.
-async function caretInView(page: Page) {
-  return page.evaluate(() => {
+async function caretInView(page: Page, offset?: number) {
+  return page.evaluate((offset) => {
     const target = document.querySelector('textarea.inkkit-plain')!
     const area = target as HTMLTextAreaElement
     const style = getComputedStyle(area)
@@ -40,11 +40,10 @@ async function caretInView(page: Page) {
       whiteSpace: 'pre-wrap',
       overflowWrap: 'break-word',
     })
-    mirror.append(
-      document.createTextNode(area.value.slice(0, area.selectionStart)),
-    )
+    const at = offset ?? area.selectionStart
+    mirror.append(document.createTextNode(area.value.slice(0, at)))
     const caret = document.createElement('span')
-    caret.textContent = area.value.slice(area.selectionStart) || '​'
+    caret.textContent = area.value.slice(at) || '​'
     mirror.append(caret)
     document.body.append(mirror)
     try {
@@ -59,7 +58,7 @@ async function caretInView(page: Page) {
     } finally {
       mirror.remove()
     }
-  })
+  }, offset)
 }
 
 // The stylesheet's own rule for the textarea outranks a plain selector, so the
@@ -166,5 +165,120 @@ test('the caret is fully in view after navigating down and up between headings i
         )
     }
   }
+  expect(failures).toEqual([])
+})
+
+// The reveal in the formatted editor scrolls its containers and the window
+// by the same whole pixels, so the selected heading must end inside the
+// viewport the editor reports, at line heights that are not whole.
+test('the heading is fully in view after navigating down and up between headings in formatted mode', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await page.evaluate(
+    (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+    sections,
+  )
+  const headings = (await operation(page, 'headings')) as { value: unknown[] }
+  const outline = (headings.value ?? headings) as unknown[]
+  expect(outline).toHaveLength(25)
+  const failures: string[] = []
+  for (const lineHeight of ['1.37', '1.43', '1.51', '1.6']) {
+    await page.evaluate((lineHeight) => {
+      const style = document.documentElement.style
+      style.setProperty('--inkkit-font-size', '13.3px')
+      style.setProperty('--inkkit-line-height', lineHeight)
+    }, lineHeight)
+    for (const index of [0, 24, 12, 13, 11, 3, 23, 1, 2, 18, 10, 24, 0]) {
+      await operation(page, 'navigateHeading', { heading: outline[index] })
+      const measured = await page.evaluate(() => {
+        const selection = getSelection()!
+        const range = selection.getRangeAt(0)
+        const rect = range.getBoundingClientRect()
+        const viewport = window.inkkitPlayground.observe().viewport!.rect
+        return { top: rect.top, bottom: rect.bottom, viewport }
+      })
+      if (
+        measured.top < measured.viewport.top ||
+        measured.bottom > measured.viewport.bottom
+      )
+        failures.push(
+          `${lineHeight}, heading ${index}: ${measured.top}-${measured.bottom} outside ${measured.viewport.top}-${measured.viewport.bottom}`,
+        )
+    }
+  }
+  expect(failures).toEqual([])
+})
+
+// A range of several lines near the end of the document must not be treated as
+// one line at the bottom edge: showing the padding there would hide its start.
+test('the start of a tall range stays in view when it is revealed near the end of the source', async ({
+  page,
+  openFixture,
+}) => {
+  // The whole textarea is on screen, so the editor's viewport is its own box.
+  await page.setViewportSize({ width: 1280, height: 1400 })
+  await openFixture()
+  await page.evaluate(
+    (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+    sections,
+  )
+  await operation(page, 'editingMode', { mode: 'source' })
+  const failures: string[] = []
+  let tested = 0
+  for (const lineHeight of ['16.5px', '17.67px', '19.25px', '22.5px']) {
+    await setMetrics(page, 12, lineHeight)
+    const snapshot = (await operation(page, 'textSnapshot')) as {
+      value?: { snapshotId: string; text: string }
+      snapshotId?: string
+      text?: string
+    }
+    const { snapshotId, text } = (snapshot.value ?? snapshot) as {
+      snapshotId: string
+      text: string
+    }
+    const end = await caretInView(page, text.length)
+    // Line starts in the last stretch of the document.
+    const starts: number[] = []
+    for (
+      let at = text.lastIndexOf('\n', text.length - 2);
+      starts.length < 80 && at > 0;
+      at = text.lastIndexOf('\n', at - 1)
+    )
+      starts.push(at + 1)
+    const tops = new Map<number, number>()
+    for (const at of starts) tops.set(at, (await caretInView(page, at)).top)
+    // The range ends a few lines above the end of the document, so only its
+    // last lines are near the bottom edge.
+    const to = starts.find((at) => {
+      const distance = end.bottom - tops.get(at)!
+      return distance >= 36 && distance <= 70
+    })
+    if (to === undefined) continue
+    for (const from of starts) {
+      const distance = end.bottom - tops.get(from)!
+      // Fits the viewport, but not together with the padding below the last
+      // line, so scrolling to the bottom edge would hide its start.
+      if (distance > end.clientHeight - 8 || distance < end.clientHeight - 40)
+        continue
+      tested++
+      await page.evaluate(() => {
+        document.querySelector('textarea.inkkit-plain')!.scrollTop = 0
+      })
+      await operation(page, 'revealTextRange', {
+        range: { snapshotId, from, to },
+      })
+      const start = await caretInView(page, from)
+      if (
+        start.top < start.scrollTop ||
+        start.bottom > start.scrollTop + start.clientHeight
+      )
+        failures.push(
+          `${lineHeight}, offset ${from}: start ${start.top}-${start.bottom} outside ${start.scrollTop}-${start.scrollTop + start.clientHeight}`,
+        )
+    }
+  }
+  expect(tested).toBeGreaterThan(0)
   expect(failures).toEqual([])
 })
