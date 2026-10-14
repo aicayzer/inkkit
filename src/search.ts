@@ -10,6 +10,7 @@ import {
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { SearchQuery, setSearchState, getSearchState } from 'prosemirror-search'
 import { InkKitError } from './types'
+import { coded } from './errors'
 
 export interface TextMatch {
   from: number
@@ -213,11 +214,7 @@ export function replaceFormatted(
   try {
     preflight(tr)
   } catch (error) {
-    if (error instanceof InkKitError) throw error
-    throw new InkKitError(
-      'preservation',
-      error instanceof Error ? error.message : 'Cannot preserve replacement',
-    )
+    throw coded(error, 'preservation')
   }
   view.dispatch(closeHistory(tr).scrollIntoView())
   view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
@@ -255,11 +252,7 @@ export function replaceFormattedRange(
   try {
     preflight(tr)
   } catch (error) {
-    if (error instanceof InkKitError) throw error
-    throw new InkKitError(
-      'preservation',
-      error instanceof Error ? error.message : 'Cannot preserve replacement',
-    )
+    throw coded(error, 'preservation')
   }
   view.dispatch(tr)
   view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))

@@ -121,6 +121,7 @@ import {
   tableCommands,
   tableAvailability,
   tableContext,
+  tableOptions,
   configureTableMovement,
   type TableCommand,
   type TableOptions,
@@ -133,6 +134,7 @@ import {
   type ImageAdapter,
   type FileAdapter,
   type WikiLinkAdapter,
+  type CapturedImage,
   type ClipboardInput,
   type ClipboardOutput,
   type PrintableDocument,
@@ -170,6 +172,23 @@ import {
 } from './hidden-comments'
 import { scrollOutward, scrollWholePixels } from './scroll'
 import { PasteController } from './paste'
+import {
+  coded,
+  expectArray,
+  expectBoolean,
+  expectGeneration,
+  expectInteger,
+  expectNumber,
+  expectOneOf,
+  expectRecord,
+  expectString,
+  invalidArgument,
+  isOmitted,
+  optionalBoolean,
+  optionalGeneration,
+  optionalRecord,
+  optionalString,
+} from './errors'
 import { selectionPlugin } from './selection'
 import { search, SearchQuery, setSearchState } from 'prosemirror-search'
 import {
@@ -208,6 +227,7 @@ export type Block =
   | { type: 'taskList' }
 
 export type EditingMode = 'source' | 'formatted'
+const editingModes: readonly EditingMode[] = ['source', 'formatted']
 
 export interface CaretState {
   marks: Mark[]
@@ -254,10 +274,96 @@ const shortcutCommands: Record<string, [FormatCommand, number?]> = {
   taskList: ['taskList'],
 }
 
+const formatCommands: readonly FormatCommand[] = [
+  'heading',
+  'paragraph',
+  'bold',
+  'italic',
+  'strikethrough',
+  'highlight',
+  'code',
+  'codeBlock',
+  'quote',
+  'bulletList',
+  'orderedList',
+  'taskList',
+  'link',
+]
+
+/** Checks a format call: the heading level, a link's destination or a code block's language, and no
+ *  argument for any other command. */
+function formatArgument(command: unknown, arg: unknown): void {
+  expectOneOf(command, formatCommands, 'command')
+  if (isOmitted(arg)) return
+  if (command === 'heading') expectInteger(arg, 'level', { min: 1, max: 6 })
+  else if (command === 'link') expectString(arg, 'destination')
+  else if (command === 'codeBlock') expectString(arg, 'language')
+  else throw invalidArgument(`format('${command}') takes no argument`)
+}
+
+const shortcutNames = [
+  ...Object.keys(shortcutCommands),
+  'undo',
+  'redo',
+  ...tableCommands.map(
+    (command) => 'table' + command[0]!.toUpperCase() + command.slice(1),
+  ),
+]
+
+/** Checks a keymap and drops omitted entries, so a `null` binding keeps its default. */
+function keymapBindings(value: unknown, name: string): Keymap {
+  const record = expectRecord(value, name, shortcutNames)
+  const keymap: Keymap = {}
+  for (const [shortcut, keys] of Object.entries(record)) {
+    if (isOmitted(keys)) continue
+    keymap[shortcut] = expectArray(keys, `${name}.${shortcut}`).map(
+      (key, index) => expectString(key, `${name}.${shortcut}[${index}]`),
+    )
+  }
+  return keymap
+}
+
+const footnoteTargets = ['definition', 'reference'] as const
+
+function footnoteLabel(label: string): boolean {
+  return !!label && !/[\s\[\]\\]/.test(label) && label.length <= 999
+}
+
 export interface TextInputPreferences {
   spellcheck?: boolean
   autocorrect?: boolean
   autocapitalize?: 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters'
+}
+
+const autocapitalizeValues = [
+  'off',
+  'none',
+  'on',
+  'sentences',
+  'words',
+  'characters',
+] as const
+
+function textInputPreferences(
+  value: unknown,
+  name: string,
+): TextInputPreferences {
+  const record = expectRecord(value, name, [
+    'spellcheck',
+    'autocorrect',
+    'autocapitalize',
+  ])
+  return {
+    spellcheck: optionalBoolean(record.spellcheck, `${name}.spellcheck`),
+    autocorrect: optionalBoolean(record.autocorrect, `${name}.autocorrect`),
+    autocapitalize: isOmitted(record.autocapitalize)
+      ? undefined
+      : expectOneOf(
+          record.autocapitalize,
+          autocapitalizeValues,
+          `${name}.autocapitalize`,
+        ),
+  }
 }
 
 export interface EditorOptions {
@@ -272,6 +378,55 @@ export interface EditorOptions {
     codeHighlighting?: boolean
     diagramPreview?: boolean
   }
+}
+
+const adapterNames = ['images', 'files', 'wikiLinks'] as const
+
+/** Checks mount options and returns them with omitted values removed. */
+function editorOptions(value: unknown): EditorOptions {
+  const options =
+    optionalRecord(value, 'options', [
+      ...adapterNames,
+      'editable',
+      'textInput',
+      'labels',
+      'keymap',
+      'rendering',
+    ]) ?? {}
+  for (const name of adapterNames)
+    optionalRecord(options[name], `options.${name}`)
+  optionalBoolean(options.editable, 'options.editable')
+  if (!isOmitted(options.textInput))
+    textInputPreferences(options.textInput, 'options.textInput')
+  if (!isOmitted(options.keymap))
+    keymapBindings(options.keymap, 'options.keymap')
+  const rendering = optionalRecord(options.rendering, 'options.rendering', [
+    'codeHighlighting',
+    'diagramPreview',
+  ])
+  optionalBoolean(
+    rendering?.codeHighlighting,
+    'options.rendering.codeHighlighting',
+  )
+  optionalBoolean(rendering?.diagramPreview, 'options.rendering.diagramPreview')
+  const labels = optionalRecord(
+    options.labels,
+    'options.labels',
+    Object.keys(defaultLabels),
+  )
+  return {
+    ...options,
+    labels:
+      labels &&
+      Object.fromEntries(
+        Object.entries(labels)
+          .filter(([, label]) => !isOmitted(label))
+          .map(([key, label]) => [
+            key,
+            expectString(label, `options.labels.${key}`),
+          ]),
+      ),
+  } as EditorOptions
 }
 
 export interface CommandState {
@@ -307,8 +462,104 @@ export interface EditorEvents {
   commandStateChanged?(state: CommandState): void
   openLink(href: string): void
   copy(text: string): void
-  error?(error: Error): void
+  error?(error: InkKitError): void
   clipboard?(content: ClipboardOutput): void | Promise<void>
+}
+
+/** Refuses a cut whose copy lost an image or a diagram, so the person keeps what the clipboard
+ *  could not hold. */
+function refuseUnportableCut(content: ClipboardOutput): void {
+  if (content.images.some((image) => image.error))
+    throw new InkKitError(
+      'image-unavailable',
+      'The selected content could not be cut, because an image in it cannot be copied',
+    )
+  if (content.diagrams?.some((diagram) => diagram.error))
+    throw new InkKitError(
+      'diagram-unavailable',
+      'The selected content could not be cut, because a diagram in it cannot be copied',
+    )
+}
+
+async function writeClipboard(
+  events: EditorEvents,
+  content: ClipboardOutput,
+): Promise<void> {
+  try {
+    await events.clipboard!(content)
+  } catch (error) {
+    throw coded(
+      error,
+      'clipboard-unavailable',
+      'The host could not write the clipboard',
+    )
+  }
+}
+
+function noClipboardHandler(): InkKitError {
+  return new InkKitError(
+    'clipboard-unavailable',
+    'Copying images or diagrams needs the clipboard event',
+  )
+}
+
+const documentFormats = ['md', 'txt'] as const
+
+function documentInput(value: unknown): DocumentInput {
+  const input = expectRecord(value, 'input')
+  return {
+    documentId: expectString(input.documentId, 'input.documentId'),
+    generation: expectGeneration(input.generation, 'input.generation'),
+    format: expectOneOf(input.format, documentFormats, 'input.format'),
+    text: expectString(input.text, 'input.text'),
+  }
+}
+
+/** A range's shape. Whether its offsets fit the snapshot is `invalid-range`, checked later. */
+function textRange(value: unknown, name: string): void {
+  const range = expectRecord(value, name)
+  expectString(range.snapshotId, `${name}.snapshotId`)
+  for (const end of ['from', 'to'])
+    if (typeof range[end] !== 'number')
+      throw invalidArgument(`${name}.${end} must be a number`)
+}
+
+/** An entry `headings()` returned, which may have gone stale since. */
+function headingEntry(value: unknown): void {
+  const heading = expectRecord(value, 'heading')
+  expectString(heading.id, 'heading.id')
+  expectInteger(heading.level, 'heading.level', { min: 1, max: 6 })
+  expectString(heading.text, 'heading.text')
+  expectString(heading.documentId, 'heading.documentId')
+  expectGeneration(heading.generation, 'heading.generation')
+  expectInteger(heading.revision, 'heading.revision', { min: 0 })
+}
+
+function clipboardInput(value: unknown): ClipboardInput {
+  const input = expectRecord(value, 'input')
+  return {
+    text: expectString(input.text, 'input.text'),
+    markdown: optionalString(input.markdown, 'input.markdown'),
+    html: optionalString(input.html, 'input.html'),
+    images: isOmitted(input.images)
+      ? undefined
+      : expectArray(input.images, 'input.images').map((image, index) =>
+          capturedImage(image, `input.images[${index}]`),
+        ),
+    plainText: optionalBoolean(input.plainText, 'input.plainText'),
+  }
+}
+
+function capturedImage(value: unknown, name: string): CapturedImage {
+  const image = expectRecord(value, name)
+  if (!(image.bytes instanceof Uint8Array))
+    throw invalidArgument(`${name}.bytes must be a Uint8Array`)
+  return {
+    bytes: image.bytes,
+    mimeType: expectString(image.mimeType, `${name}.mimeType`),
+    filename: optionalString(image.filename, `${name}.filename`),
+    source: optionalString(image.source, `${name}.source`),
+  }
 }
 
 const markNames: Record<string, Mark> = {
@@ -543,6 +794,10 @@ function joinLists(tr: Transaction, start: number, index: number): void {
 
 let editorSequence = 0
 
+interface FacadeCall {
+  refusal?: InkKitError
+}
+
 // A pause in source typing longer than this ends an undo step, as in the
 // formatted editor's history.
 const sourceGroupDelay = 500
@@ -617,6 +872,7 @@ export class InkKitEditor {
   private reportingSuppressed = false
   private loading = false
   private readonly textIdentity = ++editorSequence
+  private call?: FacadeCall
   private textScope?: { key: string; id: string; projection: TextProjection }
   private viewportContainer?: HTMLElement
   private viewportInsets: ViewportInsets = {
@@ -654,9 +910,7 @@ export class InkKitEditor {
             try {
               markdown = this.currentText(view.state.doc)
             } catch (error) {
-              this.events.error?.(
-                error instanceof Error ? error : new Error(String(error)),
-              )
+              this.events.error?.(coded(error, 'preservation'))
               return
             }
             if (this.literalSurface) {
@@ -689,7 +943,10 @@ export class InkKitEditor {
     private readonly options: EditorOptions,
   ) {
     this.writable = options.editable ?? true
-    this.inputPreferences = { ...options.textInput }
+    this.inputPreferences = textInputPreferences(
+      options.textInput ?? {},
+      'options.textInput',
+    )
   }
 
   private context(): DocumentContext {
@@ -747,12 +1004,19 @@ export class InkKitEditor {
       throw new InkKitError('destroyed', 'The editor has been destroyed')
   }
 
-  private assertCurrent(generation = this.generation): void {
+  private assertReady(expectedGeneration?: unknown): void {
     this.assertAlive()
+    const generation = optionalGeneration(expectedGeneration) ?? this.generation
     if (!this.ready)
       throw new InkKitError('not-ready', 'No document has been loaded')
     if (generation !== this.generation)
       throw new InkKitError('stale-document', 'Document changed')
+  }
+
+  /** Checks, in order, that the editor is alive, that `expectedGeneration` is a generation, and
+   *  that the document is loaded, current, not composing and has no import pending. */
+  private assertCurrent(expectedGeneration?: unknown): void {
+    this.assertReady(expectedGeneration)
     if (
       this.literalSurface
         ? this.plainComposing
@@ -766,10 +1030,78 @@ export class InkKitEditor {
       )
   }
 
-  private assertMutation(generation = this.generation): void {
-    this.assertCurrent(generation)
+  private assertMutation(expectedGeneration?: unknown): void {
+    this.assertCurrent(expectedGeneration)
     if (!this.writable)
       throw new InkKitError('read-only', 'The editor is read-only')
+  }
+
+  /**
+   * Runs one facade call, so that its failure reaches the caller once and coded. An edit that the
+   * preservation check refuses during the call is thrown, not sent to `events.error`; steps the call
+   * took before it, such as selecting a run to format it, are undone. Anything else thrown arrives
+   * as an `InkKitError`. A call made inside another runs as part of it. Promises reject instead.
+   */
+  private facadeCall<T>(operation: () => T): T {
+    if (this.call) return operation()
+    const call: FacadeCall = {}
+    const before = this.destroyed
+      ? undefined
+      : this.editor.ctx.get(editorViewCtx).state
+    this.call = call
+    let result: T
+    try {
+      result = operation()
+    } catch (error) {
+      throw this.refusal(call, before) ?? coded(error)
+    } finally {
+      this.call = undefined
+    }
+    const refusal = this.refusal(call, before)
+    if (result instanceof Promise) {
+      const settled = result.catch((error: unknown) => {
+        throw coded(error)
+      })
+      if (!refusal) return settled as T
+      settled.catch(() => {})
+      return Promise.reject(refusal) as T
+    }
+    if (refusal) throw refusal
+    return result
+  }
+
+  private refusal(
+    call: FacadeCall,
+    before: EditorState | undefined,
+  ): InkKitError | undefined {
+    if (!call.refusal || !before) return call.refusal
+    const view = this.editor.ctx.get(editorViewCtx)
+    if (view.state !== before && view.state.doc.eq(before.doc))
+      view.updateState(before)
+    return call.refusal
+  }
+
+  /** Reports a refused edit to the facade call that made it, or else to `events.error`. */
+  private refuse(error: InkKitError): void {
+    if (this.call) this.call.refusal ??= error
+    else this.events.error?.(error)
+  }
+
+  /** Reports a failure no call is waiting for. */
+  private report(error: unknown): void {
+    this.events.error?.(coded(error))
+  }
+
+  /** Runs a facade method for something the person did, such as a shortcut. Its failure goes to
+   *  `events.error`, unless a host call such as `keyDown` is waiting for it. */
+  private forPerson<T>(operation: () => T, otherwise: T): T {
+    try {
+      return operation()
+    } catch (error) {
+      if (this.call) throw error
+      this.report(error)
+      return otherwise
+    }
   }
 
   private get composing(): boolean {
@@ -785,6 +1117,7 @@ export class InkKitEditor {
 
   setEditable(editable: boolean): void {
     this.assertAlive()
+    expectBoolean(editable, 'editable')
     if (this.composing)
       throw new InkKitError('composition', 'Text composition is in progress')
     if (this.writable === editable) return
@@ -807,12 +1140,13 @@ export class InkKitEditor {
 
   setTextInputPreferences(preferences: TextInputPreferences): void {
     this.assertAlive()
+    const checked = textInputPreferences(preferences, 'preferences')
     if (this.composing)
       throw new InkKitError('composition', 'Text composition is in progress')
     const suppressed = this.reportingSuppressed
     this.reportingSuppressed = true
     try {
-      this.inputPreferences = { ...preferences }
+      this.inputPreferences = checked
       this.applyInputPolicy()
     } finally {
       this.reportingSuppressed = suppressed
@@ -865,12 +1199,8 @@ export class InkKitEditor {
     this.events.commandStateChanged?.(this.commandState())
   }
 
-  commandState(expectedGeneration = this.generation): CommandState {
-    this.assertAlive()
-    if (!this.ready)
-      throw new InkKitError('not-ready', 'No document has been loaded')
-    if (expectedGeneration !== this.generation)
-      throw new InkKitError('stale-document', 'Document changed')
+  commandState(expectedGeneration?: number): CommandState {
+    this.assertReady(expectedGeneration)
     const view = this.editor.ctx.get(editorViewCtx)
     const { state } = view
     const mutable =
@@ -1048,9 +1378,9 @@ export class InkKitEditor {
   }
 
   setEditingMode(mode: EditingMode, expectedGeneration?: number): boolean {
+    this.assertAlive()
+    expectOneOf(mode, editingModes, 'mode')
     this.assertCurrent(expectedGeneration)
-    if (mode !== 'source' && mode !== 'formatted')
-      throw new RangeError('Editing mode must be source or formatted')
     if (this.formatType === 'txt' || this.mode === mode) return false
     this.settleSource()
     // Source steps that were undone cannot be redone from the other mode.
@@ -1114,6 +1444,8 @@ export class InkKitEditor {
   }
 
   replaceSource(text: string, expectedGeneration?: number): boolean {
+    this.assertAlive()
+    expectString(text, 'text')
     this.assertMutation(expectedGeneration)
     return this.applySource(text, true)
   }
@@ -1127,7 +1459,6 @@ export class InkKitEditor {
   ): boolean {
     if (!this.writable)
       throw new InkKitError('read-only', 'The editor is read-only')
-    if (typeof text !== 'string') throw new TypeError('Source must be a string')
     // Source edits take the same steps whether typed or not; an edit that is
     // not typing ends the typing step before it and is closed to the next.
     if (this.literalSurface)
@@ -1309,10 +1640,7 @@ export class InkKitEditor {
           new Preservation(this.editor.ctx, text),
         )
     } catch (error) {
-      throw new InkKitError(
-        'preservation',
-        error instanceof Error ? error.message : 'Cannot read Markdown source',
-      )
+      throw coded(error, 'preservation')
     }
     if (this.literalSurface) {
       const previous: SourceProvenance = Object.freeze({
@@ -1478,7 +1806,9 @@ export class InkKitEditor {
       : doc
   }
 
-  async clipboardSnapshot(all = true): Promise<ClipboardOutput> {
+  async clipboardSnapshot(all?: boolean): Promise<ClipboardOutput> {
+    this.assertAlive()
+    all = optionalBoolean(all, 'all') ?? true
     const snapshot = this.snapshot()
     const epoch = this.documentEpoch
     if (this.formatType === 'txt') {
@@ -1553,12 +1883,7 @@ export class InkKitEditor {
               )
             : selectionMarkdown(this.editor.ctx, doc, valid)
     } catch (error) {
-      throw new InkKitError(
-        'preservation',
-        error instanceof Error
-          ? error.message
-          : 'Cannot copy the selected Markdown',
-      )
+      throw coded(error, 'preservation')
     }
     const result = await this.exportContent(snapshot, (signal) =>
       portableClipboard(
@@ -1586,28 +1911,12 @@ export class InkKitEditor {
       snapshot.revision !== this.revision
     )
       throw new InkKitError('stale-document', 'Document changed')
-    if (result.images.some((image) => image.error))
-      this.events.error?.(
-        new InkKitError(
-          'image-unavailable',
-          'Some copied images were unavailable; their descriptions were retained',
-        ),
-      )
-    // A host built without Mermaid chose not to render diagrams.
-    if (
-      diagramsAvailable() &&
-      result.diagrams?.some((diagram) => diagram.error)
-    )
-      this.events.error?.(
-        new InkKitError(
-          'diagram-unavailable',
-          'Some diagrams could not be exported; their source was retained',
-        ),
-      )
     return result
   }
 
   async paste(input: ClipboardInput): Promise<void> {
+    this.assertAlive()
+    input = clipboardInput(input)
     this.assertMutation()
     if (this.literalSurface || input.plainText) {
       this.pasteAsPlainText(
@@ -1622,10 +1931,13 @@ export class InkKitEditor {
 
   setCommentsVisible(visible: boolean): void {
     this.assertAlive()
+    expectBoolean(visible, 'visible')
     setCommentVisibility(this.editor.ctx.get(editorViewCtx), visible)
   }
 
   pasteAsPlainText(text: string): void {
+    this.assertAlive()
+    expectString(text, 'text')
     this.assertMutation()
     if (this.literalSurface) {
       this.replaceLiteralSelection(text, true, this.formatType === 'md')
@@ -1695,6 +2007,8 @@ export class InkKitEditor {
   }
 
   table(command: TableCommand, options?: TableOptions): boolean {
+    this.assertAlive()
+    options = tableOptions(command, options)
     this.assertMutation()
     if (this.literalSurface) return false
     return tableCommand(this.editor.ctx, command, options)
@@ -1735,8 +2049,12 @@ export class InkKitEditor {
         props: {
           handleKeyDown: (view, event) => {
             if (event.altKey && event.key === 'Enter') {
-              return this.navigateFootnote(
-                event.shiftKey ? 'reference' : 'definition',
+              return this.forPerson(
+                () =>
+                  this.navigateFootnote(
+                    event.shiftKey ? 'reference' : 'definition',
+                  ),
+                true,
               )
             }
             return this.keys(view, event)
@@ -1764,16 +2082,8 @@ export class InkKitEditor {
       if (portable && this.events.clipboard) {
         void this.clipboardSnapshot(false)
           .then(async (content) => {
-            if (
-              cut &&
-              (content.images.some((image) => image.error) ||
-                content.diagrams?.some((diagram) => diagram.error))
-            )
-              throw new InkKitError(
-                'image-unavailable',
-                'The selected content could not be cut safely',
-              )
-            await this.events.clipboard!(content)
+            if (cut) refuseUnportableCut(content)
+            await writeClipboard(this.events, content)
             if (cut) {
               this.assertMutation(snapshot.generation)
               if (
@@ -1789,35 +2099,32 @@ export class InkKitEditor {
               this.replaceLiteralSelection('')
             }
           })
-          .catch((error) => this.events.error?.(error))
+          .catch((error) => this.report(error))
       } else {
         const output = clipboardContent(parsed.content, parsed.type.schema)
         if (!event.clipboardData) return
         event.clipboardData.setData('text/plain', output.text)
         event.clipboardData.setData('text/html', output.html)
         if (portable) {
-          this.events.error?.(
-            new InkKitError(
-              'image-unavailable',
-              'The host must provide a clipboard handler for portable images and diagrams',
-            ),
-          )
+          this.report(noClipboardHandler())
           return
         }
         if (cut) this.replaceLiteralSelection('')
       }
     } catch (error) {
-      this.events.error?.(
-        error instanceof Error ? error : new Error(String(error)),
-      )
+      this.report(error)
     }
   }
 
   static async mount(
     root: HTMLElement,
     events: EditorEvents,
-    options: EditorOptions = {},
+    options?: EditorOptions,
   ): Promise<InkKitEditor> {
+    if (!(root instanceof HTMLElement))
+      throw invalidArgument('root must be an HTML element')
+    expectRecord(events, 'events')
+    options = editorOptions(options)
     const instance = new InkKitEditor(events, options)
     instance.root = root
     instance.ownsRootClass = !root.classList.contains('inkkit-root')
@@ -1826,10 +2133,8 @@ export class InkKitEditor {
       ctx: () => instance.editor.ctx,
       context: () => instance.context(),
       adapter: options.images,
-      onError: (error) =>
-        events.error?.(
-          error instanceof Error ? error : new Error(String(error)),
-        ),
+      onError: (error) => instance.report(error),
+      commit: (apply) => instance.facadeCall(apply),
       literalText: () => instance.literalSurface,
       editable: () => instance.writable && !instance.literalSurface,
       onPendingChanged: () => instance.publishCommandState(),
@@ -1878,6 +2183,8 @@ export class InkKitEditor {
         ctx.update(editorViewOptionsCtx, (options) => ({
           ...options,
           dispatchTransaction: function (this: EditorView, tr) {
+            // A call whose edit was refused changes nothing more; it throws when it returns.
+            if (instance.call?.refusal && tr.docChanged) return
             const next = this.state.apply(tr)
             if (!instance.loading) {
               try {
@@ -1890,10 +2197,11 @@ export class InkKitEditor {
                 )
               } catch (error) {
                 this.updateState(this.state)
-                instance.events.error?.(
+                instance.refuse(
                   new InkKitError(
                     'preservation',
                     `The edit was not applied because its Markdown could not be preserved: ${error instanceof Error ? error.message : String(error)}`,
+                    { cause: error },
                   ),
                 )
                 return
@@ -1945,7 +2253,7 @@ export class InkKitEditor {
       .use(
         options.rendering?.diagramPreview === false || !diagramsAvailable()
           ? []
-          : mermaidPreview((error) => events.error?.(error)),
+          : mermaidPreview((error) => instance.report(error)),
       )
       .use(selectionPlugin)
       .use($prose(() => search()))
@@ -1970,7 +2278,7 @@ export class InkKitEditor {
                 !instance.destroyed &&
                 !instance.literalSurface,
               labels: { ...defaultLabels, ...options.labels },
-              error: (error) => events.error?.(error),
+              error: (error) => instance.report(error),
             })
           : [],
       )
@@ -1998,7 +2306,7 @@ export class InkKitEditor {
                       !instance.destroyed &&
                       !instance.literalSurface,
                     labels: { ...defaultLabels, ...options.labels },
-                    error: (error) => events.error?.(error),
+                    error: (error) => instance.report(error),
                   }
                 : undefined,
               () => {
@@ -2052,9 +2360,7 @@ export class InkKitEditor {
           true,
         )
       } catch (error) {
-        events.error?.(
-          error instanceof Error ? error : new Error(String(error)),
-        )
+        instance.report(error)
       } finally {
         instance.beforePlainInput = undefined
       }
@@ -2080,7 +2386,7 @@ export class InkKitEditor {
           text: event.clipboardData.getData('text/plain'),
           markdown: event.clipboardData.getData('text/markdown') || undefined,
         })
-        .catch((error) => events.error?.(error))
+        .catch((error) => instance.report(error))
     })
     instance.plain.addEventListener('compositionstart', () => {
       instance.plainComposing = true
@@ -2116,9 +2422,7 @@ export class InkKitEditor {
         )
         instance.navigateFootnote('definition')
       } catch (error) {
-        events.error?.(
-          error instanceof Error ? error : new Error(String(error)),
-        )
+        instance.report(error)
       }
       return true
     }
@@ -2200,9 +2504,7 @@ export class InkKitEditor {
           if (event.type === 'cut' && instance.writable)
             view.dispatch(view.state.tr.deleteSelection().scrollIntoView())
         } catch (error) {
-          events.error?.(
-            error instanceof Error ? error : new Error(String(error)),
-          )
+          instance.report(error)
         }
         return
       }
@@ -2217,16 +2519,8 @@ export class InkKitEditor {
         void instance
           .clipboardSnapshot(false)
           .then(async (content) => {
-            if (
-              cut &&
-              (content.images.some((image) => image.error) ||
-                content.diagrams?.some((diagram) => diagram.error))
-            )
-              throw new InkKitError(
-                'image-unavailable',
-                'The selected content could not be cut safely',
-              )
-            await events.clipboard!(content)
+            if (cut) refuseUnportableCut(content)
+            await writeClipboard(events, content)
             if (cut) {
               instance.assertMutation()
               if (
@@ -2243,22 +2537,13 @@ export class InkKitEditor {
               )
             }
           })
-          .catch((error) =>
-            events.error?.(
-              error instanceof Error ? error : new Error(String(error)),
-            ),
-          )
+          .catch((error) => instance.report(error))
       } else {
         const container = document.createElement('div')
         container.textContent = clipboardText(expanded)
         event.clipboardData?.setData('text/plain', container.textContent ?? '')
         event.clipboardData?.setData('text/html', container.outerHTML)
-        events.error?.(
-          new InkKitError(
-            'image-unavailable',
-            'The host must provide a clipboard handler for portable images and diagrams',
-          ),
-        )
+        instance.report(noClipboardHandler())
       }
     }
     root.addEventListener('copy', instance.copyHandler, true)
@@ -2271,6 +2556,7 @@ export class InkKitEditor {
 
   loadDocument(input: DocumentInput): void {
     this.assertAlive()
+    input = documentInput(input)
     const container = this.viewportContainer ?? this.root
     const top = container.scrollTop,
       left = container.scrollLeft
@@ -2323,6 +2609,7 @@ export class InkKitEditor {
 
   reloadDocument(input: DocumentInput): void {
     this.assertAlive()
+    input = documentInput(input)
     const view = this.editor.ctx.get(editorViewCtx)
     const wasLiteral = this.literalSurface
     const previousMode = this.editingMode
@@ -2395,20 +2682,30 @@ export class InkKitEditor {
 
   setViewport(options: ViewportOptions): void {
     this.assertAlive()
-    const container = options.scrollContainer ?? this.root
-    if (container !== this.root && !container.contains(this.root))
-      throw new RangeError(
-        'The scroll container must be the editor root or an ancestor',
-      )
-    const insets = { top: 0, right: 0, bottom: 0, left: 0, ...options.insets }
+    const record = expectRecord(options, 'options', [
+      'scrollContainer',
+      'insets',
+    ])
+    const container = isOmitted(record.scrollContainer)
+      ? this.root
+      : record.scrollContainer
     if (
-      Object.values(insets).some(
-        (value) => !Number.isFinite(value) || value < 0,
-      )
+      !(container instanceof HTMLElement) ||
+      (container !== this.root && !container.contains(this.root))
     )
-      throw new RangeError(
-        'Viewport insets must be finite non-negative CSS pixel values',
+      throw invalidArgument(
+        'options.scrollContainer must be the editor root or an ancestor',
       )
+    const sides = ['top', 'right', 'bottom', 'left'] as const
+    const given = optionalRecord(record.insets, 'options.insets', sides) ?? {}
+    const insets = Object.fromEntries(
+      sides.map((side) => [
+        side,
+        isOmitted(given[side])
+          ? 0
+          : expectNumber(given[side], `options.insets.${side}`, { min: 0 }),
+      ]),
+    ) as unknown as ViewportInsets
     this.viewportContainer = container
     this.viewportInsets = insets
   }
@@ -2522,6 +2819,8 @@ export class InkKitEditor {
   }
 
   private validateTextRange(range: TextRange): TextProjection {
+    this.assertAlive()
+    textRange(range, 'range')
     this.assertCurrent()
     const scope = this.readableScope()
     if (range.snapshotId !== scope.id)
@@ -2535,8 +2834,12 @@ export class InkKitEditor {
 
   selectTextRange(
     range: TextRange,
-    options: { focus?: boolean; reveal?: boolean } = {},
+    options?: { focus?: boolean; reveal?: boolean },
   ): void {
+    this.assertAlive()
+    const choices = optionalRecord(options, 'options', ['focus', 'reveal'])
+    const focus = optionalBoolean(choices?.focus, 'options.focus')
+    const reveal = optionalBoolean(choices?.reveal, 'options.reveal')
     const projection = this.validateTextRange(range)
     if (this.literalSurface) this.plain.setSelectionRange(range.from, range.to)
     else {
@@ -2574,11 +2877,11 @@ export class InkKitEditor {
         ),
       )
     }
-    if (options.focus) {
+    if (focus) {
       if (this.literalSurface) this.plain.focus({ preventScroll: true })
       else this.editor.ctx.get(editorViewCtx).focus()
     }
-    if (options.reveal) this.revealTextRange(range)
+    if (reveal) this.revealTextRange(range)
     this.publishCommandState()
   }
 
@@ -2597,10 +2900,10 @@ export class InkKitEditor {
   }
 
   replaceTextRange(range: TextRange, text: string): boolean {
+    this.assertAlive()
+    expectString(text, 'text')
     const projection = this.validateTextRange(range)
     this.assertMutation()
-    if (typeof text !== 'string')
-      throw new TypeError('Replacement must be a string')
     if (this.literalSurface) {
       const raw = this.currentText()
       const from = rawOffset(raw, range.from),
@@ -2653,6 +2956,10 @@ export class InkKitEditor {
   textRangesRects(
     ranges: readonly TextRange[],
   ): readonly (readonly TextRect[])[] {
+    this.assertAlive()
+    expectArray(ranges, 'ranges').forEach((range, index) =>
+      textRange(range, `ranges[${index}]`),
+    )
     this.assertCurrent()
     const projections = ranges.map((range) => this.validateTextRange(range))
     if (!ranges.length) return Object.freeze([])
@@ -2674,6 +2981,8 @@ export class InkKitEditor {
   }
 
   visibleTextRanges(snapshotId: string): readonly TextRange[] {
+    this.assertAlive()
+    expectString(snapshotId, 'snapshotId')
     const snapshot = this.textSnapshot()
     this.validateTextRange({ snapshotId, from: 0, to: 0 })
     const viewport = this.viewport().rect
@@ -2867,6 +3176,8 @@ export class InkKitEditor {
   }
 
   find(text: string, expectedGeneration?: number): void {
+    this.assertAlive()
+    expectString(text, 'text')
     this.assertCurrent(expectedGeneration)
     if (this.literalSurface) {
       const from =
@@ -2911,6 +3222,9 @@ export class InkKitEditor {
     replacement: string,
     expectedGeneration?: number,
   ): boolean {
+    this.assertAlive()
+    expectString(search, 'search')
+    expectString(replacement, 'replacement')
     this.assertMutation(expectedGeneration)
     return this.replaceMatches(search, replacement, false) > 0
   }
@@ -2920,6 +3234,9 @@ export class InkKitEditor {
     replacement: string,
     expectedGeneration?: number,
   ): number {
+    this.assertAlive()
+    expectString(search, 'search')
+    expectString(replacement, 'replacement')
     this.assertMutation(expectedGeneration)
     return this.replaceMatches(search, replacement, true)
   }
@@ -2992,12 +3309,8 @@ export class InkKitEditor {
   }
 
   navigateHeading(heading: Heading): boolean {
-    this.assertCurrent()
-    if (!heading || typeof heading !== 'object')
-      throw new InkKitError(
-        'stale-document',
-        'The heading is no longer current',
-      )
+    this.assertAlive()
+    headingEntry(heading)
     this.assertCurrent(heading.generation)
     if (this.formatType === 'txt')
       throw new InkKitError(
@@ -3026,6 +3339,8 @@ export class InkKitEditor {
   /** Buffered native typing: input rules apply as if its last character were typed after the rest. */
   insertText(text: string, generation: number): boolean {
     this.assertAlive()
+    expectString(text, 'text')
+    expectGeneration(generation)
     if (
       (this.literalSurface
         ? this.plainComposing
@@ -3067,6 +3382,13 @@ export class InkKitEditor {
     generation: number,
   ): boolean {
     this.assertAlive()
+    expectString(key, 'key')
+    expectString(code, 'code')
+    expectBoolean(metaKey, 'metaKey')
+    expectBoolean(ctrlKey, 'ctrlKey')
+    expectBoolean(altKey, 'altKey')
+    expectBoolean(shiftKey, 'shiftKey')
+    expectGeneration(generation)
     if (
       (this.literalSurface
         ? this.plainComposing
@@ -3166,6 +3488,7 @@ export class InkKitEditor {
    *  order, so a key given to two shortcuts lands the same way every time. */
   setKeymap(keymap: Keymap): void {
     this.assertAlive()
+    keymap = keymapBindings(keymap, 'keymap')
     this.configuredKeys = {
       undo: ['Mod-z'],
       redo: ['Mod-y', 'Shift-Mod-z'],
@@ -3182,7 +3505,7 @@ export class InkKitEditor {
       for (const key of this.configuredKeys[name] ?? []) {
         historyBindings[key] = () => {
           if (!this.ready || !this.commandState().commands[name]) return true
-          return this[name]()
+          return this.forPerson(() => this[name](), true)
         }
       }
     }
@@ -3192,7 +3515,7 @@ export class InkKitEditor {
         bindings[key] = () => {
           if (!this.ready || !this.commandState().commands.format[command[0]])
             return true
-          this.format(...command)
+          this.forPerson(() => this.format(...command), undefined)
           return true
         }
       }
@@ -3203,7 +3526,7 @@ export class InkKitEditor {
         bindings[key] = () => {
           if (!this.ready || !this.commandState().commands.table[command])
             return false
-          return this.table(command)
+          return this.forPerson(() => this.table(command), true)
         }
     }
     this.readOnlyKeys = keydownHandler(
@@ -3223,6 +3546,12 @@ export class InkKitEditor {
   /** Dropped files land as one paragraph per path at the drop point: in place of an empty block, after
    *  the top-level block otherwise, so a list or quote is not opened up by them. */
   insertPaths(paths: string[], x: number, y: number): void {
+    this.assertAlive()
+    expectArray(paths, 'paths').forEach((path, index) =>
+      expectString(path, `paths[${index}]`),
+    )
+    expectNumber(x, 'x')
+    expectNumber(y, 'y')
     this.assertMutation()
     if (paths.length === 0) return
     if (this.literalSurface) {
@@ -3244,6 +3573,22 @@ export class InkKitEditor {
     x?: number,
     y?: number,
   ): void {
+    this.assertAlive()
+    images = expectArray(images, 'images').map((image, index) => {
+      const name = `images[${index}]`
+      const record = expectRecord(image, name)
+      return {
+        path: expectString(record.path, `${name}.path`),
+        alt: expectString(record.alt, `${name}.alt`),
+        title: optionalString(record.title, `${name}.title`),
+      }
+    })
+    if (isOmitted(x) !== isOmitted(y))
+      throw invalidArgument('x and y must be given together')
+    if (!isOmitted(x)) {
+      expectNumber(x, 'x')
+      expectNumber(y, 'y')
+    }
     this.assertMutation()
     if (!images.length) return
     if (!this.options.images || this.literalSurface)
@@ -3450,6 +3795,8 @@ export class InkKitEditor {
   }
 
   format(command: FormatCommand, arg?: string | number): void {
+    this.assertAlive()
+    formatArgument(command, arg)
     this.assertMutation()
     if (this.literalSurface) return
     const run = (cmd: Parameters<typeof callCommand>[0], payload?: unknown) =>
@@ -3531,6 +3878,10 @@ export class InkKitEditor {
     destination: string,
     title?: string,
   ): boolean {
+    this.assertAlive()
+    expectString(label, 'label')
+    expectString(destination, 'destination')
+    optionalString(title, 'title')
     this.assertMutation()
     if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
@@ -3553,6 +3904,12 @@ export class InkKitEditor {
   }
 
   insertFootnote(label?: string): void {
+    this.assertAlive()
+    const given = optionalString(label, 'label')
+    if (given !== undefined && !footnoteLabel(given))
+      throw invalidArgument(
+        'A footnote label must be 1 to 999 characters without whitespace, brackets or backslashes',
+      )
     this.assertMutation()
     if (this.literalSurface) return
     const view = this.editor.ctx.get(editorViewCtx)
@@ -3569,10 +3926,6 @@ export class InkKitEditor {
       while (labels.has(normaliseLabel(String(number)))) number++
       label = String(number)
     }
-    if (!label || /[\s\[\]\\]/.test(label) || label.length > 999)
-      throw new Error(
-        'A footnote label must be 1–999 characters without whitespace, brackets or backslashes',
-      )
     const identifier = normaliseLabel(label)
     const reference = view.state.schema.nodes.footnote_reference!.create({
       label,
@@ -3594,6 +3947,8 @@ export class InkKitEditor {
   }
 
   navigateFootnote(target: 'definition' | 'reference'): boolean {
+    this.assertAlive()
+    expectOneOf(target, footnoteTargets, 'target')
     this.assertCurrent()
     if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
@@ -3632,4 +3987,99 @@ export class InkKitEditor {
     this.focus()
     return true
   }
+
+  // Every public method runs through `facadeCall`, so each failure reaches its caller once, as an
+  // InkKitError. The type check below fails to compile when a public method is left out.
+  static {
+    const methods = [
+      'loadDocument',
+      'reloadDocument',
+      'snapshot',
+      'printableSnapshot',
+      'clipboardSnapshot',
+      'paste',
+      'pasteAsPlainText',
+      'commandState',
+      'setEditable',
+      'setTextInputPreferences',
+      'setEditingMode',
+      'replaceSource',
+      'undo',
+      'redo',
+      'find',
+      'replace',
+      'replaceAll',
+      'format',
+      'table',
+      'insertText',
+      'keyDown',
+      'insertPaths',
+      'insertImages',
+      'insertFootnote',
+      'navigateFootnote',
+      'editReferenceDefinition',
+      'setCommentsVisible',
+      'focus',
+      'setKeymap',
+      'textSnapshot',
+      'selectTextRange',
+      'revealTextRange',
+      'replaceTextRange',
+      'textRangeRects',
+      'textRangesRects',
+      'visibleTextRanges',
+      'setViewport',
+      'viewport',
+      'headings',
+      'navigateHeading',
+      'destroy',
+    ] as const satisfies readonly PublicMethod[]
+    const everyMethod: [
+      Exclude<PublicMethod, (typeof methods)[number]>,
+    ] extends [never]
+      ? true
+      : never = true
+    void everyMethod
+    for (const name of methods) {
+      const method = InkKitEditor.prototype[name] as (
+        this: InkKitEditor,
+        ...args: unknown[]
+      ) => unknown
+      Object.defineProperty(InkKitEditor.prototype, name, {
+        value(this: InkKitEditor, ...args: unknown[]) {
+          return this.facadeCall(() => method.apply(this, args))
+        },
+        writable: true,
+        configurable: true,
+      })
+    }
+    for (const name of ['editable', 'editingMode'] as const) {
+      const getter = Object.getOwnPropertyDescriptor(
+        InkKitEditor.prototype,
+        name,
+      )!.get!
+      Object.defineProperty(InkKitEditor.prototype, name, {
+        get(this: InkKitEditor) {
+          return this.facadeCall(() => getter.call(this))
+        },
+        configurable: true,
+      })
+    }
+    const mount = InkKitEditor.mount
+    InkKitEditor.mount = async (...args) => {
+      try {
+        return await mount(...args)
+      } catch (error) {
+        throw coded(error)
+      }
+    }
+  }
 }
+
+type PublicMethod = {
+  [K in keyof InkKitEditor]: InkKitEditor[K] extends (
+    ...args: never[]
+  ) => unknown
+    ? K
+    : never
+}[keyof InkKitEditor]

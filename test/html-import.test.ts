@@ -13,6 +13,7 @@ import { gfmFootnote } from 'micromark-extension-gfm-footnote'
 import { gfmTable } from 'micromark-extension-gfm-table'
 import { gfmAutolinkLiteral } from 'micromark-extension-gfm-autolink-literal'
 import { InkKitEditor } from '../src/editor'
+import type { InkKitError } from '../src/types'
 import { isSafeLinkTarget, isScriptAddress } from '../src/link-safety'
 import { semanticSignature } from '../src/preserve'
 
@@ -122,7 +123,11 @@ async function insert(
         ),
       ),
     )
-  if (via === 'paste') await session.editor.paste({ text: 'text', html })
+  // A refused paste rejects; a refused drop reports through the error event.
+  if (via === 'paste')
+    await session.editor
+      .paste({ text: 'text', html })
+      .catch((error: InkKitError) => session.errors.push(error.message))
   else await drop(session, html)
   return { text: session.editor.snapshot().text, doc: session.view.state.doc }
 }
@@ -673,11 +678,13 @@ test('Markdown typed or pasted as Markdown source keeps its text', async () => {
 test('Markdown pasted as source that would end a new comment early is refused', async () => {
   await withEditor(async (session) => {
     load(session)
-    await session.editor.paste({
-      text: 'a <!--x--!>-->',
-      markdown: 'a <!--x--!>-->\n',
-    })
-    expect(session.errors).toHaveLength(1)
+    await expect(
+      session.editor.paste({
+        text: 'a <!--x--!>-->',
+        markdown: 'a <!--x--!>-->\n',
+      }),
+    ).rejects.toMatchObject({ code: 'preservation' })
+    expect(session.errors).toEqual([])
     expect(session.editor.snapshot().text).toBe('')
   })
 })

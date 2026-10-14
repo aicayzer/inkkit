@@ -439,6 +439,7 @@ export async function printableMarkdown(
         error instanceof Error
           ? error.message
           : 'The authored image is unavailable.',
+        { cause: error },
       )
     }
   }
@@ -476,6 +477,7 @@ export async function printableMarkdown(
         error instanceof Error
           ? error.message
           : 'The diagram image is unavailable.',
+        { cause: error },
       )
     }
   }

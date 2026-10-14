@@ -279,15 +279,14 @@ test('viewport validates its target and insets without mutating text or selectio
   run((editor, root) => {
     const snapshot = editor.textSnapshot()
     const unrelated = document.createElement('div')
-    expect(() => editor.setViewport({ scrollContainer: unrelated })).toThrow(
-      RangeError,
-    )
-    expect(() => editor.setViewport({ insets: { top: Number.NaN } })).toThrow(
-      RangeError,
-    )
-    expect(() => editor.setViewport({ insets: { left: -1 } })).toThrow(
-      RangeError,
-    )
+    for (const options of [
+      { scrollContainer: unrelated },
+      { insets: { top: Number.NaN } },
+      { insets: { left: -1 } },
+    ])
+      expect(() => editor.setViewport(options)).toThrow(
+        expect.objectContaining({ code: 'invalid-argument' }),
+      )
     editor.setViewport({
       scrollContainer: root,
       insets: { top: 42, bottom: 24 },
