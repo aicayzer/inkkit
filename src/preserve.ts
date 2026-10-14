@@ -934,8 +934,9 @@ export class Preservation {
     { index: number; item: number; text: string }
   >()
   private definitionContext?: { text: string; blocks: number; nodes: number }
-  // Undefined when a definition sits inside another block, where appending
-  // the top-level ones would not reproduce the document.
+  // Undefined when a definition sits inside a quote or list, where appending
+  // the top-level ones would not reproduce the document. A definition inside
+  // a footnote definition is appended with it.
   private readonly definitionSources?: string[]
 
   constructor(
