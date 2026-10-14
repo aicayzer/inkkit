@@ -17,6 +17,8 @@ The public API is `src/core.ts`; `src/index.ts` registers Mermaid and re-exports
 
 Choose checks from the changed behaviour, not from every available fixture combination.
 
+The randomized list-preservation test runs 400 seeds by default. Set `SEEDS` to run more, for example `SEEDS=2000 pnpm exec vitest run test/preservation-lists.test.ts`.
+
 | Trigger                                                                                 | Required evidence                                                                                                                              |
 | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | Candidate code or package changes                                                       | `pnpm check`, `pnpm format:check`, `pnpm build:playground`, actual packed-consumer verification and the small Chromium browser smoke.          |
