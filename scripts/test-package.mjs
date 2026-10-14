@@ -22,16 +22,12 @@ const run = (command, args, cwd) =>
 export const sha256 = (bytes) =>
   createHash('sha256').update(bytes).digest('hex')
 
-// Mermaid is an optional peer dependency: the main entry needs it and the core
-// entry must build without it installed.
+// The main entry bundles Mermaid; the core entry must not.
 const mermaidMarker = 'Syntax error in text'
 
 export async function checkConsumer(packageSpec, version) {
-  const { peerDependencies = {} } = JSON.parse(
-    await readFile('package.json', 'utf8'),
-  )
-  const main = await buildConsumer(packageSpec, version, '', peerDependencies)
-  const core = await buildConsumer(packageSpec, version, '/core', {})
+  const main = await buildConsumer(packageSpec, version, '')
+  const core = await buildConsumer(packageSpec, version, '/core')
   if (!main.html.includes(mermaidMarker))
     throw new Error('The main-entry consumer bundle does not contain Mermaid')
   if (core.html.includes(mermaidMarker))
@@ -44,7 +40,7 @@ export async function checkConsumer(packageSpec, version) {
   }
 }
 
-async function buildConsumer(packageSpec, version, entry, peers) {
+async function buildConsumer(packageSpec, version, entry) {
   const temp = await mkdtemp(join(tmpdir(), 'inkkit-consumer-'))
   try {
     await writeFile(
@@ -52,7 +48,7 @@ async function buildConsumer(packageSpec, version, entry, peers) {
       JSON.stringify({
         private: true,
         type: 'module',
-        dependencies: { '@aicayzer/inkkit': packageSpec, ...peers },
+        dependencies: { '@aicayzer/inkkit': packageSpec },
         devDependencies: {
           typescript: '7.0.2',
           vite: '8.3.3',
@@ -82,18 +78,6 @@ async function buildConsumer(packageSpec, version, entry, peers) {
     )
     if (installed.name !== '@aicayzer/inkkit' || installed.version !== version)
       throw new Error('Clean consumer installed an unexpected package version')
-    const mermaidInstalled = await readFile(
-      join(temp, 'node_modules/mermaid/package.json'),
-    ).then(
-      () => true,
-      () => false,
-    )
-    if (mermaidInstalled !== 'mermaid' in peers)
-      throw new Error(
-        mermaidInstalled
-          ? 'Mermaid was installed without being requested'
-          : 'Mermaid was not installed for the main entry',
-      )
     await writeFile(
       join(temp, 'index.html'),
       '<html><body><div id="editor"></div><script type="module" src="/main.ts"></script></body></html>',

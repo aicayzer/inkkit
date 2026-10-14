@@ -117,7 +117,7 @@ Matching does not cause the slow rows. An edit inside a paragraph whose source c
 
 ## Builds with and without Mermaid, October 14, 2026
 
-`@aicayzer/inkkit` renders diagrams with Mermaid, which the host installs as a peer dependency. `@aicayzer/inkkit/core` never imports Mermaid. The comparison builds the offline interop consumer from the same candidate archive twice, once per entry, and loads each page ten times in fresh pages and fresh WKWebView processes:
+`@aicayzer/inkkit` renders diagrams with Mermaid. `@aicayzer/inkkit/core` never imports Mermaid, so a page built from it does not contain Mermaid, although Mermaid is still installed as a dependency. The comparison builds the offline interop consumer from the same candidate archive twice, once per entry, and loads each page ten times in fresh pages and fresh WKWebView processes:
 
 ```sh
 swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/webkit-host

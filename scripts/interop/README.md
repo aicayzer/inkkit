@@ -10,7 +10,7 @@ swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/
 swiftc scripts/interop/Clipboard.swift -o _local/interop/clipboard
 ```
 
-The builder installs the archive's peer dependencies, including Mermaid, beside it. Pass `core` as a third argument to build the consumer from the `@aicayzer/inkkit/core` entry without Mermaid. `webkit-host BUNDLE startup - RESULT.json` records the page's first mount time and the host's time from the load request; `scripts/measure-startup.mjs` uses both, as described in [performance](../../docs/performance.md).
+Pass `core` as a third argument to build the consumer from the `@aicayzer/inkkit/core` entry, which leaves Mermaid out of the page. `webkit-host BUNDLE startup - RESULT.json` records the page's first mount time and the host's time from the load request; `scripts/measure-startup.mjs` uses both, as described in [performance](../../docs/performance.md).
 
 Save the native clipboard before any probe. The snapshot can contain private content; keep it in ignored scratch storage and never commit it:
 

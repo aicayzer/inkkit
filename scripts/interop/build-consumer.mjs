@@ -11,11 +11,6 @@ const destination = resolve(process.argv[3] ?? '_local/interop/consumer')
 // `core` builds the consumer against the core entry, without Mermaid.
 const core = process.argv[4] === 'core'
 const archive = await readFile(tarball)
-const { peerDependencies = {} } = JSON.parse(
-  execFileSync('tar', ['-xzOf', tarball, 'package/package.json'], {
-    encoding: 'utf8',
-  }),
-)
 const tarballSha256 = createHash('sha256').update(archive).digest('hex')
 const consumerTarball = join(destination, `inkkit-${tarballSha256}.tgz`)
 await mkdir(destination, { recursive: true })
@@ -25,10 +20,7 @@ await writeFile(
   JSON.stringify({
     private: true,
     type: 'module',
-    dependencies: {
-      '@aicayzer/inkkit': `file:${consumerTarball}`,
-      ...(core ? {} : peerDependencies),
-    },
+    dependencies: { '@aicayzer/inkkit': `file:${consumerTarball}` },
     devDependencies: { vite: '8.3.3', 'vite-plugin-singlefile': '2.3.3' },
   }),
 )

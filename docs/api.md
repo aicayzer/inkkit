@@ -208,10 +208,10 @@ New mount-time label overrides are `fileLoading`, `fileMissing`, `fileError`, `f
 
 ## Builds without diagrams
 
-Mermaid is an optional peer dependency. The package has two entry points with the same exports:
+The package has two entry points with the same exports:
 
-- `@aicayzer/inkkit` renders diagrams with Mermaid. The host installs Mermaid itself, at the version in InkKit's `peerDependencies`: `npm install @aicayzer/inkkit mermaid@12.1.0`. If Mermaid is missing, Vite still builds the page, and every diagram preview and export reports that Mermaid could not be resolved; other bundlers can fail the build instead.
-- `@aicayzer/inkkit/core` never imports Mermaid. A host that imports only this entry does not need Mermaid installed, and its bundle does not contain it.
+- `@aicayzer/inkkit` renders diagrams with Mermaid.
+- `@aicayzer/inkkit/core` never imports Mermaid. Mermaid is still installed as a dependency, but a host that imports only this entry does not bundle it, so each web view parses and holds a much smaller page. See [measurements](performance.md#builds-with-and-without-mermaid-october-14-2026).
 
 With the core entry, `mermaid` fences remain editable code blocks that keep their authored source. No preview is shown, whatever `rendering.diagramPreview` says, and no error is reported while editing. Clipboard output and `printableSnapshot()` keep the diagram source as readable code: clipboard `diagrams` entries carry an `error`, and print reports a `diagram-unavailable` warning, the same fallback as a diagram that cannot render.
 
@@ -221,8 +221,6 @@ Import every InkKit module from the same entry, and the stylesheet from `@aicayz
 import { InkKitEditor } from '@aicayzer/inkkit/core'
 import '@aicayzer/inkkit/style.css'
 ```
-
-The version pin matters: InkKit's safety checks read the pinned Mermaid's parse results, and refuse a diagram when the fields they expect are missing.
 
 Buffered `insertText()` supports multiline text and normalises CRLF/CR to LF in formatted insertion, including code blocks. In ordinary blocks it inherits the active marks and inserts semantic breaks in one history transaction. Source/TXT retain their existing literal insertion rules.
 
