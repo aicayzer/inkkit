@@ -228,3 +228,54 @@ test('Backspace after a buffered input rule leaves its text as typed', () =>
     s.editor.keyDown('Backspace', 'Backspace', false, false, false, false, 1)
     expectSaves(s, 'Plain \\*\\*x\\*\\*words here\n')
   }))
+
+const enter = (s: Session) =>
+  s.editor.keyDown('Enter', 'Enter', false, false, false, false, 1)
+
+// [what, source, caret after, saved after Enter]
+const splits: [string, string, string, string][] = [
+  [
+    'after a URL in the middle of a line',
+    'See https://example.com today\n',
+    'example.com',
+    'See https://example.com\n\ntoday\n',
+  ],
+  [
+    'after a word in the middle of a line',
+    'See example today\n',
+    'example',
+    'See example\n\ntoday\n',
+  ],
+  [
+    'before several spaces',
+    'See example   today\n',
+    'example',
+    'See example\n\ntoday\n',
+  ],
+  ['in a heading', '# Title more\n', 'Title', '# Title\n\n# more\n'],
+  ['in a list item', '- one two\n', 'one', '- one\n- two\n'],
+]
+
+for (const [name, source, anchor, saved] of splits)
+  test(`Enter ${name} starts the new block at the next word`, () =>
+    session(source, (s) => {
+      caret(s.view, anchor)
+      expect(enter(s)).toBe(true)
+      expectSaves(s, saved)
+      s.editor.undo(1)
+      expectSaves(s, source)
+    }))
+
+test('Enter after a space keeps the text before the caret as written', () =>
+  session('See example today\n', (s) => {
+    caret(s.view, 'today', false)
+    enter(s)
+    expectSaves(s, 'See example&#x20;\n\ntoday\n')
+  }))
+
+test('Enter at the start of a block keeps the spaces it starts with', () =>
+  session('&#x20;today\n', (s) => {
+    caret(s.view, ' today', false)
+    enter(s)
+    expectSaves(s, '<br />\n\n&#x20;today\n')
+  }))

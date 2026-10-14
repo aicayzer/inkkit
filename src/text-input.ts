@@ -1,11 +1,13 @@
 import {
   EditorState,
+  Plugin,
+  PluginKey,
   TextSelection,
-  type Plugin,
   type Transaction,
 } from '@milkdown/kit/prose/state'
 import { StepMap } from '@milkdown/kit/prose/transform'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import { $prose } from '@milkdown/kit/utils'
 
 const isInputRules = (plugin: Plugin) =>
   (plugin.spec as { isInputRules?: boolean }).isInputRules === true
@@ -87,3 +89,71 @@ export function insertTextChunk(
   view.dispatch(tr.scrollIntoView())
   return true
 }
+
+const leadingSpaces = (text: string) => /^[ \t]*/.exec(text)![0].length
+
+/**
+ * Enter in the middle of a line starts the new block at the next word. The
+ * spaces after the caret would otherwise start it, where Markdown keeps them
+ * only as a character reference such as `&#x20;`.
+ */
+export const enterSkipsSpaces = $prose(() => {
+  // The state Enter was pressed in, and the spaces after its caret.
+  let pressed: { state: EditorState; spaces: number } | undefined
+  return new Plugin({
+    key: new PluginKey('inkkitEnterSkipsSpaces'),
+    props: {
+      handleKeyDown(view, event) {
+        pressed = undefined
+        if (
+          event.key !== 'Enter' ||
+          event.shiftKey ||
+          event.altKey ||
+          event.metaKey ||
+          event.ctrlKey ||
+          view.composing
+        )
+          return false
+        const { $cursor } = view.state.selection as TextSelection
+        if (!$cursor?.parentOffset || $cursor.parent.type.spec.code)
+          return false
+        const spaces = leadingSpaces(
+          $cursor.parent.textBetween(
+            $cursor.parentOffset,
+            $cursor.parent.content.size,
+            undefined,
+            '\uFFFC',
+          ),
+        )
+        if (!spaces) return false
+        pressed = { state: view.state, spaces }
+        // Enter's handlers dispatch synchronously, before this runs.
+        queueMicrotask(() => (pressed = undefined))
+        return false
+      },
+    },
+    appendTransaction(transactions, oldState, newState) {
+      if (pressed?.state !== oldState) return null
+      const { spaces } = pressed
+      pressed = undefined
+      if (!transactions.some((tr) => tr.docChanged)) return null
+      const { $cursor } = newState.selection as TextSelection
+      if (
+        !$cursor ||
+        $cursor.parentOffset ||
+        !$cursor.parent.inlineContent ||
+        $cursor.parent.type.spec.code
+      )
+        return null
+      const start = leadingSpaces(
+        $cursor.parent.textBetween(
+          0,
+          Math.min(spaces, $cursor.parent.content.size),
+          undefined,
+          '\uFFFC',
+        ),
+      )
+      return start ? newState.tr.delete($cursor.pos, $cursor.pos + start) : null
+    },
+  })
+})

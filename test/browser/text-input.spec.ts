@@ -15,6 +15,9 @@ async function caret(page: Page, marker: string, after: boolean) {
   })
 }
 
+const editor = (page: Page) =>
+  page.getByRole('textbox', { name: 'Formatted Markdown editor', exact: true })
+
 // [what, source, caret after, whether after (or before) it, text, saved]
 const chunks: [string, string, string, boolean, string, string][] = [
   [
@@ -120,3 +123,59 @@ for (const [route, insert] of [
       expect(observed.diagnostics).toEqual([])
       expect(observed.snapshot!.text).toBe(source)
     })
+
+test('Enter after a bare URL at the end of a paragraph starts a new paragraph @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await operation(page, 'reload', { text: 'See https://example.com\n' })
+  await caret(page, 'example.com', true)
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('next')
+  const observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  expect(observed.snapshot!.text).toBe('See https://example.com\n\nnext\n')
+  await expect(editor(page).locator('a')).toHaveCount(1)
+  await expect(editor(page).locator('a')).toHaveAttribute(
+    'href',
+    'https://example.com',
+  )
+})
+
+test('Enter after a URL in the middle of a line splits the paragraph there @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await operation(page, 'reload', { text: 'See https://example.com today\n' })
+  await caret(page, 'example.com', true)
+  await page.keyboard.press('Enter')
+  let observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  expect(observed.snapshot!.text).toBe('See https://example.com\n\ntoday\n')
+  await expect(editor(page).locator('a')).toHaveText('https://example.com')
+  await page.keyboard.type('Then ')
+  observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  expect(observed.snapshot!.text).toBe(
+    'See https://example.com\n\nThen today\n',
+  )
+})
+
+test('Enter inside a URL splits the paragraph there and keeps both parts @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await operation(page, 'reload', { text: 'See https://example.com today\n' })
+  await caret(page, 'https://examp', true)
+  await page.keyboard.press('Enter')
+  const observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  expect(observed.snapshot!.text).toBe('See https://examp\n\nle.com today\n')
+  await operation(page, 'undo')
+  expect((await observe(page)).snapshot!.text).toBe(
+    'See https://example.com today\n',
+  )
+})
