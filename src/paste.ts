@@ -6,6 +6,7 @@ import {
   Fragment,
   Slice,
   type Node as ProseNode,
+  type ResolvedPos,
 } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -241,6 +242,8 @@ export class PasteController {
       this.assertContext(context, operation)
       const schema = view.state.schema
       let slice: Slice
+      // Markdown parsed into the slice, whose edge spaces the parser drops.
+      let source: string | undefined
       const plainText =
         input.plainText || this.options.literalText?.() || inCode()
       if (
@@ -517,7 +520,8 @@ export class PasteController {
             node.forEach((child) => children.push(hydrate(child)))
             return node.copy(Fragment.fromArray(children))
           }
-          slice = new Slice(hydrate(parsed).content, 0, 0)
+          slice = joinable(hydrate(parsed).content)
+          source = markdown
         } else
           slice = importableSlice(
             ctx,
@@ -595,8 +599,8 @@ export class PasteController {
           )
           return
         }
-        const doc = ctx.get(parserCtx)(markdown ?? input.text)
-        slice = new Slice(doc.content, 0, 0)
+        source = markdown ?? input.text
+        slice = joinable(ctx.get(parserCtx)(source).content)
       }
       this.assertContext(context, operation)
       if (!view.editable || this.options.editable?.() === false) return
@@ -659,7 +663,18 @@ export class PasteController {
       } else
         view.dispatch(
           view.state.tr
-            .replaceRange(anchor.from, anchor.to, slice)
+            .replaceRange(
+              anchor.from,
+              anchor.to,
+              source == null
+                ? slice
+                : withEdgeSpaces(
+                    slice,
+                    source,
+                    view.state.doc.resolve(anchor.from),
+                    view.state.doc.resolve(anchor.to),
+                  ),
+            )
             .scrollIntoView(),
         )
     } finally {
@@ -669,6 +684,55 @@ export class PasteController {
       }
     }
   }
+}
+/**
+ * Parsed Markdown as a slice whose paragraphs at either end join the text at
+ * the caret, as typed text does. Any other block at an end stays whole, so a
+ * heading, list or code block still splits the paragraph it lands in.
+ */
+function joinable(content: Fragment): Slice {
+  const open = (node: ProseNode | null) =>
+    node?.type.name === 'paragraph' ? 1 : 0
+  return new Slice(content, open(content.firstChild), open(content.lastChild))
+}
+/**
+ * Markdown drops the spaces at the edges of a paragraph. Where a pasted
+ * paragraph joins text beside the caret, the spaces written next to it stay.
+ */
+function withEdgeSpaces(
+  slice: Slice,
+  source: string,
+  $from: ResolvedPos,
+  $to: ResolvedPos,
+): Slice {
+  const lead =
+    slice.openStart && $from.parent.isTextblock && $from.parentOffset > 0
+      ? /^[ \t]*/.exec(source)![0]
+      : ''
+  const trail =
+    slice.openEnd &&
+    $to.parent.isTextblock &&
+    $to.parentOffset < $to.parent.content.size
+      ? /[ \t]*$/.exec(source.slice(lead.length))![0]
+      : ''
+  if (!lead && !trail) return slice
+  const schema = $from.doc.type.schema
+  let content = slice.content
+  if (lead) {
+    const first = content.firstChild!
+    content = content.replaceChild(
+      0,
+      first.copy(Fragment.from(schema.text(lead)).append(first.content)),
+    )
+  }
+  if (trail) {
+    const last = content.lastChild!
+    content = content.replaceChild(
+      content.childCount - 1,
+      last.copy(last.content.append(Fragment.from(schema.text(trail)))),
+    )
+  }
+  return new Slice(content, slice.openStart, slice.openEnd)
 }
 /**
  * The range a drop replaces, mapped to the current document. It replaces an
