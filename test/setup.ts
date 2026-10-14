@@ -1,3 +1,29 @@
+import { afterAll } from 'vitest'
+
+// Milkdown starts a three second timeout for each editor timer and never
+// cancels it, even once the timer has resolved. A timeout that fires after the
+// file's environment is torn down calls the then missing global
+// removeEventListener, which fails the run as an unhandled error in whichever
+// file was last. Clearing what is still pending when the file ends stops that.
+const pending = new Set<ReturnType<typeof setTimeout>>()
+const startTimeout = globalThis.setTimeout
+globalThis.setTimeout = ((
+  handler: (...args: unknown[]) => void,
+  delay?: number,
+  ...args: unknown[]
+) => {
+  const timeout: ReturnType<typeof setTimeout> = startTimeout(() => {
+    pending.delete(timeout)
+    handler(...args)
+  }, delay)
+  pending.add(timeout)
+  return timeout
+}) as unknown as typeof setTimeout
+afterAll(() => {
+  for (const timeout of pending) clearTimeout(timeout)
+  pending.clear()
+})
+
 // jsdom lays nothing out; ProseMirror's scrollIntoView still asks.
 const none = () => [] as unknown as DOMRectList
 const zero = () => new DOMRect(0, 0, 0, 0)
