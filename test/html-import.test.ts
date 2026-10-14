@@ -123,8 +123,34 @@ async function insert(
       ),
     )
   if (via === 'paste') await session.editor.paste({ text: 'text', html })
-  else session.view.pasteHTML(html, new Event('paste') as ClipboardEvent)
+  else await drop(session, html)
   return { text: session.editor.snapshot().text, doc: session.view.state.doc }
+}
+
+/** Drops HTML on the editor as a browser does, and waits for the import. */
+async function drop(session: Session, html: string, files: File[] = []) {
+  const event = new Event('drop', { bubbles: true, cancelable: true })
+  const data: Record<string, string> = {
+    'text/plain': 'text',
+    'text/html': html,
+  }
+  Object.defineProperties(event, {
+    dataTransfer: {
+      value: {
+        getData: (type: string) => data[type] ?? '',
+        types: Object.keys(data),
+        files,
+      },
+    },
+    clientX: { value: 0 },
+    clientY: { value: 0 },
+  })
+  session.view.dom.dispatchEvent(event)
+  const controller = (
+    session.editor as unknown as { pasteController: { pending: boolean } }
+  ).pasteController
+  for (let tick = 0; tick < 100 && controller.pending; tick++)
+    await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 async function expectReadsBack(
@@ -285,6 +311,169 @@ test('a bare web address in pasted text imports as the link it reads back as', a
   })
 })
 
+test('a drop and a paste of the same HTML save the same Markdown', async () => {
+  const pixel =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  const images = {
+    presentation: (reference: string) => ({ url: `private://${reference}` }),
+    importImage: async () => ({ reference: 'images/photo.png' }),
+    exportImage: async () => ({
+      bytes: new Uint8Array(),
+      mimeType: 'image/png',
+    }),
+  }
+  await withEditor(
+    async (session) => {
+      for (const html of [
+        '<p>Read <a href="https://example.com/">the notes</a> and <a href="javascript:alert(1)">this</a>.</p>',
+        `<p>Before</p><p><img src="${pixel}" alt="Pixel"></p><p>After</p>`,
+        '<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>',
+        '<p>Before</p><x-widget title="t">kept</x-widget><p>After</p>',
+        '<ol><li>a</li></ol><ol start="5"><li>b</li></ol>',
+        '<ol><li>a<ol><li>b</li></ol></li></ol>',
+        '<p>a</p><pre><code></code></pre><p>b</p>',
+        '<p>a <!--note--> b</p>',
+        '<p>  spaced\n   text  </p>',
+      ]) {
+        const pasted = await insert(session, html, 'paste')
+        expect(refusals(session), html).toEqual([])
+        const dropped = await insert(session, html, 'drop')
+        expect(refusals(session), html).toEqual([])
+        expect(dropped.text, html).toBe(pasted.text)
+        expect(pasted.text.trim(), html).not.toBe('')
+        if (html.includes('<img'))
+          expect(dropped.text).toContain('![Pixel](images/photo.png)')
+      }
+    },
+    { images },
+  )
+})
+
+test('a drop of inline content followed by a block imports as a paste does', async () => {
+  await withEditor(async (session) => {
+    for (const html of [
+      '<span>end of para</span><p>next para</p>',
+      'Lead text<ul><li>a</li></ul>',
+      '<b>x</b><p>p</p>',
+    ])
+      for (const initial of ['', 'First\n\nLast\n']) {
+        const pasted = await insert(session, html, 'paste', initial)
+        const dropped = await insert(session, html, 'drop', initial)
+        expect(refusals(session), html).toEqual([])
+        expect(dropped.text, html).not.toBe(initial)
+        if (!initial) expect(dropped.text, html).toBe(pasted.text)
+      }
+  })
+})
+
+test('a callout with an empty body pasted into an empty note is kept', async () => {
+  await withEditor(async (session) => {
+    for (const via of ['paste', 'drop'] as const) {
+      const { text } = await insert(
+        session,
+        '<blockquote data-inkkit-callout="NOTE"><strong class="inkkit-callout-title">Title</strong><div class="inkkit-callout-body"><p> </p></div></blockquote>',
+        via,
+      )
+      expect(refusals(session)).toEqual([])
+      expect(text, via).toMatch(/^> \[!NOTE\] Title/)
+    }
+  })
+})
+
+test('typing after pasted or dropped content continues after it', async () => {
+  await withEditor(async (session) => {
+    for (const via of ['paste', 'drop'] as const)
+      for (const [html, kept] of [
+        ['<p>a</p><hr>', /^a\n\n---\n/],
+        [
+          '<table><tr><th>A</th></tr><tr><td>1</td></tr></table>',
+          /\| A +\|[\s\S]*\| 1 +\|/,
+        ],
+      ] as const) {
+        await insert(session, html, via)
+        const { state } = session.view
+        session.view.dispatch(
+          state.tr.replaceSelectionWith(state.schema.text('Z')),
+        )
+        const text = session.editor.snapshot().text
+        expect(refusals(session), `${via} ${html}`).toEqual([])
+        expect(text, `${via} ${html}`).toMatch(kept)
+        expect(text, `${via} ${html}`).toContain('Z')
+      }
+  })
+})
+
+test('list items pasted at the end of a list item join that list', async () => {
+  await withEditor(async (session) => {
+    load(session, '- one\n')
+    session.view.dispatch(
+      session.view.state.tr.setSelection(
+        TextSelection.atEnd(session.view.state.doc),
+      ),
+    )
+    await session.editor.paste({ text: 'x\ny', html: '<li>x</li><li>y</li>' })
+    expect(session.editor.snapshot().text).toBe('- onex\n- y\n')
+  })
+})
+
+test('text typed while a dropped image imports is kept', async () => {
+  let release!: () => void
+  const images = {
+    presentation: (reference: string) => ({ url: `private://${reference}` }),
+    importImage: () =>
+      new Promise<{ reference: string }>((resolve) => {
+        release = () => resolve({ reference: 'images/photo.png' })
+      }),
+    exportImage: async () => ({
+      bytes: new Uint8Array(),
+      mimeType: 'image/png',
+    }),
+  }
+  const pixel =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+  await withEditor(
+    async (session) => {
+      load(session)
+      const dropped = drop(session, `<p><img src="${pixel}" alt="Pixel"></p>`)
+      for (let tick = 0; tick < 20 && !release; tick++)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      session.view.dispatch(session.view.state.tr.insertText('Typed', 1))
+      release()
+      await dropped
+      expect(refusals(session)).toEqual([])
+      const text = session.editor.snapshot().text
+      expect(text).toContain('Typed')
+      expect(text).toContain('![Pixel](images/photo.png)')
+    },
+    { images },
+  )
+})
+
+test('after a drop the caret follows the dropped content', async () => {
+  await withEditor(async (session) => {
+    load(session, 'First\n\nLast\n')
+    await drop(session, '<p>Dropped</p>')
+    session.view.dispatch(session.view.state.tr.insertText(' typed'))
+    // jsdom resolves every drop point to the start of the note.
+    expect(session.editor.snapshot().text).toBe(
+      'Dropped typed\n\nFirst\n\nLast\n',
+    )
+  })
+})
+
+test('HTML that ProseMirror parses itself is still checked', async () => {
+  await withEditor(async (session) => {
+    load(session)
+    session.view.pasteHTML(
+      '<p>a</p><pre class="literal-markdown">&lt;b&gt;x&lt;/b&gt; [l](javascript:alert(1))</pre>',
+      new Event('paste') as ClipboardEvent,
+    )
+    const text = session.editor.snapshot().text
+    expect(unsafeAddresses(text)).toEqual([])
+    expect(names(session.view.state.doc)).not.toContain('literal_markdown')
+  })
+})
+
 test('HTML comments in pasted web pages import as author comments', async () => {
   await withEditor(async (session) => {
     const block = await expectReadsBack(
@@ -369,6 +558,7 @@ function generate(next: () => number): string {
   const t = () => escape(raw())
   const a = () => escape(next() < 0.3 ? 'https://example.test/' : raw())
   const templates = [
+    () => `${t()}<b>${t()}</b><p>${t()}</p>`,
     () => `<pre class="literal-markdown">${t()}</pre>`,
     () =>
       `<blockquote data-inkkit-callout="${pick(['NOTE', 'TIP', 'X'])}"${next() < 0.5 ? ` data-inkkit-title="${a()}"` : ''}><strong class="inkkit-callout-title">${t()}</strong><div class="inkkit-callout-body"><p>${t()}</p></div></blockquote>`,
@@ -403,10 +593,14 @@ test('generated HTML with InkKit metadata and untidy text reads back as inserted
     async (session) => {
       for (let seed = 1; seed <= 300; seed++) {
         const html = generate(random(seed))
+        const saved: string[] = []
         for (const via of ['paste', 'drop'] as const) {
           const initial = seed % 2 ? '' : 'Before\n\nAfter\n'
           const result = await insert(session, html, via, initial)
           const label = `seed ${seed} ${via}: ${html}\n${result.text}`
+          saved.push(result.text)
+          // A test drop lands at the start, so only an empty note compares.
+          if (via === 'drop' && !initial) expect(saved[1], label).toBe(saved[0])
           // Into an empty document the content always lands. Beside other
           // text, where its first and last blocks merge with what is there,
           // the editor may instead refuse the edit and keep the document.
