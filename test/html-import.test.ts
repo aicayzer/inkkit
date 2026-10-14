@@ -50,6 +50,9 @@ async function withEditor<T>(
     const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
     return await run({ editor, ctx, view: ctx.get(editorViewCtx), errors })
   } finally {
+    // Milkdown's drop indicator hides itself 30 ms after a drop and fails if
+    // the editor is gone by then.
+    await new Promise((resolve) => setTimeout(resolve, 50))
     await editor.destroy()
     root.remove()
   }
