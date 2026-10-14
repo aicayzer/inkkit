@@ -395,10 +395,9 @@ function commentNode(inline: boolean) {
             dom.getAttribute('data-inkkit-comment') === 'obsidian'
               ? 'obsidian'
               : 'html'
-          // Text holding its own terminator would end the comment early and
-          // leave the rest as Markdown, so it stays plain text.
-          const terminator = syntax === 'obsidian' ? '%%' : '-->'
-          if (dom.textContent?.includes(terminator)) return false
+          // Text that would end the comment early would leave the rest as
+          // Markdown, so it stays plain text.
+          if (commentTextEndsEarly(syntax, dom.textContent ?? '')) return false
           return { syntax }
         },
       },
@@ -471,7 +470,7 @@ export const comments = [commentInline, commentBlock, commentVisibility].flat()
  * HTML ends a comment at `-->` or `--!>`, and treats a start of `>` or `->` as
  * an empty comment. A `%%` comment ends at its next `%%`.
  */
-function commentTextEndsEarly(syntax: string, text: string): boolean {
+export function commentTextEndsEarly(syntax: string, text: string): boolean {
   return syntax === 'obsidian'
     ? text.includes('%%')
     : /^-?>/.test(text) || text.includes('-->') || text.includes('--!>')

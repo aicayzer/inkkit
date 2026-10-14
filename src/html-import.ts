@@ -20,7 +20,7 @@ import { gfmFootnote } from 'micromark-extension-gfm-footnote'
 import { gfmStrikethrough } from 'micromark-extension-gfm-strikethrough'
 import { gfmTable } from 'micromark-extension-gfm-table'
 import { gfmTaskListItem } from 'micromark-extension-gfm-task-list-item'
-import { commentSource } from './comments'
+import { commentSource, commentTextEndsEarly } from './comments'
 import { imageBlockName } from './image-blocks'
 import { serialize } from './dialect'
 import { isSafeLinkTarget, isScriptAddress } from './link-safety'
@@ -29,10 +29,10 @@ import { singleLine } from './references'
 
 // HTML can carry values that the Markdown writer saves as they are, so content
 // imported from HTML is kept only where its saved Markdown reads back as the
-// same structure in InkKit, and holds no address that HTML import refuses.
-// The GitHub Flavored Markdown reading that other apps use differs from
-// InkKit's only inside InkKit's own syntax. Literal source and comments are
-// text to InkKit, so their Markdown is read the way other apps read it.
+// same structure in InkKit, and where no reading of it holds an address that
+// HTML import refuses. InkKit's own syntax, such as wiki links, literal source
+// and comments, is read differently by other apps, so the saved Markdown is
+// also read the way GitHub Flavored Markdown and strict CommonMark read it.
 
 const standard = () => ({
   extensions: [
@@ -67,36 +67,7 @@ function safeAddresses(markdown: string): boolean {
     if (node.type === 'image' && isScriptAddress(node.url)) return false
     return !('children' in node) || node.children.every(visit)
   }
-  return visit(standardTree(markdown))
-}
-
-/** Whether no address in the content is one that HTML import refuses. */
-function safeContent(doc: Node): boolean {
-  let safe = true
-  doc.descendants((node) => {
-    if (!safe) return false
-    const name = node.type.name
-    if (name === 'literal_markdown') {
-      safe = safeAddresses(literalSource(node))
-      return false
-    }
-    if (name === 'comment_inline' || name === 'comment_block') {
-      safe = safeAddresses(commentSource(node))
-      return false
-    }
-    if (name === 'reference_definition')
-      safe = isSafeLinkTarget(String(node.attrs.url ?? ''))
-    else if (name === 'image' || name === imageBlockName)
-      safe = !isScriptAddress(String(node.attrs.src ?? ''))
-    for (const mark of node.marks)
-      if (
-        mark.type.name === 'link' &&
-        !isSafeLinkTarget(String(mark.attrs.href))
-      )
-        safe = false
-    return true
-  })
-  return safe
+  return visit(standardTree(markdown)) && visit(fromMarkdown(markdown))
 }
 
 class Check {
@@ -153,7 +124,7 @@ class Check {
         read === semanticSignature(doc) ||
         read === this.settledSignature(doc)
       )
-        return safeContent(doc) || undefined
+        return safeAddresses(markdown) || undefined
       return {
         reread,
         autolinks:
@@ -269,22 +240,14 @@ function literalSource(node: Node): string {
 }
 
 /**
- * Whether other readers take the comment as InkKit does. A browser must read
- * an HTML comment as one comment holding the same text. GitHub Flavored
- * Markdown has no `%%` comments, so the text of one must read as plain text.
+ * Whether other readers take the comment as InkKit does: its text must not end
+ * it early, and GitHub Flavored Markdown, which has no `%%` comments, must
+ * read the text of one as plain text.
  */
 function commentHolds(node: Node): boolean {
   const body = node.textContent
-  if (node.attrs.syntax === 'html') {
-    const template = document.createElement('template')
-    template.innerHTML = `<!--${body}-->`
-    const nodes = template.content.childNodes
-    return (
-      nodes.length === 1 &&
-      nodes[0]!.nodeType === globalThis.Node.COMMENT_NODE &&
-      (nodes[0] as Comment).data === body
-    )
-  }
+  if (commentTextEndsEarly(String(node.attrs.syntax), body)) return false
+  if (node.attrs.syntax === 'html') return true
   const source = commentSource(node)
   const { children } = standardTree(source)
   const paragraph = children[0]

@@ -28,7 +28,10 @@ interface Session {
   errors: string[]
 }
 
-async function withEditor<T>(run: (session: Session) => Promise<T>) {
+async function withEditor<T>(
+  run: (session: Session) => Promise<T>,
+  options: Parameters<typeof InkKitEditor.mount>[2] = {},
+) {
   const errors: string[] = []
   const root = document.createElement('div')
   document.body.append(root)
@@ -41,7 +44,7 @@ async function withEditor<T>(run: (session: Session) => Promise<T>) {
       openLink() {},
       error: (error) => errors.push(error.message),
     },
-    {},
+    options,
   )
   try {
     const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
@@ -70,7 +73,8 @@ const refusals = (session: Session) =>
 const structure = (doc: Node) =>
   semanticSignature(doc.type.create(null, doc.content))
 
-/** Addresses that HTML import refuses, in a GFM reading of the Markdown. */
+/** Addresses that HTML import refuses, in a GitHub Flavored Markdown or
+ *  strict CommonMark reading of the Markdown. */
 function unsafeAddresses(markdown: string): string[] {
   const found: string[] = []
   const visit = (node: Nodes) => {
@@ -92,6 +96,7 @@ function unsafeAddresses(markdown: string): string[] {
       ],
     }),
   )
+  visit(fromMarkdown(markdown))
   return found
 }
 
@@ -374,6 +379,8 @@ function generate(next: () => number): string {
     () => `<p><img src="${a()}" alt="${a()}" title="${a()}"></p>`,
     () => `<p>${t()}<!--${raw().replaceAll('-->', '')}-->${t()}</p>`,
     () => `<x-widget title="${a()}">${t()}</x-widget>`,
+    () =>
+      `<p>${t()}<span data-inkkit-wiki="${a()}" data-inkkit-wiki-raw="${escape(pick(['[[', '![[', '']) + raw() + pick([']]', '|' + raw() + ']]', '']))}">${t()}</span></p>`,
   ]
   return Array.from({ length: 1 + Math.floor(next() * 3) }, () =>
     pick(templates)(),
@@ -381,35 +388,40 @@ function generate(next: () => number): string {
 }
 
 test('generated HTML with InkKit metadata and untidy text reads back as inserted', async () => {
-  await withEditor(async (session) => {
-    for (let seed = 1; seed <= 300; seed++) {
-      const html = generate(random(seed))
-      for (const via of ['paste', 'drop'] as const) {
-        const initial = seed % 2 ? '' : 'Before\n\nAfter\n'
-        const result = await insert(session, html, via, initial)
-        const label = `seed ${seed} ${via}: ${html}\n${result.text}`
-        // Into an empty document the content always lands. Beside other
-        // text, where its first and last blocks merge with what is there,
-        // the editor may instead refuse the edit and keep the document.
-        if (initial && refusals(session).length) {
-          expect(result.text, label).toBe(initial)
-          continue
+  await withEditor(
+    async (session) => {
+      for (let seed = 1; seed <= 300; seed++) {
+        const html = generate(random(seed))
+        for (const via of ['paste', 'drop'] as const) {
+          const initial = seed % 2 ? '' : 'Before\n\nAfter\n'
+          const result = await insert(session, html, via, initial)
+          const label = `seed ${seed} ${via}: ${html}\n${result.text}`
+          // Into an empty document the content always lands. Beside other
+          // text, where its first and last blocks merge with what is there,
+          // the editor may instead refuse the edit and keep the document.
+          if (initial && refusals(session).length) {
+            expect(result.text, label).toBe(initial)
+            continue
+          }
+          expect(refusals(session), label).toEqual([])
+          expect(
+            structure(session.ctx.get(parserCtx)(result.text)),
+            label,
+          ).toBe(structure(result.doc))
+          expect(unsafeAddresses(result.text), label).toEqual([])
         }
-        expect(refusals(session), label).toEqual([])
-        expect(structure(session.ctx.get(parserCtx)(result.text)), label).toBe(
-          structure(result.doc),
-        )
-        expect(unsafeAddresses(result.text), label).toEqual([])
       }
-    }
-  })
+    },
+    { wikiLinks: { open() {} } },
+  )
 }, 60000)
 
 test('Markdown typed or pasted as Markdown source keeps its text', async () => {
-  const source = `a %%${script}%% <!--x--!>-->\n\n<b>x</b> ${script}\n\n> [!NOTE] T *e*\n> body\n`
+  const source = `a %%${script}%% <!--x -- y-->\n\n<b>x</b> ${script}\n\n> [!NOTE] T *e*\n> body\n\n[^1]: javascript:alert(1)\n`
   await withEditor(async (session) => {
     load(session)
     await session.editor.paste({ text: source, markdown: source })
+    expect(session.errors).toEqual([])
     expect(session.editor.snapshot().text).toBe(source)
     load(session)
     session.editor.pasteAsPlainText(source)
@@ -418,6 +430,50 @@ test('Markdown typed or pasted as Markdown source keeps its text', async () => {
     expect(session.editor.snapshot().text).toBe(source)
     session.editor.insertText(' more', generation)
     expect(session.editor.snapshot().text).toContain(script)
+  })
+})
+
+test('Markdown pasted as source that would end a new comment early is refused', async () => {
+  await withEditor(async (session) => {
+    load(session)
+    await session.editor.paste({
+      text: 'a <!--x--!>-->',
+      markdown: 'a <!--x--!>-->\n',
+    })
+    expect(session.errors).toHaveLength(1)
+    expect(session.editor.snapshot().text).toBe('')
+  })
+})
+
+test('a wiki link from HTML saves no address that other readers would follow', async () => {
+  await withEditor(
+    async (session) => {
+      for (const via of ['paste', 'drop'] as const)
+        for (const raw of [
+          '[[x|&lt;javascript:alert(1)&gt;]]',
+          '[[&lt;javascript:alert(1)&gt;]]',
+          '[[x]]',
+        ])
+          await expectReadsBack(
+            session,
+            `<p>a <span data-inkkit-wiki="x" data-inkkit-wiki-raw="${raw}">x</span> b</p>`,
+            via,
+          )
+    },
+    { wikiLinks: { open() {} } },
+  )
+})
+
+test('a footnote from HTML saves no address that strict CommonMark would follow', async () => {
+  await withEditor(async (session) => {
+    for (const via of ['paste', 'drop'] as const) {
+      const { text } = await expectReadsBack(
+        session,
+        '<p>a<sup data-inkkit-footnote-reference="1" data-inkkit-label="1">1</sup></p><div data-inkkit-footnote-definition="1" data-inkkit-label="1"><p>javascript:alert(1)</p></div>',
+        via,
+      )
+      expect(text).not.toMatch(/^\[\^1\]: javascript/m)
+    }
   })
 })
 
