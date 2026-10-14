@@ -18,7 +18,50 @@ const refusal =
 const cssResource =
   /url\s*\(\s*[^#\s]|(?:image-set|cross-fade|image|element|src)\s*\(/i
 
-export function validateDiagram(source: string): void {
+// Annotation syntax in the positions the pinned grammars read it: class
+// annotations on their own line, before a class name or after `class Name`, and
+// the state diagram fork, join and choice markers after `state Name`.
+const annotationName = String.raw`\w(?:[\w -]*\w)?`
+const classAnnotation = new RegExp(
+  String.raw`(?<=^[ \t]*(?:class[ \t]+[^\s<>"]+(?:\["[^"\n<>]*"\])?[ \t]+)?)<<(${annotationName})>>(?=[ \t{]|$)`,
+  'gm',
+)
+const stateAnnotation =
+  /(?<=^[ \t]*state[ \t]+[^\s<>"]+[ \t]+)<<(fork|join|choice)>>(?=[ \t]*$)/gim
+const stateBrackets = /^[ \t]*state[ \t].*\[\[(fork|join|choice)\]\]/gim
+
+interface Annotations {
+  names: string[]
+  rest: string
+}
+
+// Separates the annotations that Mermaid may read from the rest of the source,
+// which must pass the HTML check. Whether each one became an annotation is
+// checked in the parse result.
+function annotations(source: string): Annotations {
+  const header = /^\s*(?:%%[^\n]*\n\s*)*(classDiagram|stateDiagram)/.exec(
+    source,
+  )?.[1]
+  const pattern =
+    header === 'classDiagram'
+      ? classAnnotation
+      : header === 'stateDiagram'
+        ? stateAnnotation
+        : undefined
+  if (!pattern) return { names: [], rest: source }
+  const names: string[] = []
+  const rest = source.replace(pattern, (_, name: string) => {
+    names.push(header === 'stateDiagram' ? name.toLowerCase() : name)
+    return ''
+  })
+  // The class lexer skips comments, so a comment after << would hide an
+  // annotation name from the HTML check.
+  if (header === 'classDiagram' && /<<\s*%%/.test(rest))
+    throw new Error(refusal)
+  return { names, rest }
+}
+
+export function validateDiagram(source: string): Annotations {
   if (source.length > 30000)
     throw new Error('The diagram exceeds the 30,000 character rendering limit.')
   if (
@@ -29,15 +72,17 @@ export function validateDiagram(source: string): void {
     throw new Error(
       'This diagram type is not supported. The source is retained.',
     )
+  const found = annotations(source)
   // Mermaid can load image bytes before sanitising its result, so resource and
   // configuration syntax is refused anywhere in the source, labels included.
   // Statements are checked separately, in Mermaid's parse result.
   if (
     /%%\{|^\s*---|<\s*[a-z!/?]|&(?:#\w+|[a-z]+);|@\{|\$\$|(?:https?|data|file|javascript|vbscript|blob):|\/\/|url\s*\(|image-set\s*\(|cross-fade\s*\(|@import|\\/im.test(
-      source,
+      found.rest,
     )
   )
     throw new Error(refusal)
+  return found
 }
 
 type Entry = Record<string, unknown>
@@ -62,16 +107,23 @@ const clickable = (classes: unknown) =>
     .map(String)
     .includes('clickable')
 
-function statementIn(
+const unchecked = () =>
+  new Error('The diagram could not be checked. The source is retained.')
+
+// Visits each object reachable from node once, until visit returns true.
+function walk(
   node: unknown,
-  kinds: string[],
+  visit: (entry: Entry) => boolean | void,
   seen = new Set(),
 ): boolean {
   if (typeof node !== 'object' || node === null || seen.has(node)) return false
   seen.add(node)
-  if (kinds.includes(String((node as Entry).stmt))) return true
-  return Object.values(node).some((value) => statementIn(value, kinds, seen))
+  if (visit(node as Entry)) return true
+  return Object.values(node).some((value) => walk(value, visit, seen))
 }
+
+const statementIn = (node: unknown, kinds: string[]): boolean =>
+  walk(node, (entry) => kinds.includes(String(entry.stmt)))
 
 // Refuses styles, class definitions, link styles, links, click handlers,
 // tooltips, icons and images wherever the grammar accepted them. The names are
@@ -80,18 +132,12 @@ function statementIn(
 function refuseDirectives({ type, db }: ParsedDiagram): void {
   const store = db as Entry
   const field = (name: string): unknown => {
-    if (!(name in store))
-      throw new Error(
-        'The diagram could not be checked. The source is retained.',
-      )
+    if (!(name in store)) throw unchecked()
     return store[name]
   }
   const read = (name: string): unknown => {
     const accessor = field(name)
-    if (typeof accessor !== 'function')
-      throw new Error(
-        'The diagram could not be checked. The source is retained.',
-      )
+    if (typeof accessor !== 'function') throw unchecked()
     return (accessor as () => unknown).call(db)
   }
   let found: boolean
@@ -163,6 +209,39 @@ function refuseDirectives({ type, db }: ParsedDiagram): void {
   if (found) throw new Error(refusal)
 }
 
+// Each annotation taken out of the source check must be one that Mermaid read
+// as an annotation. One read as text, in a note or a multi-line label, would
+// put angle brackets in a label.
+function refuseStrayAnnotations(
+  { type, db }: ParsedDiagram,
+  source: string,
+  names: string[],
+): void {
+  if (names.length === 0) return
+  const store = db as Entry
+  const expected = [...names]
+  const parsed: string[] = []
+  if (type === 'classDiagram') {
+    if (typeof store.getClasses !== 'function') throw unchecked()
+    for (const node of entries((store.getClasses as () => unknown).call(db))) {
+      if (!Array.isArray(node.annotations)) throw unchecked()
+      parsed.push(...node.annotations.map(String))
+    }
+  } else if (type === 'stateDiagram') {
+    if (!('rootDoc' in store)) throw unchecked()
+    walk(store.rootDoc, ({ stmt, type }) => {
+      if (stmt === 'state' && /^(?:fork|join|choice)$/.test(String(type)))
+        parsed.push(String(type))
+    })
+    // [[fork]] syntax on a state line makes the same states without angle
+    // brackets.
+    for (const [, name] of source.matchAll(stateBrackets))
+      expected.push(name!.toLowerCase())
+  } else throw new Error(refusal)
+  if (parsed.sort().join('\n') !== expected.sort().join('\n'))
+    throw new Error(refusal)
+}
+
 let sequence = 0
 let queue: Promise<unknown> = Promise.resolve()
 const cache = new Map<string, Promise<string>>()
@@ -200,8 +279,9 @@ export function safeDiagramSVG(svg: string): string {
 }
 
 export function renderDiagram(source: string): Promise<string> {
+  let names: string[]
   try {
-    validateDiagram(source)
+    names = validateDiagram(source).names
   } catch (error) {
     return Promise.reject(error)
   }
@@ -255,7 +335,9 @@ export function renderDiagram(source: string): Promise<string> {
     // again on the same text; the public parse does not return the diagram. It
     // skips render's configuration step, so the two parse alike only because
     // the source check refuses %%{ directives and front matter.
-    refuseDirectives(await mermaid.mermaidAPI.getDiagramFromText(source))
+    const parsed = await mermaid.mermaidAPI.getDiagramFromText(source)
+    refuseDirectives(parsed)
+    refuseStrayAnnotations(parsed, source, names)
     // Mermaid measures text while laying out, so the holder must be attached
     // and rendered. Such a holder can load CSS resources before sanitising,
     // which is why the source and the parse result are checked first.
