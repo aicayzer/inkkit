@@ -12,7 +12,7 @@ Selection Markdown includes the definitions required by the copied references, i
 
 Ordinary Copy exports readable text and semantic HTML. Copy as Markdown explicitly exports source. Literal `&#x20;` in code or TXT stays literal; Markdown entities are interpreted by the parser where appropriate. No global entity replacement or edge-space trimming occurs.
 
-Tables retain cell boundaries. Unsupported HTML tables, including merged cells and nested block content, remain literal source. Managed images export portable bytes in HTML and native image slots. Private display URLs are not exported as external image URLs. An unavailable image retains alt text and reports the failure.
+Tables retain cell boundaries. A `<br>` line break in a cell keeps its authored spelling, and Shift+Enter in a cell inserts one written as `<br />`. A row with fewer cells than its header stays short until one of its missing cells gains content. A table with a row that has more cells than its header remains literal source, because GFM ignores the extra cells. A `|` inside a code span is a common cause; escaping it as `\|` makes the table editable. Unsupported HTML tables, including merged cells and nested block content, remain literal source. Managed images export portable bytes in HTML and native image slots. Private display URLs are not exported as external image URLs. An unavailable image retains alt text and reports the failure.
 
 Mixed image paste preserves surrounding text and commits one transaction. A result for a stale document is rejected. Native hosts must retain original clipboard content until export succeeds and keep imports bound to the captured document.
 

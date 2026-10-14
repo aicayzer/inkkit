@@ -1,10 +1,14 @@
-import { chromium } from '@playwright/test'
+import { chromium, webkit } from '@playwright/test'
 import { spawn } from 'node:child_process'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 const baseline = process.argv[2]
 if (!baseline)
-  throw Error('Usage: node scripts/measure-preservation.mjs BASELINE_CHECKOUT')
+  throw Error(
+    'Usage: node scripts/measure-preservation.mjs BASELINE_CHECKOUT [source]',
+  )
+// `source` runs only the source-mode typing measurements.
+const onlySource = process.argv[3] === 'source'
 const results = []
 for (const [name, root, port] of [
   ['baseline', resolve(baseline), 4194],
@@ -25,7 +29,10 @@ for (const [name, root, port] of [
   )
   let browser
   try {
-    browser = await chromium.launch({ channel: 'chrome', headless: true })
+    browser =
+      process.env.MEASURE_BROWSER === 'webkit'
+        ? await webkit.launch({ headless: true })
+        : await chromium.launch({ channel: 'chrome', headless: true })
     for (let i = 0; i < 100; i++) {
       try {
         if (server.exitCode !== null) throw Error('Measurement server exited')
@@ -39,25 +46,27 @@ for (const [name, root, port] of [
     const page = await browser.newPage()
     await page.goto(`http://127.0.0.1:${port}/?configuration=minimal`)
     await page.locator('#editor .ProseMirror').waitFor()
-    for (const [blocks, kind] of [
-      [100, 'plain'],
-      [500, 'plain'],
-      [1000, 'plain'],
-      [500, 'code'],
-      [500, 'marked'],
-      [500, 'heading'],
-      [500, 'mixed'],
-      [500, 'code-heading'],
-      [500, 'code-heading-plain'],
-      [4000, 'middle'],
-      [4000, 'middle-link'],
-      [4000, 'middle-short-link'],
-      [4000, 'middle-reference'],
-      [4000, 'middle-task'],
-      [1000, 'middle-code'],
-      [1000, 'middle-table'],
-      [2000, 'middle-footnote'],
-    ]) {
+    for (const [blocks, kind] of onlySource
+      ? []
+      : [
+          [100, 'plain'],
+          [500, 'plain'],
+          [1000, 'plain'],
+          [500, 'code'],
+          [500, 'marked'],
+          [500, 'heading'],
+          [500, 'mixed'],
+          [500, 'code-heading'],
+          [500, 'code-heading-plain'],
+          [4000, 'middle'],
+          [4000, 'middle-link'],
+          [4000, 'middle-short-link'],
+          [4000, 'middle-reference'],
+          [4000, 'middle-task'],
+          [1000, 'middle-code'],
+          [1000, 'middle-table'],
+          [2000, 'middle-footnote'],
+        ]) {
       const setup = await page.evaluate(
         async ({ root, blocks, kind }) => {
           const leadingHeading =
@@ -240,11 +249,13 @@ for (const [name, root, port] of [
       })
       console.log(JSON.stringify(results.at(-1)))
     }
-    for (const [blocks, changed] of [
-      [300, 100],
-      [1000, 300],
-      [2000, 1000],
-    ]) {
+    for (const [blocks, changed] of onlySource
+      ? []
+      : [
+          [300, 100],
+          [1000, 300],
+          [2000, 1000],
+        ]) {
       const outcome = await page.evaluate(
         async ({ root, blocks, changed }) => {
           if (window.measuredEditor) await window.measuredEditor.destroy()
@@ -294,6 +305,189 @@ for (const [name, root, port] of [
         { root, blocks, changed },
       )
       results.push({ name, kind: 'replace-all', blocks, changed, ...outcome })
+      console.log(JSON.stringify(results.at(-1)))
+    }
+    // Source-mode typing: the textarea is the typing surface, so a keystroke
+    // is an input event on it. Time runs from `beforeinput` to the synchronous
+    // `changed` callback, and again to the next animation frame, which covers
+    // the layout work that follows the handler.
+    for (const [blocks, kind] of [
+      [1000, 'plain'],
+      [4000, 'plain'],
+      [1000, 'middle-link'],
+    ]) {
+      const setup = await page.evaluate(
+        async ({ root, blocks, kind }) => {
+          if (window.measuredEditor) await window.measuredEditor.destroy()
+          const { InkKitEditor } = await import(`/@fs${root}/src/index.ts`)
+          document.body.innerHTML =
+            '<main id="probe" style="width:800px;height:600px;overflow:auto"></main>'
+          window.sourceInputTimes = []
+          window.sourceFrameTimes = []
+          window.inputStart = 0
+          const editor = await InkKitEditor.mount(
+            document.querySelector('#probe'),
+            {
+              changed() {
+                if (window.inputStart)
+                  window.sourceInputTimes.push(
+                    performance.now() - window.inputStart,
+                  )
+              },
+              stateChanged() {},
+              openLink() {},
+              copy() {},
+            },
+            { rendering: { diagramPreview: false } },
+          )
+          const paragraph =
+            kind === 'middle-link'
+              ? 'A paragraph with a [link](/target) and enough words to cover several lines in this editor. '.repeat(
+                  4,
+                ) + '\n\n'
+              : 'A paragraph with enough words to cover several lines in this editor. '.repeat(
+                  5,
+                ) + '\n\n'
+          const text = paragraph.repeat(blocks)
+          editor.loadDocument({
+            documentId: 'source-typing',
+            generation: 1,
+            format: 'md',
+            text,
+          })
+          window.measuredEditor = editor
+          const start = performance.now()
+          editor.setEditingMode('source')
+          const switchToSource = performance.now() - start
+          const area = document.querySelector('#probe textarea')
+          area.focus()
+          const middle = Math.floor(text.length / 2)
+          area.setSelectionRange(middle, middle)
+          area.addEventListener('beforeinput', () => {
+            window.inputStart = performance.now()
+            const began = window.inputStart
+            requestAnimationFrame(() =>
+              window.sourceFrameTimes.push(performance.now() - began),
+            )
+          })
+          // The same text in a bare textarea: what the browser itself spends on a
+          // keystroke, which no editor logic can remove.
+          const bare = document.createElement('textarea')
+          bare.style.cssText = 'width:800px;height:600px'
+          bare.value = text
+          document.body.append(bare)
+          bare.focus()
+          bare.setSelectionRange(middle, middle)
+          window.bareTimes = []
+          let bareStart = 0
+          bare.addEventListener('beforeinput', () => {
+            bareStart = performance.now()
+          })
+          bare.addEventListener('input', () =>
+            window.bareTimes.push(performance.now() - bareStart),
+          )
+          window.bare = bare
+          area.focus()
+          return { switchToSource, chars: text.length }
+        },
+        { root, blocks, kind },
+      )
+      await page.evaluate(() => window.bare.focus())
+      for (let i = 0; i < 10; i++) await page.keyboard.insertText('x')
+      await page.evaluate(() => {
+        window.bare.remove()
+        document.querySelector('#probe textarea').focus()
+      })
+      for (let i = 0; i < 10; i++) {
+        await page.keyboard.insertText('x')
+        await page.evaluate(
+          () => new Promise((resolve) => requestAnimationFrame(resolve)),
+        )
+      }
+      const times = await page.evaluate(() => ({
+        input: window.sourceInputTimes,
+        frame: window.sourceFrameTimes,
+        bare: window.bareTimes,
+        typed: document
+          .querySelector('#probe textarea')
+          .value.includes('xxxxxxxxxx'),
+        saved: window.measuredEditor.snapshot().text.includes('xxxxxxxxxx'),
+        // The first edit that is not typing after the typing.
+        paste: (() => {
+          window.inputStart = 0
+          const start = performance.now()
+          window.measuredEditor.pasteAsPlainText('pasted')
+          return performance.now() - start
+        })(),
+        // Leaving source mode takes the typed source into the formatted
+        // document, once, where each keystroke paid before.
+        leave: (() => {
+          const start = performance.now()
+          window.measuredEditor.setEditingMode('formatted')
+          return performance.now() - start
+        })(),
+      }))
+      if (!times.typed || !times.saved || times.input.length !== 10)
+        throw Error(
+          `The source measurement did not keep all ten inputs: ${JSON.stringify(times)}`,
+        )
+      results.push({
+        name,
+        blocks,
+        kind: `source-${kind}`,
+        browser: browser.version(),
+        node: process.version,
+        ...setup,
+        ...times,
+      })
+      console.log(JSON.stringify(results.at(-1)))
+    }
+    // Buffered native typing reaches the source editor through insertText
+    // rather than through the textarea, so the caret must be revealed by the
+    // editor itself.
+    for (const blocks of [1000, 4000]) {
+      const outcome = await page.evaluate(
+        async ({ root, blocks }) => {
+          if (window.measuredEditor) await window.measuredEditor.destroy()
+          const { InkKitEditor } = await import(`/@fs${root}/src/index.ts`)
+          document.body.innerHTML =
+            '<main id="probe" style="width:800px;height:600px;overflow:auto"></main>'
+          const editor = await InkKitEditor.mount(
+            document.querySelector('#probe'),
+            { changed() {}, stateChanged() {}, openLink() {}, copy() {} },
+            { rendering: { diagramPreview: false } },
+          )
+          window.measuredEditor = editor
+          const text = (
+            'A paragraph with enough words to cover several lines in this editor. '.repeat(
+              5,
+            ) + '\n\n'
+          ).repeat(blocks)
+          editor.loadDocument({
+            documentId: 'source-bridge',
+            generation: 1,
+            format: 'md',
+            text,
+          })
+          editor.setEditingMode('source')
+          const area = document.querySelector('#probe textarea')
+          area.focus()
+          area.setSelectionRange(text.length / 2, text.length / 2)
+          const times = []
+          for (let i = 0; i < 10; i++) {
+            const start = performance.now()
+            editor.insertText('x', 1)
+            times.push(performance.now() - start)
+          }
+          return {
+            times,
+            saved: editor.snapshot().text.includes('xxxxxxxxxx'),
+          }
+        },
+        { root, blocks },
+      )
+      if (!outcome.saved) throw Error('The bridge measurement lost its input')
+      results.push({ name, kind: 'source-bridge', blocks, ...outcome })
       console.log(JSON.stringify(results.at(-1)))
     }
   } finally {

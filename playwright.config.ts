@@ -1,7 +1,15 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// Worktrees running tests at the same time need different ports.
+const port = Number(process.env.INKKIT_PLAYGROUND_PORT ?? 4178)
+if (!Number.isInteger(port) || port < 1 || port > 65535)
+  throw Error(
+    `INKKIT_PLAYGROUND_PORT must be a port number, not ${process.env.INKKIT_PLAYGROUND_PORT}`,
+  )
+
 export default defineConfig({
   testDir: './test/browser',
+  testIgnore: /built-playground/,
   forbidOnly: Boolean(process.env.CI),
   workers: 1,
   retries: 0,
@@ -14,7 +22,7 @@ export default defineConfig({
     ['json', { outputFile: '_local/playwright/results.json' }],
   ],
   use: {
-    baseURL: 'http://127.0.0.1:4178',
+    baseURL: `http://127.0.0.1:${port}`,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
@@ -23,9 +31,8 @@ export default defineConfig({
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
   webServer: {
-    command:
-      'pnpm exec vite playground --host 127.0.0.1 --port 4178 --strictPort',
-    url: 'http://127.0.0.1:4178',
+    command: `pnpm exec vite playground --host 127.0.0.1 --port ${port} --strictPort`,
+    url: `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 30_000,
   },

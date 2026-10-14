@@ -9,6 +9,7 @@ import {
 import { DOMParser, DOMSerializer } from '@milkdown/kit/prose/model'
 import { createDialect, serialize, stringifyOptions } from '../src/dialect'
 import { withEditor } from './harness'
+import { InkKitEditor } from '../src/index'
 
 for (const source of [
   '<section>&amp; **raw**</section>',
@@ -72,12 +73,32 @@ test('safe inline HTML breaks reopen as visible breaks and other HTML stays lite
   })
 })
 
-test('an authored inline break in a table cell is kept', async () => {
+test('an authored inline break in a table cell is kept when another cell is edited', async () => {
   const source =
     '| a      | b             |\n| ------ | ------------- |\n| x<br>y | https://e.com |\n'
-  await withEditor(source, (editor) => {
-    expect(serialize(editor.ctx)).toBe(source)
-  })
+  const root = document.createElement('div')
+  document.body.append(root)
+  const editor = await InkKitEditor.mount(
+    root,
+    { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+    {},
+  )
+  try {
+    editor.loadDocument({
+      documentId: 'cell',
+      generation: 1,
+      format: 'md',
+      text: source,
+    })
+    editor.find('a', 1)
+    editor.insertText('aa', 1)
+    expect(editor.snapshot().text).toBe(
+      '| aa      | b             |\n| ------ | ------------- |\n| x<br>y | https://e.com |\n',
+    )
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
 })
 
 test('HTML images preserve absent titles', async () => {

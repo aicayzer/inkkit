@@ -37,7 +37,8 @@ import {
   setAlignCommand,
   exitTable,
 } from '@milkdown/kit/preset/gfm'
-import { $node, $remark } from '@milkdown/kit/utils'
+import { $node, $prose, $remark } from '@milkdown/kit/utils'
+import { keymap } from '@milkdown/kit/prose/keymap'
 import { autolinkInputRule, autolinkLiterals } from './autolink'
 import { isScriptAddress } from './link-safety'
 import { sourceAttribute } from './source'
@@ -59,6 +60,7 @@ import {
 import { literalBlock, createLiteralPreservation } from './literals'
 import {
   imageAttrs,
+  imageBlockName,
   imageBlocks,
   markdownImageAttrs,
   readParagraph,
@@ -69,7 +71,7 @@ import { inlineHighlight } from './inline-highlight'
 import { comments, remarkCommentsPlugin } from './comments'
 import { gfmTableFromMarkdown, gfmTableToMarkdown } from 'mdast-util-gfm-table'
 import { gfmTable } from 'micromark-extension-gfm-table'
-import type { Link, Parents, PhrasingContent } from 'mdast'
+import type { Link, Nodes, Parents, PhrasingContent } from 'mdast'
 import {
   defaultHandlers,
   type Options as StringifyOptions,
@@ -213,6 +215,20 @@ function remarkDialect(this: Processor) {
     },
   } satisfies StringifyOptions)
   add('toMarkdownExtensions', { handlers: { link, code: fencedCodeHandler } })
+  return padShortRows
+}
+
+// GFM reads a row with fewer cells than its header as ending in empty cells.
+// The editor holds them from the start; otherwise table editing adds them
+// after the first edit, and again after every Undo.
+function padShortRows(node: Nodes): void {
+  if (node.type === 'table') {
+    const width = node.children[0]?.children.length ?? 0
+    for (const row of node.children)
+      while (row.children.length < width)
+        row.children.push({ type: 'tableCell', children: [] })
+  }
+  if ('children' in node) node.children.forEach(padShortRows)
 }
 
 export const remarkDialectPlugin = $remark('remarkDialect', () => remarkDialect)
@@ -351,6 +367,78 @@ const normalizedImages = imageSchema.extendSchema((base) => (ctx) => {
   }
 })
 
+type CellToMarkdown = ReturnType<
+  ReturnType<Parameters<typeof tableCellSchema.extendSchema>[0]>
+>['toMarkdown']
+
+// The preset drops a cell's final break, and a paragraph writes an empty one as
+// the spacer `<br />`; either reads back differently, so a cell writes its
+// paragraph's content directly.
+function cellToMarkdown(base: CellToMarkdown): CellToMarkdown {
+  return {
+    ...base,
+    runner(state, node) {
+      if (node.childCount === 1 && node.firstChild!.type.name === 'paragraph')
+        state.openNode('tableCell').next(node.firstChild!.content).closeNode()
+      else base.runner(state, node)
+    },
+  }
+}
+
+// A cell cannot hold a line ending, so Shift-Enter there inserts the `<br />`
+// a cell reads back. The preset's command would instead split the paragraph
+// when it already ends in a break, which reshapes the table.
+const cellBreakKeymap = $prose(() =>
+  keymap({
+    'Shift-Enter': (state, dispatch) => {
+      const { $from } = state.selection
+      if (!/^table_(cell|header)$/.test($from.node(-1)?.type.name ?? ''))
+        return false
+      dispatch?.(
+        state.tr
+          // A break inside a mark or link would be inline HTML there, which
+          // a cell does not read back as a break.
+          .replaceSelectionWith(
+            state.schema.nodes.hardbreak!.create({ isHTML: true }),
+            false,
+          )
+          .scrollIntoView(),
+      )
+      return true
+    },
+  }),
+)
+
+// A list item that opens with a block, such as a code fence, is held with the
+// empty first paragraph the schema requires. Written out, that paragraph would
+// be a spacer `<br />` line; without it the item reads back the same.
+const listItems = extendListItemSchemaForTask.extendSchema(
+  (previous) => (ctx) => {
+    const schema = previous(ctx)
+    return {
+      ...schema,
+      toMarkdown: {
+        ...schema.toMarkdown,
+        runner(state, node) {
+          const [first, second] = [node.firstChild, node.maybeChild(1)]
+          // A task item's checkbox is written on its first line.
+          if (
+            node.attrs.checked == null &&
+            first?.type.name === 'paragraph' &&
+            first.content.size === 0 &&
+            second &&
+            second.type.name !== 'paragraph' &&
+            // An image block reads back as a paragraph in that position.
+            second.type.name !== imageBlockName
+          )
+            node = node.copy(node.content.cut(first.nodeSize))
+          schema.toMarkdown.runner(state, node)
+        },
+      },
+    }
+  },
+)
+
 export const tables: MilkdownPlugin[] = [
   tableSchema.extendSchema((previous) => (ctx) => ({
     ...previous(ctx),
@@ -362,6 +450,7 @@ export const tables: MilkdownPlugin[] = [
     return {
       ...schema,
       attrs: { ...schema.attrs, alignment: { default: null } },
+      toMarkdown: cellToMarkdown(schema.toMarkdown),
       parseDOM: schema.parseDOM?.map((rule) =>
         'tag' in rule
           ? {
@@ -385,6 +474,7 @@ export const tables: MilkdownPlugin[] = [
     return {
       ...schema,
       attrs: { ...schema.attrs, alignment: { default: null } },
+      toMarkdown: cellToMarkdown(schema.toMarkdown),
       parseDOM: schema.parseDOM?.map((rule) =>
         'tag' in rule
           ? {
@@ -424,6 +514,7 @@ export function createDialect(
   files = false,
 ): MilkdownPlugin[] {
   return [
+    cellBreakKeymap,
     remarkCodeFences,
     remarkReferencesPlugin,
     remarkCalloutsPlugin,
@@ -451,7 +542,7 @@ export function createDialect(
     imageBlocks,
     autolinkInputRule,
     autolinkLiterals,
-    extendListItemSchemaForTask,
+    listItems,
     strikethroughAttr,
     strikethroughSchema,
     strikethroughInputRule,
