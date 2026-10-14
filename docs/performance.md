@@ -175,11 +175,11 @@ For some text, highlight.js 11.11.2 takes time that grows with the square of the
 Two limits now bound highlighting:
 
 - **Block length:** a code block longer than 5,000 characters is not highlighted. At that length, the slowest text found takes about 110 ms to highlight in Chromium and WebKit, and ordinary code takes a few milliseconds.
-- **Time per load or edit:** once highlighting in one load or one edit has taken 200 ms, the blocks it has not reached stay plain until they are edited. This bounds a note with many slow blocks. On the machine below, a note of 200 ordinary TypeScript blocks of 4,830 characters each (947,000 characters) highlights every block in Chromium and 182 to 200 of them in WebKit; a slower device reaches the limit with less code.
+- **Time per load or edit:** once highlighting in one load or one edit has taken 200 ms, the blocks it has not reached stay plain until they are edited. This bounds a note with many slow blocks. On the machine below, a note of 200 ordinary TypeScript blocks of 4,714 characters each (947,000 characters) highlights every block in Chromium and 182 to 200 of them in WebKit; a slower device reaches the limit with less code.
 
 The text of an unhighlighted block is still editable and is saved unchanged.
 
-The measurements ran on an M4 Pro MacBook Pro with macOS 27.0.1, in Chromium 156 and Playwright WebKit 27.2, against development source. The baseline is `main` at `f5c4bb2`. Open is `loadDocument()` of a note that holds the block; type is one `insertText('x')` at the end of the block. Values are medians of three runs, in milliseconds, before / after. Run `node scripts/measure-highlighting.mjs` in each checkout to repeat them, with `INKKIT_PLAYGROUND_PORT` set to a free port.
+The measurements ran on an M4 Pro MacBook Pro with macOS 27.0.1, in Chromium 156 and Playwright WebKit 27.2, against development source. The baseline is `main` at `f5c4bb2`. Open is `loadDocument()` of a note that holds the block; type is one `insertText('x')` at the end of the block. Values are medians of three runs, in milliseconds, before / after. To repeat them, run `node scripts/measure-highlighting.mjs CHECKOUT` from this checkout once for each checkout, with `INKKIT_PLAYGROUND_PORT` set to a free port.
 
 | Code block                        | Characters | Chromium open | Chromium type | WebKit open | WebKit type |
 | --------------------------------- | ---------: | ------------: | ------------: | ----------: | ----------: |
