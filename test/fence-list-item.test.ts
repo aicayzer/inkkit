@@ -200,3 +200,48 @@ for (const [name, block] of [
     })
     expect(saved).toBe(`- <br />\n\n  ${block}- two\n`)
   })
+
+for (const [name, source] of [
+  ['a tight', '- ```\n  ```\n- two\n'],
+  ['a loose', '- ```\n  ```\n\n- two\n'],
+] as const) {
+  test(`${name} list item that opens with an empty fence saves in its authored form`, async () => {
+    expect(await roundTrip(source)).toBe(source)
+    expect(
+      await edit(source, (editor, view) => typeAfter(editor, view, 'two', 'Z')),
+    ).toBe(source.replace('two', 'twoZ'))
+  })
+
+  test(`typing into an empty fence that opens ${name} list item keeps the item's first line`, async () => {
+    expect(
+      await edit(source, (editor, view) => {
+        let position = -1
+        view.state.doc.descendants((node, from) => {
+          if (position < 0 && node.type.name === 'code_block')
+            position = from + 1
+          return position < 0
+        })
+        view.dispatch(
+          view.state.tr.setSelection(
+            TextSelection.create(view.state.doc, position),
+          ),
+        )
+        expect(editor.insertText('x', 1)).toBe(true)
+      }),
+    ).toBe(source.replace('```\n  ```', '```\n  x\n  ```'))
+  })
+
+  test(`clearing the fence that opens ${name} list item leaves it empty`, async () => {
+    const filled = source.replace('```\n  ```', '```\n  code\n  ```')
+    expect(
+      await edit(filled, (_editor, view) => {
+        let from = -1
+        view.state.doc.descendants((node, position) => {
+          if (from < 0 && node.isText && node.text === 'code') from = position
+          return from < 0
+        })
+        view.dispatch(view.state.tr.delete(from, from + 4))
+      }),
+    ).toBe(source)
+  })
+}
