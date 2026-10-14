@@ -63,9 +63,20 @@ summary:focus-visible {
 #host-content p {
   margin: 0;
 }
-#status {
+#status,
+#timing {
   display: block;
-  padding-block: 0.5rem;
+  padding-block: 0.25rem;
+}
+#problems {
+  margin-block: 0.5rem;
+  padding: 0.5rem;
+  border: 2px solid Mark;
+  background: Mark;
+  color: MarkText;
+}
+#problems[hidden] {
+  display: none;
 }
 pre {
   max-height: 20rem;

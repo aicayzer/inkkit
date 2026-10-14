@@ -13,6 +13,7 @@
         Browser checks do not prove native clipboard or IME compatibility.
       </p>
     </header>
+    <div id="problems" role="alert" hidden></div>
     <nav id="toolbar" aria-label="Editor controls">
       <label
         >Fixture
@@ -33,12 +34,41 @@
           <option value="hold">Manual release</option>
         </select></label
       >
+      <label
+        ><input id="files-toggle" type="checkbox" /> Linked file adapters</label
+      >
+      <label
+        ><input id="second-toggle" type="checkbox" /> Second read-only
+        editor</label
+      >
+      <label
+        ><input id="observe" type="checkbox" /> Observe (slows editing)</label
+      >
+      <label
+        >Generate paragraphs
+        <input
+          id="generate-count"
+          type="number"
+          min="1"
+          max="100000"
+          value="4000"
+      /></label>
+      <button id="generate">Generate document</button>
+      <button id="time-save">Time save</button>
       <button id="reset">Reset fixture</button>
       <button id="replace-document">Replace document</button>
       <button id="read-only">Make read-only</button>
       <button id="release">Release image operations</button>
       <button id="import-image">Import fixture image</button>
       <button id="bold">Bold</button><button id="table">Insert table</button>
+      <label
+        >Plain text to paste
+        <textarea
+          id="plain-text"
+          rows="1"
+          placeholder="Type or paste"
+        ></textarea>
+      </label>
       <button id="plain">Paste as Plain Text</button>
       <button id="source">Copy as Markdown</button>
       <button id="copy-readable">Copy readable content</button>
@@ -103,6 +133,7 @@
       <div id="second-editor" hidden aria-label="Second fixture editor"></div>
     </main>
     <output id="status" role="status"></output>
+    <output id="timing" aria-label="Timing"></output>
     <details open>
       <summary>Structured observations</summary>
       <pre id="observations" aria-label="Structured observations"></pre>

@@ -1,5 +1,6 @@
 import {
   InkKitEditor,
+  type CommandState,
   type TableCommand,
   type FormatCommand,
   type Heading,
@@ -12,20 +13,74 @@ import {
   imageBytes,
   type AdapterMode,
 } from '../scripts/interop/consumer/fixtures'
+import { generateDocument, parseGenerate, type GenerateSpec } from './generate'
 import '../src/style.css'
 import './style.css'
 
 const params = new URLSearchParams(location.search)
 const element = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T
-let fixtureId = params.get('fixture') ?? 'everyday'
-let configuration = params.get('configuration') ?? 'rich'
-let adapterMode = (params.get('adapter') ?? 'normal') as AdapterMode
-if (!fixtures[fixtureId]) throw Error(`Unknown fixture: ${fixtureId}`)
-if (!configurations.includes(configuration as (typeof configurations)[number]))
-  throw Error(`Unknown configuration: ${configuration}`)
-if (!['normal', 'reject', 'hold'].includes(adapterMode))
-  throw Error(`Unknown adapter: ${adapterMode}`)
+// A bad query parameter must leave a usable page, so each one is reported on
+// the page and replaced by its default instead of throwing at module load.
+const startupProblems: string[] = []
+function choose(name: string, valid: readonly string[], fallback: string) {
+  const value = params.get(name)
+  if (value === null) return fallback
+  if (valid.includes(value)) return value
+  startupProblems.push(
+    `Unknown ${name} "${value}". Using "${fallback}". Valid values: ${valid.join(', ')}.`,
+  )
+  return fallback
+}
+let fixtureId = choose('fixture', Object.keys(fixtures), 'everyday')
+let configuration = choose('configuration', configurations, 'rich')
+let adapterMode = choose(
+  'adapter',
+  ['normal', 'reject', 'hold'],
+  'normal',
+) as AdapterMode
+let generated: GenerateSpec | undefined
+const generateParam = params.get('generate')
+if (generateParam !== null)
+  try {
+    generated = parseGenerate(generateParam)
+  } catch (error) {
+    startupProblems.push(String(error instanceof Error ? error.message : error))
+  }
+// What the URL can carry besides the fixture, configuration and adapter.
+const settings = {
+  editable: params.get('editable') !== 'false',
+  editors: params.get('editors') === '2',
+  files: params.get('files') === 'true',
+}
+let observing = params.get('observe') === 'true'
+let urlReady = false
+function syncUrl() {
+  if (!urlReady) return
+  const url = new URL(location.href)
+  const write = (name: string, value: string, fallback: string) =>
+    value === fallback
+      ? url.searchParams.delete(name)
+      : url.searchParams.set(name, value)
+  write('fixture', fixtureId, 'everyday')
+  write('configuration', configuration, 'rich')
+  write('adapter', adapterMode, 'normal')
+  write('editable', String(settings.editable), 'true')
+  write('editors', settings.editors ? '2' : '1', '1')
+  write('files', String(settings.files), 'false')
+  write('observe', String(observing), 'false')
+  write('generate', generated ? `${generated.kind}:${generated.count}` : '', '')
+  try {
+    history.replaceState(null, '', url)
+  } catch {
+    // Some file: documents refuse to rewrite their address; sharing is lost, nothing else.
+  }
+}
+function showProblems(problems: readonly string[]) {
+  const box = element('problems')
+  box.textContent = problems.join(' ')
+  box.hidden = !problems.length
+}
 for (const [id, fixture] of Object.entries(fixtures)) {
   const option = document.createElement('option')
   option.value = id
@@ -71,14 +126,82 @@ let diagnostics: { code: string | null; message: string }[] = []
 let lastResult: unknown = null
 let searchSnapshot: ReturnType<InkKitEditor['textSnapshot']> | undefined
 let searchRange: Parameters<InkKitEditor['selectTextRange']>[0] | undefined
+// The status line shows the last error until the next edit or document load;
+// the diagnostics list keeps the history.
+let statusError = false
 function record(error: unknown) {
   const entry = {
     code: error instanceof Error && 'code' in error ? String(error.code) : null,
     message: error instanceof Error ? error.message : String(error),
   }
   diagnostics.push(entry)
+  statusError = true
   element<HTMLOutputElement>('status').value = entry.message
 }
+const keystrokeTimes: number[] = []
+let saveTime: { ms: number; characters: number; dirty: boolean } | undefined
+function percentile(sorted: number[], fraction: number) {
+  return sorted[
+    Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))
+  ]
+}
+const round = (value: number) => Math.round(value * 10) / 10
+function timings() {
+  const sorted = [...keystrokeTimes].sort((a, b) => a - b)
+  return {
+    keystrokes: sorted.length
+      ? {
+          count: sorted.length,
+          last: round(keystrokeTimes.at(-1)!),
+          median: round(percentile(sorted, 0.5)!),
+          p95: round(percentile(sorted, 0.95)!),
+        }
+      : null,
+    save: saveTime ?? null,
+  }
+}
+function renderTimings() {
+  const { keystrokes, save } = timings()
+  element<HTMLOutputElement>('timing').value = [
+    keystrokes
+      ? `Keystrokes to next frame (last ${keystrokes.count}): last ${keystrokes.last} ms, median ${keystrokes.median} ms, 95th percentile ${keystrokes.p95} ms.`
+      : 'No keystrokes measured yet.',
+    save
+      ? `Save (snapshot): ${save.ms} ms for ${save.characters} characters, ${save.dirty ? 'unsaved changes' : 'unchanged'}.`
+      : 'Save not measured yet.',
+  ].join(' ')
+}
+function resetTimings() {
+  keystrokeTimes.length = 0
+  saveTime = undefined
+  renderTimings()
+}
+// Measured from the key press to the frame after it is handled, so long work
+// in a key handler shows.
+element('editor').addEventListener(
+  'keydown',
+  (event) => {
+    if (
+      event.isComposing ||
+      event.ctrlKey ||
+      event.metaKey ||
+      !(
+        event.key.length === 1 ||
+        ['Backspace', 'Delete', 'Enter'].includes(event.key)
+      )
+    )
+      return
+    const start = performance.now()
+    requestAnimationFrame(() =>
+      setTimeout(() => {
+        keystrokeTimes.push(performance.now() - start)
+        if (keystrokeTimes.length > 100) keystrokeTimes.shift()
+        renderTimings()
+      }),
+    )
+  },
+  true,
+)
 function selectedText() {
   if (mounting) return ''
   const root = element('editor')
@@ -135,19 +258,39 @@ function observe() {
     adapterEvents: [...images.events],
     fileEvents: [...files.events],
     diagnostics: [...diagnostics],
+    timings: timings(),
     lastResult,
   }
 }
+// Edits only schedule this, so typing does not wait for it. The full
+// observation is the costly part (a snapshot of the whole document), so it
+// runs only while Observe is on.
+let refreshTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleControls(epoch = mountEpoch) {
+  clearTimeout(refreshTimer)
+  refreshTimer = setTimeout(() => {
+    if (epoch === mountEpoch) updateControls()
+  }, 150)
+}
 function updateControls() {
   if (!editor || mounting) return
-  const observation = observe()
-  element('observations').textContent = JSON.stringify(observation, null, 2)
+  clearTimeout(refreshTimer)
+  const observation = observing ? observe() : undefined
+  element('observations').textContent = observation
+    ? JSON.stringify(observation, null, 2)
+    : 'Observation is off. Turn on Observe, or call window.inkkitPlayground.observe().'
   element('editing-mode').textContent =
     editor.editingMode === 'source' ? 'Edit formatted' : 'Edit source'
   element('read-only').textContent = editor.editable
     ? 'Make read-only'
     : 'Make editable'
-  const state = observation.commandState
+  let state: CommandState | undefined = observation?.commandState ?? undefined
+  if (!observation)
+    try {
+      state = editor.commandState(generation)
+    } catch {
+      state = undefined
+    }
   if (state) {
     for (const [id, enabled] of Object.entries({
       bold: state.commands.format.bold,
@@ -184,9 +327,12 @@ function updateControls() {
     select.value = selected
   select.disabled = !headings.length
   element<HTMLButtonElement>('navigate-heading').disabled = !headings.length
-  if (!diagnostics.length && observation.snapshot)
+  if (!statusError && state)
     element<HTMLOutputElement>('status').value =
-      `${observation.snapshot.documentId}, generation ${generation}, revision ${observation.snapshot.revision}, ${observation.snapshot.dirty ? 'Unsaved changes' : 'Unchanged'}`
+      `${state.documentId}, generation ${generation}, revision ${state.revision}` +
+      (observation?.snapshot
+        ? `, ${observation.snapshot.dirty ? 'Unsaved changes' : 'Unchanged'}`
+        : '')
 }
 function load(
   text: string,
@@ -194,6 +340,7 @@ function load(
   documentId = `fixture:${fixtureId}`,
 ) {
   editor.loadDocument({ documentId, generation: ++generation, format, text })
+  statusError = false
   updateControls()
   return observe()
 }
@@ -210,6 +357,9 @@ async function reset(
     throw Error(`Unknown configuration: ${nextConfiguration}`)
   const epoch = ++mountEpoch
   mounting = true
+  showProblems([])
+  clearTimeout(refreshTimer)
+  if (nextFixture !== fixtureId) generated = undefined
   if (editor) await editor.destroy()
   if (secondEditor) {
     await secondEditor.destroy()
@@ -222,6 +372,8 @@ async function reset(
   pendingOutput = undefined
   pendingImage = undefined
   diagnostics = []
+  statusError = false
+  resetTimings()
   lastResult = null
   searchSnapshot = undefined
   searchRange = undefined
@@ -231,15 +383,15 @@ async function reset(
   images.setMode('export', adapterMode)
   files.setMode(adapterMode)
   const update = () => {
-    if (epoch === mountEpoch)
-      queueMicrotask(() => {
-        if (epoch === mountEpoch) updateControls()
-      })
+    if (epoch === mountEpoch) scheduleControls(epoch)
   }
   editor = await InkKitEditor.mount(
     element('editor'),
     {
-      changed: update,
+      changed: () => {
+        if (epoch === mountEpoch) statusError = false
+        update()
+      },
       stateChanged: update,
       commandStateChanged: update,
       openLink: (href) => {
@@ -264,15 +416,15 @@ async function reset(
           : undefined,
       files:
         configuration === 'rich' &&
-        (fixtureId === 'linked-files' || params.get('files') === 'true')
+        (fixtureId === 'linked-files' || settings.files)
           ? files.adapter
           : undefined,
       wikiLinks:
         configuration === 'rich' &&
-        (fixtureId === 'linked-files' || params.get('files') === 'true')
+        (fixtureId === 'linked-files' || settings.files)
           ? files.wiki
           : undefined,
-      editable: params.get('editable') !== 'false',
+      editable: settings.editable,
       textInput:
         configuration === 'rich'
           ? { spellcheck: false, autocorrect: false, autocapitalize: 'off' }
@@ -280,15 +432,26 @@ async function reset(
     },
   )
   const fixture = fixtures[fixtureId]!
-  load(fixture.text, fixture.format)
+  if (generated)
+    load(
+      generateDocument(generated),
+      'md',
+      `generated:${generated.kind}:${generated.count}`,
+    )
+  else load(fixture.text, fixture.format)
   for (const [id, value] of Object.entries({
     fixture: fixtureId,
     configuration,
     adapter: adapterMode,
   }))
     element<HTMLSelectElement>(id).value = value
-  if (params.get('editors') === '2') {
-    element('second-editor').hidden = false
+  element<HTMLInputElement>('files-toggle').checked = settings.files
+  element<HTMLInputElement>('second-toggle').checked = settings.editors
+  element<HTMLInputElement>('observe').checked = observing
+  if (generated)
+    element<HTMLInputElement>('generate-count').value = String(generated.count)
+  element('second-editor').hidden = !settings.editors
+  if (settings.editors) {
     secondEditor = await InkKitEditor.mount(
       element('second-editor'),
       { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
@@ -303,6 +466,7 @@ async function reset(
   }
   mounting = false
   updateControls()
+  syncUrl()
   return observe()
 }
 async function operation(name: string, args: Record<string, unknown> = {}) {
@@ -386,7 +550,21 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         break
       case 'editable':
         result = editor.setEditable(Boolean(args.editable))
+        settings.editable = editor.editable
+        syncUrl()
         break
+      case 'measureSave': {
+        const start = performance.now()
+        const snapshot = editor.snapshot(generation)
+        saveTime = {
+          ms: round(performance.now() - start),
+          characters: snapshot.text.length,
+          dirty: snapshot.dirty,
+        }
+        renderTimings()
+        result = saveTime
+        break
+      }
       case 'textInput':
         result = editor.setTextInputPreferences(
           args.preferences as Parameters<
@@ -561,9 +739,19 @@ click('release', () => {
 click('import-image', () => operation('startImagePaste'))
 click('bold', () => operation('format', { command: 'bold' }))
 click('table', () => operation('table', { command: 'insert' }))
-click('plain', async () =>
-  operation('pastePlain', { text: await navigator.clipboard.readText() }),
-)
+// A text box rather than navigator.clipboard.readText(), which WebKit refuses
+// without a native paste prompt and which browsers gate behind permission.
+click('plain', () => {
+  const text = element<HTMLTextAreaElement>('plain-text').value
+  if (!text) throw Error('Type or paste text into the plain text box first')
+  return operation('pastePlain', { text })
+})
+click('time-save', () => operation('measureSave'))
+click('generate', () => {
+  const count = element<HTMLInputElement>('generate-count').value
+  generated = parseGenerate(`paragraphs:${count}`)
+  return reset()
+})
 click('source', async () =>
   navigator.clipboard.writeText(editor.snapshot(generation).text),
 )
@@ -651,6 +839,19 @@ click('navigate-heading', () =>
 element('fixture').addEventListener('change', () => {
   void act(() => reset(element<HTMLSelectElement>('fixture').value))
 })
+element('files-toggle').addEventListener('change', () => {
+  settings.files = element<HTMLInputElement>('files-toggle').checked
+  void act(() => reset())
+})
+element('second-toggle').addEventListener('change', () => {
+  settings.editors = element<HTMLInputElement>('second-toggle').checked
+  void act(() => reset())
+})
+element('observe').addEventListener('change', () => {
+  observing = element<HTMLInputElement>('observe').checked
+  syncUrl()
+  updateControls()
+})
 element('configuration').addEventListener('change', () => {
   void act(() =>
     reset(fixtureId, element<HTMLSelectElement>('configuration').value),
@@ -661,6 +862,7 @@ element('adapter').addEventListener('change', () => {
   images.setMode('import', adapterMode)
   images.setMode('export', adapterMode)
   files.setMode(adapterMode)
+  syncUrl()
   updateControls()
 })
 element('table-action').addEventListener('change', updateControls)
@@ -672,6 +874,7 @@ export const playground = {
   replaceDocument: load,
   operation,
   observe,
+  timings,
   adapter: {
     setMode: (kind: 'import' | 'export', mode: AdapterMode) => {
       images.setMode(kind, mode)
@@ -688,5 +891,14 @@ declare global {
     inkkitPlayground: typeof playground
   }
 }
-await reset()
+try {
+  await reset()
+  showProblems(startupProblems)
+} catch (error) {
+  showProblems([
+    ...startupProblems,
+    `The playground could not start: ${error instanceof Error ? error.message : String(error)}`,
+  ])
+}
+urlReady = true
 window.inkkitPlayground = playground
