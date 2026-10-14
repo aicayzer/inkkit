@@ -14,24 +14,37 @@ export interface DocumentSnapshot extends DocumentInput {
   revision: number
   dirty: boolean
 }
-export type EditorErrorCode =
-  | 'not-ready'
-  | 'stale-document'
-  | 'composition'
-  | 'read-only'
-  | 'operation-pending'
-  | 'destroyed'
-  | 'preservation'
-  | 'image-unavailable'
-  | 'diagram-unavailable'
-  | 'invalid-range'
+/** The closed list of failure codes; `docs/api.md` describes each one. */
+export const editorErrorCodes = [
+  'not-ready',
+  'destroyed',
+  'stale-document',
+  'composition',
+  'operation-pending',
+  'read-only',
+  'invalid-argument',
+  'invalid-range',
+  'preservation',
+  'image-unavailable',
+  'diagram-unavailable',
+  'file-unavailable',
+  'clipboard-unavailable',
+  'internal',
+] as const
+export type EditorErrorCode = (typeof editorErrorCodes)[number]
+/** Every failure InkKit reports. Hosts branch on `code`; `message` is for logs. When the failure
+ *  started elsewhere, such as in an adapter, the host clipboard or the renderer, `cause` holds the
+ *  original error. */
 export class InkKitError extends Error {
+  readonly code: EditorErrorCode
   constructor(
-    public readonly code: EditorErrorCode,
+    code: EditorErrorCode,
     message: string,
+    options?: { cause?: unknown },
   ) {
-    super(message)
+    super(message, options)
     this.name = 'InkKitError'
+    this.code = code
   }
 }
 export interface CapturedImage {
