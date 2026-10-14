@@ -15,7 +15,11 @@ import {
 } from '../src/files'
 import { defaultLabels } from '../src/labels'
 
-const reference: FileReference = { reference: 'opaque', kind: 'path' }
+const reference: FileReference = {
+  reference: 'opaque',
+  kind: 'path',
+  target: 'opaque',
+}
 const context = () => ({
   documentId: 'files',
   generation: 1,
@@ -83,13 +87,23 @@ test('resolution retries abort old requests and reject late reference/document r
   fixture.requests[0]!.resolve(image)
   await Promise.resolve()
   expect(resolver.state.status).toBe('loading')
-  resolver.update({ reference: 'other', kind: 'wiki', fragment: 'page=2' })
+  resolver.update({
+    reference: 'other#page=2',
+    kind: 'wiki',
+    target: 'other',
+    fragment: 'page=2',
+  })
   expect(fixture.requests[1]!.context.signal.aborted).toBe(true)
   fixture.requests[1]!.resolve(image)
   fixture.advance()
   fixture.requests[2]!.resolve(image)
   await vi.waitFor(() => expect(resolver.state.status).toBe('loading'))
-  resolver.update({ reference: 'other', kind: 'wiki', fragment: 'page=2' })
+  resolver.update({
+    reference: 'other#page=2',
+    kind: 'wiki',
+    target: 'other',
+    fragment: 'page=2',
+  })
   expect(fixture.requests).toHaveLength(4)
   fixture.requests[3]!.resolve({ kind: 'file', label: 'Current file' })
   await vi.waitFor(() =>

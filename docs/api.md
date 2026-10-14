@@ -197,9 +197,29 @@ Linked syntax and controlled file views require 0.0.10 or later. `EditorOptions.
 
 `FileAdapter` provides:
 
-- `resolve(reference, context): Promise<FilePresentation>`: resolves an opaque `FileReference`. `reference.reference` retains the opaque path or decoded named reference, including its fragment; named references trim leading and trailing target/fragment whitespace while preserving internal spaces and authored source; `kind` is `path` or `wiki`. Optional `fragment`, authored `label` and `width` describe the captured request. The host identifies the actual file kind; InkKit does not infer it from an extension.
+- `resolve(reference, context): Promise<FilePresentation>`: resolves an opaque `FileReference`, described below. The host identifies the actual file kind; InkKit does not infer it from an extension.
 - Optional `exportImage(reference, context): Promise<PortableImage>`: supplies portable image bytes for copy and print. If omitted, a configured legacy `ImageAdapter` can export path images. Named images require this callback for portable image output. Image import remains with `ImageAdapter.importImage`; no file storage/import API is added.
-- Optional `open(reference, context)` and `contextMenu(reference, { clientX, clientY }, context)`: target the authored reference for host actions. Context-menu coordinates are client CSS pixels. The host owns permissions, Open/Reveal UI and error handling for asynchronous native actions.
+- Optional `open(reference, context)` and `contextMenu(reference, point, context)`: target the authored reference for host actions. `point` is a `ClientPoint`, `{ clientX, clientY }` in CSS pixels of the web view's client area. The host owns permissions, Open/Reveal UI and error handling for asynchronous native actions.
+
+A `FileReference` has these fields:
+
+- `kind`: `path` for `![alt](destination)` and `wiki` for `![[name]]`.
+- `reference`: the whole reference, including any fragment. For `path`, it's the Markdown destination, `a/b.mp4#t=10`. For `wiki`, it's `target#fragment`, or `target` when there is no fragment.
+- `target`: the reference without its fragment. Use it to find the file.
+- `fragment`: optional. Everything after the separating `#`, such as `t=10` or `page=3`. When it's absent, `target` equals `reference`.
+- `label`: optional. The alt text of a path image without its width, or `target#fragment` for a named file.
+- `width`: optional. The authored width, from `|400` in the alt text or the name.
+
+| Markdown                           | `kind` | `reference`             | `target`         | `fragment`    |
+| ---------------------------------- | ------ | ----------------------- | ---------------- | ------------- |
+| `![](a/b.mp4#t=10)`                | `path` | `a/b.mp4#t=10`          | `a/b.mp4`        | `t=10`        |
+| `![](a.pdf?x=1#page=2#more)`       | `path` | `a.pdf?x=1#page=2#more` | `a.pdf?x=1`      | `page=2#more` |
+| `![](My%23Notes.pdf)`              | `path` | `My%23Notes.pdf`        | `My%23Notes.pdf` | absent        |
+| `![[My file.pdf#page=3]]`          | `wiki` | `My file.pdf#page=3`    | `My file.pdf`    | `page=3`      |
+| `![[ My file.pdf # page=3 \|200]]` | `wiki` | `My file.pdf#page=3`    | `My file.pdf`    | `page=3`      |
+| `![[My\#Notes.pdf#page=2]]`        | `wiki` | `My#Notes.pdf#page=2`   | `My#Notes.pdf`   | `page=2`      |
+
+In a path, the fragment starts at the first `#`, so a `#` that belongs to a file name must be written `%23`, as in any URL. InkKit doesn't decode it: the target of `My%23Notes.pdf` is `My%23Notes.pdf`. InkKit gives `?` no meaning, so a query stays in `target`. In a named file, a `#` in the name is escaped as `\#`, and `target` holds the name with the escape removed, so don't find the target by splitting `reference` at its first `#`. Named targets and fragments are trimmed; internal spaces are kept.
 
 `FileContext` extends `DocumentContext` with an `AbortSignal`. The `FilePresentation` union accepts `image`, `audio`, `video` or `pdf` with a private `url`, optional `label` and matching optional `mimeType`; `file` with an optional label; `missing`; or `error` with a message. Missing/error results can carry a useful label. Unknown kinds, executable URL schemes and mismatched data-URL/MIME kinds are rejected. Resource URLs must serve the declared kind and be usable in the host's offline web view. The adapter owns their lifetime, byte validation, access checks and fragment mapping, including media `#t=` or PDF `#page=`. InkKit retains those authored fragments without interpreting storage paths or creating a network fallback.
 

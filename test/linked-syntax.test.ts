@@ -148,6 +148,7 @@ test('escaped dimension pipe belongs to the target, not size metadata', () =>
       expect(fileReference(named)).toEqual({
         reference: 'Two word file|400x300.png',
         kind: 'wiki',
+        target: 'Two word file|400x300.png',
         label: 'Two word file|400x300.png',
       })
       expect(
@@ -165,6 +166,7 @@ test('tabbed named dimensions retain exact source through edited-block serializa
     expect(fileReference(named.node)).toEqual({
       reference: 'photo.png#page=2',
       kind: 'wiki',
+      target: 'photo.png',
       fragment: 'page=2',
       label: 'photo.png#page=2',
       width: 400,
@@ -296,6 +298,7 @@ test('named and path embeds share opaque image nodes while retaining their disti
       expect(fileReference(named)).toEqual({
         reference: 'folder/A]B.png#page=2',
         kind: 'wiki',
+        target: 'folder/A]B.png',
         fragment: 'page=2',
         label: 'folder/A]B.png#page=2',
         width: 400,
@@ -303,6 +306,7 @@ test('named and path embeds share opaque image nodes while retaining their disti
       expect(fileReference(path)).toEqual({
         reference: 'opaque/path#frag',
         kind: 'path',
+        target: 'opaque/path',
         fragment: 'frag',
         label: 'Alt',
         width: 320,
@@ -350,6 +354,7 @@ test('a named reference ending in an escaped numeric pipe has no accidental widt
     expect(fileReference(node)).toEqual({
       reference: 'file|400',
       kind: 'wiki',
+      target: 'file|400',
       label: 'file|400',
     })
     expect(namedFileMarkdown(node)).toBe(String.raw`![[file\|400]]`)
