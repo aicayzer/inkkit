@@ -6,7 +6,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor, type ClipboardInput } from '../src/index'
 
 /**
- * Loads `source`, puts the caret at `|` (or selects between two `|`), pastes
+ * Loads `source`, puts the caret at `‸` (or selects between two `‸`), pastes
  * `input`, and returns the saved Markdown before and after typing `|`.
  */
 async function pasteAt(
@@ -24,7 +24,7 @@ async function pasteAt(
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
   const view = () => ctx.get(editorViewCtx) as EditorView
   try {
-    const [head, middle, tail] = source.split('|')
+    const [head, middle, tail] = source.split('‸')
     const marked = tail == null ? head! + middle! : head! + middle! + tail
     editor.loadDocument({
       documentId: 'note',
@@ -60,7 +60,7 @@ async function pasteAt(
 }
 
 test('plain text pasted inside a sentence joins the paragraph at the caret', async () => {
-  const pasted = await pasteAt('Before |after.\n', { text: 'word ' })
+  const pasted = await pasteAt('Before ‸after.\n', { text: 'word ' })
   expect(pasted.text).toBe('Before word after.\n')
   expect(pasted.typed).toBe('Before word |after.\n')
 })
@@ -68,7 +68,7 @@ test('plain text pasted inside a sentence joins the paragraph at the caret', asy
 test('Markdown pasted inside a sentence joins the paragraph with its formatting', async () => {
   expect(
     (
-      await pasteAt('Before |after.\n', {
+      await pasteAt('Before ‸after.\n', {
         text: 'bold word ',
         markdown: '**bold** word ',
       })
@@ -79,7 +79,7 @@ test('Markdown pasted inside a sentence joins the paragraph with its formatting'
 test('Markdown that comes with its HTML joins the paragraph too', async () => {
   expect(
     (
-      await pasteAt('Before |after.\n', {
+      await pasteAt('Before ‸after.\n', {
         text: 'bold',
         markdown: '*bold*',
         html: '<em>bold</em>',
@@ -89,13 +89,13 @@ test('Markdown that comes with its HTML joins the paragraph too', async () => {
 })
 
 test('a pasted line joins headings, list items and quotes at the caret', async () => {
-  expect((await pasteAt('# Head|ing\n', { text: 'ed' })).text).toBe(
+  expect((await pasteAt('# Head‸ing\n', { text: 'ed' })).text).toBe(
     '# Headeding\n',
   )
-  expect((await pasteAt('- one|\n- two\n', { text: ' and a half' })).text).toBe(
+  expect((await pasteAt('- one‸\n- two\n', { text: ' and a half' })).text).toBe(
     '- one and a half\n- two\n',
   )
-  expect((await pasteAt('> Quo|ted\n', { text: 'te, quo' })).text).toBe(
+  expect((await pasteAt('> Quo‸ted\n', { text: 'te, quo' })).text).toBe(
     '> Quote, quoted\n',
   )
 })
@@ -103,7 +103,7 @@ test('a pasted line joins headings, list items and quotes at the caret', async (
 test('a pasted line replaces the selected text inside a paragraph', async () => {
   expect(
     (
-      await pasteAt('Keep |this| text.\n', {
+      await pasteAt('Keep ‸this‸ text.\n', {
         text: 'that',
         markdown: '**that**',
       })
@@ -112,29 +112,36 @@ test('a pasted line replaces the selected text inside a paragraph', async () => 
 })
 
 test('pasted Unicode joins the paragraph without being rewritten', async () => {
-  expect((await pasteAt('Le |soir.\n', { text: 'café ☕ 東京 ' })).text).toBe(
+  expect((await pasteAt('Le ‸soir.\n', { text: 'café ☕ 東京 ' })).text).toBe(
     'Le café ☕ 東京 soir.\n',
   )
 })
 
 test('pasted paragraphs join the text on either side of the caret', async () => {
   expect(
-    (await pasteAt('Before |after.\n', { text: 'one\n\ntwo ' })).text,
+    (await pasteAt('Before ‸after.\n', { text: 'one\n\ntwo ' })).text,
   ).toBe('Before one\n\ntwo after.\n')
   expect(
-    (await pasteAt('Before |after.\n', { text: 'one\r\n\r\ntwo ' })).text,
+    (await pasteAt('Before ‸after.\n', { text: 'one\r\n\r\ntwo ' })).text,
   ).toBe('Before one\n\ntwo after.\n')
 })
 
 test('pasted blocks other than paragraphs still split the paragraph', async () => {
   expect(
-    (await pasteAt('Before |after.\n', { text: '- one\n- two' })).text,
+    (await pasteAt('Before ‸after.\n', { text: '- one\n- two' })).text,
   ).toBe('Before&#x20;\n\n- one\n- two\n\nafter.\n')
   expect(
-    (await pasteAt('Before |after.\n', { text: '# Title\n\nbody ' })).text,
+    (await pasteAt('Before ‸after.\n', { text: '# Title\n\nbody ' })).text,
   ).toBe('Before&#x20;\n\n# Title\n\nbody after.\n')
   expect(
-    (await pasteAt('Before |after.\n', { text: 'lead\n\n```\ncode\n```' }))
+    (await pasteAt('Before ‸after.\n', { text: 'lead\n\n```\ncode\n```' }))
       .text,
   ).toBe('Before lead\n\n```\ncode\n```\n\nafter.\n')
+})
+
+test('a pasted line joins the text of a table cell', async () => {
+  expect(
+    (await pasteAt('| A | B |\n| - | - |\n| x‸y | z |\n', { text: 'word' }))
+      .text,
+  ).toBe('| A | B |\n| - | - |\n| xwordy | z |\n')
 })
