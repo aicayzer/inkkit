@@ -192,6 +192,9 @@ test('task markers retain their gutter, tick offset and click target when scaled
           root.style.setProperty('--inkkit-font-size', `${size}px`),
         size,
       )
+    // The click below uses viewport coordinates, which miss a marker below
+    // the fold; the playground is taller where the default fonts are.
+    await task.scrollIntoViewIfNeeded()
     const marker = await task.evaluate((node) => {
       const style = getComputedStyle(node, '::before')
       const bounds = node.getBoundingClientRect()
@@ -225,6 +228,7 @@ test('task markers retain their gutter, tick offset and click target when scaled
   }
   await operation(page, 'editable', { editable: false })
   const before = (await observe(page)).snapshot
+  await task.scrollIntoViewIfNeeded()
   const marker = await task.evaluate((node) => {
     const style = getComputedStyle(node, '::before')
     const bounds = node.getBoundingClientRect()
