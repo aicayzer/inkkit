@@ -1,9 +1,21 @@
 import { test, expect, observe, operation } from './fixtures'
 import type { Page } from '@playwright/test'
 
-// The editor reads a moved caret from a selectionchange task queued before this one.
-const settled = (page: Page) =>
-  page.evaluate(() => new Promise((resolve) => setTimeout(resolve)))
+// Selects the first `text`, then moves the caret to one end of it with `key`.
+// The editor reads the moved caret from a selectionchange task queued before
+// the final wait, so typing that follows lands there.
+async function caretBeside(page: Page, text: string, key: string) {
+  await operation(page, 'find', { text })
+  const selection = () =>
+    page.evaluate(() => {
+      const selection = window.getSelection()!
+      return selection.isCollapsed ? '' : selection.toString()
+    })
+  await expect.poll(selection).toBe(text)
+  await page.keyboard.press(key)
+  await expect.poll(selection).toBe('')
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve)))
+}
 
 test('distant ordinary typing remains saveable, undoable and reloadable @preservation', async ({
   page,
@@ -17,29 +29,12 @@ test('distant ordinary typing remains saveable, undoable and reloadable @preserv
     ) +
     '\n'
   await operation(page, 'replaceSource', { text: source })
-  const paragraphs = page.locator('#editor .ProseMirror > p')
-  await paragraphs.nth(1).click()
-  await paragraphs.nth(1).evaluate((paragraph) => {
-    const range = document.createRange()
-    range.selectNodeContents(paragraph)
-    range.collapse(true)
-    window.getSelection()!.removeAllRanges()
-    window.getSelection()!.addRange(range)
-  })
-  await settled(page)
+  await caretBeside(page, 'Paragraph 0.', 'ArrowLeft')
   await page.keyboard.type('First ')
   await expect
     .poll(async () => (await observe(page)).snapshot?.text)
     .toContain('First Paragraph 0.')
-  await paragraphs.last().click()
-  await paragraphs.last().evaluate((paragraph) => {
-    const range = document.createRange()
-    range.selectNodeContents(paragraph)
-    range.collapse(false)
-    window.getSelection()!.removeAllRanges()
-    window.getSelection()!.addRange(range)
-  })
-  await settled(page)
+  await caretBeside(page, 'Paragraph 999.', 'ArrowRight')
   await page.keyboard.type(' Last')
   const expected = source
     .replace('Paragraph 0.', 'First Paragraph 0.')
@@ -175,18 +170,7 @@ test('new list items and a pasted list keep each list apart and saveable @preser
   const source = '* one\n* two\n\nMiddle\n\n- dash\n\nEnd\n'
   await operation(page, 'replaceSource', { text: source })
   await operation(page, 'reload')
-  await operation(page, 'find', { text: 'two' })
-  const selection = () =>
-    page.evaluate(() => {
-      const selection = window.getSelection()!
-      return selection.isCollapsed
-        ? selection.anchorNode?.textContent?.slice(0, selection.anchorOffset)
-        : `[${selection.toString()}]`
-    })
-  await expect.poll(selection).toBe('[two]')
-  await page.keyboard.press('ArrowRight')
-  await expect.poll(selection).toBe('two')
-  await settled(page)
+  await caretBeside(page, 'two', 'ArrowRight')
   await page.keyboard.press('Enter')
   await page.keyboard.type('three')
   const typed = source.replace('* two\n', '* two\n* three\n')
@@ -207,5 +191,39 @@ test('new list items and a pasted list keep each list apart and saveable @preser
   await operation(page, 'reload', { text: pasted })
   expect((await observe(page)).snapshot?.text).toBe(pasted)
   await expect(page.locator('#editor .ProseMirror > ul')).toHaveCount(3)
+  expect((await observe(page)).diagnostics).toEqual([])
+})
+
+test('typing in a long task list and beside links saves only the edited text @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  const source =
+    Array.from(
+      { length: 1000 },
+      (_, index) => `* [ ] Task ${index} with [a link](/t/${index})`,
+    ).join('\r\n') +
+    '\r\n\r\nSee [the reference][ref] and [an inline link](/x).\r\n\r\n[ref]: /target\r\n'
+  await operation(page, 'replaceSource', { text: source })
+  await operation(page, 'reload')
+  for (const [anchor, typed] of [
+    ['Task 500', ' typed'],
+    ['See', ' also'],
+  ] as const) {
+    await caretBeside(page, anchor, 'ArrowRight')
+    await page.keyboard.type(typed)
+  }
+  const expected = source
+    .replace('Task 500 ', 'Task 500 typed ')
+    .replace('See ', 'See also ')
+  await expect
+    .poll(async () => (await observe(page)).snapshot?.text)
+    .toBe(expected)
+  await operation(page, 'undo')
+  await operation(page, 'redo')
+  expect((await observe(page)).snapshot?.text).toBe(expected)
+  await operation(page, 'reload', { text: expected })
+  expect((await observe(page)).snapshot?.text).toBe(expected)
   expect((await observe(page)).diagnostics).toEqual([])
 })

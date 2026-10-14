@@ -73,15 +73,23 @@ test('unmatchable large rewrites still fail within the correspondence work budge
     (_, index) => `__Before ${index}__ [kept](/target)`,
   ).join('\n\n')
   await withEditor(source, (editor) => {
-    const after = editor.ctx.get(parserCtx)(
-      Array.from(
-        { length: 1100 },
-        (_, index) => `__After ${index}__ [kept](/target)`,
-      ).join('\n\n'),
+    const parse = editor.ctx.get(parserCtx)
+    const rewritten = Array.from(
+      { length: 1100 },
+      (_, index) => `__After ${index}__ [kept](/target)`,
     )
-    expect(() => new Preservation(editor.ctx, source).serialize(after)).toThrow(
-      'too many blocks',
-    )
+    // One block fewer, so blocks cannot be validated where they stand.
+    expect(() =>
+      new Preservation(editor.ctx, source).serialize(
+        parse(rewritten.slice(1).join('\n\n')),
+      ),
+    ).toThrow('too many blocks')
+    // Every block edited where it stands needs no matching.
+    expect(
+      new Preservation(editor.ctx, source).serialize(
+        parse(rewritten.join('\n\n')),
+      ),
+    ).toBe(rewritten.join('\n\n'))
   })
 })
 
