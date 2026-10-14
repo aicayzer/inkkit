@@ -363,6 +363,16 @@ function retainShortRow(
   )
 }
 
+// A `<br />` line, read as an HTML block or as a paragraph holding only it.
+function spacer(node: SourceNode | undefined): boolean {
+  const html = node?.type === 'paragraph' ? node.children?.[0] : node
+  return (
+    (node?.type !== 'paragraph' || node.children?.length === 1) &&
+    html?.type === 'html' &&
+    lineBreakHTML(String(html.value))
+  )
+}
+
 // Patch changed leaves so an adjacent edit retains authored delimiters and labels.
 function retainSource(
   before: SourceNode,
@@ -478,6 +488,37 @@ function retainSource(
       throw new PreservationError('A source token has no location')
     const pipes = rowPipes(raw)
     return `${pipes.opening ? '| ' : ''}${canonical.slice(from, to)} ${pipes.closing != null ? '|' : ''}`
+  }
+  if (
+    before.type === 'listItem' &&
+    after.type === 'listItem' &&
+    before.children &&
+    after.children &&
+    before.children.length === after.children.length + 1 &&
+    (spacer(before.children[0]) || before.children[0]!.type === 'paragraph') &&
+    after.children[0]?.type !== 'paragraph' &&
+    !spacer(after.children[0])
+  ) {
+    // The item now opens with an empty line before a block, which is written
+    // as no line. The blocks after it keep their authored source.
+    const retained = retainSource(
+      { ...before, children: before.children.slice(1) },
+      { ...after, spread: before.spread },
+      source,
+      canonical,
+      lineEnding,
+      inTable,
+    )
+    const first = before.children[0]!
+    if (spacer(first)) return retained
+    // An emptied first line is kept as the `<br />` line it reads back as.
+    const from = first.position!.start.offset! - start
+    const to = first.position!.end.offset! - start
+    return retained.startsWith(
+      source.slice(start, before.children[1]!.position!.start.offset!),
+    )
+      ? retained.slice(0, from) + '<br />' + retained.slice(to)
+      : retained
   }
   if (before.type === 'text' && after.type === 'text')
     return retainBoundaryWhitespace(
@@ -826,7 +867,6 @@ export function semanticSignature(doc: ProseNode): string {
       [
         'referenceContent',
         'referenceType',
-        'listPlaceholder',
         'marker',
         'id',
         'label',

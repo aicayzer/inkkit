@@ -60,6 +60,7 @@ import {
 import { literalBlock, createLiteralPreservation } from './literals'
 import {
   imageAttrs,
+  imageBlockName,
   imageBlocks,
   markdownImageAttrs,
   readParagraph,
@@ -412,6 +413,36 @@ const cellBreakKeymap = $prose(() =>
   }),
 )
 
+// A list item that opens with a block, such as a code fence, is held with the
+// empty first paragraph the schema requires. Written out, that paragraph would
+// be a spacer `<br />` line; without it the item reads back the same.
+const listItems = extendListItemSchemaForTask.extendSchema(
+  (previous) => (ctx) => {
+    const schema = previous(ctx)
+    return {
+      ...schema,
+      toMarkdown: {
+        ...schema.toMarkdown,
+        runner(state, node) {
+          const [first, second] = [node.firstChild, node.maybeChild(1)]
+          // A task item's checkbox is written on its first line.
+          if (
+            node.attrs.checked == null &&
+            first?.type.name === 'paragraph' &&
+            first.content.size === 0 &&
+            second &&
+            second.type.name !== 'paragraph' &&
+            // An image block reads back as a paragraph in that position.
+            second.type.name !== imageBlockName
+          )
+            node = node.copy(node.content.cut(first.nodeSize))
+          schema.toMarkdown.runner(state, node)
+        },
+      },
+    }
+  },
+)
+
 export const tables: MilkdownPlugin[] = [
   tableSchema.extendSchema((previous) => (ctx) => ({
     ...previous(ctx),
@@ -514,7 +545,7 @@ export function createDialect(
     normalizedImages,
     imageBlocks,
     autolinkInputRule,
-    extendListItemSchemaForTask,
+    listItems,
     strikethroughAttr,
     strikethroughSchema,
     strikethroughInputRule,
