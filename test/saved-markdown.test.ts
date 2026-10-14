@@ -128,7 +128,7 @@ test('a code fence from HTML cannot carry an info string or an open end that the
   }
 })
 
-test('comment text from HTML cannot contain its own terminator', async () => {
+test('comment elements in HTML save as text that cannot become structure', async () => {
   for (const html of [
     '<p>a<span data-inkkit-comment="html">x --&gt; # H &lt;b&gt;h</span>b</p>',
     '<p>a<span data-inkkit-comment="obsidian">x %% # H *e*</span>b</p>',
@@ -145,7 +145,7 @@ test('comment text from HTML cannot contain its own terminator', async () => {
     '<p>a<span data-inkkit-comment="html">note</span>b</p>',
     'drop',
   )
-  expect(kept.markdown).toBe('a<!--note-->b\n')
+  expect(kept.markdown).toBe('anoteb\n')
 })
 
 test('editing a reference definition through the API saves one definition', async () => {

@@ -26,6 +26,7 @@ async function pasted(
   input: Partial<ClipboardInput>,
   images: ImageAdapter = adapter,
   wikiLinks = false,
+  files = false,
 ): Promise<{ markdown: string; dom: HTMLElement }> {
   const root = document.createElement('div')
   document.body.append(root)
@@ -45,7 +46,7 @@ async function pasted(
       ctx.set(defaultValueCtx, '')
       ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
     })
-    .use(createDialect(true, wikiLinks))
+    .use(createDialect(true, wikiLinks, files))
     .use(imageView(images))
     .use(paste.plugin)
     .create()
@@ -1025,8 +1026,11 @@ test('InkKit elements import as the text they show when their attributes differ'
     expect(await read(wiki('[[Page]]', 'Shown'))).toBe('Shown\n')
     expect(await read(wiki('[[Target|Shown]]', 'Shown'))).toBe('Shown\n')
   }
-  expect(await dropped(footnote('n'))).toBe('a[^n]\n\n[^n]: body\n')
-  expect(await dropped(footnote('Shown'))).toBe('aShown\n\n[^n]: body\n')
+  expect(await dropped(footnote('n'))).toBe('a[^n]\n\nbody\n')
+  expect(await dropped(footnote('Shown'))).toBe('aShown\n\nbody\n')
+  expect(
+    await dropped(footnote('n').replace('<p>body', '<span>[n] </span><p>body')),
+  ).toBe('a[^n]\n\n[^n]: body\n')
 })
 
 test('a diagram figure pastes its source only when its image shows that source', async () => {
@@ -1049,4 +1053,88 @@ test('HTML inserted without the importer leaves out HTML comments', async () => 
   expect(await dropped('<p>a<!--note-->b</p><!--note--><p>c</p>')).toBe(
     'ab\n\nc\n',
   )
+})
+
+const fencedHTML = (info: string, marker = '```') =>
+  `<pre data-language="js" data-inkkit-fence="{&quot;marker&quot;:&quot;${marker}&quot;,&quot;info&quot;:&quot;${info}&quot;,&quot;close&quot;:&quot;${marker}&quot;,&quot;trailing&quot;:&quot;&quot;,&quot;ending&quot;:&quot;\\n&quot;}"><code>x</code></pre>`
+
+test('a code fence keeps only the language its block shows as its info', async () => {
+  for (const read of [
+    dropped,
+    async (html: string) => (await pasted({ html })).markdown,
+  ]) {
+    expect(await read(fencedHTML('js more words'))).toBe('```js\nx\n```\n')
+    expect(await read(fencedHTML('js more words', '~~~'))).toBe(
+      '~~~js\nx\n~~~\n',
+    )
+    expect(await read(fencedHTML(' js', '~~~'))).toBe('~~~ js\nx\n~~~\n')
+  }
+  expect(
+    (
+      await pasted({
+        html: withMarkdown(
+          '[a][]\n\n```js more words\nx\n```\n\n[a]: https://a.test\n',
+          `<p>${linked('a', 'https://a.test', 'a')}</p><pre data-language="js"><code>x</code></pre>`,
+        ),
+      })
+    ).markdown,
+  ).toBe('[a](https://a.test)\n\n```js\nx\n```\n')
+})
+
+const callout = (attributes: string, title: string) =>
+  `<blockquote class="inkkit-callout" data-inkkit-callout="NOTE" data-inkkit-marker="[!NOTE]" ${attributes}><strong class="inkkit-callout-title">${title}</strong><div class="inkkit-callout-body"><p>Body <a href="https://a.test">a</a></p></div></blockquote>`
+
+test('a pasted callout keeps the title it shows and starts expanded', async () => {
+  for (const read of [
+    dropped,
+    async (html: string) => (await pasted({ html })).markdown,
+  ]) {
+    expect(
+      await read(callout('data-inkkit-title="Other text"', 'Shown title')),
+    ).toBe('> [!NOTE] Shown title\n> Body [a](https://a.test)\n')
+    expect(
+      await read(callout('data-inkkit-title="A &amp;amp; B"', 'A &amp; B')),
+    ).toBe('> [!NOTE] A &amp; B\n> Body [a](https://a.test)\n')
+    expect(
+      await read(
+        callout('data-inkkit-fold="-" data-inkkit-title="Shown"', 'Shown'),
+      ),
+    ).toBe('> [!NOTE]+ Shown\n> Body [a](https://a.test)\n')
+  }
+  expect(
+    (
+      await pasted({
+        html: withMarkdown(
+          '> [!NOTE]- Shown\n> Body [a][]\n\n[a]: https://a.test\n',
+          callout('data-inkkit-fold="-" data-inkkit-title="Shown"', 'Shown'),
+        ),
+      })
+    ).markdown,
+  ).toBe('> [!NOTE]+ Shown\n> Body [a][]\n\n[a]: https://a.test\n')
+})
+
+test('template and noscript contents are left out of pasted HTML', async () => {
+  expect(
+    await fromHTML(
+      '<p>a</p><noscript><p>alternative</p></noscript><template><p>inert</p></template><p>b</p>',
+    ),
+  ).toBe('a\n\nb\n')
+})
+
+test('a file embed copied with its HTML pastes as the image the HTML shows', async () => {
+  expect(
+    (
+      await pasted(
+        {
+          html: withMarkdown(
+            '![[other.png]] [a][]\n\n[a]: https://a.test\n',
+            `<p><img src="${pixel}" alt="other.png"> ${linked('a', 'https://a.test', 'a')}</p>`,
+          ),
+        },
+        adapter,
+        false,
+        true,
+      )
+    ).markdown,
+  ).toBe('![other.png](images/photo.png) [a][]\n\n[a]: https://a.test\n')
 })

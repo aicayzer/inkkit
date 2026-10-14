@@ -391,22 +391,9 @@ function commentNode(inline: boolean) {
     code: true,
     defining: true,
     attrs: { syntax: { default: 'html' }, block: { default: !inline } },
-    parseDOM: [
-      {
-        tag: `${inline ? 'span' : 'div'}[data-inkkit-comment]`,
-        preserveWhitespace: 'full',
-        getAttrs(dom) {
-          const syntax =
-            dom.getAttribute('data-inkkit-comment') === 'obsidian'
-              ? 'obsidian'
-              : 'html'
-          // Text that would end the comment early would leave the rest as
-          // Markdown, so it stays plain text.
-          if (commentTextEndsEarly(syntax, dom.textContent ?? '')) return false
-          return { syntax }
-        },
-      },
-    ],
+    // A comment element in inserted HTML shows its text, so it imports as
+    // that text rather than as a comment, which starts hidden.
+    parseDOM: [],
     toDOM: (node) => [
       inline ? 'span' : 'div',
       {

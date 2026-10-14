@@ -125,10 +125,12 @@ Code blocks and literal source are inserted as their own blocks, not joined to t
 
 Pasted or dropped HTML adds nothing to a note that it does not show:
 
-- HTML comments are left out, as described above.
-- HTML copied from InkKit also carries the Markdown it was copied from, which keeps reference links, their definitions and footnotes. InkKit pastes that Markdown only when, after the checks above, InkKit's clipboard HTML for it reads as the HTML it came with: the same text, formatting, addresses, images and structure. Markdown that holds comments, or comment syntax in a reference or footnote label, is not used.
-- From that Markdown, InkKit keeps a reference definition only when a pasted link uses it with the same address and title, and keeps only the first definition of each label. A wiki link stays a link only when it shows its own target; one written with other text pastes as that text.
-- A reference definition, footnote reference or wiki link element keeps its InkKit metadata only when its text is what that metadata shows. A diagram figure pastes its Mermaid source only when it holds just the diagram image, whose text alternative is that source. Otherwise each imports as what it shows.
+- HTML comments, and the contents of `template` and `noscript` elements, are left out.
+- An element that InkKit writes for an author comment imports as the text it shows, not as a comment, which would start hidden.
+- HTML copied from InkKit also carries the Markdown it was copied from, which keeps reference links, their definitions and footnotes. InkKit pastes that Markdown only when, after the checks above, InkKit's clipboard HTML for it reads as the HTML it came with: the same text, formatting, addresses, images and structure. Markdown that holds comments, comment syntax in a reference or footnote label, or a code fence whose info string says more than the block's language, is not used.
+- From that Markdown, InkKit keeps a reference definition only when a pasted link uses it with the same address and title, and keeps only the first definition of each label. A wiki link stays a link only when it shows its own target; one written with other text pastes as that text. A file embed pastes as the image the HTML shows.
+- A reference definition, footnote reference or wiki link element keeps its InkKit metadata only when its text is what that metadata shows. A footnote definition keeps its label only when it starts with that label, `[label] `, as InkKit's clipboard HTML writes it. A callout keeps its authored title only when that title shows as its visible title. A code block keeps the fence marker that InkKit records, with the language it shows as its info string. A diagram figure pastes its Mermaid source only when it holds just the diagram image, whose text alternative is that source. Otherwise each imports as what it shows.
+- A pasted or dropped callout starts expanded, so a folded body is not hidden: `-` is imported as `+`.
 - When HTML imports as nothing, the plain text that came with it is pasted instead.
 
 Ordinary copy leaves out reference definitions, because the links copied with them show their addresses. Definitions copied on their own are copied as their text, `[label]: address "title"`, and paste back as definitions.

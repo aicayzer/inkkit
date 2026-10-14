@@ -480,10 +480,24 @@ export const footnoteDefinition = $node('footnote_definition', (ctx) => ({
   parseDOM: [
     {
       tag: '[data-inkkit-footnote-definition]',
-      getAttrs: (dom) => ({
-        label: dom.getAttribute('data-inkkit-label') ?? '',
-        identifier: dom.getAttribute('data-inkkit-footnote-definition') ?? '',
-      }),
+      // A definition keeps its label only when it starts by showing it, as
+      // InkKit's clipboard HTML writes it; that label is not content.
+      getAttrs: (dom) => {
+        const label = dom.getAttribute('data-inkkit-label') ?? ''
+        const first = dom.firstChild
+        return first?.nodeName === 'SPAN' && first.textContent === `[${label}] `
+          ? {
+              label,
+              identifier:
+                dom.getAttribute('data-inkkit-footnote-definition') ?? '',
+            }
+          : false
+      },
+      contentElement: (dom) => {
+        const content = dom.cloneNode(true) as HTMLElement
+        content.firstChild!.remove()
+        return content
+      },
     },
   ],
   toDOM: (node) => [

@@ -36,6 +36,7 @@ import {
 import { normaliseLabel } from './references'
 import { commentProvenance, isComment, literalCommentSpans } from './comments'
 import { showsWikiTarget } from './linked-syntax'
+import { showsFenceInfo } from './code-fences'
 import {
   InkKitError,
   type ClipboardInput,
@@ -587,9 +588,9 @@ function copiedContent(
   const schema = copied.type.schema
   const imported = importableSlice(
     ctx,
-    new Slice(withShownWikiLinks(copied).content, 0, 0),
+    new Slice(withShownLinks(copied).content, 0, 0),
   ).content
-  if (holdsComments(imported)) return undefined
+  if (holdsHidden(imported)) return undefined
   const accepted = withShownDefinitions(imported)
   if (!accepted.childCount) return undefined
   const shown = visibleContent(ctx, clipboardContent(accepted, schema).html)
@@ -607,25 +608,53 @@ function copiedContent(
     ? accepted
     : undefined
 }
-/** The document with each wiki link whose target it does not show as text. */
-function withShownWikiLinks(node: ProseNode): ProseNode {
+/**
+ * The document as the HTML can show it: a wiki link whose text is not its
+ * target becomes that text, a named file embed becomes the image it shows,
+ * and a folded callout starts expanded.
+ */
+function withShownLinks(node: ProseNode): ProseNode {
   if (node.type.name === 'inkkit_wiki_link')
     return showsWikiTarget(node.attrs)
       ? node
       : node.type.schema.text(String(node.attrs.label || 'Link'))
+  if (isImage(node))
+    return node.attrs.inkkitFileRaw == null
+      ? node
+      : node.type.create(
+          {
+            ...node.attrs,
+            inkkitFileRaw: null,
+            inkkitFileTarget: null,
+            inkkitFileFragment: null,
+            inkkitFileWidth: null,
+            inkkitFileInTable: false,
+          },
+          null,
+          node.marks,
+        )
   if (node.isText || node.isLeaf) return node
   const children: ProseNode[] = []
-  node.forEach((child) => children.push(withShownWikiLinks(child)))
-  return node.copy(Fragment.fromArray(children))
+  node.forEach((child) => children.push(withShownLinks(child)))
+  const content = Fragment.fromArray(children)
+  return node.type.name === 'inkkit_callout' && node.attrs.fold === '-'
+    ? node.type.create({ ...node.attrs, fold: '+' }, content, node.marks)
+    : node.copy(content)
 }
-/** Whether a comment, or comment syntax in a label, is anywhere in content. */
-function holdsComments(content: Fragment): boolean {
+/**
+ * Whether content holds something its HTML cannot show: a comment, comment
+ * syntax in a label, or a code fence whose info string says more than its
+ * language.
+ */
+function holdsHidden(content: Fragment): boolean {
   let found = false
   const labelled = (label: unknown) =>
     typeof label === 'string' && literalCommentSpans(label).length > 0
   content.descendants((node) => {
     if (
       isComment(node) ||
+      (node.type.name === 'code_block' &&
+        !showsFenceInfo(node.attrs.authoredFence, node.attrs.language)) ||
       (/^(?:reference|footnote)_/.test(node.type.name) &&
         labelled(node.attrs.label)) ||
       node.marks.some(
@@ -700,9 +729,15 @@ function visibleContent(ctx: Ctx, html: string): DocumentFragment {
   const template = document.createElement('template')
   template.innerHTML = html
   const container = template.content
-  // A page does not show its HTML comments, so none reaches the note, even
-  // inside source that stays literal.
-  withoutComments(container)
+  // A page shows neither its HTML comments nor the contents of `template`
+  // and `noscript`, so none of them reaches the note, even inside source
+  // that stays literal.
+  for (const hidden of container.querySelectorAll('template,noscript'))
+    hidden.remove()
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_COMMENT)
+  const comments: Node[] = []
+  while (walker.nextNode()) comments.push(walker.currentNode)
+  for (const comment of comments) comment.parentNode?.removeChild(comment)
   // Preserve whole unsupported tables before rewriting their descendants.
   for (const table of [...container.querySelectorAll('table')]) {
     if (table.parentElement?.closest('table')) continue
@@ -837,15 +872,6 @@ function visibleContent(ctx: Ctx, html: string): DocumentFragment {
   }
   collapseClipboardWhitespace(container)
   return container
-}
-/** Removes every comment, including those in the contents of templates. */
-function withoutComments(root: DocumentFragment): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT)
-  const comments: Node[] = []
-  while (walker.nextNode()) comments.push(walker.currentNode)
-  for (const comment of comments) comment.parentNode?.removeChild(comment)
-  for (const template of root.querySelectorAll('template'))
-    withoutComments(template.content)
 }
 /** Literal text as one paragraph per line, open to join the caret's text. */
 function plainSlice(schema: Schema, text: string): Slice {
