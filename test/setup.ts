@@ -4,7 +4,7 @@ const zero = () => new DOMRect(0, 0, 0, 0)
 Element.prototype.getClientRects ??= none
 Range.prototype.getClientRects ??= none
 Range.prototype.getBoundingClientRect ??= zero
-// Nor does it hit-test; a drop point then resolves to the caret.
+// Nor does it hit-test; a drop point then resolves to the start of the document.
 document.elementFromPoint ??= () => null
 // The editor runs in a macOS web view, so Mod means Meta; jsdom reports no platform.
 Object.defineProperty(navigator, 'platform', {

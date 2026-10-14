@@ -123,7 +123,7 @@ export class PasteController {
               ).catch((error) => options.onError?.(error))
               return true
             },
-            // Pastes that ProseMirror inserts itself.
+            // Drops and pastes that ProseMirror inserts itself.
             transformPasted: (slice, view, plain) =>
               this.claimed || plain || view.dragging
                 ? slice
