@@ -15,7 +15,6 @@ interface Callout extends Parent {
   fold: string
   title: string
   titleSource: string
-  listPlaceholder: boolean
   children: RootContent[]
 }
 declare module 'mdast' {
@@ -78,7 +77,7 @@ function remarkCallouts(this: Processor) {
   })
   return (tree: Root, file: { value: unknown }) => {
     const source = String(file.value).replace(/^\uFEFF/, '')
-    const visit = (node: Nodes, parent?: Nodes, index?: number): Nodes => {
+    const visit = (node: Nodes): Nodes => {
       if (node.type === 'blockquote') {
         const start = node.position?.start.offset,
           end = node.position?.end.offset
@@ -165,16 +164,13 @@ function remarkCallouts(this: Processor) {
               .slice(header.length - (match[4]?.length ?? 0))
               .trimEnd(),
             titleSource: match[4]?.trimEnd() ?? '',
-            listPlaceholder: parent?.type === 'listItem' && index === 0,
             children: children.map((child) => visit(child)) as RootContent[],
             position: node.position,
           }
         }
       }
       if ('children' in node)
-        node.children = node.children.map((child, index) =>
-          visit(child, node, index),
-        ) as never
+        node.children = node.children.map((child) => visit(child)) as never
       return node
     }
     tree.children = tree.children.map((node) => visit(node)) as RootContent[]
@@ -196,7 +192,6 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
     fold: { default: '' },
     title: { default: '' },
     titleSource: { default: null },
-    listPlaceholder: { default: false },
   },
   parseDOM: [
     {
@@ -209,8 +204,6 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
         ).toUpperCase()
         const marker = dom.getAttribute('data-inkkit-marker') ?? `[!${kind}]`
         const fold = dom.getAttribute('data-inkkit-fold') ?? ''
-        const placeholder = dom.getAttribute('data-inkkit-list-placeholder')
-        const previous = dom.previousElementSibling
         // A title read from the visible text is written with its punctuation
         // escaped, so it reads back as the same plain text.
         const visibleTitle = singleLine(
@@ -238,14 +231,6 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
           fold,
           title: titleHeader.slice(marker.length + 1).trimEnd(),
           titleSource,
-          listPlaceholder:
-            placeholder == null
-              ? dom.parentElement?.tagName === 'LI' &&
-                (!previous ||
-                  (previous.tagName === 'P' &&
-                    !previous.textContent &&
-                    !previous.childElementCount))
-              : placeholder === 'true',
         }
       },
     },
@@ -258,7 +243,6 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
       'data-inkkit-marker': node.attrs.marker,
       'data-inkkit-fold': node.attrs.fold,
       'data-inkkit-title': node.attrs.titleSource ?? node.attrs.title,
-      'data-inkkit-list-placeholder': String(node.attrs.listPlaceholder),
     },
     [
       'strong',
@@ -279,7 +263,6 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
         fold: node.fold,
         title: node.title,
         titleSource: node.titleSource,
-        listPlaceholder: node.listPlaceholder,
       })
       state.next(node.children)
       state.closeNode()
@@ -288,19 +271,6 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
   toMarkdown: {
     match: (node) => node.type.name === 'inkkit_callout',
     runner(state, node) {
-      const parent = state.top()
-      const first = parent?.children?.[0]
-      // Lists require a leading paragraph even when their authored first block is a callout.
-      if (
-        node.attrs.listPlaceholder &&
-        parent?.type === 'listItem' &&
-        parent.children?.length === 1 &&
-        first?.type === 'paragraph' &&
-        first.children?.length === 1 &&
-        first.children[0]?.type === 'html' &&
-        first.children[0].value === '<br />'
-      )
-        parent.children = []
       state.openNode('inkkitCallout', undefined, { ...node.attrs })
       state.next(node.content)
       state.closeNode()
