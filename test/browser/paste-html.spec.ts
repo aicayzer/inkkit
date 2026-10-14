@@ -215,3 +215,43 @@ test('pasted links with a script scheme keep their text without the link', async
     )
   await expect(page.locator('.ProseMirror a')).toHaveCount(2)
 })
+
+async function dropHTML(page: Page, html: string) {
+  await page.evaluate((html) => {
+    const editor = document.querySelector('.ProseMirror.editor')!
+    const box = editor.getBoundingClientRect()
+    const data = new DataTransfer()
+    data.setData('text/plain', 'plain')
+    data.setData('text/html', html)
+    editor.dispatchEvent(
+      new DragEvent('drop', {
+        dataTransfer: data,
+        clientX: box.left + 8,
+        clientY: box.top + 8,
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+  }, html)
+}
+
+for (const via of ['paste', 'drop'] as const)
+  test(`pasted or dropped HTML saves only structure that reads back the same (${via})`, async ({
+    page,
+  }) => {
+    await openEmpty(page)
+    const html =
+      '<p>a</p><pre class="literal-markdown">&lt;b&gt;x&lt;/b&gt; [l](javascript:void(0))</pre><p>b<span data-inkkit-comment="obsidian">see [l](javascript:void(0))</span></p><p>Visit https://example.com/ now</p>'
+    if (via === 'paste') await pasteHTML(page, html)
+    else await dropHTML(page, html)
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toBe(
+        'a\n\n```\n<b>x</b> [l](javascript:void(0))\n```\n\nb<!--see [l](javascript:void(0))-->\n\nVisit https://example.com/ now\n' +
+          // A drop lands before the empty paragraph, which stays as a spacer.
+          (via === 'drop' ? '\n<br />\n' : ''),
+      )
+    await expect(page.locator('.ProseMirror pre.literal-markdown')).toHaveCount(
+      0,
+    )
+  })
