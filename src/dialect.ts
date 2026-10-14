@@ -371,6 +371,22 @@ function remarkDialect(this: Processor) {
   add('toMarkdownExtensions', gfmAutolinkLiteralToMarkdown())
   add('toMarkdownExtensions', gfmTableToMarkdown())
   add('toMarkdownExtensions', {
+    // Without these, a bare destination that starts with `<` reads back as a
+    // bracketed one, and an entity in a definition, which is not phrasing,
+    // reads back as the character it stands for.
+    unsafe: [
+      { character: '<', inConstruct: 'destinationRaw' },
+      {
+        character: '&',
+        after: '[#A-Za-z]',
+        inConstruct: [
+          'destinationRaw',
+          'destinationLiteral',
+          'titleQuote',
+          'titleApostrophe',
+        ],
+      },
+    ],
     handlers: {
       text(node, parent, state, info) {
         const value = defaultHandlers.text(node, parent, state, info)

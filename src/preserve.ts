@@ -783,16 +783,24 @@ function retainSource(
     before.label === after.label &&
     before.title === after.title
   ) {
-    const destination =
-      /^(\[[\s\S]*?\]:[ \t]*)(<[^>\n]*>|[^\s]+)([\s\S]*)$/.exec(raw)
-    if (destination)
-      return (
-        destination[1] +
-        (destination[2]!.startsWith('<')
-          ? `<${after.url}>`
-          : String(after.url)) +
-        destination[3]
+    const parts = (text: string) =>
+      /^(\[[\s\S]*?\]:[ \t]*(?:\r?\n[ \t]*)?)(<(?:\\[\s\S]|[^\\<>\n])*>|\S+)([\s\S]*)$/.exec(
+        text,
       )
+    const authored = parts(raw)
+    // The canonical writer knows when a destination needs angle brackets, such
+    // as for a space, and how to escape it.
+    const written = parts(canonical.slice(newStart, newEnd))?.[2]
+    if (authored && written) {
+      const angle = authored[2]!.startsWith('<') && !written.startsWith('<')
+      return (
+        authored[1] +
+        (angle
+          ? `<${written.replace(/(\\[\s\S])|[<>]|\\$/g, (match, escape) => escape ?? `\\${match}`)}>`
+          : written) +
+        authored[3]
+      )
+    }
   }
   if (
     before.type === 'tableRow' &&

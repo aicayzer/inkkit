@@ -9,6 +9,7 @@ import {
 import { closeHistory, undo } from '@milkdown/kit/prose/history'
 import { InkKitEditor, type ImageAdapter } from '../src/index'
 import { footnoteDefinitions, referenceDefinitions } from '../src/references'
+import { Preservation, PreservationError } from '../src/preserve'
 
 async function run(
   callback: (editor: InkKitEditor, ctx: Ctx) => void | Promise<void>,
@@ -466,4 +467,82 @@ test('a reference definition copied on its own copies as its text and pastes bac
     editor.loadDocument({ ...input, generation: 2, text: '' })
     await editor.paste({ text: output.text, html: output.html })
     expect(editor.snapshot().text).toBe('[Ref]: /target "Title"\n')
+  }))
+
+const definitionEdits: Array<[string, string, string]> = [
+  ['[r]: /old\n', 'My Notes/file.md', '[r]: <My Notes/file.md>\n'],
+  ['[r]: /old "Title"\n', '/new path', '[r]: </new path> "Title"\n'],
+  ['[r]: </old>\n', '/new path', '[r]: </new path>\n'],
+  ['[r]: /old\n', '<x>', '[r]: \\<x>\n'],
+  ['[r]: </old>\n', 'a<b>c', '[r]: <a\\<b\\>c>\n'],
+  ['[r]: /old\n', 'a b\\c', '[r]: <a b\\c>\n'],
+  ['[r]: </old>\n', 'a\\', '[r]: <a\\\\>\n'],
+  ['[r]: /old\n', 'a&amp;b', '[r]: a\\&amp;b\n'],
+  ['[r]: /old\r\n', 'My Notes/file.md', '[r]: <My Notes/file.md>\r\n'],
+]
+
+for (const [definition, destination, saved] of definitionEdits)
+  test(`editing a definition to ${JSON.stringify(destination)} saves a destination that reopens the same`, () =>
+    run((editor, ctx) => {
+      const ending = definition.endsWith('\r\n') ? '\r\n' : '\n'
+      const source = `See [x][r].${ending}${ending}${definition}`
+      editor.loadDocument({ ...input, text: source })
+      expect(editor.editReferenceDefinition('r', destination)).toBe(true)
+      const text = editor.snapshot().text
+      expect(text).toBe(`See [x][r].${ending}${ending}${saved}`)
+      editor.loadDocument({ ...input, generation: 2, text })
+      const definitions = referenceDefinitions(ctx.get(editorViewCtx).state.doc)
+      expect(definitions.get('r')?.node.attrs.url).toBe(destination)
+    }))
+
+test('a definition edit that cannot be saved is refused and changes nothing', () =>
+  run((editor) => {
+    const source = 'See [x][r].\n\n[r]: /old\n'
+    editor.loadDocument({ ...input, text: source })
+    const before = editor.snapshot()
+    const serialize = Preservation.prototype.serialize
+    Preservation.prototype.serialize = () => {
+      throw new PreservationError('Cannot preserve')
+    }
+    try {
+      expect(() => editor.editReferenceDefinition('r', '/new')).toThrow(
+        expect.objectContaining({ name: 'InkKitError', code: 'preservation' }),
+      )
+    } finally {
+      Preservation.prototype.serialize = serialize
+    }
+    expect(editor.snapshot()).toEqual(before)
+    expect(editor.editReferenceDefinition('missing', '/new')).toBe(false)
+    expect(editor.snapshot()).toEqual(before)
+  }))
+
+test('an entity in a new definition title saves as text', () =>
+  run((editor, ctx) => {
+    const source = 'See [x][r].\n\n[r]: /old\n'
+    editor.loadDocument({ ...input, text: source })
+    expect(editor.editReferenceDefinition('r', '/new', 'a &amp; b')).toBe(true)
+    const text = editor.snapshot().text
+    expect(text).toBe('See [x][r].\n\n[r]: /new "a \\&amp; b"\n')
+    editor.loadDocument({ ...input, generation: 2, text })
+    const definitions = referenceDefinitions(ctx.get(editorViewCtx).state.doc)
+    expect(definitions.get('r')?.node.attrs.title).toBe('a &amp; b')
+  }))
+
+test('an inline link destination that starts with an angle bracket saves and reopens', () =>
+  run((editor, ctx) => {
+    editor.loadDocument({ ...input, text: 'See word.\n' })
+    const view = ctx.get(editorViewCtx)
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, 5, 9)),
+    )
+    editor.format('link', '<x>')
+    const text = editor.snapshot().text
+    expect(text).toBe('See [word](\\<x>).\n')
+    editor.loadDocument({ ...input, generation: 2, text })
+    const hrefs: string[] = []
+    ctx.get(editorViewCtx).state.doc.descendants((node) => {
+      for (const mark of node.marks)
+        if (mark.type.name === 'link') hrefs.push(mark.attrs.href)
+    })
+    expect(hrefs).toEqual(['<x>'])
   }))

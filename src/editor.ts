@@ -3509,13 +3509,15 @@ export class InkKitEditor {
           normaliseLabel(String(node.attrs.label)) === normaliseLabel(label),
       )
     if (!definition) return false
-    view.dispatch(
-      view.state.tr.setNodeMarkup(definition.pos, undefined, {
-        ...definition.node.attrs,
-        url: destination,
-        title: title == null ? definition.node.attrs.title : singleLine(title),
-      }),
-    )
+    const transaction = view.state.tr.setNodeMarkup(definition.pos, undefined, {
+      ...definition.node.attrs,
+      url: destination,
+      title: title == null ? definition.node.attrs.title : singleLine(title),
+    })
+    // Checked with the reference updates that follow it, before it is
+    // applied, so an edit that cannot be saved changes nothing.
+    this.currentText(view.state.applyTransaction(transaction).state.doc)
+    view.dispatch(transaction)
     return true
   }
 

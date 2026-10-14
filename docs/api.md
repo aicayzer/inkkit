@@ -64,7 +64,7 @@ Loading releases focus from the editor's active text surface and does not reveal
 
 `navigateFootnote('definition' | 'reference')` moves between the current footnote reference and its definition, returning whether a destination was found. **Alt+Enter** visits the definition; **Alt+Shift+Enter** returns to its first reference.
 
-`editReferenceDefinition(label, destination, title?)` updates the shared link definition and returns whether it exists. Omitted title retains the current title. `format('link', destination)` edits that shared definition when the selection is in a reference link.
+`editReferenceDefinition(label, destination, title?)` updates the shared link definition. It returns `true` when the definition now has that destination and title, and `false` when no definition has the label or the editor is in source mode. If the edited Markdown cannot be saved and reopened with that destination, it throws `InkKitError` with code `preservation` and changes nothing. Omitted title retains the current title. A destination that needs them, such as one with a space, is written in angle brackets. `format('link', destination)` edits that shared definition when the selection is in a reference link.
 
 These operations retain the existing document, generation and composition checks. Footnote and definition editing are disabled in TXT and Markdown source modes. Hosts continue to import only the public facade.
 
