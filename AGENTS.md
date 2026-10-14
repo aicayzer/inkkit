@@ -40,6 +40,7 @@ pnpm install --frozen-lockfile
 pnpm check            # typecheck, Vitest, build, packed-consumer test
 pnpm format:check     # Prettier; `pnpm format` rewrites
 pnpm build:playground
+pnpm test:built-playground  # opens the built page; needs the build first
 ```
 
 - One unit file: `pnpm exec vitest run test/<name>.test.ts`.

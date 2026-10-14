@@ -10,7 +10,7 @@ pnpm build:playground
 pnpm test:built-playground
 ```
 
-`pnpm test:built-playground` opens the built `_local/playground/index.html` as a file and checks that a diagram renders, so a build that has lost Mermaid fails. Run `pnpm exec playwright install chromium` once, and build first. CI runs it after the build.
+`pnpm test:built-playground` opens the built `_local/playground/index.html` as a file and checks that a diagram renders, so a build that has lost Mermaid fails. It guards the `./src/index.ts` entry in `sideEffects` in `package.json`, which stops the playground build from tree-shaking the Mermaid registration; the package does not ship `src`, so the entry has no effect on hosts. Run `pnpm exec playwright install chromium` once, and build first. CI runs it after the build.
 
 `pnpm dev` starts the [development playground](playground.md); it does not start a browser automatically. `pnpm test:package` packs the built package, installs it in a fresh consumer with an isolated npm cache, checks declarations and CSS, and builds an offline single-file Vite page. It builds a second consumer from the `@aicayzer/inkkit/core` entry and checks that its page contains no Mermaid code. The archive and `package-evidence.json` are written to ignored `_local/release/<version>/`, preserving evidence from earlier releases. Evidence records the commit, working-tree state, compressed SHA-256, npm integrity, decompressed tar SHA-256, and the SHA-256 and size of both offline pages. Commit the candidate before recording final evidence; release verification rejects evidence from a dirty working tree.
 
