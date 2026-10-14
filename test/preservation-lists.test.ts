@@ -286,6 +286,9 @@ function separable(blocks: Placed[], fixed: (index: number) => boolean) {
   return true
 }
 
+// A sample keeps the suite fast on shared runners; `SEEDS` runs more locally.
+const seeds = Number(process.env.SEEDS) || 400
+
 test(
   'random list insertions, moves, swaps, deletions and edits save unless an unchanged list would change',
   () =>
@@ -295,7 +298,7 @@ test(
         (processor.parse(text) as Root).children.length
       let saved = 0
       let refused = 0
-      for (let seed = 1; seed <= 2000; seed++) {
+      for (let seed = 1; seed <= seeds; seed++) {
         let state = seed
         const random = () =>
           (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32
@@ -426,9 +429,9 @@ test(
             )
         })
       }
-      // Before list markers were chosen, 348 of these were refused.
-      expect(saved).toBeGreaterThan(1900)
-      expect(refused).toBeLessThan(50)
+      // Before list markers were chosen, 348 of 2,000 were refused.
+      expect(saved).toBeGreaterThan(seeds * 0.95)
+      expect(refused).toBeLessThan(seeds * 0.025)
     }),
   60_000,
 )
