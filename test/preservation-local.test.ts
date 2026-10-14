@@ -396,21 +396,28 @@ test.each([
   }),
 )
 
-test('typing in one item of a long CRLF task list validates that item alone', () =>
-  withEditor('x\n', (editor) => {
-    const items = Array.from(
-      { length: 2000 },
-      (_, i) => `* [ ] Task ${i} [link](/t/${i})  `,
-    )
-    const source = items.join('\r\n') + '\r\n'
-    const { fast, whole } = edited(
-      editor.ctx,
-      source,
-      typing('Task 1000', ' typed'),
-    )
-    expect(fast).toBe(source.replace('Task 1000 ', 'Task 1000 typed '))
-    expect(whole).toBe(fast)
-  }))
+// The list must be long for local validation to matter, and the whole-document
+// save it is compared with is the slow path, so this takes seconds on a slow
+// runner.
+test(
+  'typing in one item of a long CRLF task list validates that item alone',
+  () =>
+    withEditor('x\n', (editor) => {
+      const items = Array.from(
+        { length: 2000 },
+        (_, i) => `* [ ] Task ${i} [link](/t/${i})  `,
+      )
+      const source = items.join('\r\n') + '\r\n'
+      const { fast, whole } = edited(
+        editor.ctx,
+        source,
+        typing('Task 1000', ' typed'),
+      )
+      expect(fast).toBe(source.replace('Task 1000 ', 'Task 1000 typed '))
+      expect(whole).toBe(fast)
+    }),
+  30_000,
+)
 
 test.each([
   [
