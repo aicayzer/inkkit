@@ -1,13 +1,16 @@
 # Development
 
-Use Node.js 26 and the package-manager version in `package.json`.
+CI runs Node.js 26. The package supports Node.js 22.14 or later (`engines` in `package.json`). Use the package-manager version in `package.json`.
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm check
 pnpm format:check
 pnpm build:playground
+pnpm test:built-playground
 ```
+
+`pnpm test:built-playground` opens the built `_local/playground/index.html` as a file and checks that a diagram renders, so a build that has lost Mermaid fails. Run `pnpm exec playwright install chromium` once, and build first. CI runs it after the build.
 
 `pnpm dev` starts the [development playground](playground.md); it does not start a browser automatically. `pnpm test:package` packs the built package, installs it in a fresh consumer with an isolated npm cache, checks declarations and CSS, and builds an offline single-file Vite page. It builds a second consumer from the `@aicayzer/inkkit/core` entry and checks that its page contains no Mermaid code. The archive and `package-evidence.json` are written to ignored `_local/release/<version>/`, preserving evidence from earlier releases. Evidence records the commit, working-tree state, compressed SHA-256, npm integrity, decompressed tar SHA-256, and the SHA-256 and size of both offline pages. Commit the candidate before recording final evidence; release verification rejects evidence from a dirty working tree.
 
@@ -19,13 +22,13 @@ Choose checks from the changed behaviour, not from every available fixture combi
 
 The randomized list-preservation test runs 400 seeds by default. Set `SEEDS` to run more, for example `SEEDS=2000 pnpm exec vitest run test/preservation-lists.test.ts`.
 
-| Trigger                                                                                 | Required evidence                                                                                                                              |
-| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Candidate code or package changes                                                       | `pnpm check`, `pnpm format:check`, `pnpm build:playground`, actual packed-consumer verification and the small Chromium browser smoke.          |
-| Changed editor behaviour                                                                | Focused regression tests and selected browser cases for the changed contract, including failure and untidy input.                              |
-| Changed WKWebView, focus/input, bridge, clipboard, print or resource lifecycle boundary | Selected native core plus relevant feature cases from the existing WKWebView runner, using the actual candidate archive.                       |
-| Source-only documentation change                                                        | Format and reference/example review; no native run is required. A README change affects the packed package, so refresh final package evidence. |
-| Publication                                                                             | Clean committed candidate evidence, exact registry-version consumer and archive/integrity comparison under [releases](releasing.md).           |
+| Trigger                                                                                 | Required evidence                                                                                                                                                   |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Candidate code or package changes                                                       | `pnpm check`, `pnpm format:check`, `pnpm build:playground`, `pnpm test:built-playground`, actual packed-consumer verification and the small Chromium browser smoke. |
+| Changed editor behaviour                                                                | Focused regression tests and selected browser cases for the changed contract, including failure and untidy input.                                                   |
+| Changed WKWebView, focus/input, bridge, clipboard, print or resource lifecycle boundary | Selected native core plus relevant feature cases from the existing WKWebView runner, using the actual candidate archive.                                            |
+| Source-only documentation change                                                        | Format and reference/example review; no native run is required. A README change affects the packed package, so refresh final package evidence.                      |
+| Publication                                                                             | Clean committed candidate evidence, exact registry-version consumer and archive/integrity comparison under [releases](releasing.md).                                |
 
 Browser tests use the public facade and normal DOM interaction. Use [Playwright's standard CLI](https://playwright.dev/docs/test-cli) to list and select tests, inspect reports and open traces; see the [playground guide](playground.md). The fixture catalogue is selectable. Do not run its fixtures, configurations and adapters as a Cartesian matrix. CI runs the small Chromium smoke on GitHub-hosted Linux and macOS; WebKit and targeted cases remain selectable. Local results do not establish that hosted CI passed.
 
