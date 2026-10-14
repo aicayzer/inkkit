@@ -52,6 +52,10 @@ for (const [name, root, port] of [
       [4000, 'middle'],
       [4000, 'middle-link'],
       [4000, 'middle-short-link'],
+      [4000, 'middle-reference'],
+      [4000, 'middle-task'],
+      [1000, 'middle-code'],
+      [1000, 'middle-table'],
     ]) {
       const setup = await page.evaluate(
         async ({ root, blocks, kind }) => {
@@ -114,21 +118,43 @@ for (const [name, root, port] of [
             { length: blocks },
             (_, i) => `See [link ${i}](/t/${i}) for the details.\n\n`,
           ).join('')
-          const text =
-            kind === 'middle-short-link'
-              ? shortLinks
-              : (leadingHeading ? '# Heading\n\n' : '') +
-                (kind === 'code' || kind.startsWith('code-heading')
-                  ? codeBlock
-                  : kind === 'marked'
-                    ? '__Authored bold__ and _emphasis_. ' + paragraph
-                    : kind === 'middle-link'
-                      ? linked
-                      : paragraph
-                ).repeat(blocks) +
-                (kind === 'mixed'
-                  ? '| A | B |\n| - | - |\n| one | two |\n\n```ts\nconst x = 1;\n```\n\n[Retained][ref]\n\n[ref]: /target\n\n<section>unsupported</section>\n'
-                  : '')
+          const generated = {
+            'middle-short-link': () => shortLinks,
+            'middle-reference': () =>
+              Array.from(
+                { length: blocks },
+                (_, i) => `See [link ${i}][target] for the details.\n\n`,
+              ).join('') + '[target]: /target\n',
+            'middle-task': () =>
+              Array.from(
+                { length: blocks },
+                (_, i) => `- [ ] Task ${i} with [a link](/t/${i}) to follow\n`,
+              ).join(''),
+            'middle-code': () =>
+              '```ts\nconst value = items.map((item) => item.name);\n```\n\n'.repeat(
+                blocks,
+              ),
+            'middle-table': () =>
+              Array.from(
+                { length: blocks },
+                (_, i) =>
+                  `| Name | Value |\n| --- | --- |\n| row ${i} | [link](/t/${i}) |\n\n`,
+              ).join(''),
+          }[kind]
+          const text = generated
+            ? generated()
+            : (leadingHeading ? '# Heading\n\n' : '') +
+              (kind === 'code' || kind.startsWith('code-heading')
+                ? codeBlock
+                : kind === 'marked'
+                  ? '__Authored bold__ and _emphasis_. ' + paragraph
+                  : kind === 'middle-link'
+                    ? linked
+                    : paragraph
+              ).repeat(blocks) +
+              (kind === 'mixed'
+                ? '| A | B |\n| - | - |\n| one | two |\n\n```ts\nconst x = 1;\n```\n\n[Retained][ref]\n\n[ref]: /target\n\n<section>unsupported</section>\n'
+                : '')
           const start = performance.now()
           editor.loadDocument({
             documentId: 'performance',
@@ -145,9 +171,22 @@ for (const [name, root, port] of [
             selection.collapse(heading.firstChild, heading.textContent.length)
           }
           if (kind.startsWith('middle')) {
-            const middle = document.querySelectorAll('#probe .ProseMirror > p')[
-              blocks / 2
-            ]
+            const middle =
+              {
+                'middle-task': () =>
+                  document.querySelectorAll('#probe .ProseMirror li p')[
+                    blocks / 2
+                  ],
+                'middle-code': () =>
+                  document.querySelectorAll('#probe .ProseMirror pre code')[
+                    blocks / 2
+                  ],
+                'middle-table': () =>
+                  document.querySelectorAll('#probe .ProseMirror td')[
+                    blocks + 1
+                  ],
+              }[kind]?.() ??
+              document.querySelectorAll('#probe .ProseMirror > p')[blocks / 2]
             const walker = document.createTreeWalker(
               middle,
               NodeFilter.SHOW_TEXT,
