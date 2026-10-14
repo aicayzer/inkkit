@@ -1371,4 +1371,5 @@ window.interop.measure = async (
   images.dispose()
   return result
 }
+window.initialReadyMs = initialReadyMs
 window.ready = true

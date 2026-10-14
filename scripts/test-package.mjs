@@ -1,5 +1,6 @@
 import {
   mkdtemp,
+  readdir,
   readFile,
   writeFile,
   mkdir,
@@ -22,7 +23,39 @@ const run = (command, args, cwd) =>
 export const sha256 = (bytes) =>
   createHash('sha256').update(bytes).digest('hex')
 
+// The main entry bundles Mermaid; the core entry must not.
+const mermaidMarker = 'Syntax error in text'
+
 export async function checkConsumer(packageSpec, version) {
+  const main = await buildConsumer(packageSpec, version, '')
+  const core = await buildConsumer(packageSpec, version, '/core')
+  if (!main.html.includes(mermaidMarker))
+    throw new Error('The main-entry consumer bundle does not contain Mermaid')
+  if (core.html.includes(mermaidMarker))
+    throw new Error('The core-entry consumer bundle contains Mermaid')
+  return {
+    offlineBundleSha256: sha256(main.html),
+    offlineBundleBytes: Buffer.byteLength(main.html),
+    coreOfflineBundleSha256: sha256(core.html),
+    coreOfflineBundleBytes: Buffer.byteLength(core.html),
+  }
+}
+
+// Node and webpack resolve relative ES module imports only with their
+// extension, as the package is "type": "module".
+async function checkRelativeImports(dist) {
+  for (const file of await readdir(dist)) {
+    if (!/\.(?:js|d\.ts)$/.test(file)) continue
+    const text = await readFile(join(dist, file), 'utf8')
+    for (const [, , specifier] of text.matchAll(
+      /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"]*)\1/g,
+    ))
+      if (!specifier.endsWith('.js'))
+        throw new Error(`${file} imports ${specifier} without its extension`)
+  }
+}
+
+async function buildConsumer(packageSpec, version, entry) {
   const temp = await mkdtemp(join(tmpdir(), 'inkkit-consumer-'))
   try {
     await writeFile(
@@ -60,13 +93,14 @@ export async function checkConsumer(packageSpec, version) {
     )
     if (installed.name !== '@aicayzer/inkkit' || installed.version !== version)
       throw new Error('Clean consumer installed an unexpected package version')
+    await checkRelativeImports(join(temp, 'node_modules/@aicayzer/inkkit/dist'))
     await writeFile(
       join(temp, 'index.html'),
       '<html><body><div id="editor"></div><script type="module" src="/main.ts"></script></body></html>',
     )
     await writeFile(
       join(temp, 'main.ts'),
-      `import {InkKitEditor, InkKitError, type DocumentSnapshot, type ImageAdapter, type PrintableDocument, type PrintableWarning, type TableCommand, type TableOptions, type EditingMode, type Heading, type EditorOptions, type TextInputPreferences, type CommandState, type EditorLabels, type TextRange, type ReadableTextSnapshot, type TextRect, type ViewportOptions, type ViewportSnapshot, type ViewportInsets, type FileAdapter, type FileReference, type FileContext, type FilePresentation, type PortableImage, type WikiLinkAdapter, type WikiLinkReference, type DocumentContext} from '@aicayzer/inkkit';\nimport '@aicayzer/inkkit/style.css';\nconst fileReference: FileReference = {reference:'opaque/photo#page=2',kind:'wiki',fragment:'page=2',label:'Photo',width:320};
+      `import {InkKitEditor, InkKitError, type DocumentSnapshot, type ImageAdapter, type PrintableDocument, type PrintableWarning, type TableCommand, type TableOptions, type EditingMode, type Heading, type EditorOptions, type TextInputPreferences, type CommandState, type EditorLabels, type TextRange, type ReadableTextSnapshot, type TextRect, type ViewportOptions, type ViewportSnapshot, type ViewportInsets, type FileAdapter, type FileReference, type FileContext, type FilePresentation, type PortableImage, type WikiLinkAdapter, type WikiLinkReference, type DocumentContext} from '@aicayzer/inkkit${entry}';\nimport '@aicayzer/inkkit/style.css';\nconst fileReference: FileReference = {reference:'opaque/photo#page=2',kind:'wiki',fragment:'page=2',label:'Photo',width:320};
 const presentations: readonly FilePresentation[] = [{kind:'image',url:'blob:fixture',mimeType:'image/png'}, {kind:'audio',url:'blob:fixture',label:'Voice'}, {kind:'video',url:'blob:fixture'}, {kind:'pdf',url:'blob:fixture',mimeType:'application/pdf'}, {kind:'file',label:'Archive'}, {kind:'missing',label:'Unavailable'}, {kind:'error',message:'Unavailable bytes'}];
 const files: FileAdapter = {
   async resolve(reference:FileReference, context:FileContext):Promise<FilePresentation> {const signal:AbortSignal=context.signal; void context.documentId; void context.generation; void context.operationId; void reference.kind; void reference.fragment; void reference.label; void reference.width; if(signal.aborted) throw new DOMException('Aborted','AbortError'); return presentations[4]!},
@@ -104,7 +138,7 @@ const preferences: TextInputPreferences = {spellcheck:false,autocorrect:false,au
     const html = await readFile(join(temp, 'dist/index.html'), 'utf8')
     if (/<script[^>]+\bsrc=|<link[^>]+\bhref=/i.test(html))
       throw new Error('The web-view consumer is not bundled offline')
-    return { offlineBundleSha256: sha256(html) }
+    return { html }
   } finally {
     await rm(temp, { recursive: true, force: true })
   }
@@ -148,6 +182,7 @@ async function testPackage() {
         'public declarations',
         'CSS export',
         'offline Vite bundle',
+        'core entry without Mermaid',
       ],
     }
     await writeFile(

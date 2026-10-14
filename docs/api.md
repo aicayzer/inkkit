@@ -84,13 +84,24 @@ The optional `ImageAdapter` provides:
 - `importImage({ bytes, mimeType, filename?, source? }, context)`: stores captured bytes and returns a reference. `source` associates bytes with an HTML image URL when available.
 - `exportImage(reference, context)`: returns bytes and MIME type for portable clipboard output.
 
-A paragraph that holds only one image behaves as its own block. Text can't be placed on its line: typing, Enter, paste or composition beside it writes a new paragraph before or after it, and typing, Enter or composition with it selected writes one after it. Paste with the image selected replaces it. Arrow keys select the image on the way past it, and Backspace or Delete next to it selects it before deleting it. A click beside the image puts the caret after it. `insertImages()` inserts one block per image and leaves the caret after the last one. An image that shares its paragraph with text, is linked, emphasised, strong, struck through or highlighted, or sits in a table cell or at the start of a list item, stays inline in its paragraph; with a file adapter, its card displays on its own line. Each form keeps its authored Markdown.
+A paragraph that holds only one image behaves as its own block. Text can't be placed on its line: typing, Enter, paste or composition beside it writes a new paragraph before or after it, and typing, Enter or composition with it selected writes one after it. Paste with the image selected replaces it. Arrow keys select the image on the way past it, and Backspace or Delete next to it selects it before deleting it. A click beside the image puts the caret after it. `insertImages()` inserts one block per image and leaves the caret after the last one; see [Inserting images](#inserting-images) for tables and for code and other source. An image that shares its paragraph with text, is linked, emphasised, strong, struck through or highlighted, or sits in a table cell or at the start of a list item, stays inline in its paragraph; with a file adapter, its card displays on its own line. Each form keeps its authored Markdown.
 
 The operation context contains document ID, generation and operation ID. Validate it in native callbacks. Alt text, title and the existing `alt|width` convention remain editor metadata. The adapter owns storage, access control and networking. InkKit contains no Marfa types or storage-path assumptions.
 
 Keep imported bytes available while the captured operation is pending and after insertion, including before the host saves its document. Retention and orphan cleanup belong to the host; a sweep based only on saved Markdown can miss an in-flight import or an unsaved edit. Reject stale callbacks without inserting their references into a replacement document.
 
 The `events.error` callback reports asynchronous failures. Hosts with native clipboards use `events.clipboard` to receive ordinary image and diagram selections as portable clipboard output. Return a promise that resolves only after the native clipboard write succeeds; reject it on failure. Image and diagram Cut await this acknowledgement before removing source content. Encode byte arrays explicitly when crossing a WebKit JSON bridge.
+
+### Inserting images
+
+`insertImages(images, x?, y?)` puts the images where the selection is, or at the drop point when you pass `x` and `y`. It never splits a block that can't be split or discards a selection it can't replace. As with any formatted edit, a result that can't be preserved is refused and reported through `events.error`.
+
+- **Paragraph, heading, list item, quote, callout or footnote:** inserts one image block per image, replacing a selection and splitting the paragraph around a caret. The caret ends after the last image.
+- **Table cell:** a cell holds one line and no blocks, so the images go inline in the cell, in order and on one line, replacing a selection inside the cell. Alt text and titles are collapsed to one line. The images sit next to each other with no space between them. The caret ends after the last image, the rest of the table keeps its authored spelling, and one undo removes all the images.
+- **Code, comments and other source kept as written:** a code block, Mermaid diagram, author comment, front matter, or an unsupported literal block such as a paragraph or table that contains inline HTML, can't hold an image. The images go after the block where the selection ends, inside its list item or quote when it sits in one, and the block and the selection are left as they are. A selection that spans table cells, selects cells, or runs from outside a table into a cell puts the images after the table, and no cell changes; one that runs from a cell out of the table puts them after the block where it ends. A list item that opens with a code fence can't take anything after the fence and still be saved as written, so the images go after the whole list.
+- **Drop point:** with `x` and `y`, images are always placed as blocks, after the top-level block at that point or in place of an empty paragraph, so a point over a table puts them below the table. The selection isn't checked.
+
+`commandState().commands.insertImages` is `false` only when there is no image adapter or the editor is in source or TXT mode. A call without an image adapter throws `image-unavailable`.
 
 ## Table refinements
 
@@ -128,18 +139,23 @@ Formatted replacements retain surrounding structure and formatting; replacement 
 
 The mounted root receives `.inkkit-root`. Package rules, including table styles, are scoped beneath it; they do not set the host's `:root` font size or colour scheme. Set these public CSS custom properties on the root or an ancestor. Properties beginning `--_inkkit-` are internal.
 
-| Tokens                                                                                                                                        | Default or purpose                                                                                     |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `--inkkit-font-family`, `--inkkit-font-size`, `--inkkit-line-height`                                                                          | System sans-serif, `15px`; line height defaults to `normal` in formatted mode and `1.5` in source/TXT. |
-| `--inkkit-monospace-font`                                                                                                                     | System monospace stack for source, TXT and code.                                                       |
-| `--inkkit-color-scheme`                                                                                                                       | `light dark`.                                                                                          |
-| `--inkkit-min-height`, `--inkkit-reading-width`                                                                                               | `100%`, `100%`.                                                                                        |
-| `--inkkit-padding-top`, `--inkkit-padding-inline`, `--inkkit-padding-bottom`                                                                  | `10px`, `16px`, `48px`.                                                                                |
-| `--inkkit-paragraph-spacing`                                                                                                                  | About two-thirds of the editor font size.                                                              |
-| `--inkkit-accent-color`, `--inkkit-text-color`                                                                                                | `#0a84ff`, `CanvasText`.                                                                               |
-| `--inkkit-muted-color`, `--inkkit-rule-color`, `--inkkit-code-background`                                                                     | System text mixed with transparency for secondary text, borders and code background.                   |
-| `--inkkit-code-comment`, `--inkkit-code-keyword`, `--inkkit-code-string`, `--inkkit-code-number`, `--inkkit-code-title`, `--inkkit-code-attr` | Syntax highlighting colours.                                                                           |
-| `--inkkit-focus-width`, `--inkkit-focus-color`, `--inkkit-focus-offset`                                                                       | `2px`, editor accent, `-2px`; footnote links default to current text colour and `2px` offset.          |
+| Tokens                                                                                                                                        | Default or purpose                                                                                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--inkkit-font-family`, `--inkkit-font-size`, `--inkkit-line-height`                                                                          | System sans-serif, `15px`; line height defaults to `normal` in formatted mode and `1.5` in source/TXT.                                                 |
+| `--inkkit-monospace-font`                                                                                                                     | System monospace stack for source, TXT and code.                                                                                                       |
+| `--inkkit-color-scheme`                                                                                                                       | `light dark`.                                                                                                                                          |
+| `--inkkit-min-height`, `--inkkit-reading-width`                                                                                               | `100%`, `100%`.                                                                                                                                        |
+| `--inkkit-padding-top`, `--inkkit-padding-inline`, `--inkkit-padding-bottom`                                                                  | `10px`, `16px`, `48px`.                                                                                                                                |
+| `--inkkit-paragraph-spacing`                                                                                                                  | About two-thirds of the editor font size.                                                                                                              |
+| `--inkkit-accent-color`, `--inkkit-text-color`                                                                                                | `#0a84ff`, `CanvasText`.                                                                                                                               |
+| `--inkkit-muted-color`, `--inkkit-rule-color`, `--inkkit-code-background`                                                                     | System text mixed with transparency for secondary text, borders and code background.                                                                   |
+| `--inkkit-code-comment`, `--inkkit-code-keyword`, `--inkkit-code-string`, `--inkkit-code-number`, `--inkkit-code-title`, `--inkkit-code-attr` | Syntax highlighting colors. The defaults follow the editor color scheme and meet WCAG AA contrast on the default code background over a `Canvas` page. |
+| `--inkkit-diagram-background`, `--inkkit-diagram-text-color`, `--inkkit-diagram-error-color`                                                  | `#fff`, `#222`, `#9b2424` for the diagram preview card and its error text.                                                                             |
+| `--inkkit-focus-width`, `--inkkit-focus-color`, `--inkkit-focus-offset`                                                                       | `2px`, editor accent, `-2px`; footnote links default to current text colour and `2px` offset.                                                          |
+
+The editor color scheme is `--inkkit-color-scheme`, or the system setting when it is `light dark`. Default syntax colors use the light or dark palette of that scheme, so a host that forces `light` or `dark` gets matching code colors whatever the system setting. The defaults use CSS `light-dark()`, which needs Chrome 123, Firefox 120, Safari 17.5 or the WebKit in iOS 17.5 and macOS 14.5. In an older engine, code text takes the editor text color until the host sets the `--inkkit-code-*` tokens.
+
+Diagram previews always use Mermaid's default light theme, whatever the editor color scheme, because the same rendering becomes the PNG for clipboard output and print. The preview card is therefore light by default in both schemes. The diagram tokens change the card around the diagram, not the colors inside it. Because the theme does not follow the scheme, a rendered diagram is cached by its source alone.
 
 Inherited legacy `--accent`, `--text`, `--muted`, `--rule`, `--code-bg`, `--mono` and `--reading-width` remain fallbacks when their new tokens are absent. Each editor root can have independent styling.
 
@@ -193,8 +209,24 @@ New mount-time label overrides are `fileLoading`, `fileMissing`, `fileError`, `f
 
 ## Lightweight presentation from 0.0.11
 
-`EditorOptions.rendering` accepts `codeHighlighting?: boolean` and `diagramPreview?: boolean`. Both default to `true`. Set either to `false` at mount to skip that presentation plugin. Code and diagram source remain editable and retain their authored spelling; mode changes, history and portable output keep the same contracts. Explicit clipboard and printable diagram exports still render on demand, including when previews are disabled. Mermaid loads after source validation on the first actual render; its queue/cache is shared across instances. The offline single-file bundle still includes the rendering code, so disabling previews reduces execution work rather than archive bytes. See [measured baselines](performance.md).
+`EditorOptions.rendering` accepts `codeHighlighting?: boolean` and `diagramPreview?: boolean`. Both default to `true`. Set either to `false` at mount to skip that presentation plugin. Code and diagram source remain editable and retain their authored spelling; mode changes, history and portable output keep the same contracts. Explicit clipboard and printable diagram exports still render on demand, including when previews are disabled. Mermaid loads after source validation on the first actual render; its queue/cache is shared across instances. An offline single-file bundle built from the main entry still includes the rendering code, so disabling previews reduces execution work rather than bytes. To leave Mermaid out of the bundle, use the core entry described in [Builds without diagrams](#builds-without-diagrams). See [measured baselines](performance.md).
 
 Buffered `insertText()` supports multiline text and normalises CRLF/CR to LF in formatted insertion, including code blocks. In ordinary blocks it inherits the active marks and inserts semantic breaks in one history transaction. Source/TXT retain their existing literal insertion rules.
 
 Formatted plain-text insertion preflights source preservation before dispatch. Multiline table-cell text that cannot reopen under the supported table dialect rejects with `preservation`, retaining source, revision, selection and history. This also applies to buffered multiline input; a success never means that an unsaveable document was accepted.
+
+## Builds without diagrams
+
+The package has two entry points with the same exports:
+
+- `@aicayzer/inkkit` renders diagrams with Mermaid.
+- `@aicayzer/inkkit/core` never imports Mermaid. Mermaid is still installed as a dependency, but a host that imports only this entry does not bundle it, so each web view parses and holds a much smaller page. See [measurements](performance.md#builds-with-and-without-mermaid-october-14-2026).
+
+With the core entry, `mermaid` fences remain editable code blocks that keep their authored source. No preview is shown, whatever `rendering.diagramPreview` says, and `events.error` never reports `diagram-unavailable`, while editing or when copying. Clipboard output and `printableSnapshot()` keep the diagram source as readable code, the same fallback as a diagram that cannot render: clipboard `diagrams` entries carry an `error`, and print reports a `diagram-unavailable` warning.
+
+Import from one entry throughout the app. If any module imports `@aicayzer/inkkit`, the bundle includes Mermaid and every editor renders diagrams. The stylesheet import, `@aicayzer/inkkit/style.css`, is the same for both entries.
+
+```ts
+import { InkKitEditor } from '@aicayzer/inkkit/core'
+import '@aicayzer/inkkit/style.css'
+```

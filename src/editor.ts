@@ -109,7 +109,7 @@ import {
   withReferenceMetadata,
 } from './reference-clipboard'
 import { imageView } from './images'
-import { isImage, isImageBlock } from './image-blocks'
+import { imagePlacement, isImage, isImageBlock } from './image-blocks'
 import { GapCursor } from '@milkdown/kit/prose/gapcursor'
 import { wikiLinkView } from './wiki-view'
 import { withFileSignal } from './files'
@@ -154,7 +154,13 @@ import {
   type TextProjection,
 } from './text-ranges'
 import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
-import { commentSelectionContent, setCommentVisibility } from './comments'
+import {
+  assertCommentsEndWhereWritten,
+  commentSelectionContent,
+  isWrittenEdit,
+  setCommentVisibility,
+  sourceReplacement,
+} from './comments'
 import { PasteController } from './paste'
 import { selectionPlugin } from './selection'
 import { search, SearchQuery, setSearchState } from 'prosemirror-search'
@@ -174,7 +180,7 @@ import {
   type OutlineContext,
 } from './outline'
 import { taskListPlugin, toggleTaskList } from './tasks'
-import { isMermaid, mermaidPreview } from './mermaid'
+import { diagramsAvailable, isMermaid, mermaidPreview } from './mermaid'
 import {
   hasAuthoredImagesInLiterals,
   printableMarkdown,
@@ -1109,6 +1115,7 @@ export class InkKitEditor {
     let tr = view.state.tr
       .replaceWith(0, view.state.doc.content.size, parsed.content)
       .setDocAttribute(sourceAttribute, provenance)
+      .setMeta(sourceReplacement, true)
     tr.setSelection(Selection.atEnd(tr.doc))
     if (isolated) tr = closeHistory(tr)
     view.dispatch(tr)
@@ -1330,7 +1337,11 @@ export class InkKitEditor {
           'Some copied images were unavailable; their descriptions were retained',
         ),
       )
-    if (result.diagrams?.some((diagram) => diagram.error))
+    // A host built without Mermaid chose not to render diagrams.
+    if (
+      diagramsAvailable() &&
+      result.diagrams?.some((diagram) => diagram.error)
+    )
       this.events.error?.(
         new InkKitError(
           'diagram-unavailable',
@@ -1600,7 +1611,11 @@ export class InkKitEditor {
             const next = this.state.apply(tr)
             if (!instance.loading) {
               try {
-                instance.assertPreserved(this.state.doc, next.doc)
+                instance.assertPreserved(
+                  this.state.doc,
+                  next.doc,
+                  isWrittenEdit(tr),
+                )
               } catch (error) {
                 this.updateState(this.state)
                 instance.events.error?.(
@@ -1653,10 +1668,10 @@ export class InkKitEditor {
       .use(
         options.rendering?.codeHighlighting === false
           ? []
-          : (await import('./highlight')).highlightPlugin,
+          : (await import('./highlight.js')).highlightPlugin,
       )
       .use(
-        options.rendering?.diagramPreview === false
+        options.rendering?.diagramPreview === false || !diagramsAvailable()
           ? []
           : mermaidPreview((error) => events.error?.(error)),
       )
@@ -2280,10 +2295,17 @@ export class InkKitEditor {
   }
 
   /** Throws when a document reached by an edit, after every appended normalisation, cannot be
-   *  saved as preserved Markdown. Dispatch and the replacement commands share this check. */
-  private assertPreserved(before: ProseNode, after: ProseNode): void {
-    if (this.preservation && !this.literalSurface && !after.eq(before))
-      this.currentText(after)
+   *  saved as preserved Markdown. Dispatch and the replacement commands share this check.
+   *  `written` is false for history steps and source replacement, which restore or supply a
+   *  document that may hold comment text the formatted editor would refuse to accept typed. */
+  private assertPreserved(
+    before: ProseNode,
+    after: ProseNode,
+    written = true,
+  ): void {
+    if (this.literalSurface || after.eq(before)) return
+    if (written) assertCommentsEndWhereWritten(before, after)
+    if (this.preservation) this.currentText(after)
   }
 
   replaceTextRange(range: TextRange, text: string): boolean {
@@ -2937,6 +2959,12 @@ export class InkKitEditor {
       )
     const view = this.editor.ctx.get(editorViewCtx)
     const { schema } = view.state
+    const placement =
+      x != null && y != null ? undefined : imagePlacement(view.state)
+    if (placement?.kind === 'inline') {
+      this.insertInline(images)
+      return
+    }
     // One paragraph per image: each is read back as a standalone image block where one fits.
     const blocks = images.map((image) =>
       schema.nodes.paragraph!.create(
@@ -2952,9 +2980,12 @@ export class InkKitEditor {
       this.insertBlocks(blocks, x, y)
       return
     }
-    const tr = view.state.tr.replaceSelection(
-      new Slice(Fragment.fromArray(blocks), 0, 0),
-    )
+    const tr =
+      placement?.kind === 'after'
+        ? view.state.tr.insert(placement.pos, blocks)
+        : view.state.tr.replaceSelection(
+            new Slice(Fragment.fromArray(blocks), 0, 0),
+          )
     // After the last image, so typing continues below it rather than in the block that follows.
     const last = blocks.at(-1)!.firstChild
     let after: number | undefined
@@ -2963,6 +2994,27 @@ export class InkKitEditor {
       return after == null
     })
     if (after != null) tr.setSelection(TextSelection.create(tr.doc, after))
+    view.dispatch(tr.scrollIntoView())
+  }
+
+  // A table cell holds one line, so the images sit side by side where the selection was, with no
+  // space between them: a space beside an image in a cell is saved as `&#x20;`.
+  private insertInline(
+    images: { path: string; alt: string; title?: string }[],
+  ): void {
+    const view = this.editor.ctx.get(editorViewCtx)
+    const { state } = view
+    const oneLine = (text: string) => text.replace(/\s*[\r\n]+\s*/g, ' ')
+    const nodes = images.map((image) =>
+      state.schema.nodes.image!.create({
+        src: image.path,
+        alt: oneLine(image.alt),
+        title: oneLine(image.title ?? ''),
+      }),
+    )
+    const { from, to } = state.selection
+    const tr = state.tr.replaceWith(from, to, nodes)
+    tr.setSelection(TextSelection.create(tr.doc, from + nodes.length))
     view.dispatch(tr.scrollIntoView())
   }
 

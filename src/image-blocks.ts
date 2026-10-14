@@ -5,6 +5,7 @@ import {
   Fragment,
   type Node as ProseNode,
   type NodeType,
+  type ResolvedPos,
 } from '@milkdown/kit/prose/model'
 import {
   NodeSelection,
@@ -17,6 +18,7 @@ import {
   type Transaction,
 } from '@milkdown/kit/prose/state'
 import type { ParserState } from '@milkdown/kit/transformer'
+import { CellSelection } from '@milkdown/kit/prose/tables'
 import { $nodeSchema, $prose } from '@milkdown/kit/utils'
 
 export const imageBlockName = 'image_block'
@@ -75,6 +77,62 @@ export function isImageBlock(node: ProseNode | null | undefined): boolean {
 
 function accepts(parent: ProseNode, index: number, type: NodeType): boolean {
   return parent.canReplaceWith(index, index + 1, type)
+}
+
+const cellTypes = new Set(['table_cell', 'table_header'])
+
+function cellDepth($pos: ResolvedPos): number {
+  for (let depth = $pos.depth; depth > 0; depth--)
+    if (cellTypes.has($pos.node(depth).type.name)) return depth
+  return 0
+}
+
+/** A list item that opens with a code fence or another block is held with an empty first paragraph,
+ *  which is saved as `<br />` and read back as unsupported source once something follows the block.
+ *  Anything added to such an item cannot be saved, so images go after the whole list instead. */
+function opensWithBlock(parent: ProseNode, child: ProseNode): boolean {
+  const first = parent.firstChild
+  return (
+    parent.type.name === 'list_item' &&
+    child !== first &&
+    first?.type.name === 'paragraph' &&
+    first.content.size === 0
+  )
+}
+
+export type ImagePlacement =
+  { kind: 'blocks' } | { kind: 'inline' } | { kind: 'after'; pos: number }
+
+/** Where `insertImages` puts images for a selection. `blocks` replaces the selection with one block per
+ *  image. `inline` places them on the one line of a table cell, which cannot hold blocks. `after` puts
+ *  them below the nearest block that takes a following paragraph, leaving the selection and its
+ *  block as written: the selection is in source that cannot hold an image, such as code, a comment
+ *  or an unsupported literal block, or it spans table cells. Nothing is ever split or discarded. */
+export function imagePlacement(state: EditorState): ImagePlacement {
+  const image = state.schema.nodes.image
+  const paragraph = state.schema.nodes.paragraph
+  const { selection } = state
+  const { $from, $to } = selection
+  const unfit =
+    selection instanceof CellSelection ||
+    [$from, $to].some(
+      ({ parent }) =>
+        parent.inlineContent &&
+        !(image && parent.type.contentMatch.matchType(image)),
+    )
+  const from = cellDepth($from)
+  const to = cellDepth($to)
+  if (!unfit && !from && !to) return { kind: 'blocks' }
+  if (!unfit && from && to && $from.sameParent($to)) return { kind: 'inline' }
+  for (let depth = $to.depth; depth > 0; depth--) {
+    const node = $to.node(depth)
+    const parent = $to.node(depth - 1)
+    if (node.isInline || opensWithBlock(parent, node)) continue
+    const index = $to.index(depth - 1) + 1
+    if (paragraph && parent.canReplaceWith(index, index, paragraph))
+      return { kind: 'after', pos: $to.after(depth) }
+  }
+  return { kind: 'after', pos: state.doc.content.size }
 }
 
 /** The image a paragraph holds as its only content, without marks, which makes the paragraph a

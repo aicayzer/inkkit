@@ -219,7 +219,7 @@ test('an edited block keeps its own source beside inserted and deleted blocks', 
 test('swapping two adjacent lists and editing both still saves', () =>
   withEditor('x\n', (editor) => {
     // Pairing one list by resemblance leaves the other in canonical form, where
-    // it would merge with its neighbour; the alignment's own pairing does not.
+    // it would merge with its neighbour unless it takes another marker.
     saveAs(
       editor.ctx,
       '- item one\n- item two\n\n* star one\n* star two\n\nEnd\n',

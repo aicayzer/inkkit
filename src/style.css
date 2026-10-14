@@ -684,24 +684,16 @@
   border-radius: 4px;
 }
 
-/* Syntax colors: One Dark and One Light, without the blues. */
+/* Syntax colors: One Light and One Dark hues without the blues, darkened or
+   lightened to WCAG AA contrast on the code background. light-dark() follows
+   the editor's color scheme, which a host can force. */
 .inkkit-root {
   --_inkkit-code-comment: var(--_inkkit-muted);
-  --_inkkit-code-keyword: #a626a4;
-  --_inkkit-code-string: #50a14f;
-  --_inkkit-code-number: #986801;
-  --_inkkit-code-title: #c18401;
-  --_inkkit-code-attr: #e45649;
-}
-
-@media (prefers-color-scheme: dark) {
-  .inkkit-root {
-    --_inkkit-code-keyword: #c678dd;
-    --_inkkit-code-string: #98c379;
-    --_inkkit-code-number: #d19a66;
-    --_inkkit-code-title: #e5c07b;
-    --_inkkit-code-attr: #e06c75;
-  }
+  --_inkkit-code-keyword: light-dark(#a626a4, #c77bde);
+  --_inkkit-code-string: light-dark(#3b763a, #98c379);
+  --_inkkit-code-number: light-dark(#8d6001, #d19a66);
+  --_inkkit-code-title: light-dark(#8d6101, #e5c07b);
+  --_inkkit-code-attr: light-dark(#c82c1e, #e37981);
 }
 
 .inkkit-root .hljs-comment,
@@ -898,8 +890,8 @@
 .inkkit-root .inkkit-mermaid-preview {
   padding: 16px;
   overflow: auto;
-  background: #fff;
-  color: #222;
+  background: var(--inkkit-diagram-background, #fff);
+  color: var(--inkkit-diagram-text-color, #222);
 }
 .inkkit-root .inkkit-mermaid-preview svg {
   display: block;
@@ -907,7 +899,7 @@
   height: auto;
 }
 .inkkit-root .inkkit-mermaid-preview[data-state='error'] {
-  color: #9b2424;
+  color: var(--inkkit-diagram-error-color, #9b2424);
   font-size: calc(var(--inkkit-font-size, 15px) * 0.9);
 }
 

@@ -185,6 +185,48 @@ test('inserting images leaves the caret below the last one, by API and at a drop
   )
 })
 
+test('inserting images with the caret in a table cell puts them inline in it', async ({
+  page,
+}) => {
+  const source = '| Name | Size |\n| --- | --- |\n| one | two |\n'
+  await open(page, `${source}\n![Fixture](images/native.png)\n`)
+  await caretIn(page, 'two', 'end')
+  await operation(page, 'insertImages', {
+    images: [
+      { path: 'images/one.png', alt: 'One' },
+      { path: 'images/two.png', alt: 'Two' },
+    ],
+  })
+  await page.keyboard.type('!')
+  const saved = `| Name | Size |\n| --- | --- |\n| one | two![One](images/one.png)![Two](images/two.png)! |\n\n![Fixture](images/native.png)\n`
+  expect(await text(page)).toBe(saved)
+  await expect(page.locator('td .image')).toHaveCount(2)
+  await operation(page, 'undo')
+  await operation(page, 'undo')
+  expect(await text(page)).toBe(`${source}\n![Fixture](images/native.png)\n`)
+  await operation(page, 'redo')
+  await operation(page, 'redo')
+  expect(await text(page)).toBe(saved)
+})
+
+test('inserting images with the caret in a code block places them after it', async ({
+  page,
+}) => {
+  await open(page, '```\ncode\n```\n\n![Fixture](images/native.png)\n')
+  const code = page.locator('.ProseMirror pre', { hasText: 'code' })
+  const box = (await code.boundingBox())!
+  await page.mouse.click(box.x + 20, box.y + box.height / 2)
+  await expect
+    .poll(async () => (await observe(page)).commandState!.caret.block.type)
+    .toBe('codeBlock')
+  await operation(page, 'insertImages', {
+    images: [{ path: 'images/one.png', alt: 'One' }],
+  })
+  expect(await text(page)).toBe(
+    '```\ncode\n```\n\n![One](images/one.png)\n\n![Fixture](images/native.png)\n',
+  )
+})
+
 test('pasting text beside an image writes a separate paragraph', async ({
   page,
 }) => {

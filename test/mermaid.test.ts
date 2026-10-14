@@ -246,6 +246,20 @@ test('a parse result without the expected accessors is refused', async () => {
   expect(renderer.render).not.toHaveBeenCalled()
 })
 
+test('annotations are refused when the parse result cannot show them', async () => {
+  renderer.mermaidAPI.getDiagramFromText.mockResolvedValueOnce({
+    type: 'classDiagram',
+    db: {
+      styleClasses: new Map(),
+      getClasses: () => new Map([['Shape', { styles: [] }]]),
+    },
+  })
+  await expect(
+    renderDiagram(`classDiagram\nclass Shape${++sequence} {\n<<interface>>\n}`),
+  ).rejects.toThrow(/could not be checked/)
+  expect(renderer.render).not.toHaveBeenCalled()
+})
+
 test('a parse error is reported without rendering', async () => {
   renderer.mermaidAPI.getDiagramFromText.mockRejectedValueOnce(
     new Error('Parse error on line 2'),
@@ -547,6 +561,24 @@ test('renderer and raster failures retain source and report useful clipboard fal
     ).toBe(diagram)
     expect(failed.images).toEqual([])
   }))
+
+test('copying a diagram that cannot render reports diagram-unavailable', async () => {
+  const errors: Error[] = []
+  await run(
+    async (editor) => {
+      editor.loadDocument({
+        ...input,
+        text: '~~~mermaid\nmindmap\nRoot\n~~~\n',
+      })
+      await editor.clipboardSnapshot()
+    },
+    undefined,
+    { error: (error) => errors.push(error) },
+  )
+  expect(errors).toContainEqual(
+    expect.objectContaining({ code: 'diagram-unavailable' }),
+  )
+})
 
 test('partial diagram source copy remains readable source rather than a rendered diagram', () =>
   run(async (editor, _root, ctx) => {

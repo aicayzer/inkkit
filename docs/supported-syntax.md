@@ -37,9 +37,18 @@ Fences labelled `mermaid` retain editable source beside an offline preview. Supp
 
 Before rendering, InkKit refuses author configuration (`%%{` directives and front matter), HTML, HTML entities, URL schemes, `//`, `@{` shape data, `$$` maths, backslash escapes and the CSS resource syntax `url(`, `image-set(`, `cross-fade(` and `@import`. These restrictions apply anywhere in the source, including labels and comments.
 
+Annotations are the one exception to the HTML restriction, in the positions where Mermaid reads them:
+
+- Class diagrams accept an annotation name of ASCII letters, digits, underscores, spaces and hyphens, such as `<<interface>>`, `<<abstract>>`, `<<service>>` or `<<enumeration>>`. It can stand on its own line in a class body, start a line before a class name (`<<interface>> Shape`) or follow a class name (`class Shape <<interface>>`).
+- State diagrams accept `<<fork>>`, `<<join>>` and `<<choice>>` at the end of a `state Name` line.
+
+Anywhere else, including labels, notes, messages and other diagram types, `<<name>>` is refused like other HTML when the name starts with an ASCII letter. In class diagrams, `<<` followed by a comment is also refused. Other `<<` text, such as `shift << 2` in a label, is accepted. After parsing, InkKit refuses the diagram if Mermaid did not read each accepted annotation as an annotation, for example one on a line inside a multi-line note.
+
 InkKit then parses the source with Mermaid and refuses a diagram whose parse result holds a style statement, a class definition, a link style, a link, a click handler or callback, a tooltip, an icon or an image, or a sequence actor's links or properties. This applies wherever Mermaid's grammar accepts the statement, not only at the start of a line. Words such as `click`, `link`, `image`, `style` and `classDef` are ordinary text in labels, edge labels, messages, notes and attributes. Applying a class name without a definition, for example `A:::warn`, is allowed because it carries no styles.
 
 The rendered SVG is sanitised before display: scripts, `foreignObject`, images, links and event handlers are removed, as are attributes and style elements that contain resource syntax. Rejected or invalid source remains available; editing or saving does not depend on successful rendering. No diagram callbacks or external links are activated.
+
+A host built from the core entry, without Mermaid, shows no previews. Diagram fences stay editable source, and copy and print keep the source as readable code with the diagram-unavailable fallback. See [Builds without diagrams](api.md#builds-without-diagrams).
 
 Copy as Markdown retains the complete source fence for whole documents and complete diagram selections. Ordinary rich export uses an offline PNG for complete diagrams, retaining surrounding content and inert Mermaid source metadata for InkKit paste. Partial source selections remain code text. Other applications can retain the image while discarding Mermaid metadata. If rendering or rasterisation fails, rich output retains readable code and reports the failure. TXT does not render diagrams.
 
@@ -64,6 +73,8 @@ Put the body on subsequent quoted lines. Fold markers must directly follow the c
 ## Comments
 
 Complete HTML `<!--comments-->` and Obsidian `%%comments%%` are editable author content, including inline and multiline comments. They start hidden; hosts can reveal them with `setCommentsVisible(true)`. Markdown snapshots and explicit Markdown copy retain comments. Ordinary text, HTML, clipboard metadata and print omit them even when revealed. Code and TXT remain literal; incomplete comment syntax remains literal. HTML is never executed.
+
+The formatted editor refuses an edit that would end a comment early, and the `error` event reports a `preservation` error. An HTML renderer ends an HTML comment at `-->` or `--!>`, and reads a comment that starts with `>` or `->` as empty, so comment text can't contain those markers or start with them. A `%%` comment ends at the next `%%`, so its text can't contain `%%`, and an inline `%%` comment can't end with `%`. Other dashes, arrows and percent signs are accepted. A comment that already contains such text loads unchanged, and edits outside it are accepted. Undo, redo, `replaceSource` and source mode restore or supply text as written and aren't checked.
 
 Comment delimiters inside footnote identifiers or link destinations are literal identifier or destination text. They are not author comments. Footnote body comments follow the ordinary comment rules.
 
