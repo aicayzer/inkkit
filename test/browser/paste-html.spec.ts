@@ -429,3 +429,27 @@ test('typing after a drop continues after the dropped content', async ({
     .poll(async () => (await observe(page)).snapshot!.text)
     .toBe('First\n\nDropped typed\n\nLast\n')
 })
+
+for (const via of ['paste', 'drop'] as const)
+  for (const [html, kept] of [
+    ['<p>a</p><hr>', /^a\n\n---\n/],
+    [
+      '<table><tr><th>A</th></tr><tr><td>1</td></tr></table>',
+      /\| A +\|[\s\S]*\| 1 +\|/,
+    ],
+  ] as const)
+    test(`typing after a ${via} of ${html} keeps what was inserted`, async ({
+      page,
+    }) => {
+      await openEmpty(page)
+      if (via === 'paste') await pasteHTML(page, html)
+      else await dropHTML(page, html)
+      await expect
+        .poll(async () => (await observe(page)).snapshot!.text)
+        .toMatch(kept)
+      await page.keyboard.type('Z')
+      await expect
+        .poll(async () => (await observe(page)).snapshot!.text)
+        .toContain('Z')
+      expect((await observe(page)).snapshot!.text).toMatch(kept)
+    })

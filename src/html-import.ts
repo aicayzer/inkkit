@@ -496,8 +496,14 @@ export function importableSlice(ctx: Ctx, slice: Slice): Slice {
   const inline = first.isInline
   const content = Fragment.fromArray(topLevel(check.schema, slice.content))
   const result = Fragment.fromArray(blocks(check, content))
-  // Inline nodes beside blocks were wrapped, so that form is the one to insert.
-  if (result.eq(content) && content.eq(slice.content)) {
+  // Inline nodes beside blocks were wrapped, so that form is the one to
+  // insert; other wrapping, such as list items in a list, is left to insertion.
+  let inlineCount = 0
+  slice.content.forEach((node) => {
+    if (node.isInline) inlineCount++
+  })
+  const mixed = inlineCount > 0 && inlineCount < slice.content.childCount
+  if (result.eq(content) && !mixed) {
     const start = openDepth(slice.content, slice.openStart, true)
     const end = openDepth(slice.content, slice.openEnd, false)
     return start === slice.openStart && end === slice.openEnd

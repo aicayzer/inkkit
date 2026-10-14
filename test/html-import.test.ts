@@ -380,6 +380,42 @@ test('a callout with an empty body pasted into an empty note is kept', async () 
   })
 })
 
+test('typing after pasted or dropped content continues after it', async () => {
+  await withEditor(async (session) => {
+    for (const via of ['paste', 'drop'] as const)
+      for (const [html, kept] of [
+        ['<p>a</p><hr>', /^a\n\n---\n/],
+        [
+          '<table><tr><th>A</th></tr><tr><td>1</td></tr></table>',
+          /\| A +\|[\s\S]*\| 1 +\|/,
+        ],
+      ] as const) {
+        await insert(session, html, via)
+        const { state } = session.view
+        session.view.dispatch(
+          state.tr.replaceSelectionWith(state.schema.text('Z')),
+        )
+        const text = session.editor.snapshot().text
+        expect(refusals(session), `${via} ${html}`).toEqual([])
+        expect(text, `${via} ${html}`).toMatch(kept)
+        expect(text, `${via} ${html}`).toContain('Z')
+      }
+  })
+})
+
+test('list items pasted at the end of a list item join that list', async () => {
+  await withEditor(async (session) => {
+    load(session, '- one\n')
+    session.view.dispatch(
+      session.view.state.tr.setSelection(
+        TextSelection.atEnd(session.view.state.doc),
+      ),
+    )
+    await session.editor.paste({ text: 'x\ny', html: '<li>x</li><li>y</li>' })
+    expect(session.editor.snapshot().text).toBe('- onex\n- y\n')
+  })
+})
+
 test('text typed while a dropped image imports is kept', async () => {
   let release!: () => void
   const images = {

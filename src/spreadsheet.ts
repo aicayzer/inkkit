@@ -12,6 +12,7 @@ import { InkKitError, type ClipboardInput } from './types'
 import { literalCommentSpans } from './comments'
 import { restoreConvertedSpaces } from './paste-html'
 import { importableSlice } from './html-import'
+import { caretAfter } from './drop-placement'
 import { normalizeTableAlignment } from './table-alignment'
 import {
   dispatchTableOperation,
@@ -137,15 +138,8 @@ export function pasteSpreadsheet(
       if (node === table) tableStart = pos + 1
     })
     if (tableStart < 0) reject()
-    selectTableRectangle(
-      tr,
-      tableStart,
-      table,
-      0,
-      0,
-      grid.cells.length,
-      grid.width,
-    )
+    // Selecting the new table would let the next keystroke replace it.
+    tr.setSelection(caretAfter(tr.doc, tableStart - 1 + table.nodeSize))
     dispatchTableOperation(view, tr)
     return true
   }

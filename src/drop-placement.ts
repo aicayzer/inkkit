@@ -1,4 +1,6 @@
-import type { Node } from '@milkdown/kit/prose/model'
+import { GapCursor } from '@milkdown/kit/prose/gapcursor'
+import type { Node, ResolvedPos } from '@milkdown/kit/prose/model'
+import { Selection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 
 /**
@@ -33,4 +35,22 @@ export function blockDropRange(
       : null
   const at = leaf ? hit!.inside + leaf.nodeSize : $pos.pos
   return { from: at, to: at }
+}
+
+/**
+ * A caret just after inserted blocks that end at `pos`: at the end of the
+ * last text block, or a gap cursor after a block that holds no text, such as
+ * a rule or table. It never selects a node, so typing never replaces one.
+ */
+export function caretAfter(doc: Node, pos: number): Selection {
+  const $pos = doc.resolve(pos)
+  if ($pos.nodeBefore?.isTextblock) return TextSelection.create(doc, pos - 1)
+  // `valid` is public at run time but missing from the type declarations.
+  const gap = GapCursor as unknown as { valid($pos: ResolvedPos): boolean }
+  if (gap.valid($pos)) return new GapCursor($pos)
+  return (
+    TextSelection.findFrom($pos, -1, true) ??
+    TextSelection.findFrom($pos, 1, true) ??
+    Selection.near($pos)
+  )
 }

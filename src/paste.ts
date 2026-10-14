@@ -7,12 +7,12 @@ import {
   Slice,
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
 import { importableSlice, topLevel } from './html-import'
-import { blockDropRange } from './drop-placement'
+import { blockDropRange, caretAfter } from './drop-placement'
 import { isImage } from './image-blocks'
 import {
   collapseClipboardWhitespace,
@@ -199,9 +199,7 @@ export class PasteController {
     )
     const tr = view.state.tr.replaceWith(range.from, range.to, blocks)
     const end = tr.mapping.map(range.to)
-    view.dispatch(
-      tr.setSelection(Selection.near(tr.doc.resolve(end), -1)).scrollIntoView(),
-    )
+    view.dispatch(tr.setSelection(caretAfter(tr.doc, end)).scrollIntoView())
   }
   /** Imports the input at the selection, or in place of `target`. */
   private async run(
