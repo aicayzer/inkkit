@@ -25,7 +25,7 @@ export interface DocumentVersion {
 export interface DocumentSnapshot extends DocumentInput, DocumentVersion {
   dirty: boolean
 }
-/** The closed list of failure codes; `docs/api.md` describes each one. */
+/** The closed list of failure codes. The API reference describes each one. */
 export const editorErrorCodes = [
   'not-ready',
   'destroyed',

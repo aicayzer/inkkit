@@ -1204,7 +1204,7 @@ interface TypedSource {
 
 /**
  * The editor. Create it with `InkKitEditor.mount`, load a document, and read it back with
- * `snapshot`. `docs/api.md` is the reference.
+ * `snapshot`. The reference is https://github.com/aicayzer/inkkit/blob/main/docs/api.md.
  */
 export class InkKitEditor {
   private editor!: Editor
