@@ -250,6 +250,7 @@ class ImageView implements NodeView {
         state.status === 'resolved'
           ? state.presentation.label || alt || reference.reference
           : alt || reference.reference
+      this.element.setAttribute('role', 'group')
       this.element.setAttribute('aria-label', label)
       this.element.dataset.inkkitFileState = this.previewFailed
         ? 'error'

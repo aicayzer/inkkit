@@ -1,4 +1,5 @@
 import { $node, $remark } from '@milkdown/kit/utils'
+import { editorLabels } from './labels'
 import type { Root, RootContent, Literal, Nodes } from 'mdast'
 import {
   commentSource,
@@ -223,7 +224,7 @@ export function createLiteralPreservation(images: boolean) {
 
 export const preserveLiterals = createLiteralPreservation(false)
 
-export const literalBlock = $node('literal_markdown', () => ({
+export const literalBlock = $node('literal_markdown', (ctx) => ({
   group: 'block',
   content: '(text | comment_inline)*',
   marks: '',
@@ -234,7 +235,11 @@ export const literalBlock = $node('literal_markdown', () => ({
   ],
   toDOM: () => [
     'pre',
-    { class: 'literal-markdown', 'aria-label': 'Preserved Markdown' },
+    {
+      class: 'literal-markdown',
+      role: 'group',
+      'aria-label': editorLabels(ctx).preservedMarkdown,
+    },
     0,
   ],
   parseMarkdown: {

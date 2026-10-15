@@ -249,6 +249,9 @@ test('image preview and footer keep resize and host controls separate', async ()
       expect(footer.querySelector('.inkkit-file-label')?.textContent).toBe(
         'Authored',
       )
+      const card = root.querySelector('.image.inkkit-file')!
+      expect(card.getAttribute('role')).toBe('group')
+      expect(card.getAttribute('aria-label')).toBe('Authored')
       const open = footer.querySelector('.inkkit-file-name button')!
       expect(open.getAttribute('aria-label')).toBe('Open Authored')
       expect(open.textContent).toBe('')
