@@ -202,23 +202,26 @@ function splitPart(
       children.length < wanted.length
     )
       continue
-    const at = new Map<number, number[]>()
-    children.forEach((child, index) => {
-      const key = id(child)
-      const positions = at.get(key)
-      if (positions) positions.push(index)
-      else at.set(key, [index])
+    // A part starts or ends where the original's children match its first or
+    // last child; each such run is scored, and a whole match ends the search,
+    // so a long run of equal children is not compared pair by pair.
+    const have = children.map(id)
+    const offsets = new Set<number>()
+    have.forEach((key, index) => {
+      if (key === wanted[0]) offsets.add(index)
+      if (key === wanted.at(-1)) offsets.add(index - wanted.length + 1)
     })
-    const votes = new Map<number, number>()
-    for (const [index, key] of wanted.entries())
-      for (const position of at.get(key) ?? []) {
-        if (--budget < 0) return undefined
-        const from = position - index
-        if (from < 0 || from + wanted.length > children.length) continue
-        const score = (votes.get(from) ?? 0) + 1
-        votes.set(from, score)
-        if (score > (best?.score ?? 0)) best = { node, from, score }
-      }
+    for (const from of offsets) {
+      if (from < 0 || from + wanted.length > children.length) continue
+      budget -= wanted.length
+      if (budget < 0) return undefined
+      let score = 0
+      for (const [index, key] of wanted.entries())
+        if (have[from + index] === key) score++
+      if (score > (best?.score ?? 0)) best = { node, from, score }
+      if (score === wanted.length) break
+    }
+    if (best?.score === wanted.length) break
   }
   if (!best) return undefined
   const run = best.node.children!.slice(best.from, best.from + wanted.length)
@@ -932,6 +935,9 @@ function rewrittenAddress(
   })
 }
 
+// Ordered lists already given their new start, which are not renumbered again.
+const numbered = new WeakSet<SourceNode>()
+
 // Patch changed leaves so an adjacent edit retains authored delimiters and labels.
 function retainSource(
   before: SourceNode,
@@ -952,13 +958,17 @@ function retainSource(
     after.type === 'list' &&
     before.ordered &&
     after.ordered &&
-    before.start !== after.start &&
+    !numbered.has(before) &&
     before.position?.start.offset != null
   ) {
-    // An ordered list that now starts from another number, such as the part
-    // after a split, keeps its items, numbered from there.
+    // An ordered list can come to start from another number, such as the
+    // part after a split, or lose the items before the first it keeps. Its
+    // items keep their source, and those written in sequence stay in sequence
+    // from the new start, at their authored width.
+    const own = { ...before, start: after.start }
+    numbered.add(own)
     const text = retainSource(
-      { ...before, start: after.start },
+      own,
       after,
       source,
       canonical,
@@ -972,13 +982,31 @@ function retainSource(
     const prefix = source
       .slice(source.lastIndexOf('\n', at - 1) + 1, at)
       .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    let number = Number(after.start)
+    let count = 0,
+      previous = 0,
+      number = 0
     const renumbered = text.replace(
-      new RegExp(`(^|\\n${prefix})\\d{1,9}(?=[.)])`, 'g'),
-      (_, line: string) => line + number++,
+      new RegExp(`(^|\\n${prefix})(\\d{1,9})(?=[.)])`, 'g'),
+      (_, line: string, digits: string) => {
+        const authored = Number(digits)
+        number =
+          count === 0
+            ? Number(after.start)
+            : authored === previous + 1
+              ? number + 1
+              : authored
+        previous = authored
+        count++
+        return (
+          line +
+          (digits.startsWith('0')
+            ? String(number).padStart(digits.length, '0')
+            : String(number))
+        )
+      },
     )
-    if (number - Number(after.start) === after.children?.length)
-      return renumbered
+    if (count === after.children?.length) return renumbered
+    if (before.start === after.start) return text
   }
   if (inlineParents.has(before.type)) {
     locateChildren(before, source)
@@ -1334,15 +1362,17 @@ function retainSource(
     const last = cell ? before.children.at(-1)!.position?.end.offset : end
     const newFirst = cell ? after.children[0]!.position?.start.offset : newStart
     const newLast = cell ? after.children.at(-1)!.position?.end.offset : newEnd
-    const from = prefix
-      ? before.children[prefix - 1]!.position?.end.offset
-      : first
+    // A list's range can take in the blank line its container gave it, which
+    // the edit may now need before what follows, so the kept part of a list
+    // ends at its last item.
+    const kept = (node: SourceNode) =>
+      (node.type === 'list' ? node.children?.at(-1) : node)?.position?.end
+        .offset
+    const from = prefix ? kept(before.children[prefix - 1]!) : first
     const to = suffix
       ? before.children[before.children.length - suffix]!.position?.start.offset
       : last
-    const newFrom = prefix
-      ? after.children[prefix - 1]!.position?.end.offset
-      : newFirst
+    const newFrom = prefix ? kept(after.children[prefix - 1]!) : newFirst
     const newTo = suffix
       ? after.children[after.children.length - suffix]!.position?.start.offset
       : newLast
