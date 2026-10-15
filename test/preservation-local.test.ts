@@ -9,6 +9,7 @@ import {
 import { Transform } from '@milkdown/kit/prose/transform'
 import { Preservation, PreservationError } from '../src/preserve'
 import { withEditor } from './harness'
+import { blocks, definitions, snippets } from './preservation-documents'
 
 // Saves `doc` twice: as typing does, and with local validation disabled, which
 // serializes and reopens the whole document.
@@ -47,88 +48,6 @@ function wholeOnly(ctx: Ctx, source: string): Preservation {
   ;(full as unknown as { localEdits(): undefined }).localEdits = () => undefined
   return full
 }
-
-const blocks: Array<(i: number) => string> = [
-  (i) => `Plain words ${i} with *emphasis* and __bold__ text.`,
-  (i) => `See [link ${i}](/t/${i} "Title") and \`code ${i}\` here.`,
-  (i) => `A [full ${i}][ref] and [ref][] and [ref] reference.`,
-  (i) =>
-    `Wrapped line ${i} one\nand line two  \nhard break, \\[escaped\\] &amp; done.`,
-  (i) => `Footnote ${i}[^note] mention.`,
-  (i) => `Comment ${i} %%hidden%% and <b>html</b> and <https://x.example>.`,
-  (i) => `Unresolved ${i} [missing][nowhere] stays literal.`,
-  (i) => `# Heading ${i} with [a link](/h/${i})`,
-  (i) => `Setext ${i} [l](/s)\n===`,
-  (i) => `- item ${i} [l](/l)\n- second ${i}\n  lazy continuation\n- third`,
-  (i) => `* [ ] task ${i} [l](/t)\n* [x] done ${i}`,
-  (i) => `+ plus ${i}\n\n+ loose ${i}`,
-  (i) => `1) first ${i}\n2) second [r][ref]\n3) third`,
-  (i) => `  3. indented ${i}\n  4. next`,
-  (i) => `- outer ${i}\n    - nested [l](/n)\n    - nested two`,
-  (i) => '```ts\nconst a' + i + ' = "<x>";\n```',
-  (i) => `~~~\ncode ${i} [x]\n~~~`,
-  (i) => `    indented code ${i}`,
-  (i) => `| A | B |\n| - | :-: |\n| [cell ${i}](/c) | two \\| pipe |`,
-  (i) => `> quoted ${i} [l](/q)`,
-  () => '* * *',
-  (i) => `Trailing spaces ${i}   \nnext b - c line\t`,
-  (i) => `-\ttab item ${i}\n\tmore b - c text`,
-  (i) => `1.  wide item ${i}\n    b - c continuation\n\n    second paragraph`,
-  (i) => `* [ ] task ${i}\n  b # c\n* [x] done`,
-  (i) => `Heading ${i} line\n---`,
-  (i) => `Para ${i} [l](/p)\n- interrupting [l](/i)\n- list`,
-  (i) => `Para ${i}\n\`\`\`\ncode right after\n\`\`\``,
-  (i) => `- loose ${i} [l](/l)\n\n  second paragraph\n- next`,
-  (i) => `<div>\nhtml ${i} [l](/l)\n\n</div>`,
-  (i) => `[^n${i}]: Note with\n    - a list [l](/l)`,
-  () => '> [ref]: /quoted',
-  (i) => `| Code | x |\n| - | - |\n| \`a\\|b\` ${i} | [r][ref] |`,
-  (i) => `-   wide ${i} [l](/l) word\n\n    second ${i} para`,
-  (i) => `1.  wide ${i} [r][ref] word\n    continued line\n2.  next`,
-  (i) => `  indented para ${i} [l](/l)`,
-  (i) => `   three spaces ${i}`,
-  (i) => `-   item ${i} word\n  - sibling ${i}`,
-  (i) =>
-    Array.from({ length: 11 }, (_, k) => `${k + 1}. it${k} ${i} [l](/l)`).join(
-      '\n',
-    ),
-  (i) => `1.   five col ${i} word`,
-  (i) => `-\ttab ${i} [l](/l)\n\n  two space`,
-  (i) => `1. First ${i}\n\n2. Second [l](/l)\n\n   More detail\n3. Third`,
-  (i) => `See [STRASSE] and [Straße] and [ẞ] ${i} [l](/l).`,
-  (i) => `Case [FOO  bar] and [foo bar][] ${i}.`,
-  (i) => `[^f${i}]: Foot [l](/l)\n\n    [inner${i}]: /in`,
-]
-const definitions = [
-  '[Strasse]: /s',
-  '[foo bar]: /fb',
-  '[ref]: /target "Ref"',
-  '[^note]: The note text.',
-  '[other]: <angle target>',
-]
-const snippets = [
-  'x',
-  ' ',
-  'typed',
-  '[',
-  ']',
-  '*',
-  '_',
-  '`',
-  '|',
-  '#',
-  '- ',
-  '1. ',
-  '<',
-  '%%',
-  '&',
-  '\\',
-  '!',
-  '[ref]',
-  '---',
-  '```',
-  '  ',
-]
 
 test(
   'local validation saves exactly what whole-document preservation saves',
