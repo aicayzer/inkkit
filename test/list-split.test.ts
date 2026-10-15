@@ -39,6 +39,11 @@ async function press(
       ),
     )
     for (const key of keys) {
+      // Text typed at the caret, as `type:` and the text.
+      if (key.startsWith('type:')) {
+        expect(editor.insertText(key.slice(5), 1)).toBe(true)
+        continue
+      }
       const [name, shift] = key === 'Shift-Tab' ? ['Tab', true] : [key, false]
       view.dom.dispatchEvent(
         new KeyboardEvent('keydown', {
@@ -164,7 +169,7 @@ test.each([
     '* __a__ one\n  1) b two\n  2) _c_ three\n  3) d\n* e\n',
     'b two',
     ['Enter', 'Enter'],
-    '* __a__ one\n  1) b two\n* 2) _c_ three\n  3) d\n* e\n',
+    '* __a__ one\n  1) b two\n* 1) _c_ three\n  2) d\n* e\n',
   ],
   [
     'a nested list ended at its last item',
@@ -181,11 +186,11 @@ test.each([
     '> 1. __a__\n>    * b two\n> 2. * _c_ three\n',
   ],
   [
-    'Backspace after ending a list, which leaves two lists side by side',
+    'Backspace after ending a list, which joins the list again',
     '* __a__ one\n* b two\n* _c_ three\n',
     'b two',
     ['Enter', 'Enter', 'Backspace'],
-    '* __a__ one\n* b two\n\n- _c_ three\n',
+    '* __a__ one\n* b two\n* _c_ three\n',
   ],
   [
     'Shift-Tab on an item in the middle of an ordered list',
@@ -207,6 +212,90 @@ test.each([
     'b two',
     ['Delete'],
     '* __a__ one\n* b two\n* _c_ three\n',
+  ],
+  [
+    'Tab on an item of an ordered list',
+    '1) __a__\n2) _b_\n3) c\n',
+    'b',
+    ['Tab'],
+    '1) __a__\n   1. *b*\n3) c\n',
+  ],
+  [
+    'Shift-Tab on a nested ordered item in an ordered list',
+    '1. __a__\n   1) b\n   2) _c_\n   3) d\n2. e\n',
+    'c',
+    ['Shift-Tab'],
+    '1. __a__\n   1) b\n2. *c*\n   1) d\n2. e\n',
+  ],
+  [
+    'a nested ordered list in an ordered list ended in the middle',
+    '1. __a__ one\n   1) b two\n   2) _c_ three\n2. e\n',
+    'b two',
+    ['Enter', 'Enter'],
+    '1. __a__ one\n   1) b two\n2. 1) _c_ three\n2. e\n',
+  ],
+  [
+    'typing in the item a nested ordered list ended at',
+    '* __a__ one\n  1) b two\n  2) _c_ three\n  3) d\n* e\n',
+    'b two',
+    ['Enter', 'Enter', 'type:x'],
+    '* __a__ one\n  1) b two\n* x\n  1) _c_ three\n  2) d\n* e\n',
+  ],
+  [
+    'Shift-Tab on the first item of an ordered list',
+    '1. __a__ one\n2. _b_ two\n',
+    'a one',
+    ['Shift-Tab'],
+    '**a** one\n\n1. _b_ two\n',
+  ],
+  [
+    'Shift-Tab on the first item of an ordered list from 3',
+    '3. __a__ one\n4. _b_ two\n',
+    'a one',
+    ['Shift-Tab'],
+    '**a** one\n\n3. _b_ two\n',
+  ],
+  [
+    'a list numbered 1. throughout, ended after its first item',
+    '1. a\n1. _b_\n1. c\n',
+    'a',
+    ['Enter', 'Enter'],
+    '1. a\n\n<br />\n\n2. _b_\n1. c\n',
+  ],
+  [
+    'a list numbered with leading zeros, ended after its first item',
+    '01. a\n02. _b_\n03. c\n',
+    'a',
+    ['Enter', 'Enter'],
+    '01. a\n\n<br />\n\n02. _b_\n03. c\n',
+  ],
+  [
+    'a list numbered past 9, ended after its first item',
+    '8. a\n9. _b_\n10. c\n11. d\n',
+    'a',
+    ['Enter', 'Enter'],
+    '8. a\n\n<br />\n\n9. _b_\n10. c\n11. d\n',
+  ],
+  [
+    'a list in a quote ended at its last item',
+    '> * __a__\n> * _b_\n',
+    'b',
+    ['Enter', 'Enter'],
+    '> * __a__\n> * _b_\n>\n> <br />\n',
+  ],
+  [
+    'an ordered list in a quote ended at its last item',
+    '> 1. __a__\n> 2. _b_\n\nafter\n',
+    'b',
+    ['Enter', 'Enter'],
+    '> 1. __a__\n> 2. _b_\n>\n> <br />\n\nafter\n',
+  ],
+  [
+    'a long list of equal items ended in the middle',
+    `${'* _x_\n'.repeat(1000)}* mid\n${'* _x_\n'.repeat(1000)}`,
+    'mid',
+    ['Enter', 'Enter'],
+    `${'* _x_\n'.repeat(1000)}* mid\n\n<br />\n\n${'* _x_\n'.repeat(1000)}`,
   ],
 ])('%s keeps the items it did not reach', async (_, source, at, keys, saved) =>
   expect(await press(source, at, keys)).toBe(saved),
