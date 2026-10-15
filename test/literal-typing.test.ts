@@ -189,3 +189,45 @@ describe('an edit to a literal block that cannot reopen as typed is refused', ()
     })
   })
 })
+
+// The canonical writer indents a container's blocks its own way, which the
+// literal blocks inside must not take from it.
+test.each([
+  [
+    'a callout in a list item',
+    '-   one\n\n    > [!BOGUS]\n    > body\n\nAfter.\n',
+    'one',
+    'body',
+  ],
+  [
+    'a footnote definition',
+    'Note[^1].\n\n[^1]: First line.\n\n\tA [full][ref] x.\n\tmore *x*\n\nAfter.\n',
+    'First line.',
+    'x.',
+  ],
+])(
+  'a literal block in %s keeps its indentation',
+  async (_name, source, beside, inside) => {
+    await withNote(source, (editor, view) => {
+      const after = (text: string) => {
+        let at = -1
+        view.state.doc.descendants((node, pos) => {
+          if (at < 0 && node.isText && node.text!.includes(text))
+            at = pos + node.text!.indexOf(text) + text.length
+          return at < 0
+        })
+        view.dispatch(
+          view.state.tr.setSelection(TextSelection.create(view.state.doc, at)),
+        )
+      }
+      after(beside)
+      expect(editor.insertText('!', 1)).toBe(true)
+      let saved = source.replace(beside, `${beside}!`)
+      expect(editor.snapshot().text).toBe(saved)
+      after(inside)
+      for (const character of ' *`[') editor.insertText(character, 1)
+      saved = saved.replace(inside, `${inside} *\`[`)
+      expect(editor.snapshot().text).toBe(saved)
+    })
+  },
+)

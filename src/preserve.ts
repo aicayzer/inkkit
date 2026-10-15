@@ -990,7 +990,9 @@ const literalForms = new WeakMap<SourceNode, string>()
 // for each authored line, so a line the edit left alone keeps its authored
 // spelling, and so do the quote markers or indentation before an edited one.
 // Where the edit adds or removes lines, those it reached are written as
-// `after` has them.
+// `after` has them. Without `before`, for a literal block inside another,
+// lines are compared without the indentation the container gives them, and
+// an edited line keeps its authored indentation.
 function retainLiteral(
   raw: string,
   before: string | undefined,
@@ -1000,14 +1002,22 @@ function retainLiteral(
   const old = (before ?? lf(raw)).split('\n')
   const now = after.split('\n')
   if (authored.length !== old.length) return after
+  const same =
+    before === undefined
+      ? (left: string, right: string) => left.trimStart() === right.trimStart()
+      : (left: string, right: string) => left === right
   let start = 0
-  while (start < old.length && start < now.length && old[start] === now[start])
+  while (
+    start < old.length &&
+    start < now.length &&
+    same(old[start]!, now[start]!)
+  )
     start++
   let end = 0
   while (
     end < old.length - start &&
     end < now.length - start &&
-    old[old.length - 1 - end] === now[now.length - 1 - end]
+    same(old[old.length - 1 - end]!, now[now.length - 1 - end]!)
   )
     end++
   const reached = now.slice(start, now.length - end)
@@ -1018,7 +1028,9 @@ function retainLiteral(
           const ending = own.endsWith('\r') ? '\r' : ''
           const spelled = own.slice(0, own.length - ending.length)
           const canonical = old[start + index]!
-          if (line === canonical) return own
+          if (same(line, canonical)) return own
+          if (before === undefined)
+            return /^[ \t]*/.exec(spelled)![0] + line.trimStart() + ending
           return (
             (spelled.endsWith(canonical)
               ? spelled.slice(0, spelled.length - canonical.length)
