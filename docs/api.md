@@ -269,7 +269,7 @@ The rules change only the character being typed:
 
 Smart punctuation never rewrites text that is already in the note: straight quotes and hyphens that a note holds stay as they are, on open and on save. The curly character is saved as typed, as UTF-8 text, and reopening the note shows it unchanged.
 
-One Undo straight after a rule, or Backspace, puts back what was typed: `"` or `'` for a quote, `--` for an en dash, and the en dash and a hyphen, `–-`, for an em dash. A second Undo removes the typing as it does without the option. Undo after the caret has moved is the ordinary Undo. Edit > Undo and the touch gestures, which the browser sends as `historyUndo` and `historyRedo` input events, take the same path as the Undo key and `undo()`.
+One Undo straight after a rule, or Backspace, puts back what was typed: `"` or `'` for a quote, `--` for an en dash, and the en dash and a hyphen, `–-`, for an em dash. A second Undo removes the typing as it does without the option. Undo after the caret has moved is the ordinary Undo. Undo and Redo that the browser sends as `historyUndo` and `historyRedo` input events, such as from its Edit menu, take the same path as the Undo key and `undo()`.
 
 The rules don't apply:
 
@@ -564,7 +564,7 @@ Markdown loads in formatted mode, and TXT is always literal source. `setEditingM
 
 `replaceSource` replaces the complete current source as one isolated undo operation and returns `false` for identical source. It accepts unsupported syntax, incomplete Markdown and TXT literally. Snapshots keep the actual complete source, including Markdown spelling changes that render identically. Source input keeps unchanged line endings and uses the document's existing line ending for inserted lines. Switching to formatted editing doesn't save or canonicalize the source. When the current formatted document can't be preserved, `replaceSource` and switching to source mode throw `preservation`, as `snapshot()` does, and change nothing.
 
-`undo` and `redo` use the formatted document's history, except for source edits made in source mode that the formatted document hasn't taken in yet, which they step through on the text. Each returns whether it applied a history operation. Revisions advance for actual edits and history operations. Dirty state compares the exact current source with the loaded source. Loading another document resets history.
+`undo` and `redo` use the formatted document's history, except for source edits made in source mode that the formatted document hasn't taken in yet, which they step through on the text. Each returns whether it applied a history operation. Revisions advance for actual edits and history operations. Dirty state compares the exact current source with the loaded source. Loading another document resets history. In formatted mode, Undo and Redo that the browser sends as `historyUndo` and `historyRedo` input events, such as from its Edit menu, call `undo` and `redo`, with or without smart punctuation.
 
 Source edits don't parse the document. Typing, paste, cut, replacement, `replaceSource` and any other change made while in source mode take effect on the text at once: `snapshot()`, the `changed` event, the revision and the textarea all use it. Each is an undo step on the text: a pause of more than 500 ms in typing ends a step, and an edit that isn't typing is a step of its own that later typing doesn't join. The last 100 steps are kept. `clipboardSnapshot()` and `printableSnapshot()` read the text and leave history alone.
 
