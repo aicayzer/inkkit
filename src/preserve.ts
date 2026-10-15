@@ -167,12 +167,14 @@ function authoredNeighbour(
   return marker ? { ordered: before.ordered, marker } : undefined
 }
 
-const SPLIT_BUDGET = 100_000
+// How often a child may occur in an original and still place a part in it.
+const RARE = 4
 
 // Ending a list or quote in the middle splits it, and each part holds a run of
 // the original's children. The run of a candidate that a part matches best
 // stands in for the original, so the children the edit did not reach keep
 // their source.
+
 function splitPart(
   candidates: readonly SourceNode[],
   after: SourceNode,
@@ -191,40 +193,54 @@ function splitPart(
     return value
   }
   const wanted = after.children.map(id)
-  let budget = SPLIT_BUDGET
-  let best: { node: SourceNode; from: number; score: number } | undefined
+  let best: { node: SourceNode; run: SourceNode[]; score: number } | undefined
   for (const node of candidates) {
     const children = node.children
     if (
       node.type !== after.type ||
       node.ordered !== after.ordered ||
-      !children ||
-      children.length < wanted.length
+      !children?.length
     )
       continue
-    // A part starts or ends where the original's children match its first or
-    // last child; each such run is scored, and a whole match ends the search,
-    // so a long run of equal children is not compared pair by pair.
     const have = children.map(id)
-    const offsets = new Set<number>()
+    const positions = new Map<number, number[]>()
     have.forEach((key, index) => {
-      if (key === wanted[0]) offsets.add(index)
-      if (key === wanted.at(-1)) offsets.add(index - wanted.length + 1)
+      const at = positions.get(key)
+      if (at) at.push(index)
+      else positions.set(key, [index])
     })
+    // Each child found only a few times in the original suggests where the
+    // part starts in it. A part can also run past either end of the original
+    // by children it does not hold, such as an item added at its end.
+    const votes = new Map<number, number>()
+    wanted.forEach((key, index) => {
+      const at = positions.get(key) ?? []
+      if (at.length <= RARE)
+        for (const position of at)
+          votes.set(position - index, (votes.get(position - index) ?? 0) + 1)
+    })
+    const held = (key: number) => positions.has(key)
+    const lead = wanted.findIndex(held)
+    const trail = [...wanted].reverse().findIndex(held)
+    const offsets = new Set([
+      ...[...votes]
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 3)
+        .map(([offset]) => offset),
+      ...(lead < 0 ? [] : [-lead, have.length - wanted.length + trail]),
+    ])
     for (const from of offsets) {
-      if (from < 0 || from + wanted.length > children.length) continue
-      budget -= wanted.length
-      if (budget < 0) return undefined
+      const first = Math.max(0, from)
+      const last = Math.min(have.length, from + wanted.length)
       let score = 0
-      for (const [index, key] of wanted.entries())
-        if (have[from + index] === key) score++
-      if (score > (best?.score ?? 0)) best = { node, from, score }
-      if (score === wanted.length) break
+      for (let index = first; index < last; index++)
+        if (have[index] === wanted[index - from]) score++
+      if (score > (best?.score ?? 0))
+        best = { node, run: children.slice(first, last), score }
     }
-    if (best?.score === wanted.length) break
   }
   if (!best) return undefined
-  const run = best.node.children!.slice(best.from, best.from + wanted.length)
+  const run = best.run
   const start = run[0]!.position?.start.offset
   const end = run.at(-1)!.position?.end.offset
   if (start == null || end == null) return undefined
@@ -1007,6 +1023,31 @@ function retainSource(
     )
     if (count === after.children?.length) return renumbered
     if (before.start === after.start) return text
+  }
+  if (
+    before.type === 'listItem' &&
+    after.type === 'listItem' &&
+    typeof before.checked === 'boolean' &&
+    typeof after.checked === 'boolean' &&
+    before.checked !== after.checked
+  ) {
+    // A ticked or cleared task keeps its source; only its box changes.
+    const text = retainSource(
+      { ...before, checked: after.checked },
+      after,
+      source,
+      canonical,
+      lineEnding,
+      inTable,
+      width,
+      beside,
+      joined,
+    )
+    const box = /^((?:[-*+]|\d{1,9}[.)])[ \t]+\[)[ xX](\])/.exec(text)
+    if (box)
+      return (
+        box[1] + (after.checked ? 'x' : ' ') + text.slice(box[1]!.length + 1)
+      )
   }
   if (inlineParents.has(before.type)) {
     locateChildren(before, source)
