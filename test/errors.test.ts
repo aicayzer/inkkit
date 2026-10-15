@@ -445,6 +445,23 @@ test('a facade edit that preservation refuses throws to the caller and is not al
   )
 })
 
+test('a refused format throws and is not also an event', () => {
+  const changes: string[] = []
+  return open(
+    ({ editor, errors }) => {
+      // A code block cannot hold the hidden comment, so the conversion is refused.
+      editor.loadDocument({ ...input, text: 'A <!--note--> B\n' })
+      const before = state(editor)
+      expect(() => editor.format('codeBlock')).toThrow(code('preservation'))
+      expect(state(editor)).toEqual(before)
+      expect(errors).toEqual([])
+      expect(changes).toEqual([])
+    },
+    {},
+    { changed: (text) => changes.push(text) },
+  )
+})
+
 test('a refused facade paste rejects, and the same edit made by the person is an event', () =>
   open(async (session) => {
     const { editor, view, errors } = session
