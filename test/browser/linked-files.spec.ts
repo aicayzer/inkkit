@@ -181,7 +181,7 @@ test('named and path sizing isolate undo and reject read-only/composition mutati
   await operation(page, 'find', { text: 'Before' })
   await operation(page, 'insertText', { text: 'Adjacent' })
   const resize = async (index: number, delta: number) => {
-    const handle = page.locator('.image-handle').nth(index)
+    const handle = page.locator('.inkkit-image-handle').nth(index)
     await handle.hover()
     const box = await handle.boundingBox()
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
@@ -210,10 +210,10 @@ test('named and path sizing isolate undo and reject read-only/composition mutati
   )
   const before = (await observe(page)).snapshot!.text
   await operation(page, 'editable', { editable: false })
-  await expect(page.locator('.image-handle').first()).toBeHidden()
+  await expect(page.locator('.inkkit-image-handle').first()).toBeHidden()
   expect((await observe(page)).snapshot!.text).toBe(before)
   await operation(page, 'editable', { editable: true })
-  await expect(page.locator('.image-handle').first()).toBeVisible()
+  await expect(page.locator('.inkkit-image-handle').first()).toBeVisible()
   await page
     .getByRole('textbox', { name: 'Formatted Markdown editor', exact: true })
     .dispatchEvent('compositionstart', { data: '中' })

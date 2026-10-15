@@ -577,8 +577,8 @@ window.interop = {
                 source: Boolean(node.getAttribute('src')),
                 duration: Number.isFinite(node.duration) ? node.duration : null,
               })),
-              widths: [...view().querySelectorAll('.image img')].map((node) =>
-                Math.round(node.getBoundingClientRect().width),
+              widths: [...view().querySelectorAll('.inkkit-image img')].map(
+                (node) => Math.round(node.getBoundingClientRect().width),
               ),
               pdfSandbox:
                 view().querySelector('iframe')?.getAttribute('sandbox') ?? null,
@@ -665,11 +665,11 @@ window.interop = {
           }
           case 'fileResize': {
             const image = view().querySelectorAll(
-              operation.selector ?? '.image img',
+              operation.selector ?? '.inkkit-image img',
             )[operation.occurrence ?? 0]
             const handle = image
-              ?.closest('.image')
-              ?.querySelector(':scope > .image-handle')
+              ?.closest('.inkkit-image')
+              ?.querySelector(':scope > .inkkit-image-handle')
             if (!handle) throw Error('Resize handle not found')
             const width = image.getBoundingClientRect().width
             const capturePointer = handle.setPointerCapture

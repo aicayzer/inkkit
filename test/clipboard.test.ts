@@ -37,7 +37,7 @@ test('copied HTML carries no editor roles or names on definitions and preserved 
       const html = document.createElement('div')
       html.innerHTML = copied.html
       const marked = html.querySelectorAll(
-        '.literal-markdown, [data-inkkit-footnote-definition]',
+        '.inkkit-literal-markdown, [data-inkkit-footnote-definition]',
       )
       expect(marked).toHaveLength(2)
       for (const element of marked) {

@@ -373,10 +373,12 @@ test('destroy during import rejects completion and releases pending state', asyn
 test('image resize writes width into alt metadata and read-only images refuse resize', async () =>
   run('![Photo|320](images/a.png)\n', async (editor) => {
     const view = editor.ctx.get(editorViewCtx)
-    const image = view.dom.querySelector('.image img') as HTMLImageElement
+    const image = view.dom.querySelector(
+      '.inkkit-image img',
+    ) as HTMLImageElement
     image.getBoundingClientRect = () => new DOMRect(0, 0, 320, 100)
     Object.defineProperty(view.dom, 'clientWidth', { value: 500 })
-    const handle = view.dom.querySelector('.image-handle')!
+    const handle = view.dom.querySelector('.inkkit-image-handle')!
     handle.dispatchEvent(
       new MouseEvent('pointerdown', {
         clientX: 100,
@@ -388,7 +390,7 @@ test('image resize writes width into alt metadata and read-only images refuse re
     handle.dispatchEvent(new MouseEvent('pointerup', { clientX: 160 }))
     expect(serialize(editor.ctx)).toContain('![Photo|380](images/a.png)')
     view.setProps({ editable: () => false })
-    const readonlyHandle = view.dom.querySelector('.image-handle')!
+    const readonlyHandle = view.dom.querySelector('.inkkit-image-handle')!
     readonlyHandle.dispatchEvent(
       new MouseEvent('pointerdown', {
         clientX: 100,

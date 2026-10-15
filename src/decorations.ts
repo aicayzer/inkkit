@@ -16,7 +16,7 @@ function copyButton(
 ): HTMLElement {
   const button = document.createElement('button')
   button.type = 'button'
-  button.className = 'copy'
+  button.className = 'inkkit-copy'
   button.setAttribute('aria-label', label)
   button.innerHTML = copyIcon
   button.addEventListener('mousedown', (event) => event.preventDefault())
@@ -79,7 +79,7 @@ export const placeholderPlugin = $prose(
             return null
           return DecorationSet.create(state.doc, [
             Decoration.node(0, first.nodeSize, {
-              class: 'empty',
+              class: 'inkkit-empty',
               'data-placeholder': editorLabels(ctx).placeholder,
             }),
           ])
