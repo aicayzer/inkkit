@@ -14,6 +14,7 @@ import {
   type ShortcutName,
 } from '../src/index'
 import { shortcutNames } from '../src/editor'
+import { referenceDefinitions } from '../src/references'
 
 const images: ImageAdapter = {
   presentation: () => undefined,
@@ -317,7 +318,6 @@ test('a link destination must be one the editor opens and can save', () =>
       'file:///etc/hosts',
       'app-scheme:open',
       'https://example.com/a\nb',
-      '<x>',
     ]) {
       expect(() => editor.format('link', { destination }), destination).toThrow(
         code('invalid-argument'),
@@ -328,21 +328,61 @@ test('a link destination must be one the editor opens and can save', () =>
       ).toThrow(code('invalid-argument'))
       expect(view.state, destination).toBe(state)
     }
-    // Addresses Markdown writes in another form still read back as given.
-    for (const destination of [
-      'notes/a b.md',
-      'a(b)',
-      'café',
-      '#intro',
-      '?q=1',
-      'mailto:a@example.com',
-    ]) {
+  }))
+
+// Addresses that Markdown writes in another form, in angle brackets or with escapes.
+const writtenDestinations = [
+  'notes/My file.md',
+  '#Heading with space',
+  'mailto:a@example.com?subject=Hi there',
+  'tel:+44 20 7946 0000',
+  'https://example.com/a(b',
+  'a(b)',
+  'a b <c>',
+  '<x>',
+  '&amp;',
+  'a&#x20;b',
+  ' https://example.com ',
+  'a\\',
+  '[x]',
+  'café',
+  '#intro',
+  '?q=1',
+]
+
+test('a link destination reads back as given from an inline link', () =>
+  open(({ editor, load, select, reopens }) => {
+    for (const destination of writtenDestinations) {
       load('Some words\n')
       select('words')
       expect(editor.format('link', { destination }), destination).toBe(true)
       reopens()
       select('words', 1)
       expect(editor.format('link', { destination }), destination).toBe(false)
+    }
+  }))
+
+test('a link destination reads back as given from a reference definition', () =>
+  open(({ editor, view, load, select, reopens }) => {
+    const source =
+      'See [the docs][ref] now.\n\n[ref]: https://example.com/old\n'
+    const saved = () =>
+      referenceDefinitions(view.state.doc).get('ref')?.node.attrs.url
+    for (const destination of writtenDestinations) {
+      load(source)
+      select('docs', 2)
+      expect(editor.format('link', { destination }), destination).toBe(true)
+      reopens()
+      expect(saved(), destination).toBe(destination)
+      select('docs', 2)
+      expect(editor.format('link', { destination }), destination).toBe(false)
+      load(source)
+      expect(
+        editor.editReferenceDefinition('ref', destination),
+        destination,
+      ).toBe(true)
+      reopens()
+      expect(saved(), destination).toBe(destination)
     }
   }))
 
