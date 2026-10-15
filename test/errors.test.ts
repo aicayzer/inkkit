@@ -141,9 +141,26 @@ test('each bad argument throws invalid-argument and changes nothing', () =>
       ['replace replacement', () => editor.replace('text', bad(1))],
       ['replaceAll search', () => editor.replaceAll(bad(null), 'x')],
       ['format command', () => editor.format(bad('underline'))],
-      ['format level', () => editor.format('heading', 7)],
-      ['format argument', () => editor.format('bold', 'x')],
-      ['format destination', () => editor.format('link', 1)],
+      ['format heading level', () => editor.format(bad('heading'))],
+      ['format options', () => editor.format('bold', bad('x'))],
+      [
+        'format option for another command',
+        () => editor.format('bold', { destination: 'x' }),
+      ],
+      [
+        'format language for link',
+        () => editor.format('link', { language: 'js' }),
+      ],
+      [
+        'format unknown option',
+        () => editor.format('codeBlock', bad({ lang: 'js' })),
+      ],
+      ['format generation', () => editor.format('bold', undefined, bad('1'))],
+      [
+        'format destination',
+        () => editor.format('link', { destination: bad(1) }),
+      ],
+      ['table generation', () => editor.table('insert', undefined, 1.5)],
       ['table command', () => editor.table(bad('merge'))],
       ['table rows', () => editor.table('insert', { rows: 0 })],
       ['table columns', () => editor.table('insert', { columns: 101 })],
@@ -152,23 +169,35 @@ test('each bad argument throws invalid-argument and changes nothing', () =>
       ['table order', () => editor.table('sortRows', { order: bad('random') })],
       ['insertText text', () => editor.insertText(bad(5), 1)],
       ['insertText generation', () => editor.insertText('x', bad(undefined))],
-      [
-        'keyDown key',
-        () => editor.keyDown(bad(13), '', false, false, false, false, 1),
-      ],
+      ['keyDown key', () => editor.keyDown({ key: bad(13) }, 1)],
       [
         'keyDown modifier',
-        () => editor.keyDown('a', '', bad('no'), false, false, false, 1),
+        () => editor.keyDown({ key: 'a', metaKey: bad('no') }, 1),
       ],
-      ['insertPaths paths', () => editor.insertPaths(bad('a.png'), 0, 0)],
-      ['insertPaths point', () => editor.insertPaths(['a.png'], Number.NaN, 0)],
+      [
+        'insertPaths paths',
+        () => editor.insertPaths(bad('a.png'), { clientX: 0, clientY: 0 }),
+      ],
+      [
+        'insertPaths point',
+        () =>
+          editor.insertPaths(['a.png'], { clientX: Number.NaN, clientY: 0 }),
+      ],
       [
         'insertImages entry',
-        () => editor.insertImages([bad({ path: 1, alt: '' })]),
+        () => editor.insertImages([bad({ reference: 1, alt: '' })]),
       ],
       [
         'insertImages point',
-        () => editor.insertImages([{ path: 'a.png', alt: '' }], 4),
+        () =>
+          editor.insertImages(
+            [{ reference: 'a.png', alt: '' }],
+            bad({ clientX: 4 }),
+          ),
+      ],
+      [
+        'insertImages old field',
+        () => editor.insertImages([bad({ path: 'a.png', alt: '' })]),
       ],
       ['insertFootnote label', () => editor.insertFootnote('a b')],
       ['insertFootnote type', () => editor.insertFootnote(bad(1))],
@@ -192,7 +221,11 @@ test('each bad argument throws invalid-argument and changes nothing', () =>
         () => editor.setTextInputPreferences(bad({ spellCheck: true })),
       ],
       ['setCommentsVisible', () => editor.setCommentsVisible(bad(1))],
-      ['setKeymap name', () => editor.setKeymap({ underline: ['Mod-u'] })],
+      ['setKeymap name', () => editor.setKeymap(bad({ underline: ['Mod-u'] }))],
+      [
+        'setKeymap old heading name',
+        () => editor.setKeymap(bad({ heading: ['Mod-h'] })),
+      ],
       ['setKeymap keys', () => editor.setKeymap({ bold: bad('Mod-b') })],
       [
         'selectTextRange range',
@@ -266,7 +299,8 @@ test('async methods reject bad arguments instead of throwing', () =>
       () => InkKitEditor.mount(root, bad({ ...events, error: 'log' })),
       () => InkKitEditor.mount(root, events, bad({ editable: 'yes' })),
       () => InkKitEditor.mount(root, events, bad({ theme: 'dark' })),
-      () => InkKitEditor.mount(root, events, { keymap: { underline: [] } }),
+      () =>
+        InkKitEditor.mount(root, events, bad({ keymap: { underline: [] } })),
       () => InkKitEditor.mount(root, events, bad({ labels: { copyCode: 1 } })),
     ])
       await expect(mount()).rejects.toEqual(code('invalid-argument'))
@@ -314,7 +348,7 @@ test('null stands for an omitted optional parameter or option', () =>
       editor.insertFootnote(omitted)
       expect(editor.snapshot().text).toContain('[^1]: ')
       editor.insertImages(
-        [{ path: 'a.png', alt: 'A', title: omitted }],
+        [{ reference: 'a.png', alt: 'A', title: omitted }],
         omitted,
         omitted,
       )
@@ -633,7 +667,7 @@ test('a shortcut that fails reports through the error event, and keyDown throws 
       expect.objectContaining({ code: 'internal', cause: fault }),
     ])
     expect(() =>
-      editor.keyDown('b', 'KeyB', true, false, false, false, 1),
+      editor.keyDown({ key: 'b', code: 'KeyB', metaKey: true }, 1),
     ).toThrow(expect.objectContaining({ code: 'internal', cause: fault }))
     expect(errors).toHaveLength(1)
   }))

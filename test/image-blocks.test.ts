@@ -95,7 +95,7 @@ const imageSelected = (view: EditorView, index = 0) =>
   NodeSelection.create(view.state.doc, imageBlock(view, index))
 
 function key(editor: InkKitEditor, name: string): boolean {
-  return editor.keyDown(name, name, false, false, false, false, 1)
+  return editor.keyDown({ key: name, code: name }, 1)
 }
 
 const roundTrips = {
@@ -325,8 +325,8 @@ test('inserting images leaves the caret after the last one, and typing lands bel
     const end = view().state.doc.child(0).nodeSize - 1
     select(view(), TextSelection.create(view().state.doc, end))
     editor.insertImages([
-      { path: 'one.png', alt: 'One' },
-      { path: 'two.png', alt: 'Two' },
+      { reference: 'one.png', alt: 'One' },
+      { reference: 'two.png', alt: 'Two' },
     ])
     expect(text()).toBe('Start\n\n![One](one.png)\n\n![Two](two.png)\n')
     expect(view().state.selection).toBeInstanceOf(GapCursor)
@@ -342,7 +342,7 @@ test('inserting images leaves the caret after the last one, and typing lands bel
 test('inserting an image inside a paragraph splits it, leaving the caret after the image', () =>
   run('AlphaBeta\n', ({ editor, view, text }) => {
     select(view(), TextSelection.create(view().state.doc, 6))
-    editor.insertImages([{ path: 'mid.png', alt: 'Mid' }])
+    editor.insertImages([{ reference: 'mid.png', alt: 'Mid' }])
     expect(text()).toBe('Alpha\n\n![Mid](mid.png)\n\nBeta\n')
     expect(view().state.selection).toBeInstanceOf(GapCursor)
     editor.insertText('Typed', 1)
