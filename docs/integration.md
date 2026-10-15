@@ -104,7 +104,7 @@ Image references are opaque. The adapter owns bytes, access control, storage and
 
 For native clipboard writes, await `clipboardSnapshot(scope, generation)` and check the `documentId`, `generation` and `revision` it carries before replacing the clipboard; output that `events.clipboard` receives carries them too. Supply `events.clipboard` for image or diagram selections and resolve its promise only after the native write succeeds. Cut waits for that acknowledgement before deleting content. Encode byte arrays explicitly when crossing a JSON bridge.
 
-`printableSnapshot()` returns a complete frozen printable document with portable assets; the app owns Print/PDF commands, dialogs and file generation. Before switching or closing a document, capture a fresh save snapshot. Pass a greater generation on every load and reload, pass the current one as the expected generation on every other call, and await `editor.destroy()` before removing the mounted root. Call `blur(generation)` to release focus from the editor, rather than finding its elements.
+`printableSnapshot()` returns a complete frozen printable document with portable assets; the app owns Print/PDF commands, dialogs and file generation. Before switching or closing a document, capture a fresh save snapshot. Pass a greater generation on every load and reload, pass the current one as the expected generation on every call that takes one, and await `editor.destroy()` before removing the mounted root. Call `blur(generation)` to release focus from the editor, rather than finding its elements.
 
 ## Optional linked files
 
