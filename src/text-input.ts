@@ -7,7 +7,7 @@ import {
 } from '@milkdown/kit/prose/state'
 import { StepMap } from '@milkdown/kit/prose/transform'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { receivedHyphenWithNext } from './smart-punctuation'
+import { chunkState, insertedHyphen } from './smart-punctuation'
 
 const isInputRules = (plugin: Plugin) =>
   (plugin.spec as { isInputRules?: boolean }).isInputRules === true
@@ -56,18 +56,20 @@ export function insertTextChunk(
     return true
   }
   const rules = state.plugins.filter(isInputRules)
-  const prepared = EditorState.create({
-    schema: state.schema,
-    doc: tr.doc,
-    selection: TextSelection.create(tr.doc, at),
-    // The marks the rest of the text took, which the last character would
-    // take too.
-    storedMarks:
-      state.storedMarks ??
-      (from === to ? $from.marks() : $from.marksAcross($to)),
-  })
-  // The hyphen that ends the rest is received with the last character, as one input.
-  if (rest.endsWith('-')) receivedHyphenWithNext(prepared)
+  const prepared = chunkState(
+    state,
+    {
+      schema: state.schema,
+      doc: tr.doc,
+      selection: TextSelection.create(tr.doc, at),
+      // The marks the rest of the text took, which the last character would
+      // take too.
+      storedMarks:
+        state.storedMarks ??
+        (from === to ? $from.marks() : $from.marksAcross($to)),
+    },
+    rest,
+  )
   let ruled: Transaction | undefined
   // Input rules read the state from the view they are given and dispatch to
   // it, so they are given the state with the rest of the text in place.
@@ -85,7 +87,9 @@ export function insertTextChunk(
     ),
   )
   if (!handled) {
-    view.dispatch(deflt().scrollIntoView())
+    const plain = deflt().scrollIntoView()
+    // A hyphen that ends the text counts as the one just typed.
+    view.dispatch(last === '-' ? insertedHyphen(plain) : plain)
     return true
   }
   if (ruled) {

@@ -663,6 +663,24 @@ describe('only the hyphen just received counts', () => {
       expect(s.save()).toBe('a – b')
     }))
 
+  test('a chunk ending in a hyphen, then a hyphen typed after it, gives an en dash', () =>
+    smart('a', (s) => {
+      s.caret()
+      expect(s.editor.insertText(' -', 1)).toBe(true)
+      expect(s.editor.insertText('-', 1)).toBe(true)
+      expect(s.save()).toBe('a –')
+    }))
+
+  test('a chunk ending in a hyphen, with the caret moved before the next hyphen, stays two hyphens', () =>
+    smart('a b', (s) => {
+      s.caret('a')
+      expect(s.editor.insertText(' -', 1)).toBe(true)
+      s.caret('b')
+      s.caret('a -')
+      expect(s.editor.insertText('-', 1)).toBe(true)
+      expect(s.save()).toBe('a -- b')
+    }))
+
   test('a chunk of hyphens and text keeps its hyphens unless it ends in two', () =>
     smart('a', (s) => {
       s.caret()
@@ -691,4 +709,52 @@ describe('code and tags inside the block', () => {
       s.type(`x <b class="c"`)
       expect(s.view.state.doc.textContent).toBe('x <b class="c"')
     }))
+})
+
+describe('a quote that a composition commits', () => {
+  const wait = () => new Promise((resolve) => setTimeout(resolve, 20))
+  // A composition that commits `text` at the caret, as the browser reports it.
+  function compose(s: Session, text: string, composition: boolean) {
+    s.view.dom.dispatchEvent(new Event('compositionstart'))
+    const { from } = s.view.state.selection
+    const tr = s.view.state.tr.insertText(text, from)
+    s.view.dispatch(composition ? tr.setMeta('composition', 1) : tr)
+    s.view.dom.dispatchEvent(new Event('compositionend'))
+  }
+
+  test('is curled when the composition committed only that quote', async () => {
+    await smart('say', async (s) => {
+      s.caret()
+      s.type(' ')
+      compose(s, '"', true)
+      await wait()
+      expect(s.view.state.doc.textContent).toBe('say “')
+    })
+  })
+
+  test('is left alone when no composition committed it', async () => {
+    await smart('say', async (s) => {
+      s.caret()
+      s.type(' ')
+      compose(s, '"', false)
+      await wait()
+      expect(s.view.state.doc.textContent).toBe('say "')
+    })
+  })
+
+  test('is not curled later by another composition that changes nothing', async () => {
+    await smart('say', async (s) => {
+      s.caret()
+      s.type(' ')
+      s.editor.setTextInputPreferences({})
+      compose(s, '"', true)
+      await wait()
+      expect(s.view.state.doc.textContent).toBe('say "')
+      s.editor.setTextInputPreferences({ smartPunctuation: true })
+      s.view.dom.dispatchEvent(new Event('compositionstart'))
+      s.view.dom.dispatchEvent(new Event('compositionend'))
+      await wait()
+      expect(s.view.state.doc.textContent).toBe('say "')
+    })
+  })
 })

@@ -1,9 +1,9 @@
 import { InputRule, undoInputRule } from '@milkdown/kit/prose/inputrules'
 import {
+  EditorState,
   Plugin,
   PluginKey,
   type Command,
-  type EditorState,
   type Transaction,
 } from '@milkdown/kit/prose/state'
 import { ReplaceStep } from '@milkdown/kit/prose/transform'
@@ -117,6 +117,8 @@ const inputTracking = $prose(
         apply(tr, value) {
           const { pending, composition } = value
           value.pending = value.hyphen = value.composedQuote = null
+          // Text that arrived in one piece and ended in a hyphen: the caret is after it.
+          if (tr.getMeta(hyphenReceived)) value.hyphen = tr.selection.from
           if (!tr.docChanged) return value
           if (pending !== null && insertedAt(tr, pending) === '-')
             value.hyphen = pending + 1
@@ -124,6 +126,7 @@ const inputTracking = $prose(
             value.composition = null
             const text = insertedAt(tr, composition.pos)
             if (
+              tr.getMeta('composition') !== undefined &&
               (text === '"' || text === "'") &&
               tr.doc.content.size === composition.size + 1
             )
@@ -140,7 +143,9 @@ const inputTracking = $prose(
         handleDOMEvents: {
           compositionstart(view) {
             const { from, empty } = view.state.selection
-            input.getState(view.state)!.composition = empty
+            const tracked = input.getState(view.state)!
+            tracked.composedQuote = null
+            tracked.composition = empty
               ? { pos: from, size: view.state.doc.content.size }
               : null
             return false
@@ -150,12 +155,32 @@ const inputTracking = $prose(
     }),
 )
 
-/** States of text that arrived in one piece, whose last hyphen follows one that came with it. */
-const hyphenInChunk = new WeakSet<EditorState>()
+/** Set on a transaction that inserted text ending in a hyphen, whatever else came with it. */
+const hyphenReceived = 'inkkitHyphenReceived'
 
-/** Tells the rules that the hyphen before the caret came in the same piece as the one being typed. */
-export function receivedHyphenWithNext(state: EditorState): void {
-  hyphenInChunk.add(state)
+/** Marks a transaction that inserted text ending in a hyphen that no rule changed. */
+export function insertedHyphen(tr: Transaction): Transaction {
+  return tr.setMeta(hyphenReceived, true)
+}
+
+/**
+ * The state that input rules see for text that arrived in one piece, which holds only what the
+ * rules need: it follows the document, with the tracking plugin when the editor has one. When
+ * `rest` ends in a hyphen, the last character follows a hyphen that came in the same piece.
+ */
+export function chunkState(
+  state: EditorState,
+  config: Parameters<typeof EditorState.create>[0],
+  rest: string,
+): EditorState {
+  const tracker = input.get(state)
+  const prepared = EditorState.create({
+    ...config,
+    plugins: tracker ? [tracker] : [],
+  })
+  return tracker && rest.endsWith('-')
+    ? prepared.apply(insertedHyphen(prepared.tr))
+    : prepared
 }
 
 /**
@@ -245,10 +270,7 @@ export const smartPunctuation = [
           if (!applies(ctx.get(smartPunctuationCtx.key), state, match, start))
             return null
           // The hyphen before the caret must be the one text input just inserted.
-          if (
-            input.getState(state)?.hyphen !== state.selection.from &&
-            !hyphenInChunk.has(state)
-          )
+          if (input.getState(state)?.hyphen !== state.selection.from)
             return null
           const before = textBefore(state, start)
           // At the start of a block `--` may become the divider `---`, and a hyphen run is not a
