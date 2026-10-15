@@ -767,19 +767,15 @@ test('print keeps mail and phone links and drops links with an unsafe address', 
       text: '[site](https://example.com/) [mail](mailto:ada@example.com) [call](tel:+441234567890) [run](javascript:run) [file](file:///etc/hosts) [rel](notes/today.md)\n',
     })
     const printed = await editor.printableSnapshot(1)
-    const links = [
-      ...new DOMParser()
-        .parseFromString(printed.html, 'text/html')
-        .querySelectorAll('a'),
-    ]
+    const page = new DOMParser().parseFromString(printed.html, 'text/html')
+    const links = [...page.querySelectorAll('a')]
     expect(
       links.map((link) => [link.textContent, link.getAttribute('href')]),
     ).toEqual([
       ['site', 'https://example.com/'],
       ['mail', 'mailto:ada@example.com'],
       ['call', 'tel:+441234567890'],
-      ['run', null],
-      ['file', null],
       ['rel', 'notes/today.md'],
     ])
+    expect(page.body.textContent).toContain('call run file rel')
   }))

@@ -67,3 +67,31 @@ test('rendered links keep only addresses on InkKit’s list, and only those open
     root.remove()
   }
 })
+
+test('a copied link whose address is not kept pastes back as its text', async () => {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const editor = await InkKitEditor.mount(root, {
+    changed() {},
+    stateChanged() {},
+    copy() {},
+    openLink() {},
+  })
+  const load = (generation: number, text: string) =>
+    editor.loadDocument({ documentId: 'links', generation, format: 'md', text })
+  try {
+    load(1, 'X [F](ftp://h/x) [J](javascript:alert(1)) [E]() [H](https://h/)\n')
+    const copied = await editor.clipboardSnapshot()
+    expect(copied.html).not.toMatch(/ftp:|javascript:/)
+    expect(copied.html.match(/<a\b[^>]*>[^<]*<\/a>/g)).toEqual([
+      '<a href="" data-inkkit-link-form="written">E</a>',
+      '<a href="https://h/" data-inkkit-link-form="written">H</a>',
+    ])
+    load(2, '\n')
+    await editor.paste({ text: copied.text, html: copied.html })
+    expect(editor.snapshot().text).toBe('X F J [E]() [H](https://h/)\n')
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+})
