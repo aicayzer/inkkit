@@ -72,6 +72,11 @@ function ownShape(node: SourceNode): string {
   )
 }
 
+// The shape two nodes must share to be the same child of a list or quote. A
+// task ticked since is still the same item.
+const matchShape = (node: SourceNode): string =>
+  ownShape({ ...node, checked: undefined })
+
 // The character that decides which list an item belongs to: its bullet, or the
 // delimiter after its number. Items with different ones start a new list.
 function markerAt(
@@ -167,34 +172,333 @@ function authoredNeighbour(
   return marker ? { ordered: before.ordered, marker } : undefined
 }
 
+// How often a child may occur in an original and still place a part in it.
+const RARE = 4
+
+// Ending a list or quote in the middle splits it, and each part holds a run of
+// the original's children. The run of a candidate that a part matches best
+// stands in for the original, so the children the edit did not reach keep
+// their source.
+
+function splitPart(
+  candidates: readonly SourceNode[],
+  after: SourceNode,
+  source: string,
+  taken: ReadonlySet<SourceNode> = new Set(),
+): SourceNode | undefined {
+  if (
+    (after.type !== 'list' && after.type !== 'blockquote') ||
+    !after.children?.length
+  )
+    return undefined
+  const ids = new Map<string, number>()
+  const id = (node: SourceNode) => {
+    const key = signature(node) + matchShape(node)
+    let value = ids.get(key)
+    if (value === undefined) ids.set(key, (value = ids.size))
+    return value
+  }
+  const wanted = after.children.map(id)
+  // The placements with the best score; more than one is a tie.
+  // `from` is where the part's first child falls in the run.
+  let best: Array<{ node: SourceNode; run: SourceNode[]; from: number }> = []
+  let score = 0
+  for (const node of candidates) {
+    const children = node.children
+    if (
+      node.type !== after.type ||
+      node.ordered !== after.ordered ||
+      !children?.length
+    )
+      continue
+    const have = children.map(id)
+    const positions = new Map<number, number[]>()
+    have.forEach((key, index) => {
+      if (taken.has(children[index]!)) return
+      const at = positions.get(key)
+      if (at) at.push(index)
+      else positions.set(key, [index])
+    })
+    // Each child found only a few times in the original suggests where the
+    // part starts in it. A part can also run past either end of the original
+    // by children it does not hold, such as an item added at its end.
+    // Children another part already kept are not this part's.
+    const votes = new Map<number, number>()
+    wanted.forEach((key, index) => {
+      const at = positions.get(key) ?? []
+      if (at.length <= RARE)
+        for (const position of at)
+          votes.set(position - index, (votes.get(position - index) ?? 0) + 1)
+    })
+    const held = (key: number) => positions.has(key)
+    const lead = wanted.findIndex(held)
+    const trail = [...wanted].reverse().findIndex(held)
+    const offsets = new Set([
+      ...[...votes]
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 3)
+        .map(([offset]) => offset),
+      ...(lead < 0 ? [] : [-lead, have.length - wanted.length + trail]),
+    ])
+    for (const from of offsets) {
+      // Children another part kept can end the run, as edits do; one kept
+      // inside it places the part elsewhere.
+      let first = Math.max(0, from)
+      let last = Math.min(have.length, from + wanted.length)
+      while (first < last && taken.has(children[first]!)) first++
+      while (last > first && taken.has(children[last - 1]!)) last--
+      const run = children.slice(first, last)
+      if (run.some((child) => taken.has(child))) continue
+      let matched = 0
+      for (let index = first; index < last; index++)
+        if (have[index] === wanted[index - from]) matched++
+      if (!matched || matched < score) continue
+      if (matched > score) best = []
+      score = matched
+      best.push({ node, run, from: from - first })
+    }
+  }
+  if (!best.length) return undefined
+  // Tied placements that would give the part different source leave which
+  // copy it is unknown, so it is written afresh.
+  const spelling = (placement: (typeof best)[number]) =>
+    JSON.stringify(
+      wanted.map((_, index) => {
+        const child = placement.run[index + placement.from]
+        return (
+          child &&
+          source.slice(child.position?.start.offset, child.position?.end.offset)
+        )
+      }),
+    )
+  if (new Set(best.map(spelling)).size > 1) return undefined
+  const { node: original, run } = best[0]!
+  const start = run[0]!.position?.start.offset
+  const end = run.at(-1)!.position?.end.offset
+  if (start == null || end == null) return undefined
+  const part: SourceNode = {
+    ...original,
+    children: run,
+    position: { start: { offset: start }, end: { offset: end } },
+  }
+  if (part.type === 'blockquote') {
+    // The part opens at the quote's marker on the line of its first child.
+    const opening = original.position!.start.offset!
+    const column = opening - (source.lastIndexOf('\n', opening - 1) + 1)
+    const marker = source.lastIndexOf('\n', start - 1) + 1 + column
+    if (source[marker] !== '>' || marker > start) return undefined
+    part.position!.start.offset = marker
+  } else {
+    part.spread = run.some(
+      (item, index) =>
+        index > 0 &&
+        /\n[ \t>]*\r?\n/.test(
+          source.slice(
+            run[index - 1]!.position!.end.offset,
+            item.position!.start.offset,
+          ),
+        ),
+    )
+    // The number the part's first item was written with is where it starts.
+    if (part.ordered) part.start = Number(/^\d+/.exec(source.slice(start))![0])
+  }
+  return part
+}
+
+// The source of a part split from an original, from the offset it starts at
+// in the source.
+function retainSplit(
+  candidates: readonly SourceNode[],
+  after: SourceNode,
+  source: string,
+  canonical: string,
+  lineEnding: string,
+  // Children of originals that other parts kept, which this part takes too.
+  taken: Set<SourceNode>,
+): { from: number; text: string } | undefined {
+  const part = splitPart(candidates, after, source, taken)
+  if (!part) return undefined
+  for (const child of part.children!) taken.add(child)
+  return {
+    from: part.position!.start.offset!,
+    text: retainSource(part, after, source, canonical, lineEnding),
+  }
+}
+
+// Children written afresh between authored ones, each read against the
+// original it continues: a list or quote split from an original keeps that
+// run of its children, and an item that keeps its first line is the original
+// item. An item that does not still keeps the lists and quotes split into it.
+// Undefined when no child continues an original.
+function retainParts(
+  marker: string | undefined,
+  before: SourceNode[],
+  after: SourceNode[],
+  source: string,
+  canonical: string,
+  from: number,
+  to: number,
+  lineEnding: string,
+  previous?: Neighbour,
+  next?: Neighbour,
+): string | undefined {
+  let items: Map<string, SourceNode[]> | undefined
+  const taken = new Set<SourceNode>()
+  const opening = (item: SourceNode) =>
+    item.children?.length
+      ? matchShape(item) + signature(item.children[0]!)
+      : undefined
+  const pieces = after.map((child): string | undefined => {
+    const end = child.position!.end.offset!
+    if (child.type === 'list' || child.type === 'blockquote') {
+      const part = retainSplit(
+        before,
+        child,
+        source,
+        canonical,
+        lineEnding,
+        taken,
+      )
+      // A list's range can take in the blank line its container gave it,
+      // which the part, ending at its last child, does not hold.
+      if (part)
+        return (
+          part.text +
+          canonical.slice(child.children!.at(-1)!.position!.end.offset, end)
+        )
+      // A list joined from originals keeps the items it took from them, under
+      // the marker of the first.
+      const lists = before.filter(
+        (node) => node.type === 'list' && node.ordered === child.ordered,
+      )
+      return child.type === 'list' && lists.length
+        ? retainParts(
+            authoredMarker(lists[0]!, source),
+            lists.flatMap((list) => list.children ?? []),
+            child.children!,
+            source,
+            canonical,
+            child.position!.start.offset!,
+            end,
+            lineEnding,
+          )
+        : undefined
+    }
+    if (child.type !== 'listItem') return undefined
+    if (!items) {
+      items = new Map()
+      for (const node of before) {
+        const key = node.type === 'listItem' ? opening(node) : undefined
+        if (!key) continue
+        const same = items.get(key)
+        if (same) same.push(node)
+        else items.set(key, [node])
+      }
+    }
+    const original = items.get(opening(child) ?? '')?.shift()
+    const text = original
+      ? retainSource(original, child, source, canonical, lineEnding)
+      : child.children?.some(
+            (node) => node.type === 'list' || node.type === 'blockquote',
+          )
+        ? retainParts(
+            undefined,
+            before.flatMap((node) =>
+              node.type === 'listItem' ? (node.children ?? []) : [],
+            ),
+            child.children,
+            source,
+            canonical,
+            child.position!.start.offset!,
+            end,
+            lineEnding,
+          )
+        : undefined
+    return text !== undefined && marker ? relabel(text, [0], marker) : text
+  })
+  if (pieces.every((piece) => piece === undefined)) return undefined
+  let text = '',
+    at = from
+  after.forEach((child, index) => {
+    const childStart = child.position!.start.offset!
+    const childEnd = child.position!.end.offset!
+    const following = index === after.length - 1 ? next : undefined
+    let piece = pieces[index]
+    // A list beside another with its marker would join it.
+    const own = piece && markerAt(piece, 0)?.marker
+    if (
+      child.type === 'list' &&
+      [previous, following].some(
+        (neighbour) =>
+          neighbour?.ordered === child.ordered && neighbour?.marker === own,
+      )
+    )
+      piece = undefined
+    piece ??= canonicalSlice(
+      marker,
+      [child],
+      canonical,
+      childStart,
+      childEnd,
+      previous,
+      following,
+    )
+    previous =
+      child.type === 'list'
+        ? {
+            ordered: child.ordered,
+            marker:
+              markerAt(piece, /^[ \t]*/.exec(piece)![0].length)?.marker ?? '',
+          }
+        : undefined
+    text += canonical.slice(at, childStart) + piece
+    at = childEnd
+  })
+  return text + canonical.slice(at, to)
+}
+
 // The text Markdown inline source reads as, with the source offset of each of
-// its characters; undefined where it holds more than escapes and entities.
-function decodedOffsets(
+// its characters; undefined where it holds more than escapes and entities, or
+// line endings when `lines` is set. A line ending reads as LF without the
+// spaces and tabs before it or the quote markers and indentation after it,
+// which paragraph text leaves out; the offset before it is where those spaces
+// start, so text typed at the end of a line goes before them.
+export function decodedOffsets(
   raw: string,
   lines = false,
 ): { decoded: string; offsets: number[] } | undefined {
   const offsets = [0]
   let decoded = ''
   for (let index = 0; index < raw.length;) {
+    const rest = raw.slice(index)
+    // Only a run of spaces and tabs from its start can lead to a line
+    // ending, which keeps a long run linear.
+    const line =
+      /[ \t]/.test(raw[index - 1] ?? '') && /[ \t]/.test(raw[index]!)
+        ? undefined
+        : /^[ \t]*(?:\r\n?|\n)(?:[ \t]*>)*[ \t]*/.exec(rest)?.[0]
     const token =
-      /^\\[!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~]/.exec(raw.slice(index))?.[0] ??
-      /^&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);/.exec(
-        raw.slice(index),
-      )?.[0]
+      line ??
+      /^\\[!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~]/.exec(rest)?.[0] ??
+      /^&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);/.exec(rest)?.[0]
     let value = raw[index]!
-    if (token?.startsWith('\\')) value = token[1]!
+    if (line) {
+      if (!lines) return undefined
+      value = '\n'
+    } else if (token?.startsWith('\\')) value = token[1]!
     else if (token) {
       const element = document.createElement('textarea')
       element.innerHTML = token
       value = element.value
-    } else if (!lines && (raw[index] === '\n' || raw[index] === '\r'))
-      return undefined
+    }
     index += token?.length ?? 1
     decoded += value
     for (let part = 0; part < value.length; part++) offsets.push(index)
   }
   return { decoded, offsets }
 }
+
+const lf = (text: string) => text.replace(/\r\n?/g, '\n')
 
 // GFM finds addresses after punctuation in a pass after parsing, which gives
 // the address and the text split around it no position. Each such run of
@@ -218,7 +522,7 @@ function locateChildren(node: SourceNode, text: string): void {
     const from = children[index - 1]?.position?.end.offset ?? start
     const to = children[last]?.position?.start.offset ?? end
     const run = children.slice(index, last)
-    const values = run.map((child) => inlineText(child))
+    const values = run.map((child) => lf(inlineText(child)))
     const read = decodedOffsets(text.slice(from, to), true)
     const at = read?.decoded.indexOf(values.join(''))
     if (
@@ -278,7 +582,7 @@ function runOffsets(
         )
     } else if (node.type === 'text') {
       const read = decodedOffsets(raw, true)
-      if (!read || read.decoded !== node.value) return undefined
+      if (!read || read.decoded !== lf(node.value ?? '')) return undefined
       decoded += read.decoded
       offsets.push(...read.offsets.slice(1).map((offset) => start + offset))
     } else return undefined
@@ -343,15 +647,14 @@ function retainText(
   raw: string,
   before: string,
   after: string,
-  quoteIndent = false,
   inTable = false,
   // The canonical text, used for text inserted against a link, and whether a
   // link sits before and after this text.
   written?: string,
   beside: readonly [boolean, boolean] = [false, false],
 ): string {
-  before = before.replace(/\r\n?/g, '\n')
-  after = after.replace(/\r\n?/g, '\n')
+  before = lf(before)
+  after = lf(after)
   let prefix = 0
   while (
     prefix < before.length &&
@@ -366,52 +669,9 @@ function retainText(
     before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
   )
     suffix++
-  const offsets = [0]
-  let decoded = ''
-  for (let index = 0; index < raw.length;) {
-    if (index > 0 && raw[index - 1] === '\n') {
-      const gutter = (
-        quoteIndent ? /^(?:[ \t]*>[ \t]*)+/ : /^(?:[ \t]*>[ \t]?)+/
-      ).exec(raw.slice(index))
-      if (gutter) {
-        index += gutter[0].length
-        offsets[offsets.length - 1] = index
-        continue
-      }
-    }
-    const escaped = /^\\([!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~])/.exec(
-      raw.slice(index),
-    )
-    const entity = /^&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);/.exec(
-      raw.slice(index),
-    )
-    let value: string
-    let length: number
-    if (escaped) {
-      value = escaped[1]!
-      length = escaped[0].length
-    } else if (entity) {
-      const element = document.createElement('textarea')
-      element.innerHTML = entity[0]
-      value = element.value
-      length = entity[0].length
-    } else if (raw.slice(index, index + 2) === '\r\n') {
-      value = '\n'
-      length = 2
-    } else {
-      value = raw[index]!
-      length = 1
-    }
-    decoded += value
-    index += length
-    for (let part = 0; part < value.length; part++) offsets.push(index)
-  }
-  if (decoded !== before) {
-    // Continuation indentation is excluded from a quoted paragraph's text.
-    return quoteIndent
-      ? after
-      : retainText(raw, before, after, true, inTable, written, beside)
-  }
+  const read = decodedOffsets(raw, true)
+  if (read?.decoded !== before) return after
+  const { offsets } = read
   // Text written against a link is written as the canonical writer writes
   // it, which knows what a bare address would run into.
   if (
@@ -703,6 +963,9 @@ function rewrittenAddress(
   })
 }
 
+// Ordered lists already given their new start, which are not renumbered again.
+const numbered = new WeakSet<SourceNode>()
+
 // Patch changed leaves so an adjacent edit retains authored delimiters and labels.
 function retainSource(
   before: SourceNode,
@@ -715,7 +978,89 @@ function retainSource(
   width?: number,
   // Whether a link sits before and after this node.
   beside: readonly [boolean, boolean] = [false, false],
+  // Children of originals an edit joined into this node.
+  joined: readonly SourceNode[] = [],
 ): string {
+  if (
+    before.type === 'list' &&
+    after.type === 'list' &&
+    before.ordered &&
+    after.ordered &&
+    !numbered.has(before) &&
+    before.position?.start.offset != null
+  ) {
+    // An ordered list can come to start from another number, such as the
+    // part after a split, or lose the items before the first it keeps. Its
+    // items keep their source, and those written in sequence stay in sequence
+    // from the new start, at their authored width.
+    const own = { ...before, start: after.start }
+    numbered.add(own)
+    const text = retainSource(
+      own,
+      after,
+      source,
+      canonical,
+      lineEnding,
+      inTable,
+      width,
+      beside,
+      joined,
+    )
+    const at = before.position.start.offset
+    const prefix = source
+      .slice(source.lastIndexOf('\n', at - 1) + 1, at)
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    let count = 0,
+      previous = 0,
+      number = 0
+    const renumbered = text.replace(
+      new RegExp(`(^|\\n${prefix})(\\d{1,9})(?=[.)])`, 'g'),
+      (_, line: string, digits: string) => {
+        const authored = Number(digits)
+        number =
+          count === 0
+            ? Number(after.start)
+            : authored === previous + 1
+              ? number + 1
+              : authored
+        previous = authored
+        count++
+        return (
+          line +
+          (digits.startsWith('0')
+            ? String(number).padStart(digits.length, '0')
+            : String(number))
+        )
+      },
+    )
+    if (count === after.children?.length) return renumbered
+    if (before.start === after.start) return text
+  }
+  if (
+    before.type === 'listItem' &&
+    after.type === 'listItem' &&
+    typeof before.checked === 'boolean' &&
+    typeof after.checked === 'boolean' &&
+    before.checked !== after.checked
+  ) {
+    // A ticked or cleared task keeps its source; only its box changes.
+    const text = retainSource(
+      { ...before, checked: after.checked },
+      after,
+      source,
+      canonical,
+      lineEnding,
+      inTable,
+      width,
+      beside,
+      joined,
+    )
+    const box = /^((?:[-*+]|\d{1,9}[.)])[ \t]+\[)[ xX](\])/.exec(text)
+    if (box)
+      return (
+        box[1] + (after.checked ? 'x' : ' ') + text.slice(box[1]!.length + 1)
+      )
+  }
   if (inlineParents.has(before.type)) {
     locateChildren(before, source)
     locateChildren(after, canonical)
@@ -782,16 +1127,24 @@ function retainSource(
     before.label === after.label &&
     before.title === after.title
   ) {
-    const destination =
-      /^(\[[\s\S]*?\]:[ \t]*)(<[^>\n]*>|[^\s]+)([\s\S]*)$/.exec(raw)
-    if (destination)
-      return (
-        destination[1] +
-        (destination[2]!.startsWith('<')
-          ? `<${after.url}>`
-          : String(after.url)) +
-        destination[3]
+    const parts = (text: string) =>
+      /^(\[[\s\S]*?\]:[ \t]*)(<(?:\\[\s\S]|[^\\<>\n])*>|[^ \t\r\n]+)([\s\S]*)$/.exec(
+        text,
       )
+    const authored = parts(raw)
+    // The canonical writer knows when a destination needs angle brackets, such
+    // as for a space, and how to escape it.
+    const written = parts(canonical.slice(newStart, newEnd))?.[2]
+    if (authored && written) {
+      const angle = authored[2]!.startsWith('<') && !written.startsWith('<')
+      return (
+        authored[1] +
+        (angle
+          ? `<${written.replace(/(\\[\s\S])|[<>]|\\$/g, (match, escape) => escape ?? `\\${match}`)}>`
+          : written) +
+        authored[3]
+      )
+    }
   }
   if (
     before.type === 'tableRow' &&
@@ -863,7 +1216,6 @@ function retainSource(
           raw,
           before.value!,
           after.value!,
-          false,
           inTable,
           canonical.slice(newStart, newEnd),
           beside,
@@ -1091,7 +1443,25 @@ function retainSource(
       to != null &&
       newFrom != null &&
       newTo != null
-    )
+    ) {
+      const changed = before.children.slice(
+        prefix,
+        before.children.length - suffix,
+      )
+      const changes = after.children.slice(
+        prefix,
+        after.children.length - suffix,
+      )
+      const previous = authoredNeighbour(
+        before.children[prefix - 1],
+        after.children[prefix - 1],
+        source,
+      )
+      const next = authoredNeighbour(
+        before.children[before.children.length - suffix],
+        after.children[after.children.length - suffix],
+        source,
+      )
       return (
         source.slice(start, first) +
         retainBoundaryWhitespace(
@@ -1099,36 +1469,33 @@ function retainSource(
             withEnding(
               (inlineParents.has(before.type)
                 ? retainRun(
-                    before.children.slice(
-                      prefix,
-                      before.children.length - suffix,
-                    ),
-                    after.children.slice(
-                      prefix,
-                      after.children.length - suffix,
-                    ),
+                    changed,
+                    changes,
                     source,
                     canonical,
                     [from, to],
                     [newFrom, newTo],
                   )
-                : undefined) ??
+                : retainParts(
+                    marker,
+                    [...changed, ...joined],
+                    changes,
+                    source,
+                    canonical,
+                    newFrom,
+                    newTo,
+                    lineEnding,
+                    previous,
+                    next,
+                  )) ??
                 canonicalSlice(
                   marker,
-                  after.children.slice(prefix, after.children.length - suffix),
+                  changes,
                   canonical,
                   newFrom,
                   newTo,
-                  authoredNeighbour(
-                    before.children[prefix - 1],
-                    after.children[prefix - 1],
-                    source,
-                  ),
-                  authoredNeighbour(
-                    before.children[before.children.length - suffix],
-                    after.children[after.children.length - suffix],
-                    source,
-                  ),
+                  previous,
+                  next,
                 ),
               lineEnding,
             ) +
@@ -1137,6 +1504,7 @@ function retainSource(
         ) +
         source.slice(last, end)
       )
+    }
   }
   // A list can end after blank lines that its container gave it; keep the
   // authored ones rather than add the canonical ones beside them, unless the
@@ -1647,6 +2015,7 @@ export class Preservation {
     block: Block,
     after: SourceNode,
     canonical: string,
+    joined: readonly SourceNode[] = [],
   ): string {
     const offset = this.source.startsWith('\uFEFF') ? 1 : 0
     const start = block.ast.position?.start.offset
@@ -1660,8 +2029,51 @@ export class Preservation {
         this.source.slice(offset),
         canonical,
         this.lineEnding,
+        false,
+        undefined,
+        undefined,
+        joined,
       )
     )
+  }
+
+  // The original blocks between those paired around a current block, which
+  // an edit could have split it from or joined into it.
+  private around(positions: Array<number | undefined>, index: number): Block[] {
+    let low = index - 1,
+      high = index + 1
+    while (low >= 0 && positions[low] == null) low--
+    while (high < positions.length && positions[high] == null) high++
+    const [from, to] = [
+      low < 0 ? 0 : positions[low]!,
+      high >= positions.length ? this.blocks.length - 1 : positions[high]!,
+    ].sort((left, right) => left - right)
+    return this.blocks.slice(from, to! + 1)
+  }
+
+  // A new list or quote split from one between the blocks paired around it.
+  private retainPart(
+    positions: Array<number | undefined>,
+    index: number,
+    after: SourceNode,
+    canonical: string,
+    taken: Set<SourceNode>,
+  ): string | undefined {
+    const source = this.source.slice(this.source.startsWith('\uFEFF') ? 1 : 0)
+    const part = retainSplit(
+      this.around(positions, index).map((block) => block.ast),
+      after,
+      source,
+      canonical,
+      this.lineEnding,
+      taken,
+    )
+    if (!part) return undefined
+    const indent = source.slice(
+      source.lastIndexOf('\n', part.from - 1) + 1,
+      part.from,
+    )
+    return (/^[ \t]*$/.test(indent) ? indent : '') + part.text
   }
 
   private localEdits(doc: ProseNode): string | undefined {
@@ -2160,6 +2572,36 @@ export class Preservation {
       const parse = this.ctx.get(parserCtx)
       const normalized = (text: string): string => text.replace(/\r\n?/g, '\n')
       const positions = correspondence(forms, current)
+      const paired = new Set(
+        positions.flatMap((position) =>
+          position == null ? [] : [this.blocks[position]!],
+        ),
+      )
+      // The children each edited list or quote keeps at its start and end,
+      // which a part split from the same original cannot also be.
+      const taken = new Set<SourceNode>()
+      if (currentTree.children.length === current.length)
+        positions.forEach((position, index) => {
+          const kids =
+            position == null ? undefined : this.blocks[position]!.ast.children
+          const now = (currentTree.children[index] as unknown as SourceNode)
+            .children
+          if (!kids || !now || this.blocks[position!]!.form === current[index])
+            return
+          let start = 0,
+            end = 0
+          while (
+            start < Math.min(kids.length, now.length) &&
+            signature(kids[start]!) === signature(now[start]!)
+          )
+            taken.add(kids[start++]!)
+          while (
+            end < Math.min(kids.length, now.length) - start &&
+            signature(kids[kids.length - 1 - end]!) ===
+              signature(now[now.length - 1 - end]!)
+          )
+            taken.add(kids[kids.length - 1 - end++]!)
+        })
       const gaps: string[] = []
       const pieces: string[] = []
       const kept: Kept[] = []
@@ -2181,23 +2623,36 @@ export class Preservation {
               ? 'edited'
               : 'canonical'
         kept.push(kind)
+        const node =
+          currentTree.children.length === current.length
+            ? positionalNode(
+                currentRawTree,
+                currentTree.children[index] as unknown as SourceNode,
+              )
+            : undefined
         pieces.push(
           kind === 'unchanged'
             ? this.source.slice(block!.start, block!.end)
             : kind === 'edited'
               ? this.retainBlock(
                   block!,
-                  positionalNode(
-                    currentRawTree,
-                    currentTree.children[index] as unknown as SourceNode,
-                  ),
+                  node!,
                   canonical,
+                  this.around(positions, index)
+                    .filter(
+                      (other) =>
+                        !paired.has(other) &&
+                        other.ast.type === block!.ast.type,
+                    )
+                    .flatMap((other) => other.ast.children ?? []),
                 )
-              : restoreCodeEndings(
+              : ((node &&
+                  this.retainPart(positions, index, node, canonical, taken)) ??
+                restoreCodeEndings(
                   this.ctx,
                   doc.type.create(null, [doc.child(index)]),
                   withEnding(text, this.lineEnding),
-                ),
+                )),
         )
         previous = position
       })
