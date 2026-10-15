@@ -19,7 +19,6 @@ async function run(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
       error: (error) => errors.push(error),
@@ -138,3 +137,25 @@ test('a comment at the edge of formatting stays outside it', () =>
       '**bold** <!-- a --> plain! and <!-- b -->*em*\n',
     )
   }))
+
+for (const [key, saved] of [
+  ['Backspace', '**a<!-- c --> b**\n'],
+  ['Delete', '**a <!-- c -->b**\n'],
+] as const)
+  test(`${key} beside a hidden comment inside formatting keeps the comment and the formatting`, () =>
+    run((editor, ctx, _root, errors) => {
+      const source = '**a <!-- c --> b**\n'
+      editor.loadDocument({ ...input, text: source })
+      const { snapshotId, text } = editor.textSnapshot()
+      expect(text).toBe('a  b')
+      editor.selectTextRange({ snapshotId, from: 2, to: 2 })
+      expect(editor.keyDown(key, key, false, false, false, false, 1)).toBe(true)
+      expect(errors).toEqual([])
+      expect(editor.snapshot().text).toBe(saved)
+      const marks: string[][] = []
+      ctx.get(editorViewCtx).state.doc.descendants((node) => {
+        if (node.isText) marks.push(node.marks.map((mark) => mark.type.name))
+        return node.type.name !== 'comment_inline'
+      })
+      expect(marks).toEqual([['strong'], ['strong']])
+    }))
