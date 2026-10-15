@@ -60,6 +60,52 @@ const documentMarkdown = (random: () => number, length: number): string => {
   ).join('\n\n')
 }
 
+interface Step {
+  seed: number
+  step: number
+  kind: string
+  source: string
+  doc: ProseNode
+  local: Paths
+  full: Preservation
+}
+
+// The note a seed makes and the edits it makes to it, one after another.
+function replay(
+  ctx: Ctx,
+  seed: number,
+  parse: (markdown: string) => ProseNode,
+  each: (step: Step) => void,
+): void {
+  let state = seed
+  const random = () => (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32
+  const pick = <T>(list: T[]) => list[Math.floor(random() * list.length)]!
+  const ending = random() < 0.3 ? '\r\n' : '\n'
+  // Mostly short notes, and some long ones with distant edits.
+  const length =
+    random() < 0.15
+      ? 100 + Math.floor(random() * 100)
+      : 3 + Math.floor(random() * 25)
+  const parts = [documentMarkdown(random, length)]
+  if (random() < 0.5)
+    parts.splice(Math.floor(random() * parts.length), 0, pick(definitions))
+  if (random() < 0.1) parts.unshift('---\ntitle: front\n---')
+  const source =
+    (random() < 0.1 ? '\uFEFF' : '') +
+    parts.join('\n\n').replaceAll('\n', ending) +
+    (random() < 0.8 ? ending : '')
+  const local = new Preservation(ctx, source) as unknown as Paths
+  const full = wholeOnly(ctx, source)
+  // The editor shows the baseline's own nodes.
+  let doc = local.baseline
+  for (let step = 0; step < 8; step++) {
+    const edit = randomEdit(doc, random, parse)
+    if (!edit) continue
+    doc = edit.doc
+    each({ seed, step, kind: edit.kind, source, doc, local, full })
+  }
+}
+
 test(
   'structural edits validated in place save exactly what whole-document preservation saves',
   () =>
@@ -68,37 +114,8 @@ test(
       const parse = ctx.get(parserCtx)
       const accepted = new Map<string, number>()
       let structural = 0
-      for (let seed = 1; seed <= Number(process.env.SEEDS ?? 300); seed++) {
-        let state = seed
-        const random = () =>
-          (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32
-        const pick = <T>(list: T[]) => list[Math.floor(random() * list.length)]!
-        const ending = random() < 0.3 ? '\r\n' : '\n'
-        // Mostly short notes, and some long ones with distant edits.
-        const length =
-          random() < 0.15
-            ? 100 + Math.floor(random() * 100)
-            : 3 + Math.floor(random() * 25)
-        const parts = [documentMarkdown(random, length)]
-        if (random() < 0.5)
-          parts.splice(
-            Math.floor(random() * parts.length),
-            0,
-            pick(definitions),
-          )
-        if (random() < 0.1) parts.unshift('---\ntitle: front\n---')
-        const source =
-          (random() < 0.1 ? '﻿' : '') +
-          parts.join('\n\n').replaceAll('\n', ending) +
-          (random() < 0.8 ? ending : '')
-        const local = new Preservation(ctx, source) as unknown as Paths
-        const full = wholeOnly(ctx, source)
-        // The editor shows the baseline's own nodes.
-        let doc = local.baseline
-        for (let step = 0; step < 8; step++) {
-          const edit = randomEdit(doc, random, parse)
-          if (!edit) continue
-          doc = edit.doc
+      for (let seed = 1; seed <= Number(process.env.SEEDS ?? 300); seed++)
+        replay(ctx, seed, parse, ({ step, kind, source, doc, local, full }) => {
           const fromLocal = local.localEdits(doc)
           let fast = fromLocal
           try {
@@ -106,14 +123,14 @@ test(
           } catch {
             // Preservation then takes the whole-document path.
           }
-          if (fast === undefined) continue
+          if (fast === undefined) return
           let whole: string | Error
           try {
             whole = full.serialize(doc)
           } catch (error) {
             whole = error as Error
           }
-          const label = `seed ${seed} step ${step} ${edit.kind}: ${JSON.stringify(source)}`
+          const label = `seed ${seed} step ${step} ${kind}: ${JSON.stringify(source)}`
           expect(whole, label).toBe(fast)
           // The whole-document path's own test of what reopening must keep.
           expect(semanticSignature(parse(fast)), label).toBe(
@@ -121,10 +138,9 @@ test(
           )
           if (fromLocal === undefined) {
             structural++
-            accepted.set(edit.kind, (accepted.get(edit.kind) ?? 0) + 1)
+            accepted.set(kind, (accepted.get(kind) ?? 0) + 1)
           }
-        }
-      }
+        })
       if (process.env.REPORT)
         console.info(`validated in place: ${structural}`, [...accepted])
       // A run that always fell back to the whole document would pass the
@@ -147,6 +163,25 @@ test(
     }),
   240_000,
 )
+
+// These seeds type Markdown characters into a literal paragraph, in a note
+// that ends with an empty paragraph, and then split and join blocks after it.
+test('every edit of seeds that type into a literal paragraph saves', () =>
+  withEditor('x\n', (editor) => {
+    const ctx = editor.ctx
+    const parse = ctx.get(parserCtx)
+    let edits = 0
+    for (const seed of [244, 597])
+      replay(ctx, seed, parse, ({ step, kind, doc, full }) => {
+        const saved = full.serialize(doc)
+        expect(
+          semanticSignature(parse(saved)),
+          `seed ${seed} step ${step} ${kind}`,
+        ).toBe(semanticSignature(doc))
+        edits++
+      })
+    expect(edits).toBeGreaterThan(10)
+  }))
 
 // The textblocks of `doc`, with their position and the top-level block that
 // holds them.
