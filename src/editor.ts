@@ -2849,7 +2849,7 @@ export class InkKitEditor {
     input = documentInput(input)
     this.session.checkLoad(input.generation, 'input.generation')
     const markdown = input.format === 'txt' ? '' : input.text
-    // Parsed before anything changes, so Markdown that cannot be loaded leaves the loaded document.
+    // Parsed before anything changes, so Markdown that cannot be loaded changes nothing.
     let preservation: Preservation
     try {
       preservation = new Preservation(this.editor.ctx, markdown)
