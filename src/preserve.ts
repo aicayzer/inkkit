@@ -982,70 +982,100 @@ const literals = new WeakSet<SourceNode>()
 
 // The canonical Markdown of each loaded block the editor holds as literal
 // Markdown, by its source node. It differs from the source where the editor
-// does not keep authored spelling, such as quote markers inside a comment.
+// does not keep authored spelling, such as quote markers inside a comment or
+// the indentation of a block inside another.
 const literalForms = new WeakMap<SourceNode, string>()
 
+// One line of a literal block: its authored spelling, given its canonical
+// spelling `before` and the edited canonical line `after`. The authored text
+// is kept on the side of the edit where it reads as `before` does.
+function retainLine(authored: string, before: string, after: string): string {
+  if (before === after) return authored
+  let prefix = 0
+  while (
+    prefix < before.length &&
+    prefix < after.length &&
+    before[prefix] === after[prefix]
+  )
+    prefix++
+  let suffix = 0
+  while (
+    suffix < before.length - prefix &&
+    suffix < after.length - prefix &&
+    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+  )
+    suffix++
+  if (authored.endsWith(before.slice(prefix)))
+    return (
+      authored.slice(0, authored.length - before.length + prefix) +
+      after.slice(prefix)
+    )
+  if (authored.startsWith(before.slice(0, before.length - suffix)))
+    return (
+      after.slice(0, after.length - suffix) +
+      authored.slice(before.length - suffix)
+    )
+  return after
+}
+
 // The authored source of a literal block with the edit that turned its
-// canonical Markdown `before` into `after`. The canonical Markdown has a line
-// for each authored line, so a line the edit left alone keeps its authored
-// spelling, and so do the quote markers or indentation before an edited one.
-// Where the edit adds or removes lines, those it reached are written as
-// `after` has them. Without `before`, for a literal block inside another,
-// lines are compared without the indentation the container gives them, and
-// an edited line keeps its authored indentation.
+// canonical Markdown `before` into `after`, or into the authored source itself
+// when its canonical Markdown is not known. The canonical Markdown has a line
+// for each authored line, so each line the edit left alone keeps its authored
+// spelling and line ending, and an edited line keeps them where it can. Where
+// the edit adds or removes lines, those it reached are written as `after` has
+// them.
 function retainLiteral(
   raw: string,
   before: string | undefined,
   after: string,
 ): string {
-  const authored = raw.split('\n')
+  const parts = raw.split(/(\r\n|\r|\n)/)
+  const authored = parts.filter((_, index) => index % 2 === 0)
+  const endings = parts.filter((_, index) => index % 2 === 1)
   const old = (before ?? lf(raw)).split('\n')
   const now = after.split('\n')
   if (authored.length !== old.length) return after
-  const same =
-    before === undefined
-      ? (left: string, right: string) => left.trimStart() === right.trimStart()
-      : (left: string, right: string) => left === right
   let start = 0
-  while (
-    start < old.length &&
-    start < now.length &&
-    same(old[start]!, now[start]!)
-  )
+  while (start < old.length && start < now.length && old[start] === now[start])
     start++
   let end = 0
   while (
     end < old.length - start &&
     end < now.length - start &&
-    same(old[old.length - 1 - end]!, now[now.length - 1 - end]!)
+    old[old.length - 1 - end] === now[now.length - 1 - end]
   )
     end++
   const reached = now.slice(start, now.length - end)
-  const lines =
-    reached.length === old.length - start - end
-      ? reached.map((line, index) => {
-          const own = authored[start + index]!
-          const ending = own.endsWith('\r') ? '\r' : ''
-          const spelled = own.slice(0, own.length - ending.length)
-          const canonical = old[start + index]!
-          if (same(line, canonical)) return own
-          if (before === undefined)
-            return /^[ \t]*/.exec(spelled)![0] + line.trimStart() + ending
-          return (
-            (spelled.endsWith(canonical)
-              ? spelled.slice(0, spelled.length - canonical.length)
-              : '') +
-            line +
-            ending
-          )
-        })
-      : reached
-  return [
-    ...authored.slice(0, start),
-    ...lines,
-    ...authored.slice(authored.length - end),
-  ].join('\n')
+  const lines: string[] = []
+  for (let index = 0; index < start; index++)
+    lines.push(authored[index]! + (endings[index] ?? ''))
+  if (reached.length === old.length - start - end)
+    reached.forEach((line, index) =>
+      lines.push(
+        retainLine(authored[start + index]!, old[start + index]!, line) +
+          (endings[start + index] ?? ''),
+      ),
+    )
+  else if (reached.length)
+    lines.push(
+      reached.join('\n') +
+        (end ? (endings[authored.length - end - 1] ?? '\n') : ''),
+    )
+  // Removed lines at the end leave no line ending after the last one kept.
+  else if (!end && start) lines[start - 1] = authored[start - 1]!
+  for (let index = authored.length - end; index < authored.length; index++)
+    lines.push(authored[index]! + (endings[index] ?? ''))
+  return lines.join('')
 }
+
+const holdsLiteral = (node: SourceNode): boolean =>
+  (node.children ?? []).some(
+    (child) => literals.has(child) || holdsLiteral(child),
+  )
+
+const sourceRange = (node: SourceNode) =>
+  `${node.position?.start.offset}:${node.position?.end.offset}`
 
 // Marks the nodes of `raw` that `transformed` keeps as literal blocks, and
 // those at the ranges of `blocks`, which the editor holds as literal blocks.
@@ -1054,17 +1084,15 @@ function markLiterals(
   transformed: Root,
   blocks: readonly SourceNode[] = [],
 ): void {
-  const range = (node: SourceNode) =>
-    `${node.position?.start.offset}:${node.position?.end.offset}`
-  const ranges = new Set(blocks.map(range))
+  const ranges = new Set(blocks.map(sourceRange))
   const find = (node: SourceNode) => {
-    if (node.type === 'inkkitLiteral') ranges.add(range(node))
+    if (node.type === 'inkkitLiteral') ranges.add(sourceRange(node))
     else node.children?.forEach(find)
   }
   find(transformed as unknown as SourceNode)
   if (!ranges.size) return
   const mark = (node: SourceNode) => {
-    if (node.position?.start.offset != null && ranges.has(range(node)))
+    if (node.position?.start.offset != null && ranges.has(sourceRange(node)))
       literals.add(node)
     else node.children?.forEach(mark)
   }
@@ -1347,9 +1375,12 @@ function retainSource(
       ),
       canonical.slice(newStart, newEnd),
     )
+  // A literal block's tree does not show all of its text, such as spaces
+  // that open a line, so a block holding one is compared line by line.
   if (
     signature(before) === signature(after) &&
-    ownShape(before) === ownShape(after)
+    ownShape(before) === ownShape(after) &&
+    !holdsLiteral(after)
   )
     return raw
   const marker = sameList(before, after)
@@ -1790,11 +1821,20 @@ function blockForm(ctx: Ctx, node: ProseNode): string {
   const text = form(
     write(ctx, node.type.schema.topNodeType.create(null, [node])),
   )
-  // A literal block's text is its source, so a line ending at its end, which
-  // cannot be read back, is part of what it holds.
-  return node.type.name === 'literal_markdown'
-    ? text + lf(/(?:\r?\n)*$/.exec(node.textContent)![0])
-    : text
+  // A literal block's text is its source, so a line ending at its end is part
+  // of what it holds, though the writer drops it and it cannot be read back.
+  // Keeping it in the form shows the edit that added it.
+  let endings = ''
+  const literal = (child: ProseNode) => {
+    if (child.type.name === 'literal_markdown')
+      endings += lf(/(?:\r?\n)*$/.exec(child.textContent)![0])
+  }
+  literal(node)
+  node.descendants((child) => {
+    literal(child)
+    return !child.isTextblock
+  })
+  return text + endings
 }
 
 export function semanticSignature(doc: ProseNode): string {
@@ -2145,6 +2185,10 @@ export class Preservation {
     { identity: string; nodes: ProseNode[]; text: string }
   >()
   private readonly definitionNodes = new Map<string, number>()
+  // The source ranges of literal blocks inside other blocks, and the blocks
+  // whose literal blocks have been given their canonical form.
+  private readonly nestedLiterals = new Set<string>()
+  private readonly literalsRead = new WeakSet<Block>()
   // Undefined when a definition sits inside another block, where appending
   // the top-level ones would not reproduce the document.
   private readonly definitionSources?: Array<{ label: string; text: string }>
@@ -2206,6 +2250,13 @@ export class Preservation {
         this.originalForms.add(block.form)
         this.blockForms.push(block.form)
       }
+      const inside = (node: SourceNode) =>
+        node.children?.forEach((child) => {
+          if (child.type === 'inkkitLiteral')
+            this.nestedLiterals.add(sourceRange(child))
+          else inside(child)
+        })
+      ;(tree.children as unknown as SourceNode[]).forEach(inside)
       const definition = (node: SourceNode) =>
         node.type === 'definition' || node.type === 'footnoteDefinition'
       const nested = (node: SourceNode): boolean =>
@@ -2244,6 +2295,7 @@ export class Preservation {
     const start = block.ast.position?.start.offset
     if (start == null)
       throw new PreservationError('A source block has no location')
+    this.readNestedLiterals(block)
     return (
       this.source.slice(block.start, start + offset) +
       retainSource(
@@ -2258,6 +2310,39 @@ export class Preservation {
         joined,
       )
     )
+  }
+
+  // Gives each literal block inside `block` the canonical form it has in the
+  // block's own canonical Markdown, found at the same place in its tree.
+  private readNestedLiterals(block: Block): void {
+    if (!this.nestedLiterals.size || this.literalsRead.has(block)) return
+    this.literalsRead.add(block)
+    const holds = (node: SourceNode): boolean =>
+      (node.children ?? []).some(
+        (child) => this.nestedLiterals.has(sourceRange(child)) || holds(child),
+      )
+    if (!holds(block.ast)) return
+    const tree = parseTree(this.ctx, block.form)
+    if (tree.children.length !== 1) return
+    const pair = (source: SourceNode, written: SourceNode) => {
+      if (source.children?.length !== written.children?.length) return
+      source.children?.forEach((child, index) => {
+        const other = written.children![index]!
+        if (other.type !== child.type) return
+        if (this.nestedLiterals.has(sourceRange(child)))
+          literalForms.set(
+            child,
+            lf(
+              block.form.slice(
+                other.position!.start.offset!,
+                other.position!.end.offset!,
+              ),
+            ),
+          )
+        else pair(child, other)
+      })
+    }
+    pair(block.ast, tree.children[0] as unknown as SourceNode)
   }
 
   // The original blocks between those paired around a current block, which

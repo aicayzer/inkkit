@@ -12,7 +12,7 @@ import { semanticSignature } from '../src/preserve'
 
 async function withNote(
   source: string,
-  run: (editor: InkKitEditor, view: EditorView) => void,
+  run: (editor: InkKitEditor, view: EditorView) => void | Promise<void>,
 ): Promise<void> {
   const root = document.createElement('div')
   document.body.append(root)
@@ -29,7 +29,7 @@ async function withNote(
       text: source,
     })
     const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
-    run(editor, ctx.get(editorViewCtx))
+    await run(editor, ctx.get(editorViewCtx))
   } finally {
     await editor.destroy()
     root.remove()
@@ -178,15 +178,62 @@ describe('an edit to a literal block that cannot reopen as typed is refused', ()
     })
   })
 
-  test('a line ending at the end of the block', async () => {
-    const source = 'A [full][ref] x.\n\nAfter.\n'
+  test.each([
+    ['a top-level block', 'A [full][ref] x.\n\nAfter.\n', 'x.'],
+    [
+      'a footnote definition',
+      'N[^1].\n\n[^1]: A [full][ref] x.\n\nAfter.\n',
+      'x.',
+    ],
+    ['a quote', '> quote\n>\n> > [!BOGUS]\n> > body\n\nAfter.\n', 'body'],
+  ])(
+    'a line ending at the end of the block, in %s',
+    async (_name, source, at) => {
+      await withNote(source, (editor, view) => {
+        caretAfter(view, at)
+        const before = view.state.doc
+        refused(() => editor.keyDown({ key: 'Enter' }, 1))
+        expect(view.state.doc.eq(before)).toBe(true)
+        expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
+      })
+    },
+  )
+})
+
+test('a paste that makes a paragraph literal saves as pasted', async () => {
+  const source = 'Hello\n   world\n\nAfter.\n'
+  await withNote(source, async (editor, view) => {
+    const paragraph = view.state.doc.firstChild!
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, 1, 1 + paragraph.content.size),
+      ),
+    )
+    const pasted = 'Hello <b>x</b>\nworld'
+    await editor.paste({ text: pasted, markdown: pasted }, 1)
+    expect(editor.snapshot().text).toBe(`${pasted}\n\nAfter.\n`)
+  })
+})
+
+test('a space typed at the start of an indented literal line is kept', async () => {
+  for (const indent of ['    ', '\t']) {
+    const source = `N[^1].\n\n[^1]: A [full][ref] x.\n${indent}more\n\nAfter.\n`
     await withNote(source, (editor, view) => {
-      caretAfter(view, 'x.')
-      const before = view.state.doc
-      refused(() => editor.keyDown({ key: 'Enter' }, 1))
-      expect(view.state.doc.eq(before)).toBe(true)
-      expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
+      caretAfter(view, 'x.\n')
+      expect(editor.insertText(' ', 1)).toBe(true)
+      expect(editor.snapshot().text).toBe(
+        source.replace(`${indent}more`, `${indent} more`),
+      )
     })
+  }
+})
+
+test('a line of a literal block keeps a lone carriage return', async () => {
+  const source = 'A [x] b.\rline2\rline3\n\nAfter.\n'
+  await withNote(source, (editor, view) => {
+    caretAfter(view, 'line2')
+    for (const character of '*`') editor.insertText(character, 1)
+    expect(editor.snapshot().text).toBe(source.replace('line2', 'line2*`'))
   })
 })
 
