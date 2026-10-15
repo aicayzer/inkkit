@@ -75,6 +75,7 @@ import {
 import { references, remarkReferencesPlugin } from './references'
 import { callouts, remarkCalloutsPlugin } from './callouts'
 import { inlineHighlight } from './inline-highlight'
+import { smartPunctuation } from './smart-punctuation'
 import { comments, remarkCommentsPlugin } from './comments'
 import { hiddenCommentEditing } from './hidden-comments'
 import {
@@ -819,6 +820,7 @@ export function createDialect(
     strikethroughKeymap,
     toggleStrikethroughCommand,
     wrapInTaskListInputRule,
+    smartPunctuation,
     remarkDialectPlugin,
     tables,
     literalBlock,

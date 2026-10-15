@@ -54,6 +54,7 @@ import {
   wrapInOrderedListCommand,
 } from '@milkdown/kit/preset/commonmark'
 import { authoredSourcesCtx, setTextblockType } from './block-conversion'
+import { smartPunctuationCtx, undoSmartPunctuation } from './smart-punctuation'
 import {
   strikethroughKeymap,
   tableKeymap,
@@ -404,11 +405,13 @@ function footnoteLabel(label: string): boolean {
   return !!label && !/[\s\[\]\\]/.test(label) && label.length <= 999
 }
 
-/** Hints for the browser's input features. A field left out leaves the behavior to the browser. */
+/** Hints for the browser's input features, and smart punctuation. A field left out takes its default. */
 export interface TextInputPreferences {
   spellcheck?: boolean
   autocorrect?: boolean
   autocapitalize?: 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters'
+  /** Typing a quote or `--` gives a curly quote or a dash, in formatted mode. Off unless true. */
+  smartPunctuation?: boolean
 }
 
 const autocapitalizeValues = [
@@ -428,10 +431,15 @@ function textInputPreferences(
     'spellcheck',
     'autocorrect',
     'autocapitalize',
+    'smartPunctuation',
   ])
   return {
     spellcheck: optionalBoolean(record.spellcheck, `${name}.spellcheck`),
     autocorrect: optionalBoolean(record.autocorrect, `${name}.autocorrect`),
+    smartPunctuation: optionalBoolean(
+      record.smartPunctuation,
+      `${name}.smartPunctuation`,
+    ),
     autocapitalize: isOmitted(record.autocapitalize)
       ? undefined
       : expectOneOf(
@@ -1627,7 +1635,7 @@ export class InkKitEditor {
     this.publishCommandState()
   }
 
-  /** Replaces the input hints. A field left out leaves the browser's behavior. Throws `composition`
+  /** Replaces the input preferences. A field left out takes its default. Throws `composition`
    *  during text composition. */
   setTextInputPreferences(preferences: TextInputPreferences): void {
     this.assertAlive()
@@ -1807,6 +1815,35 @@ export class InkKitEditor {
     )
     return !!findWrapping(range, type)
   }
+
+  // Edit > Undo and the touch gestures arrive as `beforeinput` events that
+  // ProseMirror's history would handle on its own. This plugin comes before the
+  // history plugin, so every Undo takes the one path through `undo` and `redo`,
+  // with smart punctuation's step and the source-step bookkeeping.
+  private historyInputPlugin = $prose(
+    () =>
+      new Plugin({
+        key: new PluginKey('inkkitHistoryInput'),
+        props: {
+          handleDOMEvents: {
+            beforeinput: (_view, event) => {
+              if (!this.writable) return false
+              const name =
+                event.inputType === 'historyUndo'
+                  ? 'undo'
+                  : event.inputType === 'historyRedo'
+                    ? 'redo'
+                    : undefined
+              if (!name) return false
+              event.preventDefault()
+              if (this.ready && this.commandState().commands[name])
+                this.forPerson(() => this[name](), true)
+              return true
+            },
+          },
+        },
+      }),
+  )
 
   private policyPlugin = $prose(
     () =>
@@ -2185,7 +2222,10 @@ export class InkKitEditor {
     this.assertMutation(expectedGeneration)
     if (this.literalSurface && this.stepTypedSource('undo')) return true
     const view = this.editor.ctx.get(editorViewCtx)
-    const undone = undoHistory(view.state, view.dispatch)
+    const undone =
+      (!this.literalSurface &&
+        undoSmartPunctuation(view.state, view.dispatch)) ||
+      undoHistory(view.state, view.dispatch)
     if (undone) {
       // Source steps that were undone come back after the formatted ones.
       if (this.literalSurface && this.undoneSteps.length) this.formattedUndone++
@@ -2661,6 +2701,10 @@ export class InkKitEditor {
         ctx.set(authoredSourcesCtx.key, (doc, positions) =>
           instance.authoredSources(doc, positions),
         )
+        ctx.set(
+          smartPunctuationCtx.key,
+          () => instance.inputPreferences.smartPunctuation === true,
+        )
         ctx.update(labelsCtx.key, () => ({
           ...defaultLabels,
           ...options.labels,
@@ -2772,6 +2816,7 @@ export class InkKitEditor {
       .use(tablePlugins)
       .use(tableBlock)
       .use(instance.changePlugin)
+      .use(instance.historyInputPlugin)
       .use(history)
       .use(clipboard)
       .use(cursor)
