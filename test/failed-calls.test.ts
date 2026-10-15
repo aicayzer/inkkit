@@ -338,3 +338,42 @@ test('the commands that take more than one step are among those refused at each 
   expect(stepCounts.get("format('taskList')")).toBe(2)
   expect(stepCounts.get("format('heading', 2)")).toBe(2)
 })
+
+test('a call made from a state event handler leaves the host with the newest state', async () => {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const texts: string[] = []
+  const revisions: number[] = []
+  let rewrite = false
+  const editor: InkKitEditor = await InkKitEditor.mount(root, {
+    changed: (markdown) => {
+      texts.push(markdown)
+      if (rewrite) {
+        rewrite = false
+        editor.replaceSource('Rewritten\n')
+      }
+    },
+    stateChanged() {},
+    commandStateChanged: (state) => revisions.push(state.revision),
+    copy() {},
+    openLink() {},
+  })
+  try {
+    editor.loadDocument({
+      documentId: 'handler-call',
+      generation: 1,
+      format: 'md',
+      text: 'Hello\n',
+    })
+    revisions.length = 0
+    rewrite = true
+    editor.insertText('X', 1)
+    const snapshot = editor.snapshot()
+    expect(texts.at(-1)).toBe(snapshot.text)
+    expect(revisions.at(-1)).toBe(snapshot.revision)
+    expect(revisions).toEqual([...revisions].sort((a, b) => a - b))
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+})

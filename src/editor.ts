@@ -836,7 +836,7 @@ let editorSequence = 0
 interface FacadeCall {
   refusal?: InkKitError
   /** Host events raised during the call, sent when it succeeds and dropped when it fails. */
-  events: (() => void)[]
+  events: { name: string | symbol; send: () => void }[]
 }
 
 /** Host events that report the editor's state, which a failed call must not have changed. */
@@ -987,6 +987,8 @@ export class InkKitEditor {
     false
 
   private readonly events: EditorEvents
+  /** How many of each state event the host has been sent. */
+  private readonly sentEvents = new Map<string | symbol, number>()
 
   private constructor(
     events: EditorEvents,
@@ -999,8 +1001,11 @@ export class InkKitEditor {
         if (!stateEvents.includes(name) || typeof handler !== 'function')
           return handler
         return (...args: unknown[]) => {
-          const send = () => handler.apply(target, args)
-          if (this.call) this.call.events.push(send)
+          const send = () => {
+            this.sentEvents.set(name, (this.sentEvents.get(name) ?? 0) + 1)
+            handler.apply(target, args)
+          }
+          if (this.call) this.call.events.push({ name, send })
           else send()
         }
       },
@@ -1137,6 +1142,21 @@ export class InkKitEditor {
     return result
   }
 
+  /** Sends a finished call's state events in order. Each event reports the whole of its state, so
+   *  once a call made from one of the host's handlers has sent a newer event of a kind, the call's
+   *  remaining events of that kind are out of date and are dropped. */
+  private deliver(events: FacadeCall['events']): void {
+    const before = new Map(this.sentEvents)
+    const own = new Map<string | symbol, number>()
+    for (const { name, send } of events) {
+      const count = own.get(name) ?? 0
+      if ((this.sentEvents.get(name) ?? 0) !== (before.get(name) ?? 0) + count)
+        continue
+      own.set(name, count + 1)
+      send()
+    }
+  }
+
   /** What a failed call puts back. */
   private restorePoint() {
     return {
@@ -1154,7 +1174,7 @@ export class InkKitEditor {
     failure: InkKitError | undefined,
   ): void {
     if (!failure || failure.code === 'internal' || !before) {
-      for (const send of call.events) send()
+      this.deliver(call.events)
       return
     }
     const view = this.editor.ctx.get(editorViewCtx)
