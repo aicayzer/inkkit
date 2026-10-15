@@ -184,6 +184,34 @@ describe('a block that cannot be built is kept as source', () => {
     })
   })
 
+  test('when Markdown characters are typed into it', async () => {
+    await run((editor, ctx) => {
+      for (const [generation, ending] of [
+        [1, '\n'],
+        [3, '\r\n'],
+      ] as const) {
+        const source =
+          'Before.\n\n- one\n- FAIL\n\nMiddle *one*.\n\n1) two\n\nAfter.\n'.replace(
+            /\n/g,
+            ending,
+          )
+        load(editor, source, generation)
+        caretAfter(ctx, 'one')
+        for (const character of '*_[]\\`<')
+          editor.insertText(character, generation)
+        const saved = source.replace('one', 'one*_[]\\`<')
+        expect(editor.snapshot(generation).text).toBe(saved)
+        load(editor, saved, generation + 1)
+        expect(editor.snapshot(generation + 1).text).toBe(saved)
+        const kept = ctx.get(editorViewCtx).state.doc.child(1)
+        expect(kept.type.name).toBe('literal_markdown')
+        expect(kept.textContent).toBe(
+          '- one*_[]\\`<\n- FAIL'.replace(/\n/g, ending),
+        )
+      }
+    })
+  })
+
   // Milkdown could not build a callout whose last paragraph is a lone HTML break; it now loads
   // formatted, and must still save as written.
   test('for a callout that ends in a line break', async () => {
