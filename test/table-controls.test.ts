@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
-import { TableMap } from '@milkdown/kit/prose/tables'
+import { CellSelection, TableMap } from '@milkdown/kit/prose/tables'
 import { undo } from '@milkdown/kit/prose/history'
 import { InkKitEditor, type EditorLabels } from '../src/index'
 
@@ -392,3 +392,36 @@ test.each([
       expect(editor.snapshot().text).toBe(written)
     }),
 )
+
+test('every control action and Escape leave a collapsed caret, never a selected line', () =>
+  run((_editor, ctx, root) => {
+    const view = ctx.get(editorViewCtx)
+    const collapsed = () => {
+      const { selection } = view.state
+      expect(selection).toBeInstanceOf(TextSelection)
+      expect(selection.empty).toBe(true)
+    }
+    for (const [axis, label] of [
+      ['Move row', 'Add row'],
+      ['Move row', 'Delete row'],
+      ['Move column', 'Align right'],
+      ['Move column', 'Add column'],
+      ['Move column', 'Delete column'],
+    ] as const) {
+      caret(ctx, 1, 1)
+      control(root, axis).click()
+      expect(view.state.selection).toBeInstanceOf(CellSelection)
+      control(root, label).click()
+      collapsed()
+    }
+    caret(ctx, 1, 0)
+    const grip = control(root, 'Move row')
+    grip.click()
+    press(grip, 'Escape')
+    collapsed()
+    grip.focus()
+    press(grip, 'ArrowDown')
+    expect(view.state.selection).toBeInstanceOf(CellSelection)
+    grip.blur()
+    collapsed()
+  }))

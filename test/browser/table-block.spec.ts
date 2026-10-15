@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, observe, operation } from './fixtures'
+import { test, expect, focusSettled, observe, operation } from './fixtures'
 
 const axePath = createRequire(import.meta.url).resolve('axe-core')
 
@@ -100,6 +100,7 @@ test('a click in a cell places the caret, so typing adds to the cell', async ({
   const target = cell(page, 2, 0).locator('p')
   const box = (await target.boundingBox())!
   await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2)
+  await focusSettled(page)
   await page.keyboard.type('Z')
   const after = await saved(page)
   expect(cells(after[body + 1]!)).toEqual(['cZ', '2', '<!-- c -->'])
@@ -199,6 +200,7 @@ test('the keyboard reaches the controls, opens a menu, moves a row and returns t
   // Safari moves focus to buttons with Option-Tab unless set to Tab to all.
   const next = browserName === 'webkit' ? 'Alt+Tab' : 'Tab'
   await cell(page, 3, 2).click()
+  await focusSettled(page)
   await page.mouse.move(0, 0)
   await page.keyboard.press(next)
   const column = control(page, 'Move column')
@@ -219,7 +221,11 @@ test('the keyboard reaches the controls, opens a menu, moves a row and returns t
     (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
     source,
   )
+  // The caret is already where a click at the cell's centre puts it, so a
+  // click there would leave the reloaded editor's selection where it is.
+  await cell(page, 3, 1).click()
   await cell(page, 3, 2).click()
+  await focusSettled(page)
   await page.mouse.move(0, 0)
   await page.keyboard.press(next)
   await page.keyboard.press(next)
@@ -308,4 +314,150 @@ test('axe reports nothing on a table with a menu open', async ({
     }))
   })
   expect(findings).toEqual([])
+})
+
+// After a control returns focus to the text, typing goes into one cell; it
+// never replaces a selected row or column.
+const grid =
+  '| A | B | C |\n| - | - | - |\n| a | b | c |\n| d | e | f |\n| g | h | i |\n'
+
+async function openGrid(page: Page, openFixture: () => Promise<void>) {
+  await openFixture()
+  await page.evaluate(
+    (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+    grid,
+  )
+  await expect(page.locator('.inkkit-table-block td')).toHaveCount(9)
+}
+
+/** Clicks at the end of a cell's text, as a person placing the caret. */
+async function caretAtEnd(page: Page, row: number, column: number) {
+  const box = (await cell(page, row, column).locator('p').boundingBox())!
+  await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2)
+  await focusSettled(page)
+}
+
+const typed = async (page: Page) => {
+  await page.keyboard.type('x')
+  return (await observe(page)).snapshot?.text
+}
+
+test('typing after Align right goes into the cell that held the caret', async ({
+  page,
+  openFixture,
+}) => {
+  await openGrid(page, openFixture)
+  await caretAtEnd(page, 2, 1)
+  await control(page, 'Move column').click()
+  await control(page, 'Align right').click()
+  await expect(editor(page)).toBeFocused()
+  expect(await typed(page)).toBe(
+    '| A |  B | C |\n| - | -: | - |\n| a |  b | c |\n| d | ex | f |\n| g |  h | i |\n',
+  )
+})
+
+test('typing after Add row goes into the new row', async ({
+  page,
+  openFixture,
+}) => {
+  await openGrid(page, openFixture)
+  await caretAtEnd(page, 2, 1)
+  await control(page, 'Move row').click()
+  await control(page, 'Add row').click()
+  expect(await typed(page)).toBe(
+    '| A | B | C |\n| - | - | - |\n| a | b | c |\n| d | e | f |\n|   | x |   |\n| g | h | i |\n',
+  )
+})
+
+test('typing after Add column goes into the new column', async ({
+  page,
+  openFixture,
+}) => {
+  await openGrid(page, openFixture)
+  await caretAtEnd(page, 2, 1)
+  await control(page, 'Move column').click()
+  await control(page, 'Add column').click()
+  expect(await typed(page)).toBe(
+    '| A | B |   | C |\n| - | - | - | - |\n| a | b |   | c |\n| d | e | x | f |\n| g | h |   | i |\n',
+  )
+})
+
+test('typing after Delete row goes into the row that took its place', async ({
+  page,
+  openFixture,
+}) => {
+  await openGrid(page, openFixture)
+  await caretAtEnd(page, 2, 1)
+  await control(page, 'Move row').click()
+  await control(page, 'Delete row').click()
+  const text = await typed(page)
+  expect(text).toMatch(
+    /^\| A \| B \| C \|\n\| - \| - \| - \|\n\| a \| b \| c \|\n/,
+  )
+  expect(text?.split('\n').slice(3, 4)).toEqual(['| g | hx | i |'])
+})
+
+test('Escape from a menu opened by the pointer closes it and typing goes into the cell', async ({
+  page,
+  openFixture,
+}) => {
+  await openGrid(page, openFixture)
+  await caretAtEnd(page, 2, 1)
+  const column = control(page, 'Move column')
+  await column.click()
+  await expect(column).toHaveAttribute('aria-expanded', 'true')
+  await page.keyboard.press('Escape')
+  await expect(column).toHaveAttribute('aria-expanded', 'false')
+  await expect(control(page, 'Align right')).toBeHidden()
+  await expect(editor(page)).toBeFocused()
+  expect(await typed(page)).toBe(grid.replace('| e |', '| ex |'))
+})
+
+test('Escape from a menu opened by the keyboard puts the caret back in its cell', async ({
+  page,
+  openFixture,
+  browserName,
+}) => {
+  await openGrid(page, openFixture)
+  const next = browserName === 'webkit' ? 'Alt+Tab' : 'Tab'
+  await caretAtEnd(page, 3, 2)
+  await page.mouse.move(0, 0)
+  await page.keyboard.press(next)
+  await page.keyboard.press(next)
+  await expect(control(page, 'Move row')).toBeFocused()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Escape')
+  await expect(editor(page)).toBeFocused()
+  expect(await typed(page)).toBe(grid.replace('| i |', '| ix |'))
+})
+
+test('typing after a keyboard move or a drag goes into the moved row', async ({
+  page,
+  openFixture,
+}) => {
+  await openGrid(page, openFixture)
+  await caretAtEnd(page, 3, 2)
+  await page.mouse.move(0, 0)
+  const row = control(page, 'Move row')
+  await row.focus()
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('Escape')
+  expect(await typed(page)).toBe(
+    '| A | B | C |\n| - | - | - |\n| a | b | c |\n| g | h | ix |\n| d | e | f |\n',
+  )
+
+  await page.evaluate(
+    (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+    grid,
+  )
+  await caretAtEnd(page, 1, 0)
+  const last = (await cell(page, 3, 0).boundingBox())!
+  await drag(page, control(page, 'Move row'), {
+    x: last.x + 4,
+    y: last.y + last.height - 2,
+  })
+  await expect(editor(page)).toBeFocused()
+  expect(await typed(page)).toBe(
+    '| A | B | C |\n| - | - | - |\n| d | e | f |\n| g | h | i |\n| ax | b | c |\n',
+  )
 })
