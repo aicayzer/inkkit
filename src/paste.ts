@@ -9,7 +9,12 @@ import {
   type ResolvedPos,
   type Schema,
 } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
+import {
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type Transaction,
+} from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
@@ -38,6 +43,7 @@ import { normaliseLabel } from './references'
 import { commentProvenance, isComment, literalCommentSpans } from './comments'
 import { showsWikiTarget } from './linked-syntax'
 import { showsFenceInfo } from './code-fences'
+import { coded } from './errors'
 import {
   InkKitError,
   type ClipboardInput,
@@ -51,6 +57,8 @@ export interface PasteControllerOptions {
   context: () => DocumentContext
   adapter?: ImageAdapter
   onError?: (error: unknown) => void
+  /** Runs the import's edit as one call, which throws if the edit is refused. */
+  commit?: <T>(apply: () => T) => T
   onPendingChanged?: () => void
   editable?: () => boolean
   literalText?: () => boolean
@@ -202,6 +210,12 @@ export class PasteController {
         'The document changed while images were importing.',
       )
   }
+  private commit<T>(apply: () => T): T {
+    return this.options.commit ? this.options.commit(apply) : apply()
+  }
+  private dispatch(view: EditorView, tr: Transaction): void {
+    this.commit(() => view.dispatch(tr))
+  }
   /**
    * Inserts dropped content as whole blocks, so none joins the block beside
    * it, and puts the caret after them.
@@ -212,7 +226,10 @@ export class PasteController {
     )
     const tr = view.state.tr.replaceWith(range.from, range.to, blocks)
     const end = tr.mapping.map(range.to)
-    view.dispatch(tr.setSelection(caretAfter(tr.doc, end)).scrollIntoView())
+    this.dispatch(
+      view,
+      tr.setSelection(caretAfter(tr.doc, end)).scrollIntoView(),
+    )
   }
   /** Imports the input at the selection, or in place of `target`. */
   private async run(
@@ -268,10 +285,12 @@ export class PasteController {
       if (
         !plainText &&
         input.markdown == null &&
-        pasteSpreadsheet(
-          ctx,
-          { ...input, images },
-          target && dropRange(view.state.doc, this.anchor(operation)),
+        this.commit(() =>
+          pasteSpreadsheet(
+            ctx,
+            { ...input, images },
+            target && dropRange(view.state.doc, this.anchor(operation)),
+          ),
         )
       )
         return
@@ -279,7 +298,8 @@ export class PasteController {
       if (plainText) {
         if (inCode()) {
           const anchor = this.anchor(operation)
-          view.dispatch(
+          this.dispatch(
+            view,
             caretAfterInsertion(
               view.state.tr.insertText(input.text, anchor.from, anchor.to),
             ).scrollIntoView(),
@@ -341,7 +361,8 @@ export class PasteController {
               document.createTextNode(`[${alt}: image unavailable]`),
             )
             this.options.onError?.(
-              new InkKitError(
+              coded(
+                error,
                 'image-unavailable',
                 error instanceof Error
                   ? error.message
@@ -455,7 +476,8 @@ export class PasteController {
               ),
             )
             this.options.onError?.(
-              new InkKitError(
+              coded(
+                error,
                 'image-unavailable',
                 error instanceof Error
                   ? error.message
@@ -478,7 +500,8 @@ export class PasteController {
           const mark = schema.marks.link.create({ href: text })
           // The caret goes after the link, so typing never replaces it.
           const tr = view.state.tr.addMark(anchor.from, anchor.to, mark)
-          view.dispatch(
+          this.dispatch(
+            view,
             tr
               .setSelection(TextSelection.create(tr.doc, anchor.to))
               .removeStoredMark(mark)
@@ -538,7 +561,8 @@ export class PasteController {
         slice.content.firstChild?.isBlock &&
         slice.content.firstChild.type.spec.isolating
       ) {
-        view.dispatch(
+        this.dispatch(
+          view,
           caretAfterInsertion(
             view.state.tr.replaceRange(
               insertion.before(),
@@ -548,7 +572,8 @@ export class PasteController {
           ).scrollIntoView(),
         )
       } else
-        view.dispatch(
+        this.dispatch(
+          view,
           caretAfterInsertion(
             view.state.tr.replaceRange(
               anchor.from,

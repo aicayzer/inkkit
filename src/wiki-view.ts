@@ -5,16 +5,18 @@ import { wikiLinkSchema } from './linked-syntax'
 import { modHeld } from './modifier'
 import type {
   DocumentContext,
+  InkKitError,
   WikiLinkAdapter,
   WikiLinkReference,
 } from './types'
+import { coded } from './errors'
 import type { EditorLabels } from './labels'
 
 interface WikiRuntime {
   capture(): { context: DocumentContext; isCurrent(): boolean }
   active(): boolean
   labels: Readonly<EditorLabels>
-  error?(error: Error): void
+  error?(error: InkKitError): void
 }
 
 export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
@@ -32,7 +34,7 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
       label: String(current.attrs.label),
     })
     const report = (error: unknown) =>
-      runtime.error?.(error instanceof Error ? error : new Error(String(error)))
+      runtime.error?.(coded(error, 'file-unavailable'))
     const render = () => {
       dom.textContent = reference().label
       dom.removeAttribute('title')

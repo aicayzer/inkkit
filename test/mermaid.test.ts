@@ -6,6 +6,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import {
   InkKitEditor,
   type EditorEvents,
+  type InkKitError,
   type ImageAdapter,
 } from '../src/index'
 import {
@@ -586,21 +587,23 @@ test('renderer and raster failures retain source and report useful clipboard fal
     expect(failed.images).toEqual([])
   }))
 
-test('copying a diagram that cannot render reports diagram-unavailable', async () => {
-  const errors: Error[] = []
+test('a diagram that cannot render is reported once, by its preview; its copy describes itself', async () => {
+  const errors: InkKitError[] = []
   await run(
     async (editor) => {
       editor.loadDocument({
         ...input,
         text: '~~~mermaid\nmindmap\nRoot\n~~~\n',
       })
-      await editor.clipboardSnapshot()
+      await vi.waitFor(() => expect(errors).toHaveLength(1))
+      expect(errors[0]).toMatchObject({ code: 'diagram-unavailable' })
+      expect(errors[0]!.cause).toBeInstanceOf(Error)
+      const copied = await editor.clipboardSnapshot()
+      expect(copied.diagrams?.[0]?.error).toEqual(expect.any(String))
+      expect(errors).toHaveLength(1)
     },
     undefined,
     { error: (error) => errors.push(error) },
-  )
-  expect(errors).toContainEqual(
-    expect.objectContaining({ code: 'diagram-unavailable' }),
   )
 })
 

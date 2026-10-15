@@ -353,8 +353,8 @@ test('destroyed methods fail before reading detached editor state', () =>
       expect(operation).toThrow('destroyed')
   }))
 
-test('image cut retains source on missing bytes and emits a warning on ordinary copy', async () => {
-  const errors: Error[] = []
+test('image cut retains source on missing bytes; an ordinary copy describes the image without an error', async () => {
+  const errors: InkKitError[] = []
   let writes = 0
   await run(
     async (editor, _root, ctx) => {
@@ -366,17 +366,15 @@ test('image cut retains source on missing bytes and emits a warning on ordinary 
       )
       const copy = await editor.clipboardSnapshot(false)
       expect(copy.text).toContain('image unavailable')
-      expect(
-        errors.some(
-          (error) =>
-            error instanceof InkKitError && error.code === 'image-unavailable',
-        ),
-      ).toBe(true)
+      expect(copy.images[0]?.error).toBe('Image offline')
+      // Degraded output describes itself; it is not also an error.
+      expect(errors).toEqual([])
       view.dom.dispatchEvent(
         new Event('cut', { bubbles: true, cancelable: true }),
       )
       for (let attempts = 0; attempts < 20; attempts++) await Promise.resolve()
       expect(writes).toBe(0)
+      expect(errors.map((error) => error.code)).toEqual(['image-unavailable'])
       expect(editor.snapshot().text).toBe(source)
     },
     {
@@ -397,7 +395,8 @@ test('image cut retains source on missing bytes and emits a warning on ordinary 
 })
 
 test('image cut retains source if host clipboard writing fails', async () => {
-  const errors: Error[] = []
+  const errors: InkKitError[] = []
+  const refusal = new Error('Clipboard write refused')
   await run(
     async (editor, _root, ctx) => {
       const source = '![Photo](images/photo.png)'
@@ -410,9 +409,11 @@ test('image cut retains source if host clipboard writing fails', async () => {
         new Event('cut', { bubbles: true, cancelable: true }),
       )
       for (let attempts = 0; attempts < 20; attempts++) await Promise.resolve()
-      expect(
-        errors.some((error) => error.message === 'Clipboard write refused'),
-      ).toBe(true)
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toMatchObject({
+        code: 'clipboard-unavailable',
+        cause: refusal,
+      })
       expect(editor.snapshot().text).toBe(source)
     },
     { ...imageAdapter },
@@ -421,7 +422,7 @@ test('image cut retains source if host clipboard writing fails', async () => {
         errors.push(error)
       },
       async clipboard() {
-        throw new Error('Clipboard write refused')
+        throw refusal
       },
     },
   )

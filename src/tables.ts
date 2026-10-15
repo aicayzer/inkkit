@@ -33,6 +33,13 @@ import { keymap } from '@milkdown/kit/prose/keymap'
 import { $prose } from '@milkdown/kit/utils'
 import { clipboardText } from './clipboard'
 import { removesStructure } from './hidden-comments'
+import {
+  expectInteger,
+  expectOneOf,
+  invalidArgument,
+  isOmitted,
+  optionalRecord,
+} from './errors'
 
 export type TableCommand =
   | 'insert'
@@ -175,6 +182,45 @@ export const tablePlugins = [
   $prose(() => keymap({ Tab: goToNextCell(1), 'Shift-Tab': goToNextCell(-1) })),
 ].flat()
 
+/** Checks a table call's command and options, with `null` as omitted, and returns the options to
+ *  use. Each option belongs to one command; any other throws `invalid-argument`. */
+export function tableOptions(
+  command: unknown,
+  options: unknown,
+): TableOptions | undefined {
+  expectOneOf(command, tableCommands, 'command')
+  const allowed =
+    command === 'insert'
+      ? ['rows', 'columns']
+      : command === 'sortRows'
+        ? ['column', 'order', 'comparison']
+        : []
+  const record = optionalRecord(options, 'options', allowed)
+  if (!record) return undefined
+  const size = { min: 1, max: 100 }
+  const checked: TableOptions = {
+    rows: isOmitted(record.rows)
+      ? undefined
+      : expectInteger(record.rows, 'options.rows', size),
+    columns: isOmitted(record.columns)
+      ? undefined
+      : expectInteger(record.columns, 'options.columns', size),
+    column: isOmitted(record.column)
+      ? undefined
+      : expectInteger(record.column, 'options.column', { min: 0 }),
+    order: isOmitted(record.order)
+      ? undefined
+      : expectOneOf(record.order, sortOrders, 'options.order'),
+    comparison: isOmitted(record.comparison)
+      ? undefined
+      : expectOneOf(record.comparison, sortComparisons, 'options.comparison'),
+  }
+  return checked
+}
+
+const sortOrders = ['ascending', 'descending'] as const
+const sortComparisons = ['text', 'number'] as const
+
 export function tableCommand(
   ctx: Ctx,
   command: TableCommand,
@@ -185,15 +231,6 @@ export function tableCommand(
   if (command === 'insert') {
     const row = options?.rows ?? 3,
       col = options?.columns ?? 2
-    if (
-      !Number.isInteger(row) ||
-      !Number.isInteger(col) ||
-      row < 1 ||
-      row > 100 ||
-      col < 1 ||
-      col > 100
-    )
-      throw new RangeError('Table dimensions must be integers from 1 to 100')
     return commands.call(insertTableCommand.key, { row, col })
   }
   if (command === 'exit') return commands.call(exitTable.key)
@@ -370,19 +407,18 @@ function refineTable(
     right = rect.right
   if (command === 'sortRows') {
     const column = options?.column ?? rect.left
-    if (!Number.isInteger(column) || column < 0 || column >= rect.map.width)
-      throw new RangeError('Sort column must identify an existing table column')
+    if (column >= rect.map.width)
+      throw invalidArgument(
+        'options.column must identify an existing table column',
+      )
     const order = options?.order ?? 'ascending'
     const comparison = options?.comparison ?? 'text'
-    if (!['ascending', 'descending'].includes(order))
-      throw new RangeError('Sort order must be ascending or descending')
-    if (!['text', 'number'].includes(comparison))
-      throw new RangeError('Sort comparison must be text or number')
     const body = rows.slice(1).map((row, index) => ({
       row,
       index,
       key: clipboardText(row.child(column).content),
     }))
+    // Cells that are not numbers leave nothing to sort by; the table stays as it is.
     if (
       comparison === 'number' &&
       body.some(({ key }) => {
@@ -390,9 +426,7 @@ function refineTable(
         return value !== '' && decimalNumber(value) === undefined
       })
     )
-      throw new RangeError(
-        'Numeric sorting requires finite decimal values or blank cells',
-      )
+      return false
     body.sort(
       (a, b) =>
         compareCells(a.key, b.key, comparison, order) || a.index - b.index,
