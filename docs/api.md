@@ -312,7 +312,7 @@ max(
 )
 ```
 
-The percentage resolves against the width of the element that uses the value. To line a header or toolbar that the host draws outside the root up with the column, set `--inkkit-column-inset` once on an ancestor of both, and give the header the same width as the editor root, without a border or margin of its own:
+As with any padding, the `100%` resolves against the containing block of the element that uses the value; for InkKit's surfaces, that block is as wide as the editor root. To line up a header or toolbar that the host draws outside the root with the column, set `--inkkit-column-inset` once on an ancestor of both, put the header in a container as wide as the editor root, and give the header no border or margin of its own:
 
 ```css
 .page {
@@ -332,7 +332,7 @@ The percentage resolves against the width of the element that uses the value. To
 
 InkKit then uses that value on its surfaces, so the host overrides no InkKit selector. Leave the token unset to keep the default.
 
-**Classes.** Every class InkKit draws begins `inkkit-`. The classes that ProseMirror and Milkdown add, such as `ProseMirror`, `ProseMirror-selectednode` and the table block's `milkdown-table-block`, keep their names. Classes and markup are not a styling API: style the editor through the tokens above, and expect a class to change in any release. Copied and printable HTML carry no class that does not begin `inkkit-`.
+**Classes.** Every class InkKit draws begins `inkkit-`. The classes that ProseMirror, its table plugin and Milkdown add, such as `ProseMirror`, `ProseMirror-selectednode` and `selectedCell`, keep their names, and so do the classes inside a diagram preview's SVG, which Mermaid draws. Classes and markup are not a styling API: style the editor through the tokens above, and expect a class to change in any release. Copied and printable HTML carry no class that does not begin `inkkit-`.
 
 `EditorOptions.labels` is `Partial<EditorLabels>`. Omitted labels keep their defaults; overrides are inserted safely as text. The label keys are:
 

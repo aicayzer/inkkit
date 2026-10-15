@@ -84,9 +84,9 @@
     Menlo,
     monospace
   );
-  /* The writing column's inset. The percentage resolves against the width of
-     the element that uses it, so every surface and a host header of the same
-     width line up. A host may set --inkkit-column-inset to replace it. */
+  /* The percentage resolves against the containing block of the element that
+     uses the value, so both surfaces, and a host header in a container as wide
+     as the root, line up. */
   --_inkkit-column-inset: var(
     --inkkit-column-inset,
     max(
