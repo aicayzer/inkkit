@@ -153,3 +153,48 @@ test('holding Mod over the editor shows the link cursor', async ({
   await expect.poll(() => cursor(site)).not.toBe('pointer')
   expect((await observe(page)).snapshot!.text).toBe(source)
 })
+
+for (const editable of [true, false])
+  test(`${editable ? 'editable' : 'read-only'} links never navigate the page without Mod`, async ({
+    page,
+    openFixture,
+  }) => {
+    await open(page, openFixture)
+    if (!editable) await operation(page, 'editable', { editable: false })
+    const url = page.url()
+    // A reload or navigation clears this.
+    await page.evaluate(() => {
+      ;(window as unknown as { stayed?: boolean }).stayed = true
+    })
+    for (const name of ['Site', 'Blanked', 'Empty']) {
+      const link = page.getByRole('link', { name })
+      await link.click()
+      await link.click({ modifiers: ['Shift'] })
+      await link.click({ button: 'middle' })
+    }
+    // A new window or tab opens asynchronously.
+    await page.waitForTimeout(300)
+    expect(page.url()).toBe(url)
+    expect(page.context().pages()).toHaveLength(1)
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { stayed?: boolean }).stayed,
+      ),
+    ).toBe(true)
+    expect((await observe(page)).lastResult).toBeNull()
+    if (!editable) expect((await observe(page)).snapshot!.text).toBe(source)
+  })
+
+test('Mod-click on a link leaves the selection where it was', async ({
+  page,
+  openFixture,
+}) => {
+  await open(page, openFixture)
+  const site = page.getByRole('link', { name: 'Site' })
+  await site.click()
+  await site.click({ modifiers: ['ControlOrMeta'] })
+  await page.keyboard.type('Z')
+  await expect
+    .poll(async () => (await observe(page)).snapshot!.text)
+    .toBe(source.replace('Site', 'SiZte'))
+})

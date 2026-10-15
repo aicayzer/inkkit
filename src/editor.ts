@@ -608,6 +608,7 @@ export class InkKitEditor {
   private root!: HTMLElement
   private ownsRootClass = false
   private clickHandler?: (event: MouseEvent) => void
+  private auxClickHandler?: (event: MouseEvent) => void
   private untrackLinkModifier?: () => void
   private footnoteKeyHandler?: (event: KeyboardEvent) => void
   private copyHandler?: (event: ClipboardEvent) => void
@@ -984,6 +985,11 @@ export class InkKitEditor {
           (!tr.docChanged && !tr.storedMarksSet),
         props: {
           editable: () => this.writable && !this.literalSurface,
+          // ProseMirror selects the clicked node when Mod is held; a click
+          // that opens a link leaves the selection alone.
+          handleClick: (_view, _pos, event) =>
+            modHeld(event) &&
+            !!(event.target as HTMLElement).closest('a[href]'),
           handleDOMEvents: {
             compositionstart: () => {
               queueMicrotask(() => this.publishCommandState())
@@ -1705,6 +1711,8 @@ export class InkKitEditor {
     this.pasteController.destroy()
     if (this.clickHandler)
       this.root.removeEventListener('click', this.clickHandler)
+    if (this.auxClickHandler)
+      this.root.removeEventListener('auxclick', this.auxClickHandler)
     this.untrackLinkModifier?.()
     if (this.footnoteKeyHandler)
       this.root.removeEventListener('keydown', this.footnoteKeyHandler, true)
@@ -2123,14 +2131,22 @@ export class InkKitEditor {
     instance.clickHandler = (event) => {
       if (activateFootnote(event)) return
       const anchor = (event.target as HTMLElement).closest('a[href]')
-      if (!anchor || event.button !== 0 || !modHeld(event)) return
+      if (!anchor) return
+      // A read-only surface is not editable, so the browser would follow the
+      // link itself; only the host opens links.
       event.preventDefault()
-      // The renderer blanks an address whose scheme isn't on its allow-list.
+      if (event.button !== 0 || !modHeld(event)) return
+      // The renderer leaves the address empty when it is not on the list in
+      // link-safety.ts.
       const href = anchor.getAttribute('href')
       if (href) events.openLink(href)
     }
     root.addEventListener('click', instance.clickHandler)
-    instance.untrackLinkModifier = trackLinkModifier(root)
+    instance.auxClickHandler = (event) => {
+      if ((event.target as HTMLElement).closest('a[href]'))
+        event.preventDefault()
+    }
+    root.addEventListener('auxclick', instance.auxClickHandler)
     instance.copyHandler = (event) => {
       if (instance.formatType === 'txt') return
       if (instance.mode === 'source') {
@@ -2247,6 +2263,7 @@ export class InkKitEditor {
     root.addEventListener('cut', instance.copyHandler, true)
     instance.applyInputPolicy()
     instance.setKeymap(options.keymap ?? {})
+    instance.untrackLinkModifier = trackLinkModifier(root)
     return instance
   }
 
