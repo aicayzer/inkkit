@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
+import { splitBlock } from '@milkdown/kit/prose/commands'
 import { Slice } from '@milkdown/kit/prose/model'
 import { serialize } from '../src/dialect'
 import { InkKitEditor, type CaretState } from '../src/editor'
@@ -211,14 +212,29 @@ test('moving the caret ends a pending code span', async () => {
   })
 })
 
-test('deleting while a code span is pending does not restart it', async () => {
+test('correcting a typo while a code span is pending keeps it going', async () => {
+  await withInkKitEditor('A line\n', (editor, states) => {
+    placeCaret(editor, 3)
+    editor.format('code')
+    typeKeys(editor, 'abx')
+    const view = ctxOf(editor).get(editorViewCtx)
+    view.dispatch(view.state.tr.delete(5, 6))
+    expect(states.at(-1)?.marks).toEqual(['code'])
+    typeKeys(editor, 'c')
+    expect(serialize(ctxOf(editor))).toBe('A `abc`line\n')
+  })
+})
+
+test('Enter ends a pending code span, since a span never crosses blocks', async () => {
   await withInkKitEditor('A line\n', (editor, states) => {
     placeCaret(editor, 3)
     editor.format('code')
     typeKeys(editor, 'ab')
     const view = ctxOf(editor).get(editorViewCtx)
-    view.dispatch(view.state.tr.delete(4, 5))
+    splitBlock(view.state, view.dispatch)
     expect(states.at(-1)?.marks).toEqual([])
+    typeKeys(editor, 'cd')
+    expect(serialize(ctxOf(editor))).toBe('A `ab`\n\ncdline\n')
   })
 })
 
