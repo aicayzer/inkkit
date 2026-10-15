@@ -37,9 +37,10 @@ function mixedSource(blocks: number, changed: number, ending: string): string {
   )
 }
 
+// Heading form, IDs and delimiter markers are presentation; saved bytes are checked separately.
 const shape = (doc: ProseNode) =>
   JSON.stringify(doc.toJSON(), (key, value) =>
-    key === 'id' || key === 'marker' ? undefined : value,
+    key === 'id' || key === 'marker' || key === 'form' ? undefined : value,
   )
 
 async function mount(

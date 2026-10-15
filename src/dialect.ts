@@ -414,15 +414,6 @@ function remarkDialect(this: Processor) {
       },
     ],
     handlers: {
-      heading(node, parent, state, info) {
-        const previous = state.options.setext
-        if (node.data?.inkkitSetext) state.options.setext = true
-        try {
-          return defaultHandlers.heading(node, parent, state, info)
-        } finally {
-          state.options.setext = previous
-        }
-      },
       text(node, parent, state, info) {
         const value = defaultHandlers.text(node, parent, state, info)
         // GFM trims spaces and tabs at the edges of a cell on reopening, so
@@ -585,7 +576,6 @@ const headingsWithBreaks = headingSchema.extendSchema((base) => (ctx) => {
       runner(state, node) {
         state.openNode('heading', undefined, {
           depth: node.attrs.level,
-          data: { inkkitSetext: node.attrs.form === 'setext' },
         })
         state.next(node.content)
         state.closeNode()

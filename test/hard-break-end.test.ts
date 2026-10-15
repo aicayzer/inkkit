@@ -237,3 +237,15 @@ for (const method of ['insertText', 'pasteAsPlainText', 'replace'] as const) {
     })
   }
 }
+
+for (const marker of ['__', '_', '~~', '==']) {
+  test(`multiline insertion keeps both ${marker} delimiters around a completed break`, async () => {
+    await session(`${marker}Original${marker}\r\n`, (editor, save) => {
+      select(editor, 'Original')
+      editor.insertText('\r\nA😀B\r\n', 1)
+      save(`${marker}Original\\\r\nA😀B${marker}\r\n`)
+      editor.undo()
+      save(`${marker}Original${marker}\r\n`)
+    })
+  })
+}
