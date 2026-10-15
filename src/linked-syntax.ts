@@ -206,14 +206,21 @@ export function fileReference(node: ProseNode): FileReference {
   const named = node.attrs.inkkitFileRaw != null
   const alt = String(node.attrs.alt ?? '')
   const match = /\|(\d{1,5})$/.exec(alt)
+  // A path's fragment starts at its first `#`; a `#` in a file name is written
+  // `%23`. A named file's `#` can be escaped, so its parsed target is kept.
+  const hash = reference.indexOf('#')
+  const target = named
+    ? String(node.attrs.inkkitFileTarget ?? '')
+    : hash < 0
+      ? reference
+      : reference.slice(0, hash)
   const fragment = named
     ? node.attrs.inkkitFileFragment
-    : reference.includes('#')
-      ? reference.slice(reference.indexOf('#') + 1)
-      : null
+    : hash < 0
+      ? null
+      : reference.slice(hash + 1)
   const label = named
-    ? String(node.attrs.inkkitFileTarget ?? '') +
-      (fragment != null ? `#${fragment}` : '')
+    ? target + (fragment != null ? `#${fragment}` : '')
     : match
       ? alt.slice(0, match.index)
       : alt
@@ -226,6 +233,7 @@ export function fileReference(node: ProseNode): FileReference {
   return {
     reference,
     kind: named ? 'wiki' : 'path',
+    target,
     ...(fragment != null ? { fragment: String(fragment) } : {}),
     ...(label ? { label } : {}),
     ...(width != null ? { width } : {}),

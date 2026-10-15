@@ -24,6 +24,7 @@ export type {
   WikiLinkReference,
   WikiLinkAdapter,
   FileReference,
+  ClientPoint,
   FileContext,
   FilePresentation,
   FileAdapter,
