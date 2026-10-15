@@ -93,7 +93,7 @@ InkKitEditor.mount(
 | `files`     | `FileAdapter`                                              | None                         | Resolves path images and `![[name]]` embeds into images, audio, video, PDFs and file cards. See [Optional wiki links and files](#optional-wiki-links-and-files). |
 | `wikiLinks` | `WikiLinkAdapter`                                          | None                         | Resolves and opens `[[wiki links]]`. Without it, they stay literal source.                                                                                       |
 | `editable`  | `boolean`                                                  | `true`                       | Whether the person can edit. Change it later with `setEditable`.                                                                                                 |
-| `textInput` | `TextInputPreferences`                                     | `{}`, the browser's behavior | Spell check, autocorrect and autocapitalization hints. Change them later with `setTextInputPreferences`.                                                         |
+| `textInput` | `TextInputPreferences`                                     | `{}`, the browser's behavior | Spell check, autocorrect and autocapitalization hints, and smart punctuation. Change them later with `setTextInputPreferences`.                                  |
 | `labels`    | `Partial<EditorLabels>`                                    | The English defaults         | Replaces built-in text and accessible names. See [Labels](#labels).                                                                                              |
 | `keymap`    | `Keymap`                                                   | Undo, redo and table exit    | Shortcut bindings. Change them later with `setKeymap`. See [Shortcuts](#shortcuts).                                                                              |
 | `rendering` | `{ codeHighlighting?: boolean, diagramPreview?: boolean }` | Both `true`                  | Turns code highlighting or diagram previews off. See [Code highlighting and diagram previews](#code-highlighting-and-diagram-previews).                          |
@@ -238,7 +238,9 @@ The `revision` that `changed` receives is the revision of the change it reports,
 | `setEditable(editable: boolean)`                             | `void`    | Changes the policy on the formatted surface and on the source and TXT surface. |
 | `setTextInputPreferences(preferences: TextInputPreferences)` | `void`    | Replaces the input preferences on both surfaces.                               |
 
-`TextInputPreferences` sets the matching HTML attributes on both editing surfaces. Every field is optional. A field you omit removes its attribute instead of keeping an earlier override, which leaves the behavior to the browser. These are hints; the browser and the operating system decide whether they take effect.
+`TextInputPreferences` has two kinds of fields. Every field is optional. `setTextInputPreferences` replaces the whole set, so a field you omit goes back to its default instead of keeping an earlier override.
+
+`spellcheck`, `autocorrect` and `autocapitalize` set the matching HTML attributes on both editing surfaces. Omitting one removes its attribute, which leaves the behavior to the browser. These are hints; the browser and the operating system decide whether they take effect.
 
 | Field            | Type                                                                  | HTML attribute                  |
 | ---------------- | --------------------------------------------------------------------- | ------------------------------- |
@@ -251,6 +253,33 @@ Read-only permits selection, copying, find, navigation, folding, loading and rel
 Entering read-only cancels pending imports and invalidates deferred destructive operations, including an acknowledged Cut, so a late result can't change the editor after editing is enabled again. Active image resize previews are canceled. Imported asset retention and cleanup remain the host adapter's responsibility.
 
 `setEditable` and `setTextInputPreferences` throw `composition` during active text composition, with no partial change. A successful change keeps focus, selection, source, document identity, revision, dirty state and history, because these are presentation changes and not document edits.
+
+### Smart punctuation
+
+`smartPunctuation: boolean` turns typed quotes and dashes into curly quotes and dashes. It is `false` by default. It is InkKit's own behavior, not an HTML attribute, so it doesn't depend on the browser's settings. It applies to typing in formatted mode. You can turn it on at mount or with `setTextInputPreferences`, and a change takes effect on the next key press, with no remount.
+
+The rules change only the character being typed:
+
+| You type                                   | You get                      | When                                                                                                                                                                                                                                                       |
+| ------------------------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"` or `'`                                 | `“` or `‘`, an opening quote | At the start of a block or after a line break, whitespace, an opening bracket (`(`, `[`, `{`, `<`), an en or em dash, or another opening quote.                                                                                                            |
+| `"` or `'`                                 | `”` or `’`, a closing quote  | Anywhere else. A `'` between letters is an apostrophe, which is the closing form. A `'` that starts a word, as in `'tis` or `'90s`, opens a quote.                                                                                                         |
+| `--`                                       | `–`, an en dash              | After other text in the block, when the first hyphen was typed just before the second. A hyphen already in the note, or typed before the caret moved, stays a hyphen. At the start of a block `--` stays as typed, so that a third hyphen makes a divider. |
+| `-` straight after an en dash it just made | `—`, an em dash              | So `---` gives an em dash. On an otherwise empty line `---` is still a divider, and never an em dash.                                                                                                                                                      |
+
+Smart punctuation never rewrites text that is already in the note: straight quotes and hyphens that a note holds stay as they are, on open and on save. The curly character is saved as typed, as UTF-8 text, and reopening the note shows it unchanged.
+
+One Undo straight after a rule, or Backspace, puts back what was typed: `"` or `'` for a quote, `--` for an en dash, and the en dash and a hyphen, `–-`, for an em dash. A second Undo removes the typing as it does without the option. Undo after the caret has moved is the ordinary Undo. Undo and Redo that the browser sends as `historyUndo` and `historyRedo` input events, such as from its Edit menu, take the same path as the Undo key and `undo()`.
+
+The rules don't apply:
+
+- In inline code, including a code span you are still typing (an unmatched backtick outside code earlier in the block), in code blocks, in front matter, in comments and in any block that InkKit holds as literal Markdown.
+- In Markdown syntax that you are typing out: a link destination and title after `](`, a web address (`https://`, `www.` or `mailto:`), a wiki link or footnote label that isn't closed yet, an HTML tag or comment that isn't closed yet, a reference definition (`[label]: …`), and `--` in a line that starts with `|`, as a typed table row does.
+- In source view and TXT notes, where the text is typed as is. The same goes for `insertText` in those modes.
+
+On a keyboard layout that makes a quote with a dead key, such as US International, the quote reaches the editor as a composition. It follows the rules when the composition commits exactly that one `"` or `'` at the caret, and any other composition is left alone. A dash always comes from the hyphen key and is unaffected. The dead-key quote is tested in Chromium only; other engines and input methods may differ.
+
+Text typed inside the text of a link, a table cell, a heading, a list item, a quote or a callout follows the rules. Typing that arrives in one piece, such as dictation or a text replacement, follows them for its last character, like any other input rule.
 
 ## Command availability
 
@@ -311,7 +340,7 @@ Availability describes the moment you ask. It doesn't promise that a later call 
 | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `heading1` to `heading6`                               | Makes the block a heading of that level. Applying the block's current level makes it a paragraph again.                                                  |
 | `paragraph`                                            | Makes the block a paragraph.                                                                                                                             |
-| `bold`, `italic`, `strikethrough`, `highlight`, `code` | Toggles the mark on the selection. At a caret, toggles it for the text typed next; `code` inside a code span removes the span.                           |
+| `bold`, `italic`, `strikethrough`, `highlight`, `code` | Toggles the mark on the selection. At a caret, applies to typed text until toggled off or the caret moves; `code` inside a code span removes the span.   |
 | `codeBlock`                                            | Makes the block a code block, with the info string `options.language` when given, or makes a code block a paragraph again.                               |
 | `quote`                                                | Quotes the selected blocks, or the whole list when the selection is in a list item, or removes the quote that holds them.                                |
 | `bulletList`, `orderedList`                            | Makes the blocks a list of that kind, converts a list of the other kind, or lifts the item out of a list of the same kind.                               |
@@ -535,7 +564,7 @@ Markdown loads in formatted mode, and TXT is always literal source. `setEditingM
 
 `replaceSource` replaces the complete current source as one isolated undo operation and returns `false` for identical source. It accepts unsupported syntax, incomplete Markdown and TXT literally. Snapshots keep the actual complete source, including Markdown spelling changes that render identically. Source input keeps unchanged line endings and uses the document's existing line ending for inserted lines. Switching to formatted editing doesn't save or canonicalize the source. When the current formatted document can't be preserved, `replaceSource` and switching to source mode throw `preservation`, as `snapshot()` does, and change nothing.
 
-`undo` and `redo` use the formatted document's history, except for source edits made in source mode that the formatted document hasn't taken in yet, which they step through on the text. Each returns whether it applied a history operation. Revisions advance for actual edits and history operations. Dirty state compares the exact current source with the loaded source. Loading another document resets history.
+`undo` and `redo` use the formatted document's history, except for source edits made in source mode that the formatted document hasn't taken in yet, which they step through on the text. Each returns whether it applied a history operation. Revisions advance for actual edits and history operations. Dirty state compares the exact current source with the loaded source. Loading another document resets history. In formatted mode, Undo and Redo that the browser sends as `historyUndo` and `historyRedo` input events, such as from its Edit menu, call `undo` and `redo`, with or without smart punctuation.
 
 Source edits don't parse the document. Typing, paste, cut, replacement, `replaceSource` and any other change made while in source mode take effect on the text at once: `snapshot()`, the `changed` event, the revision and the textarea all use it. Each is an undo step on the text: a pause of more than 500 ms in typing ends a step, and an edit that isn't typing is a step of its own that later typing doesn't join. The last 100 steps are kept. `clipboardSnapshot()` and `printableSnapshot()` read the text and leave history alone.
 
