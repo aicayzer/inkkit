@@ -3,6 +3,10 @@ import { fixtures } from '../../scripts/interop/consumer/fixtures'
 
 const source = (page: import('@playwright/test').Page) =>
   page.getByRole('textbox', { name: 'Markdown source editor' })
+// The page sets up the playground after it loads, so this reads nothing until
+// then instead of failing.
+const openedDocument = (page: import('@playwright/test').Page) =>
+  page.evaluate(() => window.inkkitPlayground?.observe().snapshot?.documentId)
 
 test('an unknown fixture shows an error on the page and still opens @playground-tools', async ({
   page,
@@ -12,13 +16,7 @@ test('an unknown fixture shows an error on the page and still opens @playground-
   await expect(problems).toContainText('Unknown fixture "nope"')
   await expect(problems).toContainText('Unknown configuration "wide"')
   await expect(problems).toContainText('Unknown adapter "slow"')
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => window.inkkitPlayground?.observe().snapshot?.documentId,
-      ),
-    )
-    .toBe('fixture:everyday')
+  await expect.poll(() => openedDocument(page)).toBe('fixture:everyday')
   await page.locator('#fixture').selectOption('tables')
   await expect(problems).toBeHidden()
 })
@@ -29,9 +27,7 @@ test('a bad generator is reported and a good one builds a document @playground-t
   await page.goto('/?generate=lines:5')
   await expect(page.getByRole('alert')).toContainText('Unknown generator')
   await page.goto('/?generate=paragraphs:300')
-  await expect
-    .poll(async () => (await observe(page)).snapshot?.documentId)
-    .toBe('generated:paragraphs:300')
+  await expect.poll(() => openedDocument(page)).toBe('generated:paragraphs:300')
   const snapshot = (await observe(page)).snapshot!
   expect(snapshot.text.match(/^Paragraph /gm)?.length).toBeGreaterThan(280)
   expect(snapshot.dirty).toBe(false)
@@ -63,9 +59,7 @@ test('choices made on the page are written to the address and restore the same s
   const shared = page.url()
   await page.goto('about:blank')
   await page.goto(shared)
-  await expect
-    .poll(async () => (await observe(page)).snapshot?.documentId)
-    .toBe('fixture:mermaid')
+  await expect.poll(() => openedDocument(page)).toBe('fixture:mermaid')
   const restored = await observe(page)
   expect(restored.configuration).toBe('minimal')
   expect(restored.adapterMode).toBe('hold')
