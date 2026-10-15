@@ -174,7 +174,7 @@ for (const size of [12, 15, 18, 24]) {
   }
 }
 
-test('a checkbox follows the first line of an item typed into an empty task, with the caret level', async ({
+test('a checkbox follows the first line of an item typed into an empty task', async ({
   page,
   openFixture,
 }) => {
@@ -191,8 +191,8 @@ test('a checkbox follows the first line of an item typed into an empty task, wit
   const empty = items.nth(1)
   const at = await geometry(empty)
   expect(Math.abs(at.checkbox - at.line)).toBeLessThanOrEqual(1)
-  // The caret of an empty item has no rectangle of its own in either engine;
-  // the break that holds the line open has the height the caret takes.
+  // The break provides the empty line's font metrics. This is a geometry
+  // proxy; it does not measure the painted caret.
   expect(at.caret).not.toBeNull()
   expect(Math.abs(at.caret! - at.checkbox)).toBeLessThanOrEqual(1.5)
   await page.keyboard.type('x')
