@@ -502,7 +502,9 @@
   text-decoration: underline;
 }
 
-.meta .inkkit-root .ProseMirror a {
+/* Held Mod opens a link on click; an empty address opens nothing. */
+.inkkit-root.inkkit-link-modifier .ProseMirror a[href]:not([href='']),
+.inkkit-root.inkkit-link-modifier .inkkit-wiki-link {
   cursor: pointer;
 }
 

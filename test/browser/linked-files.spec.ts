@@ -22,7 +22,7 @@ test('optional wiki/files preserve source, resolve offline kinds and route host 
   ).toHaveCount(1)
   expect((await observe(page)).snapshot!.text).toBe(linkedSource)
   const wiki = page.getByRole('link', { name: 'Travel plan', exact: true })
-  await wiki.click({ modifiers: ['Meta'] })
+  await wiki.click({ modifiers: ['ControlOrMeta'] })
   await wiki.focus()
   await page.keyboard.press('Enter')
   const photo = page

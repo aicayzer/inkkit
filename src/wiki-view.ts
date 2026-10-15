@@ -2,6 +2,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 import { $view } from '@milkdown/kit/utils'
 import { wikiLinkSchema } from './linked-syntax'
+import { modHeld } from './modifier'
 import type {
   DocumentContext,
   WikiLinkAdapter,
@@ -59,7 +60,7 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
       }
     }
     dom.addEventListener('click', (event) => {
-      if (event.metaKey || event.ctrlKey) open(event)
+      if (event.button === 0 && modHeld(event)) open(event)
     })
     dom.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') open(event)

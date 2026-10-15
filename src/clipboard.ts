@@ -10,6 +10,7 @@ import { shareableFragment } from './comments'
 import { diagramImage } from './mermaid'
 import { fileReference } from './linked-syntax'
 import { definitionText } from './references'
+import { isSafeLinkTarget } from './link-safety'
 import { portableFile, portableFileImage } from './portable-files'
 import { withFileSignal } from './files'
 import type {
@@ -158,7 +159,15 @@ export function clipboardContent(
         },
       ],
     },
-    serializer.marks,
+    {
+      ...serializer.marks,
+      // The editor shows such a link without an address; as an element it
+      // would paste back as a link to nothing, so it copies as its text.
+      link: (mark, inline) =>
+        isSafeLinkTarget(String(mark.attrs.href ?? ''))
+          ? serializer.marks.link!(mark, inline)
+          : ['span', 0],
+    },
   )
   container.append(safe.serializeFragment(content))
   if (!onlyDefinitions(content))

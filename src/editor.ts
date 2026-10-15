@@ -188,6 +188,7 @@ import {
   type OutlineContext,
 } from './outline'
 import { taskListPlugin, toggleTaskList } from './tasks'
+import { modHeld, trackLinkModifier } from './modifier'
 import { diagramsAvailable, isMermaid, mermaidPreview } from './mermaid'
 import {
   hasAuthoredImagesInLiterals,
@@ -607,6 +608,8 @@ export class InkKitEditor {
   private root!: HTMLElement
   private ownsRootClass = false
   private clickHandler?: (event: MouseEvent) => void
+  private auxClickHandler?: (event: MouseEvent) => void
+  private untrackLinkModifier?: () => void
   private footnoteKeyHandler?: (event: KeyboardEvent) => void
   private copyHandler?: (event: ClipboardEvent) => void
   private originalSource = ''
@@ -982,6 +985,13 @@ export class InkKitEditor {
           (!tr.docChanged && !tr.storedMarksSet),
         props: {
           editable: () => this.writable && !this.literalSurface,
+          // ProseMirror selects the clicked node when Mod is held; a click
+          // that opens a link must not.
+          handleClick: (_view, _pos, event) =>
+            modHeld(event) &&
+            !!(event.target as HTMLElement).closest(
+              'a[href], .inkkit-wiki-link',
+            ),
           handleDOMEvents: {
             compositionstart: () => {
               queueMicrotask(() => this.publishCommandState())
@@ -1703,6 +1713,9 @@ export class InkKitEditor {
     this.pasteController.destroy()
     if (this.clickHandler)
       this.root.removeEventListener('click', this.clickHandler)
+    if (this.auxClickHandler)
+      this.root.removeEventListener('auxclick', this.auxClickHandler)
+    this.untrackLinkModifier?.()
     if (this.footnoteKeyHandler)
       this.root.removeEventListener('keydown', this.footnoteKeyHandler, true)
     if (this.copyHandler) {
@@ -2120,12 +2133,22 @@ export class InkKitEditor {
     instance.clickHandler = (event) => {
       if (activateFootnote(event)) return
       const anchor = (event.target as HTMLElement).closest('a[href]')
-      if (anchor && event.metaKey) {
-        event.preventDefault()
-        events.openLink(anchor.getAttribute('href') ?? '')
-      }
+      if (!anchor) return
+      // A read-only surface is not editable, so the browser would follow the
+      // link itself; only the host opens links.
+      event.preventDefault()
+      if (event.button !== 0 || !modHeld(event)) return
+      // The renderer leaves the address empty when it is not on the list in
+      // link-safety.ts.
+      const href = anchor.getAttribute('href')
+      if (href) events.openLink(href)
     }
     root.addEventListener('click', instance.clickHandler)
+    instance.auxClickHandler = (event) => {
+      if ((event.target as HTMLElement).closest('a[href]'))
+        event.preventDefault()
+    }
+    root.addEventListener('auxclick', instance.auxClickHandler)
     instance.copyHandler = (event) => {
       if (instance.formatType === 'txt') return
       if (instance.mode === 'source') {
@@ -2242,6 +2265,7 @@ export class InkKitEditor {
     root.addEventListener('cut', instance.copyHandler, true)
     instance.applyInputPolicy()
     instance.setKeymap(options.keymap ?? {})
+    instance.untrackLinkModifier = trackLinkModifier(root)
     return instance
   }
 
