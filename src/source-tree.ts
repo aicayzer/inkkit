@@ -25,7 +25,8 @@ export function ownStarts(tree: Root): undefined {
         own?.offset != null &&
         own.offset >= previousEnd
       ) {
-        // A column counts the characters before it on its line.
+        // micromark counts a tab as one column, so on one line columns and
+        // offsets move together.
         const column = Math.min(start.column, own.column)
         child.position!.start = {
           line: own.line,
