@@ -1193,6 +1193,7 @@ function retainSource(
     before.children &&
     after.children &&
     before.children.length === after.children.length + 1 &&
+    after.children.length > 0 &&
     (spacer(before.children[0]) || before.children[0]!.type === 'paragraph') &&
     after.children[0]?.type !== 'paragraph' &&
     !spacer(after.children[0])
@@ -1660,6 +1661,15 @@ export const crossCheck = {
   differences: [] as string[],
 }
 
+// Whether a source node is or holds a link or footnote definition.
+function definesSource(node: SourceNode): boolean {
+  return (
+    node.type === 'definition' ||
+    node.type === 'footnoteDefinition' ||
+    (node.children ?? []).some(definesSource)
+  )
+}
+
 function blockForm(ctx: Ctx, node: ProseNode): string {
   // An empty document is empty Markdown, but an empty block inside a document
   // is authored spacing and must remain a real block when read again.
@@ -1986,6 +1996,12 @@ function similarity(left: string, right: string): number {
 
 type Kept = 'unchanged' | 'edited' | 'canonical'
 
+// Changed blocks between two unchanged ones, by their index in the document.
+interface Run {
+  previous?: number
+  next?: number
+}
+
 /** Retains the loaded source of blocks the edit leaves alone. */
 export class Preservation {
   /** The document as loaded from `source`. */
@@ -1993,6 +2009,8 @@ export class Preservation {
   private readonly blocks: Block[] = []
   private readonly lineEnding: string
   private readonly originalForms = new Set<string>()
+  // The form of each block, in order.
+  private readonly blockForms: string[] = []
   private readonly forms = new WeakMap<ProseNode, string>()
   private readonly blockEdits = new WeakMap<
     ProseNode,
@@ -2001,6 +2019,10 @@ export class Preservation {
   private readonly itemEdits = new WeakMap<
     ProseNode,
     { index: number; item: number; text: string }
+  >()
+  private readonly regionEdits = new WeakMap<
+    ProseNode,
+    { identity: string; nodes: ProseNode[]; text: string }
   >()
   private readonly definitionNodes = new Map<string, number>()
   // Undefined when a definition sits inside another block, where appending
@@ -2054,7 +2076,10 @@ export class Preservation {
           ast: positionalNode(rawTree, node as unknown as SourceNode),
         })
       }
-      for (const block of this.blocks) this.originalForms.add(block.form)
+      for (const block of this.blocks) {
+        this.originalForms.add(block.form)
+        this.blockForms.push(block.form)
+      }
       const definition = (node: SourceNode) =>
         node.type === 'definition' || node.type === 'footnoteDefinition'
       const nested = (node: SourceNode): boolean =>
@@ -2637,6 +2662,13 @@ export class Preservation {
         cause,
       })
     }
+    if (local === undefined)
+      try {
+        local = this.regions(doc)
+      } catch {
+        // The whole-document path decides, and refuses if it fails too.
+        local = undefined
+      }
     return local === undefined
       ? this.wholeDocument(doc)
       : this.checked(doc, local)
@@ -2704,6 +2736,480 @@ export class Preservation {
     )
   }
 
+  // The gap the whole-document path writes before the current block at
+  // `index`: the authored text between two blocks paired one after the other,
+  // otherwise a blank line. The first block keeps the file's head when it is
+  // paired with the first original.
+  private gap(index: number, positions: Array<number | undefined>): string {
+    const position = positions[index]
+    const block = position == null ? undefined : this.blocks[position]
+    if (index === 0)
+      return position === 0 && block
+        ? this.source.slice(0, block.start)
+        : this.source.startsWith('\uFEFF')
+          ? '\uFEFF'
+          : ''
+    const previous = positions[index - 1]
+    return previous != null && position === previous + 1 && block
+      ? this.source.slice(this.blocks[previous]!.end, block.start)
+      : this.lineEnding.repeat(2)
+  }
+
+  // What the whole-document path writes for the current blocks from `from` to
+  // `to`, and the gap before each. `canonical` is those blocks written as
+  // canonical Markdown, and `tree` its parse, with the block at `from` as its
+  // first child, when it reads back as one node for each block.
+  private build(
+    doc: ProseNode,
+    positions: Array<number | undefined>,
+    current: string[],
+    from: number,
+    to: number,
+    canonical: string,
+    tree?: { raw: Root; transformed: Root },
+  ): { gaps: string[]; pieces: string[]; kept: Kept[] } {
+    const transformed = (index: number) =>
+      tree!.transformed.children[index - from] as unknown as SourceNode
+    // An original between the blocks paired around these is one an edit
+    // could have joined into them. Pairing keeps order, so only the blocks
+    // paired from just before `from` to just after `to` can lie between.
+    const paired = new Set<Block>()
+    for (
+      let index = Math.max(0, from - 1);
+      index < Math.min(positions.length, to + 1);
+      index++
+    ) {
+      const position = positions[index]
+      if (position != null) paired.add(this.blocks[position]!)
+    }
+    // The children each edited list or quote keeps at its start and end,
+    // which a part split from the same original cannot also be.
+    const taken = new Set<SourceNode>()
+    if (tree)
+      for (let index = from; index < to; index++) {
+        const position = positions[index]
+        const kids =
+          position == null ? undefined : this.blocks[position]!.ast.children
+        const now = transformed(index).children
+        if (!kids || !now || this.blocks[position!]!.form === current[index])
+          continue
+        let start = 0,
+          end = 0
+        while (
+          start < Math.min(kids.length, now.length) &&
+          signature(kids[start]!) === signature(now[start]!)
+        )
+          taken.add(kids[start++]!)
+        while (
+          end < Math.min(kids.length, now.length) - start &&
+          signature(kids[kids.length - 1 - end]!) ===
+            signature(now[now.length - 1 - end]!)
+        )
+          taken.add(kids[kids.length - 1 - end++]!)
+      }
+    const gaps: string[] = []
+    const pieces: string[] = []
+    const kept: Kept[] = []
+    for (let index = from; index < to; index++) {
+      const text = current[index]!
+      const position = positions[index]
+      const block = position == null ? undefined : this.blocks[position]
+      gaps.push(this.gap(index, positions))
+      const kind: Kept =
+        block && block.form === text
+          ? 'unchanged'
+          : block && tree
+            ? 'edited'
+            : 'canonical'
+      kept.push(kind)
+      const node = tree
+        ? positionalNode(tree.raw, transformed(index))
+        : undefined
+      pieces.push(
+        kind === 'unchanged'
+          ? this.source.slice(block!.start, block!.end)
+          : kind === 'edited'
+            ? this.retainBlock(
+                block!,
+                node!,
+                canonical,
+                this.around(positions, index)
+                  .filter(
+                    (other) =>
+                      !paired.has(other) && other.ast.type === block!.ast.type,
+                  )
+                  .flatMap((other) => other.ast.children ?? []),
+              )
+            : ((node &&
+                this.retainPart(positions, index, node, canonical, taken)) ??
+              restoreCodeEndings(
+                this.ctx,
+                doc.type.create(null, [doc.child(index)]),
+                withEnding(text, this.lineEnding),
+              )),
+      )
+    }
+    return { gaps, pieces, kept }
+  }
+
+  // The canonical Markdown of `nodes` and its parse, which locates each block
+  // in it when it reads back as one node for each.
+  private canonicalBlocks(
+    doc: ProseNode,
+    nodes: ProseNode[],
+  ): { canonical: string; tree?: { raw: Root; transformed: Root } } {
+    const { written, extra } = this.writeBlocks(doc, nodes)
+    // Read with the definitions its labels can refer to, as in the document.
+    const definitions = written.includes('[')
+      ? this.definitions(written)
+      : undefined
+    const canonical = definitions?.text
+      ? written + this.lineEnding.repeat(2) + definitions.text
+      : written
+    const raw = parseTree(this.ctx, canonical)
+    const transformed = this.ctx
+      .get(remarkCtx)
+      .runSync(structuredClone(raw), { value: canonical }) as Root
+    return {
+      canonical,
+      tree:
+        transformed.children.length ===
+        nodes.length + extra + (definitions?.blocks ?? 0)
+          ? { raw, transformed }
+          : undefined,
+    }
+  }
+
+  // The canonical Markdown of the whole document and its parse.
+  private canonicalDocument(doc: ProseNode): {
+    canonical: string
+    tree?: { raw: Root; transformed: Root }
+  } {
+    const nodes: ProseNode[] = []
+    doc.forEach((node) => nodes.push(node))
+    const { written: canonical, extra } = this.writeBlocks(doc, nodes)
+    const raw = parseTree(this.ctx, canonical)
+    const transformed = this.ctx
+      .get(remarkCtx)
+      .runSync(structuredClone(raw), { value: canonical }) as Root
+    return {
+      canonical,
+      tree:
+        transformed.children.length === doc.childCount + extra
+          ? { raw, transformed }
+          : undefined,
+    }
+  }
+
+  // Canonical Markdown for `nodes`. An empty paragraph at the end of a
+  // document is written as nothing, so a paragraph is added after one there,
+  // and `extra` counts it.
+  private writeBlocks(
+    doc: ProseNode,
+    nodes: ProseNode[],
+  ): { written: string; extra: number } {
+    const last = nodes.at(-1)
+    const extra =
+      last?.type.name === 'paragraph' && last.content.size === 0 ? 1 : 0
+    const written = write(
+      this.ctx,
+      doc.type.create(
+        doc.attrs,
+        extra
+          ? [...nodes, last!.type.create(null, doc.type.schema.text('end'))]
+          : nodes,
+      ),
+    )
+    return { written, extra }
+  }
+
+  // The runs of changed blocks, each between two blocks the edit left as they
+  // were, or an end of the document. A block is unchanged when it is paired
+  // with an original of the same form, and the text between two unchanged
+  // blocks is kept when they are paired with consecutive originals.
+  private runs(positions: Array<number | undefined>, current: string[]): Run[] {
+    const unchanged = (index: number) => {
+      const position = positions[index]
+      return position != null && this.blocks[position]!.form === current[index]
+    }
+    const consecutive = (index: number) =>
+      index === 0
+        ? positions[0] === 0
+        : positions[index] != null &&
+          positions[index - 1] != null &&
+          positions[index] === positions[index - 1]! + 1
+    const runs: Run[] = []
+    let previous: number | undefined
+    let changed = false
+    for (let index = 0; index < current.length; index++) {
+      if (!unchanged(index)) changed = true
+      else {
+        if (changed || !consecutive(index)) runs.push({ previous, next: index })
+        changed = false
+        previous = index
+      }
+    }
+    if (
+      changed ||
+      previous === undefined ||
+      positions[previous] !== this.blocks.length - 1
+    )
+      runs.push({ previous })
+    return runs
+  }
+
+  // Whether each run reads as it does in the document when it is read with
+  // the definitions it refers to, which holds when every definition is a
+  // top-level block that no run adds, changes or removes. Otherwise changed
+  // blocks are read in the canonical Markdown of the whole document.
+  private readAlone(
+    doc: ProseNode,
+    positions: Array<number | undefined>,
+    runs: Run[],
+  ): boolean {
+    if (this.definitionSources === undefined) return false
+    return runs.every((run) => {
+      const from = run.previous === undefined ? 0 : run.previous + 1
+      const to = run.next ?? doc.childCount
+      for (let index = from; index < to; index++)
+        if (Preservation.defines(doc.child(index))) return false
+      const first =
+        run.previous === undefined ? 0 : positions[run.previous]! + 1
+      const last =
+        run.next === undefined ? this.blocks.length : positions[run.next]!
+      for (let index = first; index < last; index++)
+        if (definesSource(this.blocks[index]!.ast)) return false
+      return true
+    })
+  }
+
+  // What the whole-document path writes for the changed blocks of a run, read
+  // from their own canonical Markdown.
+  private runPieces(
+    doc: ProseNode,
+    positions: Array<number | undefined>,
+    current: string[],
+    run: Run,
+  ): { gaps: string[]; pieces: string[]; kept: Kept[] } {
+    const from = run.previous === undefined ? 0 : run.previous + 1
+    const to = run.next ?? doc.childCount
+    if (from === to) return { gaps: [], pieces: [], kept: [] }
+    const nodes: ProseNode[] = []
+    for (let index = from; index < to; index++) nodes.push(doc.child(index))
+    const { canonical, tree } =
+      from === 0 && to === doc.childCount
+        ? this.canonicalDocument(doc)
+        : this.canonicalBlocks(doc, nodes)
+    return this.build(doc, positions, current, from, to, canonical, tree)
+  }
+
+  // Saves an edit that inserts, removes, splits or joins blocks by validating
+  // only what changed. Blocks are paired with their originals as the
+  // whole-document path pairs them, and each run of changed blocks between
+  // unchanged ones is written by the same code. Each run is then read back
+  // with the unchanged block on either side, which shows that nothing in it
+  // changes how those blocks, or the blocks beyond them, read. Returns
+  // undefined whenever that cannot be shown, and the whole-document path
+  // decides.
+  private regions(doc: ProseNode): string | undefined {
+    const count = doc.childCount
+    if (
+      !count ||
+      this.baseline.childCount !== this.blocks.length ||
+      !doc.sameMarkup(this.baseline) ||
+      // `readAlone` would refuse this after pairing; checking first skips it.
+      this.definitionSources === undefined
+    )
+      return undefined
+    const current: string[] = []
+    doc.forEach((node) => current.push(this.formOf(node)))
+    let positions: Array<number | undefined>
+    try {
+      positions = correspondence(this.blockForms, current)
+    } catch {
+      return undefined
+    }
+    const runs = this.runs(positions, current)
+    if (
+      // With nothing left as it was, the whole document is one run.
+      runs.some(
+        (run) => run.previous === undefined && run.next === undefined,
+      ) ||
+      !this.readAlone(doc, positions, runs)
+    )
+      return undefined
+    let output = ''
+    let at = 0
+    for (const run of runs) {
+      const from =
+        run.previous === undefined
+          ? 0
+          : this.blocks[positions[run.previous]!]!.end
+      const to =
+        run.next === undefined
+          ? this.source.length
+          : this.blocks[positions[run.next]!]!.start
+      const text = this.region(doc, positions, current, run)
+      if (text === undefined) return undefined
+      output += this.source.slice(at, from) + text
+      at = to
+    }
+    output += this.source.slice(at)
+    // Front matter runs from the start of the file to the next delimiter
+    // line, which a changed block can supply, and a rule that opens the file
+    // would then be rewritten.
+    const bom = (text: string) => text.replace(/^\uFEFF/, '')
+    const frontmatter = sourceFrontmatter(bom(output))
+    if (
+      frontmatter !== sourceFrontmatter(bom(this.source)) ||
+      (doc.firstChild?.type.name === 'hr' && frontmatter?.startsWith('---'))
+    )
+      return undefined
+    return output
+  }
+
+  // The text that replaces the source between the unchanged blocks around a
+  // run, or undefined when the run cannot be validated on its own.
+  private region(
+    doc: ProseNode,
+    positions: Array<number | undefined>,
+    current: string[],
+    run: Run,
+  ): string | undefined {
+    const from = run.previous === undefined ? 0 : run.previous + 1
+    const to = run.next ?? doc.childCount
+    const nodes: ProseNode[] = []
+    for (let index = from; index < to; index++) nodes.push(doc.child(index))
+    const neighbours = [run.previous, run.next].flatMap((index) =>
+      index === undefined ? [] : [doc.child(index)],
+    )
+    const key = nodes[0] ?? neighbours[0]!
+    const original = (index: number | undefined) =>
+      index === undefined ? -1 : positions[index]!
+    const identity = [
+      original(run.previous),
+      original(run.next),
+      ...positions.slice(from, to),
+    ].join()
+    const cached = this.regionEdits.get(key)
+    if (
+      cached &&
+      cached.identity === identity &&
+      cached.nodes.length === nodes.length + neighbours.length &&
+      [...nodes, ...neighbours].every(
+        (node, index) => cached.nodes[index] === node,
+      )
+    )
+      return cached.text
+    // Two lists of one kind side by side need markers chosen across both.
+    const list = (index: number) => {
+      const name = doc.maybeChild(index)?.type.name
+      return name === 'bullet_list' || name === 'ordered_list'
+        ? name
+        : undefined
+    }
+    for (
+      let index = Math.max(1, from);
+      index <= Math.min(to, doc.childCount - 1);
+      index++
+    )
+      if (list(index) && list(index) === list(index - 1)) return undefined
+    const { gaps, pieces } = this.runPieces(doc, positions, current, run)
+    let text = pieces.map((piece, index) => gaps[index] + piece).join('')
+    if (run.next !== undefined) text += this.gap(run.next, positions)
+    else
+      text +=
+        positions[doc.childCount - 1] === this.blocks.length - 1
+          ? this.source.slice(this.blocks.at(-1)!.end)
+          : (finalCodeEnding(doc) ?? this.lineEnding)
+    const slice = (index: number | undefined) => {
+      if (index === undefined) return ''
+      const block = this.blocks[positions[index]!]!
+      return this.source.slice(block.start, block.end)
+    }
+    const read = [
+      ...(run.previous === undefined ? [] : [doc.child(run.previous)]),
+      ...nodes,
+      ...(run.next === undefined ? [] : [doc.child(run.next)]),
+    ]
+    if (!this.readsAs(slice(run.previous) + text + slice(run.next), read))
+      return undefined
+    this.regionEdits.set(key, {
+      identity,
+      nodes: [...nodes, ...neighbours],
+      text,
+    })
+    return text
+  }
+
+  // Whether a block is or holds a link or footnote definition.
+  private static defines(node: ProseNode): boolean {
+    let found = false
+    node.descendants((child) => {
+      if (/^(?:reference|footnote)_definition$/.test(child.type.name))
+        found = true
+      return !found
+    })
+    return found || /^(?:reference|footnote)_definition$/.test(node.type.name)
+  }
+
+  // Whether `text` reads as `nodes` in place. HTML blocks, HTML comments and
+  // `%%` comments can span blocks, so text holding them is not read alone;
+  // the `<br />` line an empty paragraph is written as is the exception. A
+  // paragraph after the text must still read as a paragraph of its own, which
+  // shows that nothing in the text runs on into what follows it.
+  private readsAs(text: string, nodes: ProseNode[]): boolean {
+    if (
+      text.includes('%%') ||
+      text
+        .split(/\r?\n/)
+        .some((line) => line.includes('<') && !lineBreakHTML(line))
+    )
+      return false
+    const definitions = text.includes('[')
+      ? this.definitions(text)
+      : { text: '', blocks: 0, nodes: 0 }
+    if (!definitions) return false
+    const sentinel = 'InkKit end of region'
+    const separator = this.lineEnding.repeat(2)
+    const read = parseDoc(
+      this.ctx,
+      text +
+        separator +
+        sentinel +
+        (definitions.text ? separator + definitions.text : ''),
+    )
+    if (
+      read.childCount !== nodes.length + 1 + definitions.nodes ||
+      read.child(nodes.length).type.name !== 'paragraph' ||
+      read.child(nodes.length).textContent !== sentinel
+    )
+      return false
+    const children: ProseNode[] = []
+    for (let index = 0; index < nodes.length; index++)
+      children.push(read.child(index))
+    const expected = read.type.create(null, nodes)
+    const reopened = read.type.create(null, children)
+    if (semanticSignature(reopened) !== semanticSignature(expected))
+      return false
+    const normalized = (value: string): string => value.replace(/\r\n?/g, '\n')
+    const canonical = write(this.ctx, expected)
+    const actual = normalized(write(this.ctx, reopened))
+    if (actual === normalized(canonical)) return true
+    // Parsing may normalize loose-list spacing, as in `reopens`.
+    const again = parseDoc(
+      this.ctx,
+      canonical + (definitions.text ? separator + definitions.text : ''),
+    )
+    if (again.childCount !== nodes.length + definitions.nodes) return false
+    const rewritten: ProseNode[] = []
+    for (let index = 0; index < nodes.length; index++)
+      rewritten.push(again.child(index))
+    return (
+      actual === normalized(write(this.ctx, read.type.create(null, rewritten)))
+    )
+  }
+
   private wholeDocument(doc: ProseNode): string {
     try {
       const canonical = write(this.ctx, doc)
@@ -2711,97 +3217,30 @@ export class Preservation {
         return this.source.startsWith('\uFEFF') ? '\uFEFF' : ''
       const current: string[] = []
       doc.forEach((node) => current.push(this.formOf(node)))
-      const forms = this.blocks.map((block) => block.form)
-      const processor = this.ctx.get(remarkCtx)
-      const currentRawTree = parseTree(this.ctx, canonical)
-      const currentTree = processor.runSync(structuredClone(currentRawTree), {
-        value: canonical,
-      }) as Root
-      const positions = correspondence(forms, current)
-      const paired = new Set(
-        positions.flatMap((position) =>
-          position == null ? [] : [this.blocks[position]!],
-        ),
+      const positions = correspondence(this.blockForms, current)
+      // Unchanged blocks keep their source and the text between them. Each
+      // run of changed blocks is written from its own canonical Markdown, or,
+      // when a run can't be read alone, every block from the whole document's.
+      const gaps = current.map((_, index) => this.gap(index, positions))
+      const pieces = positions.map((position) =>
+        position == null
+          ? ''
+          : this.source.slice(
+              this.blocks[position]!.start,
+              this.blocks[position]!.end,
+            ),
       )
-      // The children each edited list or quote keeps at its start and end,
-      // which a part split from the same original cannot also be.
-      const taken = new Set<SourceNode>()
-      if (currentTree.children.length === current.length)
-        positions.forEach((position, index) => {
-          const kids =
-            position == null ? undefined : this.blocks[position]!.ast.children
-          const now = (currentTree.children[index] as unknown as SourceNode)
-            .children
-          if (!kids || !now || this.blocks[position!]!.form === current[index])
-            return
-          let start = 0,
-            end = 0
-          while (
-            start < Math.min(kids.length, now.length) &&
-            signature(kids[start]!) === signature(now[start]!)
-          )
-            taken.add(kids[start++]!)
-          while (
-            end < Math.min(kids.length, now.length) - start &&
-            signature(kids[kids.length - 1 - end]!) ===
-              signature(now[now.length - 1 - end]!)
-          )
-            taken.add(kids[kids.length - 1 - end++]!)
+      const kept: Kept[] = current.map(() => 'unchanged')
+      const runs = this.runs(positions, current)
+      for (const run of this.readAlone(doc, positions, runs) ? runs : [{}]) {
+        const from = run.previous === undefined ? 0 : run.previous + 1
+        const written = this.runPieces(doc, positions, current, run)
+        written.pieces.forEach((piece, index) => {
+          pieces[from + index] = piece
+          kept[from + index] = written.kept[index]!
         })
-      const gaps: string[] = []
-      const pieces: string[] = []
-      const kept: Kept[] = []
-      let previous: number | undefined
-      current.forEach((text, index) => {
-        const position = positions[index]
-        const block = position == null ? undefined : this.blocks[position]
-        if (index === 0) {
-          if (position === 0 && block)
-            gaps.push(this.source.slice(0, block.start))
-          else gaps.push(this.source.startsWith('\uFEFF') ? '\uFEFF' : '')
-        } else if (previous != null && position === previous + 1 && block) {
-          gaps.push(this.source.slice(this.blocks[previous]!.end, block.start))
-        } else gaps.push(this.lineEnding.repeat(2))
-        const kind: Kept =
-          block && block.form === text
-            ? 'unchanged'
-            : block && currentTree.children.length === current.length
-              ? 'edited'
-              : 'canonical'
-        kept.push(kind)
-        const node =
-          currentTree.children.length === current.length
-            ? positionalNode(
-                currentRawTree,
-                currentTree.children[index] as unknown as SourceNode,
-              )
-            : undefined
-        pieces.push(
-          kind === 'unchanged'
-            ? this.source.slice(block!.start, block!.end)
-            : kind === 'edited'
-              ? this.retainBlock(
-                  block!,
-                  node!,
-                  canonical,
-                  this.around(positions, index)
-                    .filter(
-                      (other) =>
-                        !paired.has(other) &&
-                        other.ast.type === block!.ast.type,
-                    )
-                    .flatMap((other) => other.ast.children ?? []),
-                )
-              : ((node &&
-                  this.retainPart(positions, index, node, canonical, taken)) ??
-                restoreCodeEndings(
-                  this.ctx,
-                  doc.type.create(null, [doc.child(index)]),
-                  withEnding(text, this.lineEnding),
-                )),
-        )
-        previous = position
-      })
+      }
+      const previous = positions.at(-1)
       this.separateLists(doc, pieces, kept, positions, current)
       let output = pieces.map((piece, index) => gaps[index] + piece).join('')
       if (previous === this.blocks.length - 1 && this.blocks.length)

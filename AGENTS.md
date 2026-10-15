@@ -74,6 +74,7 @@ Report problems that a host or a person would meet: changed source, unsafe impor
 
 - Flag a change that can alter bytes of an unedited document, bytes outside the edited block, or unsupported syntax. Safe path: the rebuilt source is parsed again, and a mismatch rejects the edit with `preservation` and leaves the document, revision and history unchanged.
 - Flag a new syntax or editing path without a test that saves, reopens and compares the bytes.
+- Flag new syntax in `src/dialect.ts` that can span blocks or change how other blocks read, as link definitions, HTML and `%%` comments do, unless `localEdits` and `regions` in `src/preserve.ts` keep text holding it on the whole-document path. Those paths validate an edit by reading only the changed blocks and their neighbors.
 
 ### Import safety
 
