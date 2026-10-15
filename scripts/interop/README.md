@@ -118,7 +118,7 @@ node scripts/interop/verify-native.mjs BUNDLE _local/interop/controlled-failure 
 
 Expect a non-zero result with the mismatched value and assertion step. Never count this expected failure as passing verification.
 
-For candidate changes run `pnpm check`, `pnpm format:check`, `pnpm build:playground` and the small Chromium smoke. Select browser regressions for changed behaviour. Run selected native checks for changed WKWebView, focus/input, bridge, clipboard, print or resource-lifecycle boundaries. Source-only documentation changes need no native run. Print groups remain opt-in and retain the protected preferences/pasteboard procedure above. Release verification still uses the actual archive and exact-version clean offline consumer; hosted CI is distinct from local results.
+For candidate changes run `pnpm check`, `pnpm format:check`, `pnpm build:playground` and the browser specs for the changed behaviour; CI runs the whole browser suite in Chromium and WebKit. Select browser regressions for changed behaviour. Run selected native checks for changed WKWebView, focus/input, bridge, clipboard, print or resource-lifecycle boundaries. Source-only documentation changes need no native run. Print groups remain opt-in and retain the protected preferences/pasteboard procedure above. Release verification still uses the actual archive and exact-version clean offline consumer; hosted CI is distinct from local results.
 
 ## Native text and viewport checks from 0.0.9
 
