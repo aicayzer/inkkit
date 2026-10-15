@@ -88,31 +88,23 @@ function read(
   })
 }
 
-// The links each text reads as, found by reading the text with the parser as
-// it is and as typed text is saved, with brackets and backslashes escaped,
-// which decide whether GFM reads an address while parsing or afterwards.
-// Where the two differ, or the text does not read as itself, it is
-// undefined.
+// The links each text reads as once saved. Typed text is written with its
+// brackets and backslashes escaped, which decides whether GFM reads an address
+// while parsing or afterwards, so it is read as written, not as authored: text
+// such as `[a](http://x.com` reads as plain text unescaped but as a link to the
+// address escaped, and it is the escaped text that is saved. Undefined where
+// the written text does not read as itself.
 function literals(ctx: Ctx, texts: string[]): Array<Found | undefined> {
   // GFM reads an address only after `www.`, `http://` or `https://`, or
   // around `@`, so other text needs no reading.
   const possible = texts.map((text) => /www\.|https?:\/\/|@/i.test(text))
   const candidates = texts.filter((_, index) => possible[index])
-  const escaped = candidates.map((text) => text.replace(/[\\`[\]<>]/g, '\\$&'))
-  const raw = read(ctx, candidates, candidates)
-  const changed = candidates.flatMap((text, index) =>
-    escaped[index] === text ? [] : [index],
-  )
-  const written = read(
+  const found = read(
     ctx,
-    changed.map((index) => escaped[index]!),
-    changed.map((index) => candidates[index]!),
+    candidates.map((text) => text.replace(/[\\`[\]<>]/g, '\\$&')),
+    candidates,
   )
-  changed.forEach((index, at) => {
-    if (JSON.stringify(written[at]) !== JSON.stringify(raw[index]))
-      raw[index] = undefined
-  })
-  return texts.map((_, index) => (possible[index] ? raw.shift() : []))
+  return texts.map((_, index) => (possible[index] ? found.shift() : []))
 }
 
 // CommonMark reads an address in angle brackets as a link to it, or to

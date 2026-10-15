@@ -181,6 +181,30 @@ for (const address of [
         expect(s.editor.snapshot().text).toContain(`${mark}`)
       }))
 
+// A bracket and a parenthesis before an address change how the parser reads
+// it as authored, but typed text is saved with them escaped, and that decides
+// whether the address links.
+for (const typed of [
+  '[a](http://x.com',
+  '[a](www.example.com/p',
+  '[a](https://example.com/a?b=1',
+  'see [a](http://x.com',
+  '(http://x.com',
+  '[http://x.com',
+])
+  test(`typing ${typed} one character at a time saves`, () =>
+    session('\n', async (s) => {
+      place(s.view, 1)
+      for (const character of typed) {
+        type(s.view, character)
+        expect(s.errors).toEqual([])
+        const { same } = await s.save()
+        expect(same).toBe(true)
+      }
+      await expectSaves(s)
+      expect(s.view.state.doc.textContent).toBe(typed)
+    }))
+
 // 3. Line breaks keep their kind.
 test('undo next to a soft line break keeps it soft', () =>
   session('Go https://example.com\nline two\n', async (s) => {

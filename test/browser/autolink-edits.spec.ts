@@ -102,6 +102,14 @@ const typing: [string, string, string, boolean, string, string][] = [
     'Write here www.example.com\n',
   ],
   [
+    'a link written as Markdown into plain text',
+    'Write here\n',
+    'here',
+    true,
+    ' [a](http://x.com',
+    'Write here \\[a]\\(http://x.com\n',
+  ],
+  [
     'an email address into plain text',
     'Write here\n',
     'here',
