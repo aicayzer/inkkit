@@ -1605,11 +1605,44 @@ function form(text: string): string {
   return text.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
 }
 
+/**
+ * Characters preservation has parsed and written. A test reads it to tell an
+ * edit validated where it happened from one that read the whole document.
+ */
+export const preservationWork = { characters: 0 }
+
+function parseDoc(ctx: Ctx, text: string): ProseNode {
+  preservationWork.characters += text.length
+  return ctx.get(parserCtx)(text)
+}
+
+function parseTree(ctx: Ctx, text: string): Root {
+  preservationWork.characters += text.length
+  return ctx.get(remarkCtx).parse(text) as Root
+}
+
+function write(ctx: Ctx, doc: ProseNode): string {
+  const text = serialize(ctx, doc)
+  preservationWork.characters += text.length
+  return text
+}
+
+/**
+ * When enabled, every save that did not take the whole-document path is saved
+ * through it as well, and each difference in bytes or refusal is recorded.
+ * The test suite enables it, so every test also compares the two paths.
+ */
+export const crossCheck = {
+  enabled: false,
+  compared: 0,
+  differences: [] as string[],
+}
+
 function blockForm(ctx: Ctx, node: ProseNode): string {
   // An empty document is empty Markdown, but an empty block inside a document
   // is authored spacing and must remain a real block when read again.
   if (node.type.name === 'paragraph' && node.content.size === 0) return '<br />'
-  return form(serialize(ctx, node.type.schema.topNodeType.create(null, [node])))
+  return form(write(ctx, node.type.schema.topNodeType.create(null, [node])))
 }
 
 export function semanticSignature(doc: ProseNode): string {
@@ -1957,7 +1990,7 @@ export class Preservation {
     private readonly source: string,
   ) {
     try {
-      const parse = ctx.get(parserCtx)
+      const parse = (text: string) => parseDoc(ctx, text)
       this.baseline = parse(source)
       this.lineEnding =
         source.includes('\r\n') && !source.replaceAll('\r\n', '').includes('\n')
@@ -1966,7 +1999,7 @@ export class Preservation {
       const processor = ctx.get(remarkCtx)
       const offset = source.startsWith('\uFEFF') ? 1 : 0
       const body = source.slice(offset)
-      const rawTree = processor.parse(source) as Root
+      const rawTree = parseTree(ctx, source)
       const tree = processor.runSync(structuredClone(rawTree), {
         value: body,
       }) as Root
@@ -1981,17 +2014,21 @@ export class Preservation {
         if (/^[ \t]*$/.test(source.slice(firstColumn, start)))
           start = firstColumn
         const text = source.slice(start, sourceEnd)
-        const parsed =
-          this.baseline.childCount === tree.children.length
-            ? this.baseline.type.create(null, [this.baseline.child(index)])
-            : parse(text)
+        const own = this.baseline.childCount === tree.children.length
+        const parsed = own
+          ? this.baseline.type.create(null, [this.baseline.child(index)])
+          : parse(text)
+        const blockText =
+          parsed.childCount === 1
+            ? blockForm(ctx, parsed.firstChild!)
+            : form(write(ctx, parsed))
+        // The editor shows the baseline, so its blocks are these nodes until
+        // an edit replaces them, and their forms need not be written again.
+        if (own) this.forms.set(this.baseline.child(index), blockText)
         this.blocks.push({
           start,
           end: sourceEnd,
-          form:
-            parsed.childCount === 1
-              ? blockForm(ctx, parsed.firstChild!)
-              : form(serialize(ctx, parsed)),
+          form: blockText,
           ast: positionalNode(rawTree, node as unknown as SourceNode),
         })
       }
@@ -2101,7 +2138,8 @@ export class Preservation {
     let run: number[] = []
     for (let index = 0; index <= doc.childCount; index++) {
       const node = index < doc.childCount ? doc.child(index) : undefined
-      if (!node || node.eq(this.baseline.child(index))) {
+      const before = node && this.baseline.child(index)
+      if (!node || node === before || node.eq(before!)) {
         if (run.length > 1 && !this.pairedInPlace(doc, run)) return undefined
         run = []
         continue
@@ -2164,7 +2202,7 @@ export class Preservation {
     const appended = sources.join('\n\n')
     let nodes = this.definitionNodes.get(appended)
     if (nodes === undefined) {
-      nodes = appended ? this.ctx.get(parserCtx)(appended).childCount : 0
+      nodes = appended ? parseDoc(this.ctx, appended).childCount : 0
       this.definitionNodes.set(appended, nodes)
     }
     return { text: appended, blocks: sources.length, nodes }
@@ -2193,7 +2231,7 @@ export class Preservation {
   private parseLocally(text: string): ProseNode | undefined {
     const local = this.inContext(text)
     if (!local) return undefined
-    const parsed = this.ctx.get(parserCtx)(local.text)
+    const parsed = parseDoc(this.ctx, local.text)
     return parsed.childCount === local.nodes ? parsed.firstChild! : undefined
   }
 
@@ -2204,7 +2242,7 @@ export class Preservation {
   ): { canonical: string; node: SourceNode } | undefined {
     const local = this.inContext(text)
     if (!local) return undefined
-    const tree = this.ctx.get(remarkCtx).parse(local.text) as Root
+    const tree = parseTree(this.ctx, local.text)
     return tree.children.length === local.blocks
       ? {
           canonical: local.text,
@@ -2273,7 +2311,7 @@ export class Preservation {
     // Code is literal, so only its fence decides where it ends.
     const canonical = code
       ? (() => {
-          const tree = this.ctx.get(remarkCtx).parse(form) as Root
+          const tree = parseTree(this.ctx, form)
           return tree.children.length === 1
             ? {
                 canonical: form,
@@ -2286,7 +2324,7 @@ export class Preservation {
     const text = this.retainBlock(block, canonical.node, canonical.canonical)
     const reopened = code
       ? (() => {
-          const parsed = this.ctx.get(parserCtx)(text)
+          const parsed = parseDoc(this.ctx, text)
           return parsed.childCount === 1 ? parsed.firstChild! : undefined
         })()
       : this.parseLocally(text)
@@ -2340,7 +2378,8 @@ export class Preservation {
     let previous = block.start
     for (let at = 0; at < node.childCount; at++) {
       const item = node.child(at)
-      if (item.eq(before.child(at))) continue
+      const original = before.child(at)
+      if (item === original || item.eq(original)) continue
       let retained = this.itemEdits.get(item)
       if (retained?.index !== index || retained.item !== at) {
         const text = this.localItem(
@@ -2386,7 +2425,7 @@ export class Preservation {
       return undefined
     const local = this.canonicalTree(
       form(
-        serialize(
+        write(
           this.ctx,
           list.type.schema.topNodeType.create(null, [
             list.type.create(list.attrs, [item]),
@@ -2546,9 +2585,8 @@ export class Preservation {
   }
 
   private relabelList(text: string, marker: string): string | undefined {
-    const processor = this.ctx.get(remarkCtx)
     const read = (text: string) =>
-      (processor.parse(text) as Root).children as unknown as SourceNode[]
+      parseTree(this.ctx, text).children as unknown as SourceNode[]
     const [list, ...rest] = read(text)
     if (list?.type !== 'list' || rest.length) return undefined
     const relabelled = relabel(
@@ -2567,23 +2605,96 @@ export class Preservation {
   }
 
   serialize(doc: ProseNode): string {
-    if (doc.eq(this.baseline)) return this.source
+    if (this.unchanged(doc)) return this.source
+    let local: string | undefined
     try {
-      const local = this.localEdits(doc)
-      if (local !== undefined) return local
-      const canonical = serialize(this.ctx, doc)
+      local = this.localEdits(doc)
+    } catch (cause) {
+      if (cause instanceof PreservationError) throw cause
+      throw new PreservationError('Cannot preserve the edited Markdown', {
+        cause,
+      })
+    }
+    return local === undefined
+      ? this.wholeDocument(doc)
+      : this.checked(doc, local)
+  }
+
+  // Equal to the loaded document. The editor shows the baseline's own nodes,
+  // and an edit keeps the nodes it does not reach, so most blocks are
+  // compared by identity rather than by content.
+  private unchanged(doc: ProseNode): boolean {
+    if (doc === this.baseline) return true
+    if (
+      doc.childCount !== this.baseline.childCount ||
+      !doc.sameMarkup(this.baseline)
+    )
+      return false
+    for (let index = 0; index < doc.childCount; index++) {
+      const node = doc.child(index)
+      const before = this.baseline.child(index)
+      if (node !== before && !node.eq(before)) return false
+    }
+    return true
+  }
+
+  // In cross-check mode, records where the whole-document path would save
+  // different bytes or refuse.
+  private checked(doc: ProseNode, text: string): string {
+    if (!crossCheck.enabled) return text
+    crossCheck.compared++
+    const { characters } = preservationWork
+    let whole: string
+    try {
+      whole = this.wholeDocument(doc)
+    } catch (error) {
+      // An edit validated where it stands needs no matching, so it can save
+      // when matching the whole document would run out of budget.
+      whole =
+        (error as Error).message === tooManyBlocks().message &&
+        this.reopens(doc, text)
+          ? text
+          : `refused: ${(error as Error).message}`
+    }
+    preservationWork.characters = characters
+    if (whole !== text)
+      crossCheck.differences.push(
+        JSON.stringify({ source: this.source, fast: text, whole }),
+      )
+    return text
+  }
+
+  // Whether `output` reads back as `doc`.
+  private reopens(
+    doc: ProseNode,
+    output: string,
+    canonical = write(this.ctx, doc),
+  ): boolean {
+    const reopened = parseDoc(this.ctx, output)
+    if (semanticSignature(reopened) !== semanticSignature(doc)) return false
+    const normalized = (text: string): string => text.replace(/\r\n?/g, '\n')
+    const actual = normalized(write(this.ctx, reopened))
+    // Parsing may normalize loose-list spacing. Compare both reconstructed
+    // source and intended canonical source after that same normalization.
+    return (
+      actual === normalized(canonical) ||
+      actual === normalized(write(this.ctx, parseDoc(this.ctx, canonical)))
+    )
+  }
+
+  private wholeDocument(doc: ProseNode): string {
+    try {
+      const canonical = write(this.ctx, doc)
       if (canonical === '')
         return this.source.startsWith('\uFEFF') ? '\uFEFF' : ''
       const current: string[] = []
       doc.forEach((node) => current.push(this.formOf(node)))
       const forms = this.blocks.map((block) => block.form)
       const processor = this.ctx.get(remarkCtx)
-      const currentRawTree = processor.parse(canonical) as Root
+      const currentRawTree = parseTree(this.ctx, canonical)
       const currentTree = processor.runSync(structuredClone(currentRawTree), {
         value: canonical,
       }) as Root
-      const parse = this.ctx.get(parserCtx)
-      const normalized = (text: string): string => text.replace(/\r\n?/g, '\n')
       const positions = correspondence(forms, current)
       const paired = new Set(
         positions.flatMap((position) =>
@@ -2682,16 +2793,7 @@ export class Preservation {
         sourceFrontmatter(output.slice(bom))?.startsWith('---')
       )
         output = output.slice(0, bom) + '***' + output.slice(bom + 3)
-      const reopened = parse(output)
-      if (semanticSignature(reopened) === semanticSignature(doc)) {
-        const actual = normalized(serialize(this.ctx, reopened))
-        if (actual === normalized(canonical)) return output
-        // Parsing may normalize loose-list spacing. Compare both reconstructed
-        // source and intended canonical source after that same normalization.
-        if (actual === normalized(serialize(this.ctx, parse(canonical))))
-          return output
-      }
-
+      if (this.reopens(doc, output, canonical)) return output
       throw new PreservationError(
         'The edited Markdown cannot be reopened without changing its content',
       )
