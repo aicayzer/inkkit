@@ -87,6 +87,26 @@ test.each(['+', '-'])(
   },
 )
 
+test.each([
+  ['an untitled', '> [!NOTE]\n> Body\n>\n> <br />\n\nAfter\n'],
+  ['a titled', '> [!tip]- Tips &amp; tricks\n> Body\n>\n> <br />\n\nAfter\n'],
+  ['a quoted', '> > [!NOTE]\n> > Body\n> >\n> > <br />\n\nAfter\n'],
+])('%s callout keeps an empty paragraph it ends with', (_, source) =>
+  run(source, (editor, ctx, root) => {
+    const body = root.querySelector('.inkkit-callout-body')!
+    expect([...body.children].map((child) => child.textContent ?? '')).toEqual([
+      'Body',
+      '',
+    ])
+    expect(root.textContent).toContain('After')
+    editor.find('After')
+    editor.insertText('Edited', 1)
+    expect(editor.snapshot().text).toBe(source.replace('After', 'Edited'))
+    undo(ctx.get(editorViewCtx).state, ctx.get(editorViewCtx).dispatch)
+    expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
+  }),
+)
+
 test('an edit keeps continuation indentation and entity spelling inside quotes', () => {
   const source = '> [!NOTE]\n> First line\n>     second indent &amp; line\n'
   return run(source, (editor) => {
