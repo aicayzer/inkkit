@@ -173,7 +173,12 @@ import {
   type TextProjection,
 } from './text-ranges'
 import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
-import { blockMove, canMoveBlock, moveBlockTransaction } from './block-move'
+import {
+  blockMove,
+  canMoveBlock,
+  carriedBlocks,
+  moveBlockTransaction,
+} from './block-move'
 import {
   assertCommentsEndWhereWritten,
   commentSelectionContent,
@@ -1263,6 +1268,9 @@ export class InkKitEditor {
   private ready = false
   private destroyed = false
   private preservation?: Preservation
+  // The blocks moves have carried since the document loaded, whose source goes
+  // with them.
+  private carried?: WeakSet<ProseNode>
   private pasteController!: PasteController
   private plain!: HTMLTextAreaElement
   private root!: HTMLElement
@@ -1928,7 +1936,7 @@ export class InkKitEditor {
           this.sourcePreservations.set(provenance, preservation)
         }
       }
-      text = preservation!.serialize(cleanSourceDoc(doc))
+      text = preservation!.serialize(cleanSourceDoc(doc), this.carried)
     } catch (error) {
       throw coded(error, 'preservation')
     }
@@ -2788,6 +2796,8 @@ export class InkKitEditor {
           dispatchTransaction: function (this: EditorView, tr) {
             // A call whose edit was refused changes nothing more; it throws when it returns.
             if (instance.call?.refusal && tr.docChanged) return
+            for (const node of tr.getMeta(carriedBlocks) ?? [])
+              (instance.carried ??= new WeakSet()).add(node)
             const applied = this.state.applyTransaction(tr)
             let next = applied.state
             if (!instance.loading) {
@@ -3781,6 +3791,7 @@ export class InkKitEditor {
       this.loading = false
     }
     this.preservation = preservation
+    this.carried = undefined
     this.lastMarkdown = markdown
     // A caret at the end, where writing carries on; at the start it would sit in a first-line heading and
     // show its marks. The last place text can go, so a document ending in a rule takes a caret above it

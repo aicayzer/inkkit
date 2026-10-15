@@ -243,6 +243,8 @@ describe('paragraphs and other top-level blocks', () => {
     })
   })
 
+  // The block it passes carries the move, so the edited block stays paired
+  // with its original.
   test('a block edited and then moved keeps its source', async () => {
     await withNote(
       'Intro\r\n\r\n__Bold__ line  \r\nnext\r\n\r\n*   one\r\n*   two\r\n',
@@ -603,6 +605,8 @@ describe('selections, undo and bindings', () => {
 
 // Pairing a block with an original it did not stay beside must never refuse an
 // edit, or give a new block source that is not its own.
+// Edits other than a move save exactly as they did before moves kept source,
+// and a move saves where that would.
 describe('blocks that change places beside other edits', () => {
   // Deletes the top-level block at `index`.
   const remove = (note: Note, index: number) => {
@@ -687,7 +691,7 @@ describe('blocks that change places beside other edits', () => {
     )
   })
 
-  test('ordered items pasted in a new order keep their own source', async () => {
+  test('ordered items pasted in a new order save as other pastes do', async () => {
     await saves(
       '8. a\n9. b\n10. c\n    more c\n',
       (note) => {
@@ -700,7 +704,90 @@ describe('blocks that change places beside other edits', () => {
         const markdown = '8. a\n9. c\n   more c\n10. b'
         return note.editor.paste({ text: markdown, markdown })
       },
-      '8. a\n9. c\n   more c\n10. b\n',
+      '8. a\n9. c\nmore c\n10. b\n',
+    )
+  })
+
+  test('a pasted block does not take the source of a deleted one', async () => {
+    for (const ending of ['\n', '\r\n'])
+      for (const [old, incoming, expected] of [
+        [
+          '   Project alpha is ready.',
+          'Project beta is ready.',
+          '# Keep\n\nEndProject beta is ready.\n',
+        ],
+        [
+          '+  Project alpha is ready.',
+          '- Project beta is ready.',
+          '# Keep\n\nEnd\n\n- Project beta is ready.\n',
+        ],
+        [
+          '|Project|Status|\n|:---|---:|\n|alpha|ready|',
+          '| Project | Status |\n| :--- | ---: |\n| beta | ready |',
+          '# Keep\n\nEnd\n\n| Project | Status |\n| :------ | -----: |\n| beta    |  ready |\n',
+        ],
+      ] as const)
+        await saves(
+          `${old}\n\n# Keep\n\nEnd\n`.replaceAll('\n', ending),
+          (note) => {
+            remove(note, 0)
+            note.view.dispatch(
+              note.view.state.tr.setSelection(
+                TextSelection.atEnd(note.view.state.doc),
+              ),
+            )
+            return note.editor.paste({
+              text: incoming,
+              markdown: `\n\n${incoming}`,
+            })
+          },
+          expected.replaceAll('\n', ending),
+        )
+    await saves(
+      '   Project alpha is ready.\n\n# Keep\n\nOld tail\n',
+      (note) => {
+        const { state } = note.view
+        note.view.dispatch(
+          state.tr.setSelection(
+            TextSelection.create(state.doc, 0, state.doc.content.size),
+          ),
+        )
+        const markdown = '# Keep\n\nNew tail\n\nProject beta is ready.'
+        return note.editor.paste({ text: markdown, markdown })
+      },
+      '# Keep\n\nNew tail\n\nProject beta is ready.\n',
+    )
+  })
+
+  test('a block the moves did not reach keeps its bytes beside a moved copy', async () => {
+    await saves(
+      '__same__\n\nB\n\n**same**\n\nC\n\nD\n',
+      (note) => {
+        note.caret('same', 0)
+        expect(note.press('ArrowDown')).toBe(true)
+        note.caret('C', 0)
+        expect(note.press('ArrowDown')).toBe(true)
+      },
+      'B\n\n__same__\n\n**same**\n\nD\n\nC\n',
+    )
+  })
+
+  test('an item whose source would nest elsewhere moves as other edits write it', async () => {
+    await saves(
+      '-   alpha\n  - beta\n',
+      (note) => {
+        note.caret('alpha', 0)
+        expect(note.press('ArrowDown')).toBe(true)
+      },
+      '-   beta\n  - alpha\n',
+    )
+    await saves(
+      '-   alpha\r\n  - beta\r\n\r\nAfter\r\n',
+      (note) => {
+        note.caret('alpha', 0)
+        expect(note.press('ArrowDown')).toBe(true)
+      },
+      '-   beta\r\n  - alpha\r\n\r\nAfter\r\n',
     )
   })
 })

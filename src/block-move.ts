@@ -1,6 +1,7 @@
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import {
   NodeSelection,
+  PluginKey,
   Selection,
   TextSelection,
   type EditorState,
@@ -27,6 +28,12 @@ const tableParts = new Set([
   'table_cell',
   'table_header',
 ])
+
+/** On a move's transaction, the blocks it carried, so their source can go
+ *  with them. */
+export const carriedBlocks = new PluginKey<readonly ProseNode[]>(
+  'carriedBlocks',
+)
 
 interface Move {
   /** The container's depth and the index range of the blocks that move. */
@@ -131,7 +138,9 @@ export function moveBlockTransaction(
   const from = offset(up ? past[0] : start)
   const to = offset(up ? end : past[1])
   const reordered = up ? [...moved, ...passed] : [...passed, ...moved]
-  const tr = state.tr.replaceWith(from, to, Fragment.fromArray(reordered))
+  const tr = state.tr
+    .replaceWith(from, to, Fragment.fromArray(reordered))
+    .setMeta(carriedBlocks, reordered)
   // The selection keeps its place in the moved text.
   const shift = up
     ? -passed.reduce((size, node) => size + node.nodeSize, 0)

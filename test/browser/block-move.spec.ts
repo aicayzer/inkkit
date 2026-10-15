@@ -164,3 +164,33 @@ test('in a table cell the key is left to the web view', async ({
     'P\n\n| a | b |\n|---|---|\n| 3 | 4 |\n| 1 | 2 |\n',
   )
 })
+
+test('a block neither move reaches keeps its bytes beside a moved copy @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await operation(page, 'reload', {
+    text: '__same__\n\nB\n\n**same**\n\nC\n\nD\n',
+  })
+  await caret(page, 'same')
+  await page.keyboard.press('Alt+ArrowDown')
+  await caret(page, 'C')
+  await page.keyboard.press('Alt+ArrowDown')
+  const expected = 'B\n\n__same__\n\n**same**\n\nD\n\nC\n'
+  expect(await saved(page)).toBe(expected)
+  await reopens(page, expected)
+})
+
+test('an item whose source would nest under its new neighbor still moves @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await operation(page, 'reload', { text: '-   alpha\n  - beta\n' })
+  await caret(page, 'alpha')
+  await page.keyboard.press('Alt+ArrowDown')
+  const expected = '-   beta\n  - alpha\n'
+  expect(await saved(page)).toBe(expected)
+  await reopens(page, expected)
+})

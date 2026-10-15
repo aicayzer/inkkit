@@ -111,6 +111,15 @@ function relabel(text: string, offsets: number[], marker: string): string {
   return text
 }
 
+/** Where a block move carried children: by their parent, the original index
+ *  of each moved child, by its current index. A parent is known by its type
+ *  and where it starts in the source, since a list starts where its first
+ *  item does. */
+type Reorder = Map<string, Map<number, number>>
+
+const parentKey = (node: SourceNode): string =>
+  `${node.type}:${node.position!.start.offset!}`
+
 /**
  * An item of an ordered list moved from `original`'s place to `place`'s, which
  * takes the number written there, so the numbers keep their order. Lines after
@@ -1149,6 +1158,10 @@ function retainSource(
   beside: readonly [boolean, boolean] = [false, false],
   // Children of originals an edit joined into this node.
   joined: readonly SourceNode[] = [],
+  // Children that a block move carried to other places, by where the parent
+  // starts in `source`: the original index of each moved child, by its
+  // index in `after`.
+  reorder?: Reorder,
 ): string {
   if (literals.has(after))
     return withEnding(
@@ -1191,6 +1204,7 @@ function retainSource(
       width,
       beside,
       joined,
+      reorder,
     )
     const at = before.position.start.offset
     const prefix = source
@@ -1240,6 +1254,7 @@ function retainSource(
       width,
       beside,
       joined,
+      reorder,
     )
     const box = /^((?:[-*+]|\d{1,9}[.)])[ \t]+\[)[ xX](\])/.exec(text)
     if (box)
@@ -1438,31 +1453,12 @@ function retainSource(
     let output = '',
       at = start
     let previous: Neighbour | undefined
-    // Matching a moved child compares it with every other, so each child's
-    // signature and shape are written once.
-    const keys = new Map<SourceNode, string>()
-    const key = (node: SourceNode) => {
-      let found = keys.get(node)
-      if (found === undefined) {
-        found = `${signature(node)}\n${ownShape(node)}`
-        keys.set(node, found)
-      }
-      return found
-    }
     const same = (candidate: SourceNode, incoming: SourceNode) =>
-      key(candidate) === key(incoming)
-    // Children that change places keep their own source: the rows and cells
-    // of a table, the items of a list and the blocks of a quote, callout or
-    // footnote.
-    const reorderable = [
-      'table',
-      'tableRow',
-      'list',
-      'blockquote',
-      'inkkitCallout',
-      'footnoteDefinition',
-    ].includes(before.type)
-    // Equal children can differ in spelling, so each one that stayed in
+      signature(candidate) === signature(incoming) &&
+      ownShape(candidate) === ownShape(incoming)
+    const reorderable = before.type === 'table' || before.type === 'tableRow'
+    const moves = reorder?.get(parentKey(before))
+    // Equal rows or cells can differ in spelling, so each one that stayed in
     // place keeps its own source before any moved one is matched.
     const retained = new Set<number>(
       reorderable
@@ -1473,8 +1469,15 @@ function retainSource(
     )
     before.children.forEach((child, index) => {
       const incoming = after.children![index]!
+      const carried = moves?.get(index)
       const movedIndex = !reorderable
-        ? -1
+        ? // A child the move carried here keeps its own source when it reads
+          // as the same child.
+          carried !== undefined &&
+          before.children![carried] !== undefined &&
+          same(before.children![carried]!, incoming)
+          ? carried
+          : -1
         : same(child, incoming)
           ? index
           : before.children!.findIndex(
@@ -1531,6 +1534,8 @@ function retainSource(
                 after.children![index - 1]?.type === 'link',
                 after.children![index + 1]?.type === 'link',
               ],
+              [],
+              reorder,
             )
       if (
         before.type === 'tableRow' &&
@@ -1558,7 +1563,12 @@ function retainSource(
                 lineEnding,
               )
       }
-      if (before.ordered && movedIndex >= 0 && movedIndex !== index)
+      if (
+        !reorderable &&
+        before.ordered &&
+        movedIndex >= 0 &&
+        movedIndex !== index
+      )
         retainedSource = renumberItem(retainedSource, source, original, child)
       if (marker) retainedSource = relabel(retainedSource, [0], marker)
       previous =
@@ -1791,15 +1801,6 @@ function definitionLabel(label: string): string {
   return label.startsWith('^')
     ? '^' + normalizeIdentifier(label.slice(1))
     : normalizeIdentifier(label)
-}
-
-// The same item, whatever its number and spacing, which come from its list.
-function sameItem(left: ProseNode, right: ProseNode): boolean {
-  if (left === right) return true
-  if (left.type !== right.type || !left.content.eq(right.content)) return false
-  const { label: _label, spread: _spread, ...own } = left.attrs
-  const { label: _l, spread: _s, ...other } = right.attrs
-  return JSON.stringify(own) === JSON.stringify(other)
 }
 
 // Whether two nodes have the same blocks, leaving inline content aside.
@@ -2223,6 +2224,21 @@ function similarity(left: string, right: string): number {
 
 type Kept = 'unchanged' | 'moved' | 'edited' | 'canonical'
 
+// The blocks a block move carried, for one save: the original each moved
+// top-level block keeps the source of, by its index, and whether children a
+// move carried inside an edited block keep theirs.
+interface Carried {
+  moved: Map<number, number>
+  children: boolean
+}
+
+const nothingCarried: Carried = { moved: new Map(), children: false }
+
+interface Pairing {
+  positions: Array<number | undefined>
+  carried: Carried
+}
+
 // Changed blocks between two unchanged ones, by their index in the document.
 interface Run {
   previous?: number
@@ -2252,6 +2268,10 @@ export class Preservation {
     { identity: string; nodes: ProseNode[]; text: string }
   >()
   private readonly definitionNodes = new Map<string, number>()
+  // The nodes block moves carried, for the save in progress, and where each
+  // baseline block sits in the baseline, by node, made when first needed.
+  private moves?: WeakSet<ProseNode>
+  private origins?: WeakMap<ProseNode, number[]>
   // The source ranges of literal blocks inside other blocks, and the blocks
   // whose literal blocks have been given their canonical form.
   private readonly nestedLiterals = new Set<string>()
@@ -2357,6 +2377,7 @@ export class Preservation {
     after: SourceNode,
     canonical: string,
     joined: readonly SourceNode[] = [],
+    reorder?: Reorder,
   ): string {
     const offset = this.source.startsWith('\uFEFF') ? 1 : 0
     const start = block.ast.position?.start.offset
@@ -2375,6 +2396,7 @@ export class Preservation {
         undefined,
         undefined,
         joined,
+        reorder,
       )
     )
   }
@@ -2464,6 +2486,9 @@ export class Preservation {
     for (let index = 0; index <= doc.childCount; index++) {
       const node = index < doc.childCount ? doc.child(index) : undefined
       const before = node && this.baseline.child(index)
+      // A block a move carried from another place is paired with its own
+      // original, which only the whole-document path does.
+      if (node && node !== before && this.moves?.has(node)) return undefined
       if (!node || node === before || node.eq(before!)) {
         if (run.length > 1 && !this.pairedInPlace(doc, run)) return undefined
         run = []
@@ -2699,59 +2724,47 @@ export class Preservation {
         return undefined
     }
     const marker = authoredMarker(list, source)
-    // An item that equals an original which left its own place moved there
-    // from it, and keeps that original's source, as whole-document matching
-    // pairs it. More than one such original leaves the pairing to that path.
-    const changed: number[] = []
-    for (let at = 0; at < node.childCount; at++)
-      if (!sameItem(node.child(at), before.child(at))) changed.push(at)
-    const from = new Map<number, number>()
-    const claimed = new Set<number>()
-    for (const at of changed) {
-      const sources = changed.filter(
-        (other) =>
-          other !== at && sameItem(before.child(other), node.child(at)),
-      )
-      if (sources.length > 1 || claimed.has(sources[0]!)) return undefined
-      if (sources.length) {
-        from.set(at, sources[0]!)
-        claimed.add(sources[0]!)
-      }
-    }
+    // Items a block move carried within this list, and below it.
+    const reorder = this.moves ? this.carriedChildren(node, index) : undefined
+    const carried = reorder?.get(parentKey(list))
     let output = ''
     let previous = block.start
     for (let at = 0; at < node.childCount; at++) {
       const item = node.child(at)
       const original = before.child(at)
       if (item === original || item.eq(original)) continue
-      const moved = from.get(at)
+      const moved = carried?.get(at)
+      // A carried item keeps its source only where both trees agree on it.
+      const from =
+        moved !== undefined && list.children[moved] ? moved : undefined
       let retained = this.itemEdits.get(item)
       if (
         retained?.index !== index ||
         retained.item !== at ||
-        retained.from !== moved
+        retained.from !== from
       ) {
         const text =
-          moved === undefined
+          from === undefined
             ? this.localItem(
                 node,
                 item,
-                original,
+                before.child(at),
                 list.children[at]!,
                 source,
                 marker,
+                reorder,
               )
             : this.movedItem(
                 node,
                 item,
                 list,
-                list.children[moved]!,
+                list.children[from]!,
                 list.children[at]!,
                 source,
                 marker,
               )
         if (text === undefined) return undefined
-        retained = { index, item: at, from: moved, text }
+        retained = { index, item: at, from, text }
         this.itemEdits.set(item, retained)
       }
       const ast = list.children[at]!
@@ -2763,8 +2776,9 @@ export class Preservation {
     return output + this.source.slice(previous, block.end)
   }
 
-  // The source of an item moved from `original`'s place to `place`'s, when it
-  // reads there as the same item and keeps the content column of that place.
+  // The source of an item a block move carried from `original`'s place to
+  // `place`'s, when it reads there as the same item with the same marker and
+  // spacing as that place.
   private movedItem(
     node: ProseNode,
     item: ProseNode,
@@ -2787,9 +2801,9 @@ export class Preservation {
     return this.readsAsItem(node, item, text, place, source)
   }
 
-  // `text` in place of `ast`, when it starts with the same marker and spacing,
-  // which set the column that continuation lines and blocks after the list
-  // are read against, and reads alone as `item`.
+  // `text` in place of the item at `ast`, when it starts with the same marker
+  // and spacing, which set the column that continuation lines and blocks after
+  // the list are read against, and reads alone as `item`.
   private readsAsItem(
     list: ProseNode,
     item: ProseNode,
@@ -2809,7 +2823,14 @@ export class Preservation {
     if (reopened?.type !== list.type || reopened.childCount !== 1)
       return undefined
     const reread = reopened.firstChild!
-    return sameItem(reread, item) ? text : undefined
+    // The label and spacing of an item come from its list.
+    const { label: _label, spread: _spread, ...attrs } = reread.attrs
+    const { label: _l, spread: _s, ...expected } = item.attrs
+    return reread.type === item.type &&
+      JSON.stringify(attrs) === JSON.stringify(expected) &&
+      reread.content.eq(item.content)
+      ? text
+      : undefined
   }
 
   private localItem(
@@ -2819,6 +2840,7 @@ export class Preservation {
     ast: SourceNode,
     source: string,
     marker: string | undefined,
+    reorder?: Reorder,
   ): string | undefined {
     const start = ast.position!.start.offset!
     const end = ast.position!.end.offset!
@@ -2852,6 +2874,11 @@ export class Preservation {
       source,
       local.canonical,
       this.lineEnding,
+      false,
+      undefined,
+      undefined,
+      [],
+      reorder,
     )
     if (marker) text = relabel(text, [0], marker)
     return this.readsAsItem(list, item, text, ast, source)
@@ -2993,7 +3020,19 @@ export class Preservation {
       : undefined
   }
 
-  serialize(doc: ProseNode): string {
+  /** `moved` holds the nodes block moves carried. A moved node that is still a
+   *  node of the loaded document keeps that node's source where it reads the
+   *  same; every other edit is saved without it. */
+  serialize(doc: ProseNode, moved?: WeakSet<ProseNode>): string {
+    this.moves = moved
+    try {
+      return this.serializeWith(doc)
+    } finally {
+      this.moves = undefined
+    }
+  }
+
+  private serializeWith(doc: ProseNode): string {
     if (this.unchanged(doc)) return this.source
     let local: string | undefined
     try {
@@ -3105,7 +3144,7 @@ export class Preservation {
     doc: ProseNode,
     positions: Array<number | undefined>,
     current: string[],
-    moved: Map<number, number>,
+    carried: Carried,
     from: number,
     to: number,
     canonical: string,
@@ -3165,124 +3204,54 @@ export class Preservation {
     for (let index = from; index < to; index++) {
       const text = current[index]!
       const position = positions[index]
-      const node = tree
-        ? positionalNode(tree.raw, transformed(index))
-        : undefined
-      // A list or quote split from an original keeps that original's items
-      // before an edited block that moved is paired with one.
-      const part =
-        position == null && node && moved.get(index) !== undefined
-          ? this.retainPart(positions, index, node, canonical, taken)
-          : undefined
-      const pairing = position ?? (part ? undefined : moved.get(index))
-      const block = pairing == null ? undefined : this.blocks[pairing]
+      const moved = carried.moved.get(index)
+      const block =
+        position == null
+          ? moved === undefined
+            ? undefined
+            : this.blocks[moved]
+          : this.blocks[position]
       gaps.push(this.gap(index, positions))
       const kind: Kept =
         block && block.form === text
           ? position == null
             ? 'moved'
             : 'unchanged'
-          : block && tree
+          : block && tree && position != null
             ? 'edited'
             : 'canonical'
       kept.push(kind)
+      const node = tree
+        ? positionalNode(tree.raw, transformed(index))
+        : undefined
       pieces.push(
-        part !== undefined && kind === 'canonical'
-          ? part
-          : kind === 'unchanged' || kind === 'moved'
-            ? this.source.slice(block!.start, block!.end)
-            : kind === 'edited'
-              ? this.retainBlock(
-                  block!,
-                  node!,
-                  canonical,
-                  position == null
-                    ? []
-                    : this.around(positions, index)
-                        .filter(
-                          (other) =>
-                            !paired.has(other) &&
-                            other.ast.type === block!.ast.type,
-                        )
-                        .flatMap((other) => other.ast.children ?? []),
-                )
-              : ((node &&
-                  this.retainPart(positions, index, node, canonical, taken)) ??
-                restoreCodeEndings(
-                  this.ctx,
-                  doc.type.create(null, [doc.child(index)]),
-                  withEnding(text, this.lineEnding),
-                )),
+        kind === 'unchanged' || kind === 'moved'
+          ? this.source.slice(block!.start, block!.end)
+          : kind === 'edited'
+            ? this.retainBlock(
+                block!,
+                node!,
+                canonical,
+                this.around(positions, index)
+                  .filter(
+                    (other) =>
+                      !paired.has(other) && other.ast.type === block!.ast.type,
+                  )
+                  .flatMap((other) => other.ast.children ?? []),
+                carried.children
+                  ? this.carriedChildren(doc.child(index), position!)
+                  : undefined,
+              )
+            : ((node &&
+                this.retainPart(positions, index, node, canonical, taken)) ??
+              restoreCodeEndings(
+                this.ctx,
+                doc.type.create(null, [doc.child(index)]),
+                withEnding(text, this.lineEnding),
+              )),
       )
     }
     return { gaps, pieces, kept }
-  }
-
-  // Pairing keeps order, so a block moved past others is left unpaired, and
-  // so is its original. Returns the original each such block takes its source
-  // from, by the block's index: the one unpaired original it equals, where its
-  // form repeats among neither. A block edited and then moved is paired with
-  // the original it was edited from when each is the only unpaired block of
-  // its type and they resemble each other as `pairSimilar` measures it, with
-  // at least half of the longer form kept at its start and end.
-  private moved(
-    doc: ProseNode,
-    positions: Array<number | undefined>,
-    current: string[],
-  ): Map<number, number> {
-    const moved = new Map<number, number>()
-    // Unpaired positions are holes, which `forEach` and `some` skip.
-    const unpaired: number[] = []
-    for (let index = 0; index < current.length; index++)
-      if (positions[index] == null) unpaired.push(index)
-    if (!unpaired.length) return moved
-    const paired = new Set(positions)
-    const originals = new Map<string, number>()
-    this.blocks.forEach((block, index) => {
-      if (!paired.has(index))
-        originals.set(block.form, originals.has(block.form) ? -1 : index)
-    })
-    if (!originals.size) return moved
-    const found = new Map<string, number>()
-    for (const index of unpaired) {
-      const form = current[index]!
-      if ((originals.get(form) ?? -1) >= 0)
-        found.set(form, found.has(form) ? -1 : index)
-    }
-    for (const [form, index] of found)
-      if (index >= 0) {
-        const original = originals.get(form)!
-        moved.set(index, original)
-        paired.add(original)
-      }
-    if (this.baseline.childCount !== this.blocks.length) return moved
-    // The one index of each type, or -1 when the type repeats.
-    const once = (indexes: number[], type: (index: number) => string) => {
-      const found = new Map<string, number>()
-      for (const index of indexes)
-        found.set(type(index), found.has(type(index)) ? -1 : index)
-      return found
-    }
-    const left = once(
-      this.blocks.flatMap((_, index) => (paired.has(index) ? [] : [index])),
-      (index) => this.baseline.child(index).type.name,
-    )
-    const edited = once(
-      unpaired.filter((index) => !moved.has(index)),
-      (index) => doc.child(index).type.name,
-    )
-    for (const [type, index] of edited) {
-      const original = left.get(type) ?? -1
-      if (index < 0 || original < 0) continue
-      const before = this.blocks[original]!.form
-      const after = current[index]!
-      if (
-        2 * similarity(before, after) >=
-        Math.max(before.length, after.length)
-      )
-        moved.set(index, original)
-    }
-    return moved
   }
 
   // The canonical Markdown of `nodes` and its parse, which locates each block
@@ -3422,7 +3391,7 @@ export class Preservation {
     doc: ProseNode,
     positions: Array<number | undefined>,
     current: string[],
-    moved: Map<number, number>,
+    carried: Carried,
     run: Run,
   ): { gaps: string[]; pieces: string[]; kept: Kept[] } {
     const from = run.previous === undefined ? 0 : run.previous + 1
@@ -3434,7 +3403,16 @@ export class Preservation {
       from === 0 && to === doc.childCount
         ? this.canonicalDocument(doc)
         : this.canonicalBlocks(doc, nodes)
-    return this.build(doc, positions, current, moved, from, to, canonical, tree)
+    return this.build(
+      doc,
+      positions,
+      current,
+      carried,
+      from,
+      to,
+      canonical,
+      tree,
+    )
   }
 
   // Saves an edit that inserts, removes, splits or joins blocks by validating
@@ -3458,8 +3436,9 @@ export class Preservation {
     const current: string[] = []
     doc.forEach((node) => current.push(this.formOf(node)))
     let positions: Array<number | undefined>
+    let carried: Carried
     try {
-      positions = correspondence(this.blockForms, current)
+      ;({ positions, carried } = this.pairing(doc, current))
     } catch {
       return undefined
     }
@@ -3472,7 +3451,6 @@ export class Preservation {
       !this.readAlone(doc, positions, runs)
     )
       return undefined
-    const moved = this.moved(doc, positions, current)
     let output = ''
     let at = 0
     for (const run of runs) {
@@ -3484,7 +3462,7 @@ export class Preservation {
         run.next === undefined
           ? this.source.length
           : this.blocks[positions[run.next]!]!.start
-      const text = this.region(doc, positions, current, moved, run)
+      const text = this.region(doc, positions, current, carried, run)
       if (text === undefined) return undefined
       output += this.source.slice(at, from) + text
       at = to
@@ -3509,7 +3487,7 @@ export class Preservation {
     doc: ProseNode,
     positions: Array<number | undefined>,
     current: string[],
-    moved: Map<number, number>,
+    carried: Carried,
     run: Run,
   ): string | undefined {
     const from = run.previous === undefined ? 0 : run.previous + 1
@@ -3525,10 +3503,11 @@ export class Preservation {
     const identity = [
       original(run.previous),
       original(run.next),
-      // Unpaired positions are holes, which `map` would keep as holes.
+      // Unpaired positions are holes, which `slice` keeps as holes.
       ...Array.from(
         { length: to - from },
-        (_, at) => positions[from + at] ?? `m${moved.get(from + at) ?? ''}`,
+        (_, at) =>
+          positions[from + at] ?? `m${carried.moved.get(from + at) ?? ''}`,
       ),
     ].join()
     const cached = this.regionEdits.get(key)
@@ -3554,7 +3533,13 @@ export class Preservation {
       index++
     )
       if (list(index) && list(index) === list(index - 1)) return undefined
-    const { gaps, pieces } = this.runPieces(doc, positions, current, moved, run)
+    const { gaps, pieces } = this.runPieces(
+      doc,
+      positions,
+      current,
+      carried,
+      run,
+    )
     let text = pieces.map((piece, index) => gaps[index] + piece).join('')
     if (run.next !== undefined) text += this.gap(run.next, positions)
     else
@@ -3657,58 +3642,32 @@ export class Preservation {
         return this.source.startsWith('\uFEFF') ? '\uFEFF' : ''
       const current: string[] = []
       doc.forEach((node) => current.push(this.formOf(node)))
-      const positions = correspondence(this.blockForms, current)
-      // Unchanged blocks keep their source and the text between them. Each
-      // run of changed blocks is written from its own canonical Markdown, or,
-      // when a run can't be read alone, every block from the whole document's.
-      const gaps = current.map((_, index) => this.gap(index, positions))
-      const pieces = positions.map((position) =>
-        position == null
-          ? ''
-          : this.source.slice(
-              this.blocks[position]!.start,
-              this.blocks[position]!.end,
-            ),
-      )
-      const runs = this.runs(positions, current)
-      const alone = this.readAlone(doc, positions, runs)
-      const attempt = (moved: Map<number, number>): string => {
-        const written = [...pieces]
-        const kept: Kept[] = current.map(() => 'unchanged')
-        for (const run of alone ? runs : [{}]) {
-          const from = run.previous === undefined ? 0 : run.previous + 1
-          const part = this.runPieces(doc, positions, current, moved, run)
-          part.pieces.forEach((piece, index) => {
-            written[from + index] = piece
-            kept[from + index] = part.kept[index]!
-          })
+      const pairing = this.pairing(doc, current)
+      const carries = pairing.carried.moved.size > 0 || pairing.carried.children
+      if (carries) {
+        // A moved block's source can read differently where it now stands,
+        // such as indented code under a list. The moved blocks are then
+        // written as an edit without the move's record writes them.
+        let output: string | undefined
+        try {
+          output = this.writeDocument(doc, current, pairing)
+        } catch {
+          output = undefined
         }
-        const previous = positions.at(-1)
-        this.separateLists(doc, written, kept, positions, current)
-        let output = written.map((piece, index) => gaps[index] + piece).join('')
-        if (previous === this.blocks.length - 1 && this.blocks.length)
-          output += this.source.slice(this.blocks[previous]!.end)
-        else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
-        // A `---` rule that opens the file reads back as front matter when
-        // another `---` line follows, whether it is new or moved there.
-        const bom = output.startsWith('\uFEFF') ? 1 : 0
-        if (
-          doc.firstChild?.type.name === 'hr' &&
-          sourceFrontmatter(output.slice(bom))?.startsWith('---')
-        )
-          output = output.slice(0, bom) + '***' + output.slice(bom + 3)
-        return output
+        if (output !== undefined && this.reopens(doc, output, canonical))
+          return output
       }
-      const moved = this.moved(doc, positions, current)
-      const output = attempt(moved)
+      const output = this.writeDocument(
+        doc,
+        current,
+        carries
+          ? {
+              positions: correspondence(this.blockForms, current),
+              carried: nothingCarried,
+            }
+          : pairing,
+      )
       if (this.reopens(doc, output, canonical)) return output
-      // A block's source can read differently where it now stands, such as
-      // indented code after a list. Writing such blocks afresh is what
-      // pairing in order alone gives.
-      if (moved.size) {
-        const fresh = attempt(new Map())
-        if (this.reopens(doc, fresh, canonical)) return fresh
-      }
       throw new PreservationError(
         'The edited Markdown cannot be reopened without changing its content',
       )
@@ -3718,5 +3677,181 @@ export class Preservation {
         cause,
       })
     }
+  }
+
+  // The whole document written from `pairing`. Unchanged blocks keep their
+  // source and the text between them. Each run of changed blocks is written
+  // from its own canonical Markdown, or, when a run can't be read alone,
+  // every block from the whole document's.
+  private writeDocument(
+    doc: ProseNode,
+    current: string[],
+    { positions, carried }: Pairing,
+  ): string {
+    const gaps = current.map((_, index) => this.gap(index, positions))
+    const pieces = positions.map((position) =>
+      position == null
+        ? ''
+        : this.source.slice(
+            this.blocks[position]!.start,
+            this.blocks[position]!.end,
+          ),
+    )
+    const kept: Kept[] = current.map(() => 'unchanged')
+    const runs = this.runs(positions, current)
+    for (const run of this.readAlone(doc, positions, runs) ? runs : [{}]) {
+      const from = run.previous === undefined ? 0 : run.previous + 1
+      const written = this.runPieces(doc, positions, current, carried, run)
+      written.pieces.forEach((piece, index) => {
+        pieces[from + index] = piece
+        kept[from + index] = written.kept[index]!
+      })
+    }
+    const previous = positions.at(-1)
+    this.separateLists(doc, pieces, kept, positions, current)
+    let output = pieces.map((piece, index) => gaps[index] + piece).join('')
+    if (previous === this.blocks.length - 1 && this.blocks.length)
+      output += this.source.slice(this.blocks[previous]!.end)
+    else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
+    // A `---` rule that opens the file reads back as front matter when
+    // another `---` line follows, whether it is new or moved there.
+    const bom = output.startsWith('\uFEFF') ? 1 : 0
+    if (
+      doc.firstChild?.type.name === 'hr' &&
+      sourceFrontmatter(output.slice(bom))?.startsWith('---')
+    )
+      output = output.slice(0, bom) + '***' + output.slice(bom + 3)
+    return output
+  }
+
+  // Where each baseline block sits in the baseline, by node: its index among
+  // the top-level blocks, then among the children of each block above it.
+  private originIndex(): WeakMap<ProseNode, number[]> {
+    if (this.origins) return this.origins
+    const origins = new WeakMap<ProseNode, number[]>()
+    const visit = (node: ProseNode, path: number[]) =>
+      node.forEach((child, _, index) => {
+        const at = [...path, index]
+        origins.set(child, at)
+        if (!child.isTextblock && !child.isLeaf && child.type.name !== 'table')
+          visit(child, at)
+      })
+    visit(this.baseline, [])
+    return (this.origins = origins)
+  }
+
+  // Pairs the current blocks with the originals. Without block moves, this is
+  // `correspondence`. A top-level block a move carried, that is still a node
+  // of the baseline, is paired with its own original before the others are
+  // matched, so a copy of its text elsewhere can't take its source or give it
+  // another's. Back beside a neighbor it had in the source, it is paired in
+  // place, as if it had not moved; otherwise it keeps its source as a moved
+  // block.
+  private pairing(doc: ProseNode, current: string[]): Pairing {
+    const moves = this.moves
+    if (!moves || this.baseline.childCount !== this.blocks.length)
+      return {
+        positions: correspondence(this.blockForms, current),
+        carried: nothingCarried,
+      }
+    const origins = this.originIndex()
+    const pinned = new Map<number, number>()
+    doc.forEach((node, _, index) => {
+      if (moves.has(node)) {
+        const origin = origins.get(node)
+        if (origin?.length === 1) pinned.set(index, origin[0]!)
+      }
+    })
+    if (!pinned.size)
+      return {
+        positions: correspondence(this.blockForms, current),
+        carried: { moved: pinned, children: true },
+      }
+    const taken = new Set(pinned.values())
+    const before = this.blocks.flatMap((_, index) =>
+      taken.has(index) ? [] : [index],
+    )
+    const after = current.flatMap((_, index) =>
+      pinned.has(index) ? [] : [index],
+    )
+    const matched = correspondence(
+      before.map((index) => this.blockForms[index]!),
+      after.map((index) => current[index]!),
+    )
+    const positions: Array<number | undefined> = new Array(current.length)
+    after.forEach((index, at) => {
+      const match = matched[at]
+      if (match !== undefined) positions[index] = before[match]
+    })
+    // The paired original after each current block, so a moved block back in
+    // its own place is paired there, as if it had not moved.
+    const next: number[] = new Array(current.length)
+    let following = this.blocks.length
+    for (let index = current.length - 1; index >= 0; index--) {
+      next[index] = following
+      if (positions[index] !== undefined) following = positions[index]!
+    }
+    const moved = new Map<number, number>()
+    let last = -1
+    for (let index = 0; index < current.length; index++) {
+      const origin = pinned.get(index)
+      if (origin === undefined) {
+        if (positions[index] !== undefined) last = positions[index]!
+      } else if (
+        origin > last &&
+        origin < next[index]! &&
+        // Beside the block it followed or preceded in the source, so back in
+        // its own place.
+        (index === 0
+          ? origin === 0
+          : positions[index - 1] === origin - 1 ||
+            positions[index + 1] === origin + 1)
+      ) {
+        positions[index] = origin
+        last = origin
+      } else moved.set(index, origin)
+    }
+    return { positions, carried: { moved, children: true } }
+  }
+
+  // Where block moves carried the children of the current block `node`,
+  // paired with the original at `original`: for each list, quote, callout or
+  // footnote of the original, by where it starts in the source, the original
+  // index of each child a move carried, by its current index.
+  private carriedChildren(
+    node: ProseNode,
+    original: number,
+  ): Reorder | undefined {
+    const moves = this.moves
+    if (!moves || this.baseline.childCount !== this.blocks.length) return
+    const origins = this.originIndex()
+    let reorder: Reorder | undefined
+    const walk = (
+      current: ProseNode,
+      path: number[],
+      ast: SourceNode | undefined,
+    ) => {
+      if (!ast?.children || ast.position?.start.offset == null) return
+      current.forEach((child, _, index) => {
+        let from = index
+        const origin = moves.has(child) ? origins.get(child) : undefined
+        if (
+          origin?.length === path.length + 1 &&
+          origin.every((step, at) => at === path.length || step === path[at])
+        ) {
+          from = origin.at(-1)!
+          if (from !== index) {
+            reorder ??= new Map()
+            const key = parentKey(ast)
+            if (!reorder.has(key)) reorder.set(key, new Map())
+            reorder.get(key)!.set(index, from)
+          }
+        }
+        if (!child.isTextblock && !child.isLeaf && child.type.name !== 'table')
+          walk(child, [...path, from], ast.children![from])
+      })
+    }
+    walk(node, [original], this.blocks[original]!.ast)
+    return reorder
   }
 }

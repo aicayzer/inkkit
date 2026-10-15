@@ -1,5 +1,6 @@
+import { pathToFileURL } from 'node:url'
 import { expect, test } from 'vitest'
-import { parserCtx } from '@milkdown/kit/core'
+import { parserCtx, remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
   Fragment,
@@ -7,6 +8,7 @@ import {
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
 import { Transform } from '@milkdown/kit/prose/transform'
+import type { Root } from 'mdast'
 import { Preservation, PreservationError } from '../src/preserve'
 import { withEditor } from './harness'
 import { blocks, definitions, snippets } from './preservation-documents'
@@ -49,57 +51,6 @@ function wholeOnly(ctx: Ctx, source: string): Preservation {
   return full
 }
 
-// The whole-document path pairing blocks in order only, as it did before
-// blocks that change places kept their source.
-function inOrder(ctx: Ctx, source: string): Preservation {
-  const full = wholeOnly(ctx, source)
-  ;(full as unknown as { moved(): Map<number, number> }).moved = () => new Map()
-  return full
-}
-
-// The nodes whose children a move reorders.
-const movable = new Set([
-  'doc',
-  'bullet_list',
-  'ordered_list',
-  'blockquote',
-  'inkkit_callout',
-  'footnote_definition',
-])
-
-// Swaps two neighbours in a list, quote, callout, footnote or the document,
-// and sometimes deletes a top-level block too. Returns false when the
-// document has nothing to swap.
-function move(doc: ProseNode, tr: Transform, random: () => number): boolean {
-  const containers: Array<{ node: ProseNode; start: number }> = []
-  if (doc.childCount > 1) containers.push({ node: doc, start: 0 })
-  doc.descendants((node, pos) => {
-    if (movable.has(node.type.name) && node.childCount > 1)
-      containers.push({ node, start: pos + 1 })
-    return true
-  })
-  if (!containers.length) return false
-  const { node, start } = containers[Math.floor(random() * containers.length)]!
-  const index = Math.floor(random() * (node.childCount - 1))
-  let from = start
-  for (let at = 0; at < index; at++) from += node.child(at).nodeSize
-  const first = node.child(index)
-  const second = node.child(index + 1)
-  tr.replaceWith(
-    from,
-    from + first.nodeSize + second.nodeSize,
-    Fragment.from([second, first]),
-  )
-  if (random() < 0.4 && tr.doc.childCount > 2) {
-    const removed = Math.floor(random() * tr.doc.childCount)
-    let at = 0
-    for (let child = 0; child < removed; child++)
-      at += tr.doc.child(child).nodeSize
-    tr.delete(at, at + tr.doc.child(removed).nodeSize)
-  }
-  return true
-}
-
 test(
   'local validation saves exactly what whole-document preservation saves',
   () =>
@@ -107,7 +58,6 @@ test(
       const ctx = editor.ctx
       const parse = ctx.get(parserCtx)
       let localSaves = 0
-      let moves = 0
       const kinds = new Map<string, number>()
       for (let seed = 1; seed <= Number(process.env.SEEDS ?? 600); seed++) {
         let state = seed
@@ -133,34 +83,8 @@ test(
           (random() < 0.8 ? ending : '')
         const local = new Preservation(ctx, source)
         const full = wholeOnly(ctx, source)
-        const ordered = inOrder(ctx, source)
         let doc = parse(source)
         for (let step = 0; step < 4; step++) {
-          // A move made beside the text edits, from the document they have
-          // reached so far, so moved blocks can be edited ones.
-          const moving = new Transform(doc)
-          if (random() < 0.4 && move(doc, moving, random)) {
-            const moved = moving.doc
-            // Keeping moved blocks' source never refuses an edit that
-            // pairing in order alone saves, and every path saves alike.
-            let saved: string | Error
-            try {
-              saved = local.serialize(moved)
-            } catch (error) {
-              saved = error as Error
-            }
-            let before: string | Error
-            try {
-              before = ordered.serialize(moved)
-            } catch (error) {
-              before = error as Error
-            }
-            const label = `seed ${seed} step ${step}: ${JSON.stringify(source)}`
-            if (typeof before === 'string') {
-              expect(saved, label).toBeTypeOf('string')
-              moves++
-            }
-          }
           const textblocks: Array<{
             node: ProseNode
             pos: number
@@ -261,7 +185,6 @@ test(
         }
       }
       expect(localSaves).toBeGreaterThan(500)
-      expect(moves).toBeGreaterThan(200)
       for (const kind of [
         'paragraph',
         'heading',
@@ -272,8 +195,7 @@ test(
       ])
         expect(kinds.get(kind), kind).toBeGreaterThan(10)
     }),
-  // Longer runs with more seeds.
-  Math.max(120_000, Number(process.env.SEEDS ?? 600) * 100),
+  120_000,
 )
 
 // Applies `edit` to the loaded document and saves it both ways.
@@ -558,3 +480,208 @@ test('an edit in a CRLF list keeps the continuation lines of other items', () =>
     })
     expect(whole).toBe(source.replace('one', 'one!').replace('End', 'End!'))
   }))
+
+// The blocks a move reorders among themselves.
+const movable = new Set([
+  'doc',
+  'bullet_list',
+  'ordered_list',
+  'blockquote',
+  'inkkit_callout',
+  'footnote_definition',
+])
+
+// Swaps two neighbors in the note, a list, a quote, a callout or a footnote,
+// as a block move does, and returns the blocks it carried.
+function swap(
+  doc: ProseNode,
+  tr: Transform,
+  random: () => number,
+): ProseNode[] | undefined {
+  const containers: Array<{ node: ProseNode; start: number }> = []
+  if (doc.childCount > 1) containers.push({ node: doc, start: 0 })
+  doc.descendants((node, pos) => {
+    if (movable.has(node.type.name) && node.childCount > 1)
+      containers.push({ node, start: pos + 1 })
+    return node.type.name !== 'table'
+  })
+  if (!containers.length) return undefined
+  const { node, start } = containers[Math.floor(random() * containers.length)]!
+  const index = Math.floor(random() * (node.childCount - 1))
+  let from = start
+  for (let at = 0; at < index; at++) from += node.child(at).nodeSize
+  const carried = [node.child(index + 1), node.child(index)]
+  tr.replaceWith(
+    from,
+    from + carried[0]!.nodeSize + carried[1]!.nodeSize,
+    Fragment.from(carried),
+  )
+  return carried
+}
+
+// Each top-level block's source in `text`, when it reads as `count` blocks.
+function blockSources(
+  ctx: Ctx,
+  text: string,
+  count: number,
+): string[] | undefined {
+  const body = text.replace(/^﻿/, '')
+  const tree = ctx.get(remarkCtx).parse(body) as Root
+  if (tree.children.length !== count) return undefined
+  return tree.children.map((node) =>
+    body.slice(node.position!.start.offset, node.position!.end.offset),
+  )
+}
+
+// The serializer moves are compared with: by default this one without the
+// record of moved blocks, which is every other edit's path. Set
+// INKKIT_PRESERVE_REFERENCE to a copy of another version's `preserve.ts`,
+// such as `main`'s, to compare with that.
+const reference = process.env.INKKIT_PRESERVE_REFERENCE
+  ? (
+      (await import(
+        pathToFileURL(process.env.INKKIT_PRESERVE_REFERENCE).href
+      )) as {
+        Preservation: typeof Preservation
+      }
+    ).Preservation
+  : Preservation
+
+test(
+  'block moves save wherever saving without them does, and leave other blocks as it does',
+  () =>
+    withEditor('x\n', (editor) => {
+      const ctx = editor.ctx
+      let compared = 0
+      let checked = 0
+      for (let seed = 1; seed <= Number(process.env.SEEDS ?? 600); seed++) {
+        let state = seed
+        const random = () =>
+          (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32
+        const pick = <T>(list: T[]) => list[Math.floor(random() * list.length)]!
+        const ending = random() < 0.3 ? '\r\n' : '\n'
+        const parts = Array.from(
+          { length: 3 + Math.floor(random() * 10) },
+          (_, i) => pick(blocks)(i),
+        )
+        // Copies of a block, in another spelling or the same.
+        if (random() < 0.3)
+          parts.push(
+            pick(['__same__', '**same**', '   same', '- same', '* same']),
+            pick(['__same__', '**same**', '   same', '- same', '* same']),
+          )
+        if (random() < 0.5) parts.splice(1, 0, pick(definitions))
+        if (random() < 0.1) parts.unshift('---\ntitle: front\n---')
+        const source =
+          parts.join('\n\n').replaceAll('\n', ending) +
+          (random() < 0.8 ? ending : '')
+        const own = new Preservation(ctx, source)
+        const other = new reference(ctx, source)
+        const carried = new WeakSet<ProseNode>()
+        const original = new Map<ProseNode, number>()
+        own.baseline.forEach((node, _, index) => original.set(node, index))
+        const authored = blockSources(ctx, source, own.baseline.childCount)
+        let doc = own.baseline
+        for (let step = 0; step < 5; step++) {
+          const tr = new Transform(doc)
+          const schema = doc.type.schema
+          const action = random()
+          try {
+            if (action < 0.55) {
+              const nodes = swap(doc, tr, random)
+              if (!nodes) continue
+              for (const node of nodes) carried.add(node)
+              // Sometimes another block goes in the same step.
+              if (random() < 0.3 && tr.doc.childCount > 2) {
+                const removed = Math.floor(random() * tr.doc.childCount)
+                let at = 0
+                for (let child = 0; child < removed; child++)
+                  at += tr.doc.child(child).nodeSize
+                tr.delete(at, at + tr.doc.child(removed).nodeSize)
+              }
+            } else if (action < 0.7 && doc.childCount > 1) {
+              // A whole block deleted, or replaced by a new paragraph.
+              const removed = Math.floor(random() * doc.childCount)
+              let at = 0
+              for (let child = 0; child < removed; child++)
+                at += doc.child(child).nodeSize
+              const end = at + doc.child(removed).nodeSize
+              if (random() < 0.5) tr.delete(at, end)
+              else
+                tr.replaceWith(
+                  at,
+                  end,
+                  schema.nodes.paragraph!.create(
+                    null,
+                    schema.text(pick(['New words.', 'Project beta.'])),
+                  ),
+                )
+            } else {
+              const textblocks: Array<{ node: ProseNode; pos: number }> = []
+              doc.descendants((node, pos) => {
+                if (node.isTextblock) textblocks.push({ node, pos })
+                return true
+              })
+              if (!textblocks.length) continue
+              const target = pick(textblocks)
+              const from =
+                target.pos +
+                1 +
+                Math.floor(random() * (target.node.content.size + 1))
+              if (random() < 0.7)
+                tr.insert(
+                  from,
+                  schema.text(pick(snippets), doc.resolve(from).marks()),
+                )
+              else
+                tr.delete(
+                  from,
+                  Math.min(
+                    target.pos + 1 + target.node.content.size,
+                    from + 1 + Math.floor(random() * 4),
+                  ),
+                )
+            }
+          } catch {
+            continue
+          }
+          doc = tr.doc
+          let saved: string | Error
+          try {
+            saved = own.serialize(doc, carried)
+          } catch (error) {
+            saved = error as Error
+          }
+          let expected: string | Error
+          try {
+            expected = other.serialize(doc)
+          } catch (error) {
+            expected = error as Error
+          }
+          const label = `seed ${seed} step ${step}: ${JSON.stringify(source)}`
+          if (typeof expected !== 'string') continue
+          compared++
+          expect(saved, label).toBeTypeOf('string')
+          // A block of the loaded note that no move carried and no edit
+          // reached keeps its own source, or is written as saving without
+          // moves writes it, such as a list given another marker so that it
+          // doesn't join its neighbor.
+          const mine = blockSources(ctx, saved as string, doc.childCount)
+          const theirs = blockSources(ctx, expected, doc.childCount)
+          if (!mine || !theirs || !authored) continue
+          checked++
+          doc.forEach((node, _, index) => {
+            const from = original.get(node)
+            if (from === undefined || carried.has(node)) return
+            if (mine[index] !== authored[from])
+              expect(mine[index], `${label}, block ${index}`).toBe(
+                theirs[index],
+              )
+          })
+        }
+      }
+      expect(compared).toBeGreaterThan(1000)
+      expect(checked).toBeGreaterThan(800)
+    }),
+  Math.max(120_000, Number(process.env.SEEDS ?? 600) * 100),
+)
