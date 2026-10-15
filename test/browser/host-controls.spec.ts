@@ -192,8 +192,8 @@ test('task markers retain their gutter, tick offset and click target when scaled
           root.style.setProperty('--inkkit-font-size', `${size}px`),
         size,
       )
-    // The click below uses viewport coordinates, which miss a marker below
-    // the fold; the playground is taller where the default fonts are.
+    // The click below uses viewport coordinates, so the marker must be on
+    // screen; with Linux default fonts it starts below the fold.
     await task.scrollIntoViewIfNeeded()
     const marker = await task.evaluate((node) => {
       const style = getComputedStyle(node, '::before')
