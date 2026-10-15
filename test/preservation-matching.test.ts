@@ -227,7 +227,7 @@ test('swapping two adjacent lists and editing both still saves', () =>
     )
   }))
 
-test('moved blocks are rewritten canonically while everything between them keeps its source', () => {
+test('moved blocks keep their source, and so does everything between them', () => {
   const plain = (i: number) => `Plain ${i}`
   const before = Array.from({ length: 1000 }, (_, i) =>
     i % 10 === 0 ? plain(i) : authored(i),
@@ -236,13 +236,8 @@ test('moved blocks are rewritten canonically while everything between them keeps
   ;[after[100], after[900]] = [after[900]!, after[100]!]
   const run = after.splice(600, 5)
   after.splice(300, 0, ...run)
-  // A moved block has no source to retain once it leaves its place.
-  const moved = new Set(run)
-  const expected = after.map((block) =>
-    moved.has(block) ? block.replaceAll('__', '**') : block,
-  )
   return withEditor(join(before), (editor) => {
-    saveAs(editor.ctx, join(before), join(after), join(expected))
+    saveAs(editor.ctx, join(before), join(after), join(after))
   })
 }, 60_000)
 
