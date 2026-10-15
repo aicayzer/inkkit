@@ -10,6 +10,7 @@ import {
   paragraphSchema,
   remarkInlineLinkPlugin,
   syncHeadingIdPlugin,
+  createCodeBlockInputRule,
 } from '@milkdown/kit/preset/commonmark'
 import {
   extendListItemSchemaForTask,
@@ -63,6 +64,7 @@ import {
   fencedCodeHandler,
 } from './code-fences'
 import { literalBlock, createLiteralPreservation } from './literals'
+import { checkedParser } from './parser'
 import {
   imageAttrs,
   imageBlockName,
@@ -75,6 +77,11 @@ import { callouts, remarkCalloutsPlugin } from './callouts'
 import { inlineHighlight } from './inline-highlight'
 import { comments, remarkCommentsPlugin } from './comments'
 import { hiddenCommentEditing } from './hidden-comments'
+import {
+  codeBlockInputRule,
+  authoredSourcesCtx,
+  joinKeepingSourceKeymap,
+} from './block-conversion'
 import { gfmTableFromMarkdown, gfmTableToMarkdown } from 'mdast-util-gfm-table'
 import { gfmTable } from 'micromark-extension-gfm-table'
 import type { Link, Nodes, Parents, PhrasingContent } from 'mdast'
@@ -448,12 +455,14 @@ export const remarkDialectPlugin = $remark('remarkDialect', () => remarkDialect)
 // Reference links retain their authored form instead of expanding to inline links. The preset's
 // heading ID plugin follows every heading edit with a second transaction that only rewrites the
 // ID attribute, so one edit would count as two revisions; the heading schema's own ID fallback
-// still names headings in the DOM, and saved Markdown never carries the attribute.
+// still names headings in the DOM, and saved Markdown never carries the attribute. InkKit's own
+// rule makes code blocks from typed fences.
 const commonmarkWithLiteralReferences = commonmark.filter(
   (plugin) =>
     !remarkInlineLinkPlugin.includes(plugin) &&
     plugin !== hardbreakClearMarkPlugin &&
-    plugin !== syncHeadingIdPlugin,
+    plugin !== syncHeadingIdPlugin &&
+    plugin !== createCodeBlockInputRule,
 )
 
 // A line break inserted inside formatting does not take its marks, and no
@@ -790,6 +799,9 @@ export function createDialect(
     hiddenCommentEditing,
     inlineHighlight,
     preservingCodeBlocks,
+    authoredSourcesCtx,
+    codeBlockInputRule,
+    joinKeepingSourceKeymap,
     preserveSpacerParagraphs,
     visibleSoftbreaks,
     normalizedImages,
@@ -806,6 +818,7 @@ export function createDialect(
     remarkDialectPlugin,
     tables,
     literalBlock,
+    checkedParser,
   ].flat()
 }
 
