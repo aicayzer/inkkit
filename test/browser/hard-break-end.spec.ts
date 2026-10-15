@@ -259,3 +259,36 @@ test('a pending break accepts spaces and Unicode text after formatted text', asy
   await saved(page, '**Run now**\\\n&#x20;café🙂\n')
   await reopen(page, '**Run now**\\\n&#x20;café🙂\n')
 })
+
+for (const ending of ['\n', '\r\n']) {
+  for (const underline of ['=====', '---']) {
+    for (const title of ['Title', 'One\nTitle']) {
+      test(`setext break ${JSON.stringify([ending, underline, title])} saves and undoes`, async ({
+        page,
+        openFixture,
+      }) => {
+        await openFixture()
+        const note = (body: string, rule = underline) =>
+          `Untouched __before__.\n\n${body}\n${rule}\n\nUntouched _after_.\n`.replaceAll(
+            '\n',
+            ending,
+          )
+        await load(page, note(title))
+        await caret(page, 'Title')
+        const before = (await observe(page)).textSnapshot!.text
+        await page.keyboard.press('Shift+Enter')
+        await saved(page, note(title))
+        await page.keyboard.type('z')
+        await saved(page, note(`${title}\\\nz`, underline[0]))
+        await page.keyboard.press('ControlOrMeta+z')
+        await saved(page, note(title))
+        await page.keyboard.press('ControlOrMeta+z')
+        await saved(page, note(title))
+        expect((await observe(page)).textSnapshot!.text).toBe(before)
+        await operation(page, 'redo')
+        await operation(page, 'redo')
+        await reopen(page, note(`${title}\\\nz`, underline[0]))
+      })
+    }
+  }
+}

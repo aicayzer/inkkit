@@ -17,7 +17,10 @@ function completedSource(node: ProseNode): ProseNode {
   const cached = completedLines.get(node)
   if (cached) return cached
   let result = node
-  if (node.type.name === 'paragraph') {
+  if (
+    node.type.name === 'paragraph' ||
+    (node.type.name === 'heading' && node.attrs.form === 'setext')
+  ) {
     let end = node.content.size
     for (let index = node.childCount - 1; index >= 0; index--) {
       const child = node.child(index)

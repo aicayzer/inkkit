@@ -51,6 +51,7 @@ import { storedInlineCode } from './inline-code'
 import { followsText, remarkLinkForms, type LinkForm } from './link-form'
 import { isScriptAddress } from './link-safety'
 import { sourceAttribute } from './source'
+import { htmlBreakAt } from './hard-break'
 import { ownStarts } from './source-tree'
 import {
   linkedSyntax,
@@ -413,6 +414,15 @@ function remarkDialect(this: Processor) {
       },
     ],
     handlers: {
+      heading(node, parent, state, info) {
+        const previous = state.options.setext
+        if (node.data?.inkkitSetext) state.options.setext = true
+        try {
+          return defaultHandlers.heading(node, parent, state, info)
+        } finally {
+          state.options.setext = previous
+        }
+      },
       text(node, parent, state, info) {
         const value = defaultHandlers.text(node, parent, state, info)
         // GFM trims spaces and tabs at the edges of a cell on reopening, so
@@ -481,8 +491,7 @@ const commonmarkWithLiteralReferences = commonmark.filter(
     plugin !== createCodeBlockInputRule,
 )
 
-// A line break inserted inside formatting does not take its marks, and no
-// line break takes inline code, which cannot hold one. This replaces the
+// No line break takes inline code, which cannot hold one. This replaces the
 // preset's plugin, which also cleared the marks of breaks inside newly
 // formatted text and, doing so, reset their attributes, turning a soft break
 // into a hard one, at positions read from the first step against the final
@@ -493,7 +502,6 @@ const breaksWithoutMarks = $prose(
       key: new PluginKey('inkkitBreaksWithoutMarks'),
       appendTransaction(transactions, oldState, newState) {
         if (!transactions.some((tr) => tr.docChanged)) return null
-        const inserted = transactions.some((tr) => tr.getMeta('hardbreak'))
         const start = oldState.doc.content.findDiffStart(newState.doc.content)
         if (start == null) return null
         const end = oldState.doc.content.findDiffEnd(newState.doc.content)!.b
@@ -502,8 +510,7 @@ const breaksWithoutMarks = $prose(
         newState.doc.nodesBetween(start, Math.max(start, end), (node, pos) => {
           if (node.type !== type) return
           for (const mark of node.marks)
-            if (inserted || mark.type.spec.code)
-              tr.removeMark(pos, pos + 1, mark.type)
+            if (mark.type.spec.code) tr.removeMark(pos, pos + 1, mark.type)
         })
         return tr.steps.length ? tr : null
       },
@@ -552,17 +559,40 @@ const preserveSpacerParagraphs = paragraphSchema.extendSchema(
 
 // The preset drops a terminal heading break, including an explicit HTML
 // break that can reopen. Keep the content and each break's own source form.
-const headingsWithBreaks = headingSchema.extendSchema((base) => (ctx) => ({
-  ...base(ctx),
-  toMarkdown: {
-    ...base(ctx).toMarkdown,
-    runner(state, node) {
-      state.openNode('heading', undefined, { depth: node.attrs.level })
-      state.next(node.content)
-      state.closeNode()
+const headingsWithBreaks = headingSchema.extendSchema((base) => (ctx) => {
+  const schema = base(ctx)
+  return {
+    ...schema,
+    attrs: { ...schema.attrs, form: { default: 'atx' } },
+    parseMarkdown: {
+      ...schema.parseMarkdown,
+      runner(state, node, type) {
+        // ATX headings occupy one source line; setext headings include an underline.
+        const position = node.position
+        state.openNode(type, {
+          level: node.depth,
+          form:
+            position && position.end.line > position.start.line
+              ? 'setext'
+              : 'atx',
+        })
+        state.next(node.children)
+        state.closeNode()
+      },
     },
-  },
-}))
+    toMarkdown: {
+      ...schema.toMarkdown,
+      runner(state, node) {
+        state.openNode('heading', undefined, {
+          depth: node.attrs.level,
+          data: { inkkitSetext: node.attrs.form === 'setext' },
+        })
+        state.next(node.content)
+        state.closeNode()
+      },
+    },
+  }
+})
 
 // Soft Markdown breaks still serialize as a single newline. Display the actual
 // line boundary rather than a space, so changing editor mode never joins lines.
@@ -687,10 +717,7 @@ const breakKeymap = $prose(() =>
         $from.parent.type.spec.code
       )
         return false
-      const isHTML =
-        $from.parent.type.name === 'heading' ||
-        ($from.depth > 1 &&
-          /^table_(cell|header)$/.test($from.node(-1).type.name))
+      const isHTML = htmlBreakAt($from)
       if (dispatch) {
         dispatch(
           closeHistory(state.tr)

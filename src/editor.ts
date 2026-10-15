@@ -1,3 +1,4 @@
+import { htmlBreakAt } from './hard-break'
 import {
   Editor,
   commandsCtx,
@@ -2527,6 +2528,8 @@ export class InkKitEditor {
               )) ??
           []
         const children: ProseNode[] = []
+        const isHTML =
+          !inHiddenComment && htmlBreakAt(view.state.selection.$from)
         const lines = text.replace(/\r\n?/g, '\n').split('\n')
         lines.forEach((line, index) => {
           const finalBreak = index === lines.length - 1 && line === ''
@@ -2534,11 +2537,11 @@ export class InkKitEditor {
             children.push(
               schema.nodes.hardbreak!.create(
                 {
-                  isHTML: finalBreak,
+                  isHTML,
                 },
                 null,
                 // A terminal HTML spacer must remain outside emphasis to reopen as a break.
-                finalBreak ? [] : marks,
+                isHTML && finalBreak ? [] : marks,
               ),
             )
           if (line) children.push(schema.text(line, marks))
@@ -2555,7 +2558,12 @@ export class InkKitEditor {
               .scrollIntoView()
         if (!transaction) return
         // Dispatch validates after appended plugins have normalized the edit.
-        view.dispatch(transaction)
+        const isolated = lines.length > 1
+        view.dispatch(isolated ? closeHistory(transaction) : transaction)
+        if (isolated)
+          view.dispatch(
+            closeHistory(view.state.tr).setMeta('addToHistory', false),
+          )
       }
     }
   }

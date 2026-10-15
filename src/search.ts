@@ -1,3 +1,4 @@
+import { htmlBreakAt } from './hard-break'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Fragment, Slice } from '@milkdown/kit/prose/model'
 import { closeHistory } from '@milkdown/kit/prose/history'
@@ -146,14 +147,15 @@ function replacementSlice(
   if (start.parent.type.spec.code) {
     if (value) nodes.push(state.schema.text(value, marks))
   } else {
+    const isHTML = htmlBreakAt(start)
     const lines = value.split('\n')
     lines.forEach((line, index) => {
       if (index)
         nodes.push(
           state.schema.nodes.hardbreak!.create(
-            { isHTML: index === lines.length - 1 && line === '' },
+            { isHTML },
             null,
-            marks,
+            isHTML && index === lines.length - 1 && line === '' ? [] : marks,
           ),
         )
       if (line) nodes.push(state.schema.text(line, marks))
