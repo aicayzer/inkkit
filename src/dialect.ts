@@ -158,8 +158,10 @@ function writesBare(node: Link, index: number, ancestors: Parents[]): boolean {
     if (text.type !== 'text') return false
     const run = /^\S*/.exec(text.value)![0]
     // Edge spaces become character references even after punctuation. The
-    // reader would then include that punctuation in a bare address.
+    // reader would then include that punctuation in a bare address. An email
+    // address stops at the reference, so it stays bare.
     if (
+      !node.url.startsWith('mailto:') &&
       blocks.has(parent.type) &&
       parent.children.at(-1) === text &&
       /^[ \t]+$/.test(text.value.slice(run.length))

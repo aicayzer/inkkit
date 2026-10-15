@@ -63,6 +63,14 @@ for (const [source, saved] of [
       await saves(editor, source)
     }))
 
+test('punctuation and a trailing space after an email address keep it bare', () =>
+  session('Mail ada@example.com\n', async (editor) => {
+    caret(editor, 'example.com')
+    editor.insertText('.', 1)
+    editor.insertText(' ', 1)
+    await saves(editor, 'Mail ada@example.com.&#x20;\n')
+  }))
+
 for (const text of [
   ' see http://x.com',
   ' (www.example.com). ',
