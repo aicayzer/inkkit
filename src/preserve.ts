@@ -1698,7 +1698,6 @@ function withoutHeadingId(node: ProseNode): ProseNode {
     : node
 }
 
-
 const MATCHING_BUDGET = 1_000_000
 const SIMILARITY_BUDGET = 4_000_000
 
