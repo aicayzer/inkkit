@@ -4,6 +4,32 @@ Editability, text-input preferences, command availability and mount-time labels/
 
 InkKit supplies document editing and portable exports. Your app supplies its interface, files and storage. Use exports from `@aicayzer/inkkit`; hosts do not import Milkdown or ProseMirror internals. The [API reference](api.md) defines errors and asynchronous contracts, and [preservation](preservation.md) explains source and clipboard fidelity.
 
+## Supported engines
+
+InkKit supports these engines. Each version is the oldest in which every API below, except the optional one, works as designed.
+
+| Engine                                     | Oldest supported version                         |
+| ------------------------------------------ | ------------------------------------------------ |
+| WebKit: Safari and `WKWebView`             | 17.5, the WebKit in iOS 17.5 and macOS 14.5      |
+| Chromium: Chrome, Edge and Android WebView | 123                                              |
+| Firefox                                    | 125. CI does not run Firefox, so it is untested. |
+
+The versions come from these APIs. Each one shipped in at least one engine after 2022:
+
+| API                                                                                                           | WebKit | Chromium | Firefox | Below that version                                                                                   |
+| ------------------------------------------------------------------------------------------------------------- | ------ | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| [`Intl.Segmenter`](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/Segmenter) | 14.1   | 87       | 125     | The editor does not load.                                                                            |
+| Regular expression lookbehind assertions                                                                      | 16.4   | 62       | 78      | The editor does not load.                                                                            |
+| ES2022 class static blocks                                                                                    | 16.4   | 94       | 93      | The editor does not load.                                                                            |
+| CSS [`light-dark()`](https://developer.mozilla.org/docs/Web/CSS/color_value/light-dark)                       | 17.5   | 123      | 120     | Code text takes the editor text color until the host sets the `--inkkit-code-*` tokens.              |
+| CSS [`color-mix()`](https://developer.mozilla.org/docs/Web/CSS/color_value/color-mix)                         | 16.2   | 111      | 113     | Muted text, rules, code backgrounds and the selection lose their default colors.                     |
+| CSS [`:has()`](https://developer.mozilla.org/docs/Web/CSS/:has)                                               | 15.4   | 105      | 121     | A small image preview is not widened to its minimum size.                                            |
+| [CSS Custom Highlight API](https://developer.mozilla.org/docs/Web/API/CSS_Custom_Highlight_API)               | 17.2   | 105      | 149     | Optional. The engine draws its own selection, which also fills the margins beside the selected text. |
+
+Versions are from MDN browser compatibility data 8.1.5. `CSS.highlights` arrived in Firefox 140, but the `::highlight()` styling InkKit needs arrived in 149, so InkKit checks for both.
+
+Declare UTF-8 in the page that loads InkKit, for example with `<meta charset="utf-8">`. The bundle contains non-ASCII text, and WebKit reads an undeclared single-file page as Latin-1, which stops the script from loading.
+
 ## A simple writing tool
 
 A small host can mount the editor without an image adapter or custom toolbar. The event handlers connect to the host's own controls, link handling and clipboard. This example uses the core entry, which leaves Mermaid out of the build and keeps diagrams as editable source; see [Builds without diagrams](api.md#builds-without-diagrams).

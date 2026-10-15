@@ -53,7 +53,7 @@ Development-only `window.inkkitPlayground` exposes `fixtures`, `configurations`,
 
 ## Browser selection and diagnostics
 
-Use Playwright's [standard CLI](https://playwright.dev/docs/test-cli), reports and [trace viewer](https://playwright.dev/docs/trace-viewer). List tests before selecting a regression. Keep the small Chromium smoke as the candidate baseline, then select cases for the changed contract; do not multiply every fixture, configuration, adapter and browser.
+Use Playwright's [standard CLI](https://playwright.dev/docs/test-cli), reports and [trace viewer](https://playwright.dev/docs/trace-viewer). List tests before selecting a regression. CI runs the whole suite in Chromium and WebKit. Locally, start from the small Chromium smoke, then select cases for the changed contract; do not multiply every fixture, configuration, adapter and browser.
 
 ```sh
 pnpm exec playwright test --list

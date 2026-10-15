@@ -17,6 +17,10 @@ npm install @aicayzer/inkkit
 
 An app that does not render diagrams can import from `@aicayzer/inkkit/core` instead. That entry leaves Mermaid out of the app's bundle and keeps diagrams as editable source. See [Builds without diagrams](docs/api.md#builds-without-diagrams).
 
+## Supported engines
+
+InkKit supports Safari and `WKWebView` 17.5 or later (iOS 17.5, macOS 14.5), Chrome and Edge 123 or later, and Firefox 125 or later. The host page must declare UTF-8. See [Supported engines](docs/integration.md#supported-engines) for the APIs behind these versions.
+
 ## Use
 
 ```ts

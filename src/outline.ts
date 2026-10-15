@@ -5,13 +5,8 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { clipboardText } from './clipboard'
 import { revealCalloutAncestors } from './callouts'
-import { InkKitError, type DocumentVersion } from './types'
+import { InkKitError, type DocumentVersion, type Heading } from './types'
 
-export interface Heading extends Readonly<DocumentVersion> {
-  readonly id: string
-  readonly level: number
-  readonly text: string
-}
 /** The document version headings are read from, and the session key that names it and its mode. */
 export interface OutlineContext extends DocumentVersion {
   key: string
