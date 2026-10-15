@@ -133,11 +133,14 @@ describe('a block that cannot be built is kept as source', () => {
         )
         caretAfter(ctx, 'Before.')
         expect(editor.insertText(' Less', 1)).toBe(true)
-        expect(editor.snapshot().text).toBe(
-          source
-            .replace('Before.', 'Before. Less')
-            .replace('After.', 'After. More'),
-        )
+        const saved = source
+          .replace('Before.', 'Before. Less')
+          .replace('After.', 'After. More')
+        expect(editor.snapshot().text).toBe(saved)
+        // Reopening what was saved keeps the block as source again.
+        load(editor, saved, 2)
+        expect(editor.snapshot(2).text).toBe(saved)
+        expect(root.querySelectorAll('pre.literal-markdown')).toHaveLength(1)
       })
     }
   })
