@@ -90,6 +90,7 @@ import {
   type Transaction,
 } from '@milkdown/kit/prose/state'
 import { $prose, callCommand, type $UserKeymap } from '@milkdown/kit/utils'
+import { literalEnter, literalReread } from './literal-edits'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
 import { labelsCtx, defaultLabels } from './labels'
 import { createDialect, serialize, stringifyOptions } from './dialect'
@@ -2764,6 +2765,8 @@ export class InkKitEditor {
       .use(taskListPlugin)
       .use(quoteBackspace)
       .use(calloutEnter)
+      .use(literalEnter)
+      .use(literalReread)
       .use(listItemBackspace)
       .use(listItemShiftTab)
       .use(nestedItemEnter)
