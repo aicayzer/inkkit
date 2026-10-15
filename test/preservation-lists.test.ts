@@ -141,6 +141,18 @@ test.each([
     '> - a\n>\n> * b\n>\n> End\n',
     '> - a\n>\n> * b\n>\n> End\n',
   ],
+  [
+    'a paragraph after the last quoted list',
+    '> * a\n> * b\n',
+    '> * a\n> * b\n>\n> para\n',
+    '> * a\n> * b\n>\n> para\n',
+  ],
+  [
+    'an empty paragraph after the last list in a callout',
+    '> [!NOTE]\n> * a\n> * b\n',
+    '> [!NOTE]\n> * a\n> * b\n>\n> <br />\n',
+    '> [!NOTE]\n> * a\n> * b\n>\n> <br />\n',
+  ],
 ])('%s inside a container saves', (_, before, after, expected) =>
   withEditor('x\n', (editor) => {
     expect(save(editor.ctx, before, after)).toBe(expected)
