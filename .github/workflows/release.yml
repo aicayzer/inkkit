@@ -11,19 +11,14 @@ jobs:
   tag:
     runs-on: ubuntu-latest
     steps:
-      # Full history, so the main branch is available for the ancestry check.
+      # Full history includes main and any explicit maintenance release branch.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Check the tag names the package version
         run: node -e "const p=require('./package.json');if(process.env.GITHUB_REF_NAME!=='v'+p.version){console.error('::error::Tag '+process.env.GITHUB_REF_NAME+' does not match package.json version '+p.version);process.exit(1)}"
-      - name: Check the tagged commit is on main
-        run: |
-          commit=$(git rev-parse "$GITHUB_REF^{commit}")
-          if ! git merge-base --is-ancestor "$commit" origin/main; then
-            echo "::error::Tagged commit $commit is not on main"
-            exit 1
-          fi
+      - name: Check the release source
+        run: node scripts/check-release-source.mjs
 
   checks:
     needs: tag
@@ -32,8 +27,8 @@ jobs:
   publish:
     needs: [tag, checks]
     runs-on: ubuntu-latest
-    # The environment accepts only v* tags, and npm accepts only this
-    # environment, so a workflow edited on a branch cannot publish.
+    # The environment accepts only v* tags; the tag ruleset limits who can
+    # create them. Every publication also requires source validation and CI.
     environment: npm
     permissions:
       contents: read
