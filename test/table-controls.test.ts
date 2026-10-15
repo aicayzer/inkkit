@@ -436,3 +436,114 @@ test('the controls highlight a line and never select one', () =>
     collapsed()
     expect(highlighted()).toEqual([])
   }))
+
+// The facade call's events go out before a control returns, so the caret has
+// to be in place inside the call: a host that edits from `changed` must not
+// meet the move command's selected row.
+const grid =
+  '| A | B | C |\n| - | - | - |\n| a | b | c |\n| d | e | f |\n| g | h | i |\n'
+
+async function mountGrid(
+  onChanged: (editor: InkKitEditor, ctx: Ctx) => void = () => {},
+) {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const seen: string[] = []
+  let editor!: InkKitEditor
+  let ctx!: Ctx
+  const record = () => {
+    const { selection } = ctx.get(editorViewCtx).state
+    seen.push(
+      selection instanceof TextSelection && selection.empty
+        ? 'caret'
+        : selection.constructor.name,
+    )
+  }
+  editor = await InkKitEditor.mount(root, {
+    changed() {
+      record()
+      onChanged(editor, ctx)
+    },
+    commandStateChanged: () => record(),
+  })
+  ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  editor.loadDocument({ ...input, generation: 5, text: grid })
+  seen.length = 0
+  return {
+    root,
+    editor,
+    ctx,
+    seen,
+    async destroy() {
+      await editor.destroy()
+      root.remove()
+    },
+  }
+}
+
+/** The caret at the start of a cell's text. */
+function caretAtStart(ctx: Ctx, row: number, column: number) {
+  caret(ctx, row, column)
+  const view = ctx.get(editorViewCtx)
+  const { $head } = view.state.selection
+  view.dispatch(
+    view.state.tr.setSelection(
+      TextSelection.create(view.state.doc, $head.start()),
+    ),
+  )
+}
+
+test('the events of an arrow-key move see a caret, so an edit from changed types into one cell', async () => {
+  let inserted = false
+  const grid = await mountGrid((editor) => {
+    // Once, for the move's own change.
+    if (inserted) return
+    inserted = true
+    editor.insertText('Z', editor.snapshot().generation)
+  })
+  try {
+    caretAtStart(grid.ctx, 3, 1)
+    const row = control(grid.root, 'Move row')
+    row.focus()
+    grid.seen.length = 0
+    inserted = false
+    press(row, 'ArrowUp')
+    expect(grid.seen.length).toBeGreaterThan(0)
+    expect(grid.seen.every((kind) => kind === 'caret')).toBe(true)
+    expect(grid.editor.snapshot().text).toBe(
+      '| A | B | C |\n| - | - | - |\n| a | b | c |\n| g | Zh | i |\n| d | e | f |\n',
+    )
+  } finally {
+    await grid.destroy()
+  }
+})
+
+test('the events of a drag see a caret', async () => {
+  const grid = await mountGrid()
+  try {
+    caretAtStart(grid.ctx, 1, 1)
+    const row = control(grid.root, 'Move row')
+    const pointer = (type: string, clientY: number) =>
+      row.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          button: 0,
+          pointerId: 1,
+          clientX: 0,
+          clientY,
+        }),
+      )
+    grid.seen.length = 0
+    pointer('pointerdown', 0)
+    // Without layout every row is at 0, so a drag downwards ends below the last.
+    pointer('pointermove', 50)
+    pointer('pointerup', 50)
+    expect(grid.editor.snapshot().text).toBe(
+      '| A | B | C |\n| - | - | - |\n| d | e | f |\n| g | h | i |\n| a | b | c |\n',
+    )
+    expect(grid.seen.length).toBeGreaterThan(0)
+    expect(grid.seen.every((kind) => kind === 'caret')).toBe(true)
+  } finally {
+    await grid.destroy()
+  }
+})

@@ -589,8 +589,11 @@ export class TableBlockView implements NodeView {
     this.close()
     this.highlight(undefined)
     this.from(cell)
-    const done = this.run(() => tableCommand(this.ctx, action.command))
-    this.returnToText(done ? this.after(action.command, cell, base) : base)
+    const target = this.after(action.command, cell, base)
+    const done = this.run(() =>
+      this.then(tableCommand(this.ctx, action.command), target),
+    )
+    this.returnToText(done ? target : base)
   }
 
   /** Where the caret goes after a menu command on the line through `cell`:
@@ -618,6 +621,14 @@ export class TableBlockView implements NodeView {
     }
   }
 
+  /** After a command that applied, puts the caret in place within the same
+   *  facade call, so its events and any host edit they prompt see a caret,
+   *  never the cells a move command selects. */
+  private then(applied: boolean, caret: Caret): boolean {
+    if (applied) this.collapse(caret)
+    return applied
+  }
+
   private run(operation: () => boolean): boolean {
     return this.ctx.get(tableControlCtx.key)(operation)
   }
@@ -638,21 +649,21 @@ export class TableBlockView implements NodeView {
     const cell = this.engage()
     if (!this.editable || !cell) return
     this.from(cell)
-    if (!this.run(() => tableCommand(this.ctx, command))) return
-    // The control, the highlight and the caret follow the moved line. The
-    // command selects the moved cells; the caret replaces that selection.
+    // The control, the highlight and the caret follow the moved line.
     const index = axis === 'column' ? 'column' : 'row'
     const to = cell[index] + (/Up|Left/.test(command) ? -1 : 1)
-    this.pinned = { ...cell, [index]: to }
     const origin = this.origin ?? { cell }
-    this.origin = {
+    const caret = {
       ...origin,
       cell: {
         ...origin.cell,
         [index]: moved(origin.cell[index], cell[index], to),
       },
     }
-    this.collapse(this.origin)
+    if (!this.run(() => this.then(tableCommand(this.ctx, command), caret)))
+      return
+    this.pinned = { ...cell, [index]: to }
+    this.origin = caret
     this.highlight({ axis, index: to })
     this.refresh()
   }
@@ -760,25 +771,25 @@ export class TableBlockView implements NodeView {
     this.origin = drag.origin
     this.from(cell)
     const move = drag.axis === 'column' ? moveColCommand : moveRowCommand
-    const done = this.run(() =>
-      this.ctx
-        .get(commandsCtx)
-        .call(move.key, { from: drag.from, to: drag.to, pos: start }),
-    )
     const index = drag.axis === 'column' ? 'column' : 'row'
     const base = drag.origin ?? { cell }
-    this.hover = undefined
-    this.returnToText(
-      done
-        ? {
-            ...base,
-            cell: {
-              ...base.cell,
-              [index]: moved(base.cell[index], drag.from, drag.to),
-            },
-          }
-        : base,
+    const caret = {
+      ...base,
+      cell: {
+        ...base.cell,
+        [index]: moved(base.cell[index], drag.from, drag.to),
+      },
+    }
+    const done = this.run(() =>
+      this.then(
+        this.ctx
+          .get(commandsCtx)
+          .call(move.key, { from: drag.from, to: drag.to, pos: start }),
+        caret,
+      ),
     )
+    this.hover = undefined
+    this.returnToText(done ? caret : base)
   }
 }
 
