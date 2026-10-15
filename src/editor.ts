@@ -90,6 +90,7 @@ import {
   type Transaction,
 } from '@milkdown/kit/prose/state'
 import { $prose, callCommand, type $UserKeymap } from '@milkdown/kit/utils'
+import { literalEnter, literalReread, literalRereadKey } from './literal-edits'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
 import { labelsCtx, defaultLabels } from './labels'
 import { createDialect, serialize, stringifyOptions } from './dialect'
@@ -2713,16 +2714,29 @@ export class InkKitEditor {
           dispatchTransaction: function (this: EditorView, tr) {
             // A call whose edit was refused changes nothing more; it throws when it returns.
             if (instance.call?.refusal && tr.docChanged) return
-            const next = this.state.apply(tr)
+            const applied = this.state.applyTransaction(tr)
+            let next = applied.state
             if (!instance.loading) {
-              try {
+              const check = (doc: ProseNode) => {
                 if (!instance.literalSurface)
-                  assertHiddenCommentsKept(this.state, tr, next.doc)
-                instance.assertPreserved(
-                  this.state.doc,
-                  next.doc,
-                  isWrittenEdit(tr),
-                )
+                  assertHiddenCommentsKept(this.state, tr, doc)
+                instance.assertPreserved(this.state.doc, doc, isWrittenEdit(tr))
+              }
+              try {
+                try {
+                  check(next.doc)
+                } catch (error) {
+                  // Reading a literal block again never adds a refusal: the
+                  // edit is then made as it would be without that.
+                  if (
+                    !applied.transactions.some((step) =>
+                      step.getMeta(literalRereadKey),
+                    )
+                  )
+                    throw error
+                  next = this.state.apply(tr.setMeta(literalRereadKey, 'skip'))
+                  check(next.doc)
+                }
               } catch (error) {
                 this.updateState(this.state)
                 instance.refuse(
@@ -2764,6 +2778,8 @@ export class InkKitEditor {
       .use(taskListPlugin)
       .use(quoteBackspace)
       .use(calloutEnter)
+      .use(literalEnter)
+      .use(literalReread)
       .use(listItemBackspace)
       .use(listItemShiftTab)
       .use(nestedItemEnter)

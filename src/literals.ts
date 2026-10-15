@@ -1,4 +1,5 @@
 import { $node, $remark } from '@milkdown/kit/utils'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { editorLabels } from './labels'
 import type { Root, RootContent, Literal, Nodes } from 'mdast'
 import {
@@ -224,6 +225,21 @@ export function createLiteralPreservation(images: boolean) {
 
 export const preserveLiterals = createLiteralPreservation(false)
 
+/** The Markdown a literal block holds, up to `end` within its content. */
+export function literalSource(
+  node: ProseNode,
+  end = node.content.size,
+): string {
+  let source = ''
+  node.forEach((child, offset) => {
+    if (offset < end)
+      source += child.isText
+        ? child.text!.slice(0, end - offset)
+        : commentSource(child)
+  })
+  return source
+}
+
 export const literalBlock = $node('literal_markdown', (ctx) => ({
   group: 'block',
   content: '(text | comment_inline)*',
@@ -269,11 +285,7 @@ export const literalBlock = $node('literal_markdown', (ctx) => ({
   toMarkdown: {
     match: (node) => node.type.name === 'literal_markdown',
     runner: (state, node) => {
-      let source = ''
-      node.forEach((child) => {
-        source += child.isText ? child.text : commentSource(child)
-      })
-      state.addNode('html', undefined, source)
+      state.addNode('html', undefined, literalSource(node))
     },
   },
 }))

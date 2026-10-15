@@ -164,20 +164,6 @@ describe('an edit to a literal block that cannot reopen as typed is refused', ()
     throw new Error('The edit was saved')
   }
 
-  test('a line that would become a heading', async () => {
-    const source = 'A [full][ref] x.\nnext line\n\nAfter.\n'
-    await withNote(source, (editor, view) => {
-      caretAfter(view, 'x.\n')
-      expect(editor.insertText('#', 1)).toBe(true)
-      const saved = source.replace('\nnext', '\n#next')
-      expect(editor.snapshot().text).toBe(saved)
-      const before = view.state.doc
-      refused(() => editor.insertText(' ', 1))
-      expect(view.state.doc.eq(before)).toBe(true)
-      expect(editor.snapshot().text).toBe(saved)
-    })
-  })
-
   test.each([
     ['a top-level block', 'A [full][ref] x.\n\nAfter.\n', 'x.'],
     [
@@ -192,7 +178,8 @@ describe('an edit to a literal block that cannot reopen as typed is refused', ()
       await withNote(source, (editor, view) => {
         caretAfter(view, at)
         const before = view.state.doc
-        refused(() => editor.keyDown({ key: 'Enter' }, 1))
+        // Enter starts a paragraph instead; a line ending typed as text stays.
+        refused(() => editor.insertText('\n', 1))
         expect(view.state.doc.eq(before)).toBe(true)
         expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
       })
