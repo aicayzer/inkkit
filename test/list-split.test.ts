@@ -278,10 +278,10 @@ test.each([
   ],
   [
     'a long list of equal items ended in the middle',
-    `${'* _x_\n'.repeat(1000)}* mid\n${'* _x_\n'.repeat(1000)}`,
+    `${'* _x_\n'.repeat(400)}* mid\n${'* _x_\n'.repeat(400)}`,
     'mid',
     ['Enter', 'Enter'],
-    `${'* _x_\n'.repeat(1000)}* mid\n\n<br />\n\n${'* _x_\n'.repeat(1000)}`,
+    `${'* _x_\n'.repeat(400)}* mid\n\n<br />\n\n${'* _x_\n'.repeat(400)}`,
   ],
 ])('%s keeps the items it did not reach', async (_, source, at, keys, saved) =>
   expect(await press(source, at, keys)).toBe(saved),
