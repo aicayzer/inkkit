@@ -29,7 +29,7 @@ const outline = (page: Page) =>
         ? element.querySelector(':scope > .inkkit-callout-body')!
         : element
       const children = [...body.children].filter((child) =>
-        /^(P|BLOCKQUOTE|UL|OL|LI)$/.test(child.tagName),
+        /^(P|PRE|BLOCKQUOTE|UL|OL|LI)$/.test(child.tagName),
       )
       return children.length
         ? `${own}(${children.map(describe).join(' ')})`
@@ -166,6 +166,16 @@ const edits: [string, string, string, boolean, string[], string, string][] = [
     ['Enter', 'Enter', 'Enter', 'next'],
     '> [!NOTE]\n> - one\n> - two\n\nnext\n',
     'NOTE(ul(li(p) li(p))) p',
+  ],
+  [
+    'Enter in an empty code block in the middle of a callout',
+    '> [!NOTE]\n> a\n>\n> ```\n> ```\n>\n> b\n',
+    // The empty code block shows no text; its place is just before `b`'s line.
+    '\nb',
+    false,
+    ['Enter', 'x'],
+    '> [!NOTE]\n> a\n>\n> ```\n> \n> x\n> ```\n>\n> b\n',
+    'NOTE(p pre p)',
   ],
   [
     'Enter three times in a nested list item in a quote',

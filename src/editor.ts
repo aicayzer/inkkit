@@ -750,6 +750,7 @@ const calloutEnter = $prose(() =>
         !empty ||
         $from.depth < 2 ||
         !$from.parent.isTextblock ||
+        $from.parent.type.spec.code ||
         $from.parent.content.size > 0
       )
         return false
