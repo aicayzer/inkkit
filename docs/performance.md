@@ -193,3 +193,17 @@ The measurements ran on an M4 Pro MacBook Pro with macOS 27.0.1, in Chromium 156
 | 20 `ini` blocks of one word, each |      4,999 |   2,212 / 251 |     112 / 121 | 2,167 / 251 |   110 / 110 |
 
 Typing in the last of the 20 blocks still highlights that block, so it costs what one block at the length limit costs.
+
+## Saving an unedited document, October 15, 2026
+
+The preset's heading ID plugin gave every heading an ID after loading, which the loaded Markdown does not hold. A snapshot of an unedited document with a heading therefore rebuilt the Markdown instead of returning the loaded text. Since the plugin was removed (#241), an unedited document matches what was loaded, and its first snapshot returns the loaded text without serializing.
+
+The measurement ran on an M4 Pro MacBook Pro with macOS 27.0.1 and Node.js 26.11.0, in Vitest with jsdom, against development source. The baseline is `main` at `04b3fed`; the candidate is `main` after #241 with the fixes for #142 and #148. Each sample loads the document with `loadDocument()` and times the first `snapshot()`; code highlighting and diagram previews are off. Values are the median of three loads, in milliseconds.
+
+| Document                                | Characters | Before | After |
+| --------------------------------------- | ---------: | -----: | ----: |
+| highlight.js 11.11.2 `CHANGES.md`       |    147,983 |    659 |   1.4 |
+| prettier 3.9.9 `THIRD-PARTY-NOTICES.md` |    362,560 |  1,160 |   1.4 |
+| d3-shape 3.2.0 `README.md`              |     94,547 |    2.5 |   0.4 |
+
+Before, a document whose headings could each be checked on their own, such as the d3-shape README, already saved quickly; the others rebuilt the whole document. The prettier notices hold headings inside block quotes, which is why ignoring the IDs of top-level headings alone, as tried in #143, did not make them fast.
