@@ -2995,7 +2995,7 @@ export class Preservation {
       !count ||
       this.baseline.childCount !== this.blocks.length ||
       !doc.sameMarkup(this.baseline) ||
-      // Cheaper than pairing the blocks, and decided the same way after it.
+      // `readAlone` would refuse this after pairing; checking first skips it.
       this.definitionSources === undefined
     )
       return undefined
@@ -3196,8 +3196,9 @@ export class Preservation {
       const current: string[] = []
       doc.forEach((node) => current.push(this.formOf(node)))
       const positions = correspondence(this.blockForms, current)
-      // Unchanged blocks keep their source and the text between them; each
-      // run of changed blocks is written from its own canonical Markdown.
+      // Unchanged blocks keep their source and the text between them. Each
+      // run of changed blocks is written from its own canonical Markdown, or,
+      // when a run can't be read alone, every block from the whole document's.
       const gaps = current.map((_, index) => this.gap(index, positions))
       const pieces = positions.map((position) =>
         position == null
