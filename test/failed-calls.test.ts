@@ -243,7 +243,6 @@ test.each(scenarios)(
       root,
       {
         changed: () => sent.push('changed'),
-        stateChanged: () => sent.push('stateChanged'),
         commandStateChanged: () => sent.push('commandStateChanged'),
         error: (error) => sent.push(`error ${error.code}`),
         copy() {},
@@ -346,14 +345,13 @@ test('a call made from a state event handler leaves the host with the newest sta
   const revisions: number[] = []
   let rewrite = false
   const editor: InkKitEditor = await InkKitEditor.mount(root, {
-    changed: (markdown) => {
-      texts.push(markdown)
+    changed: ({ text }) => {
+      texts.push(text)
       if (rewrite) {
         rewrite = false
         editor.replaceSource('Rewritten\n')
       }
     },
-    stateChanged() {},
     commandStateChanged: (state) => revisions.push(state.revision),
     copy() {},
     openLink() {},

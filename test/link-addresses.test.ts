@@ -25,7 +25,6 @@ test('rendered links keep only addresses on InkKit’s list, and only those open
   document.body.append(root)
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink: (href) => opened.push(href),
   })
@@ -73,7 +72,6 @@ test('a copied link whose address is not kept pastes back as its text', async ()
   document.body.append(root)
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
   })

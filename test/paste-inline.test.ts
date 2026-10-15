@@ -11,13 +11,12 @@ import { InkKitEditor, type ClipboardInput } from '../src/index'
  */
 async function pasteAt(
   source: string,
-  input: ClipboardInput,
+  input: ClipboardInput | string,
 ): Promise<{ text: string; typed: string }> {
   const root = document.createElement('div')
   document.body.append(root)
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
   })
@@ -52,7 +51,8 @@ async function pasteAt(
         ),
       )
     }
-    await editor.paste(input)
+    if (typeof input === 'string') editor.pasteAsPlainText(input)
+    else await editor.paste(input)
     const text = editor.snapshot().text
     editor.insertText('X', 1)
     return { text, typed: editor.snapshot().text }
@@ -167,9 +167,10 @@ test('typing after a paste over a selection keeps the pasted text', async () => 
     text: 'Keep *that* text.\n',
     typed: 'Keep *thatX* text.\n',
   })
-  expect(
-    await pasteAt('Keep ‸this‸ text.\n', { text: 'that', plainText: true }),
-  ).toEqual({ text: 'Keep that text.\n', typed: 'Keep thatX text.\n' })
+  expect(await pasteAt('Keep ‸this‸ text.\n', 'that')).toEqual({
+    text: 'Keep that text.\n',
+    typed: 'Keep thatX text.\n',
+  })
   expect(
     await pasteAt('Keep ‸this‸ text.\n', { text: 'one\n\n- two' }),
   ).toEqual({

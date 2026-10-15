@@ -29,7 +29,6 @@ async function run(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
     },
@@ -37,7 +36,8 @@ async function run(
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
   try {
-    editor.loadDocument(input)
+    // An earlier generation, so that a test can load `input` again.
+    editor.loadDocument({ ...input, generation: 1 })
     await fn(editor, root, ctx)
   } finally {
     await editor.destroy()
@@ -129,7 +129,7 @@ test('range failures cannot split surrogates, remove structure or erase a hidden
     },
   ))
 
-test('scopes reject same-generation reloads, mode round trips and different editors', () =>
+test('scopes reject reloads of the same text, mode round trips and different editors', () =>
   run(async (editor) => {
     const held = range(editor, 'Title')
     editor.reloadDocument(input)
@@ -139,7 +139,7 @@ test('scopes reject same-generation reloads, mode round trips and different edit
     const mode = range(editor, 'Title')
     editor.setEditingMode('source')
     editor.setEditingMode('formatted')
-    expect(() => editor.textRangeRects(mode)).toThrow(
+    expect(() => editor.textRangesRects([mode])).toThrow(
       expect.objectContaining({ code: 'stale-document' }),
     )
     const current = range(editor, 'Title')
@@ -203,15 +203,15 @@ test.each(['md', 'txt'] as const)(
       editor.loadDocument(document)
       editor.focus()
       expect(root.contains(globalThis.document.activeElement)).toBe(true)
-      editor.reloadDocument(document)
+      editor.reloadDocument({ ...document, generation: 10 })
       expect(root.contains(globalThis.document.activeElement)).toBe(true)
-      editor.loadDocument({ ...document, documentId: 'next' })
+      editor.loadDocument({ ...document, documentId: 'next', generation: 11 })
       expect(root.contains(globalThis.document.activeElement)).toBe(false)
       const host = globalThis.document.createElement('input')
       globalThis.document.body.append(host)
       try {
         host.focus()
-        editor.loadDocument(document)
+        editor.loadDocument({ ...document, generation: 12 })
         expect(globalThis.document.activeElement).toBe(host)
         editor.focus()
         expect(root.contains(globalThis.document.activeElement)).toBe(true)
@@ -312,8 +312,8 @@ test('callout label geometry measures the title and full labels select their con
       .mockReturnValue([new DOMRect(10, 20, 120, 18)] as unknown as DOMRectList)
     try {
       const label = range(editor, 'Protected title')
-      expect(editor.textRangeRects(label)).toEqual([
-        { left: 10, top: 20, right: 130, bottom: 38, width: 120, height: 18 },
+      expect(editor.textRangesRects([label])).toEqual([
+        [{ left: 10, top: 20, right: 130, bottom: 38, width: 120, height: 18 }],
       ])
       expect(() =>
         editor.replaceTextRange(
@@ -454,16 +454,20 @@ test('reveal fits a complete wrapped range and uses a stable leading anchor for 
       new DOMRect(120, 170, 100, 18),
       new DOMRect(200, 188, 80, 18),
     ]
-    const rects = vi.spyOn(editor, 'textRangeRects').mockImplementation(() =>
-      measured.map((rect) => ({
-        left: rect.left - root.scrollLeft,
-        right: rect.right - root.scrollLeft,
-        top: rect.top - root.scrollTop,
-        bottom: rect.bottom - root.scrollTop,
-        width: rect.width,
-        height: rect.height,
-      })),
-    )
+    const rects = vi
+      .spyOn(editor, 'textRangesRects')
+      .mockImplementation((ranges) =>
+        ranges.map(() =>
+          measured.map((rect) => ({
+            left: rect.left - root.scrollLeft,
+            right: rect.right - root.scrollLeft,
+            top: rect.top - root.scrollTop,
+            bottom: rect.bottom - root.scrollTop,
+            width: rect.width,
+            height: rect.height,
+          })),
+        ),
+      )
     try {
       const target = range(editor, 'Title')
       editor.revealTextRange(target)
@@ -471,7 +475,7 @@ test('reveal fits a complete wrapped range and uses a stable leading anchor for 
       const viewport = editor.viewport().rect
       expect(
         editor
-          .textRangeRects(target)
+          .textRangesRects([target])[0]!
           .every(
             (rect) =>
               rect.top >= viewport.top &&
@@ -549,7 +553,7 @@ test('batch source geometry uses one temporary layout and freezes ordered result
       expect(append).toHaveBeenCalledTimes(1)
       expect(document.body.childElementCount).toBe(children)
       expect(result).toEqual(
-        selected.map((value) => editor.textRangeRects(value)),
+        selected.map((value) => editor.textRangesRects([value])[0]),
       )
       expect(Object.isFrozen(result)).toBe(true)
       expect(result.every(Object.isFrozen)).toBe(true)

@@ -31,7 +31,6 @@ async function open(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
       error: (error) => errors.push(error),
@@ -213,7 +212,6 @@ test('each bad argument throws invalid-argument and changes nothing', () =>
         'replaceTextRange offsets',
         () => editor.replaceTextRange({ ...range, from: bad('0') }, 'x'),
       ],
-      ['textRangeRects range', () => editor.textRangeRects(bad('range'))],
       ['textRangesRects ranges', () => editor.textRangesRects(bad(range))],
       ['visibleTextRanges id', () => editor.visibleTextRanges(bad(1))],
       [
@@ -260,7 +258,7 @@ test('async methods reject bad arguments instead of throwing', () =>
     expect(state(editor)).toEqual(before)
     expect(errors).toEqual([])
     const root = document.createElement('div')
-    const events = { changed() {}, stateChanged() {}, copy() {}, openLink() {} }
+    const events = { changed() {}, copy() {}, openLink() {} }
     for (const mount of [
       () => InkKitEditor.mount(bad(null), events),
       () => InkKitEditor.mount(root, bad(null)),
@@ -331,7 +329,6 @@ test('null stands for an omitted optional parameter or option', () =>
         markdown: omitted,
         html: omitted,
         images: omitted,
-        plainText: omitted,
       })
       expect(editor.snapshot().text).toContain('Pasted')
       expect(editor.setEditingMode('source', omitted)).toBe(true)
@@ -408,9 +405,15 @@ test('an import in progress is operation-pending', async () => {
   )
 })
 
+let commentGeneration = 100
+
 /** Loads a note with a visible comment and puts the caret inside it. */
 function inComment({ editor, view }: Session): void {
-  editor.loadDocument({ ...input, text: 'A <!--note--> B\n' })
+  editor.loadDocument({
+    ...input,
+    generation: ++commentGeneration,
+    text: 'A <!--note--> B\n',
+  })
   editor.setCommentsVisible(true)
   let at = 0
   view.state.doc.descendants((node, pos) => {
@@ -427,7 +430,10 @@ test('a facade edit that preservation refuses throws to the caller and is not al
     (session) => {
       const { editor, view, errors } = session
       for (const [name, call] of [
-        ['insertText', () => editor.insertText('-->', 1)],
+        [
+          'insertText',
+          () => editor.insertText('-->', editor.commandState().generation),
+        ],
         ['pasteAsPlainText', () => editor.pasteAsPlainText('-->')],
       ] as const) {
         inComment(session)
@@ -441,7 +447,7 @@ test('a facade edit that preservation refuses throws to the caller and is not al
       }
     },
     {},
-    { changed: (text) => changes.push(text) },
+    { changed: ({ text }) => changes.push(text) },
   )
 })
 
@@ -458,7 +464,7 @@ test('a refused format throws and is not also an event', () => {
       expect(changes).toEqual([])
     },
     {},
-    { changed: (text) => changes.push(text) },
+    { changed: ({ text }) => changes.push(text) },
   )
 })
 
@@ -467,9 +473,9 @@ test('a refused facade paste rejects, and the same edit made by the person is an
     const { editor, view, errors } = session
     inComment(session)
     const before = state(editor)
-    await expect(
-      editor.paste({ text: '-->', plainText: true }),
-    ).rejects.toEqual(code('preservation'))
+    await expect(editor.paste({ text: '-->' })).rejects.toEqual(
+      code('preservation'),
+    )
     expect(state(editor)).toEqual(before)
     expect(errors).toEqual([])
     view.dispatch(view.state.tr.insertText('-->'))
@@ -649,7 +655,7 @@ test('an exception from a host event handler goes to reportError and does not fa
         expect(editor.editable).toBe(false)
       },
       {},
-      { changed: fail, stateChanged: fail, commandStateChanged: fail },
+      { changed: fail, commandStateChanged: fail },
     )
     expect(reported.length).toBeGreaterThan(0)
     expect(reported.every((error) => error === fault)).toBe(true)

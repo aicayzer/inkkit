@@ -213,7 +213,6 @@ async function mounted(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
       error: options.error,
@@ -481,7 +480,7 @@ test('missing, failed and undecodable files provide retry without changing autho
   )
 })
 
-test('same-generation reload and source mode abort held requests; late results cannot populate the new view', async () => {
+test('reload and source mode abort held requests; late results cannot populate the new view', async () => {
   const requests: {
     context: FileContext
     complete(value: FilePresentation): void
@@ -493,7 +492,7 @@ test('same-generation reload and source mode abort held requests; late results c
     },
     async (editor, root) => {
       expect(requests).toHaveLength(1)
-      editor.reloadDocument(source)
+      editor.reloadDocument({ ...source, generation: 2 })
       expect(requests[0]!.context.signal.aborted).toBe(true)
       expect(requests).toHaveLength(2)
       requests[0]!.complete(image)

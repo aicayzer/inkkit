@@ -8,7 +8,7 @@ import { InkKitEditor } from '../src/index'
 import { tableAvailability, tableContext, tableCommands } from '../src/tables'
 import type { EditorLabels } from '../src/labels'
 
-const events = { changed() {}, stateChanged() {}, openLink() {}, copy() {} }
+const events = { changed() {}, openLink() {}, copy() {} }
 const input = { documentId: 'custom', generation: 1, format: 'md' as const }
 async function mount(labels: Partial<EditorLabels> = {}) {
   const root = document.createElement('div')

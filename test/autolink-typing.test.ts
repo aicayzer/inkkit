@@ -29,7 +29,6 @@ async function mount() {
   const errors: Error[] = []
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
     error: (error) => errors.push(error),

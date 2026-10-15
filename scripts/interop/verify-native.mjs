@@ -2095,7 +2095,7 @@ if (releaseAtLeast('0.0.9')) {
         },
         { op: 'hostFocus' },
         { op: 'viewportState', name: 'beforeReload' },
-        { op: 'reload', sameGeneration: true, source: layoutSource },
+        { op: 'reload', source: layoutSource },
         { op: 'viewportState', name: 'afterReload' },
         assert('hostFocused', true, 'afterReload'),
         {
@@ -2307,7 +2307,6 @@ if (releaseAtLeast('0.0.11')) {
         {
           op: 'reload',
           source: '__Reload__\r\n\r\n![[Photo|80]]\r\n',
-          sameGeneration: true,
         },
         assert('editingMode', 'source'),
         { op: 'editingMode', mode: 'formatted' },
@@ -2361,7 +2360,7 @@ if (releaseAtLeast('0.0.11')) {
     source: 'Before import',
     operations: [
       { op: 'startImagePaste' },
-      { op: 'reload', source: 'Replacement', sameGeneration: true },
+      { op: 'reload', source: 'Replacement' },
       { op: 'finishImagePaste', expectedError: 'stale-document' },
       assert('snapshot.text', 'Replacement'),
       { op: 'fileMode', mode: 'hold' },
