@@ -266,6 +266,9 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
         Record<string, unknown>,
       ]
       const attrs = { ...dom[1] }
+      // Milkdown's own list also allows `ftp:`; the address follows the same
+      // list as HTML import and print, so Mod-click opens nothing else.
+      if (!isSafeLinkTarget(String(mark.attrs.href ?? ''))) attrs.href = ''
       delete attrs.label
       delete attrs.identifier
       delete attrs.referenceType
@@ -504,6 +507,7 @@ export const footnoteDefinition = $node('footnote_definition', (ctx) => ({
     'div',
     {
       class: 'inkkit-footnote-definition',
+      role: 'note',
       'aria-label': `${editorLabels(ctx).footnote} ${node.attrs.label}`,
       'data-inkkit-footnote-definition': node.attrs.identifier,
       'data-inkkit-label': node.attrs.label,

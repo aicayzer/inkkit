@@ -18,7 +18,7 @@ async function run(
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+    { changed() {}, copy() {}, openLink() {} },
     {
       images: {
         presentation() {
@@ -477,24 +477,25 @@ test('outline refreshes after edits and invalidates entries after edits, mode ch
     const current = editor.headings()[0]!
     editor.loadDocument({
       documentId: 'tools',
-      generation: 4,
+      generation: 5,
       format: 'md',
       text: '# Revised\n\n## New',
     })
+    // A reload of the same text is a new generation, so the old entry is stale.
     expect(() => editor.navigateHeading(current)).toThrow(
-      'heading is no longer current',
+      expect.objectContaining({ code: 'stale-document' }),
     )
     const reloaded = editor.headings()[0]!
     editor.loadDocument({
       documentId: 'other',
-      generation: 5,
+      generation: 6,
       format: 'md',
       text: '# Revised',
     })
     expect(() => editor.navigateHeading(reloaded)).toThrow('Document changed')
     editor.loadDocument({
       documentId: 'literal',
-      generation: 6,
+      generation: 7,
       format: 'txt',
       text: '# Literal',
     })

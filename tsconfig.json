@@ -11,5 +11,12 @@
     "noEmit": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "test", "playground", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "playground",
+    "vite.config.ts",
+    "vite.package.config.ts",
+    "vitest.config.ts"
+  ]
 }

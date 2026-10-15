@@ -44,7 +44,7 @@ async function run(
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+    { changed() {}, copy() {}, openLink() {} },
     options,
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
@@ -489,7 +489,7 @@ test('resizing re-emits only that image, in the width-in-alt form, keeping wiki 
 test('copying a selected image block exports its paragraph Markdown and picture', () =>
   run(roundTrips['standalone image'], async ({ editor, view }) => {
     select(view(), imageSelected(view()))
-    const copied = await editor.clipboardSnapshot(false)
+    const copied = await editor.clipboardSnapshot('selection')
     expect(copied.markdown.trim()).toBe('![Photo](photo.png)')
     expect(copied.text).toBe('Photo')
     expect(copied.html).toMatch(/<p><img[^>]*alt="Photo"/)

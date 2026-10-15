@@ -4,6 +4,32 @@ Editability, text-input preferences, command availability and mount-time labels/
 
 InkKit supplies document editing and portable exports. Your app supplies its interface, files and storage. Use exports from `@aicayzer/inkkit`; hosts do not import Milkdown or ProseMirror internals. The [API reference](api.md) defines errors and asynchronous contracts, and [preservation](preservation.md) explains source and clipboard fidelity.
 
+## Supported engines
+
+InkKit supports these engines. Each version is the oldest in which every API below, except the optional one, works as designed.
+
+| Engine                                     | Oldest supported version                         |
+| ------------------------------------------ | ------------------------------------------------ |
+| WebKit: Safari and `WKWebView`             | 17.5, the WebKit in iOS 17.5 and macOS 14.5      |
+| Chromium: Chrome, Edge and Android WebView | 123                                              |
+| Firefox                                    | 125. CI does not run Firefox, so it is untested. |
+
+The versions come from these APIs. Each one shipped in at least one engine after 2022:
+
+| API                                                                                                           | WebKit | Chromium | Firefox | Below that version                                                                                   |
+| ------------------------------------------------------------------------------------------------------------- | ------ | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| [`Intl.Segmenter`](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/Segmenter) | 14.1   | 87       | 125     | The editor does not load.                                                                            |
+| Regular expression lookbehind assertions                                                                      | 16.4   | 62       | 78      | The editor does not load.                                                                            |
+| ES2022 class static blocks                                                                                    | 16.4   | 94       | 93      | The editor does not load.                                                                            |
+| CSS [`light-dark()`](https://developer.mozilla.org/docs/Web/CSS/color_value/light-dark)                       | 17.5   | 123      | 120     | Code text takes the editor text color until the host sets the `--inkkit-code-*` tokens.              |
+| CSS [`color-mix()`](https://developer.mozilla.org/docs/Web/CSS/color_value/color-mix)                         | 16.2   | 111      | 113     | Muted text, rules, code backgrounds and the selection lose their default colors.                     |
+| CSS [`:has()`](https://developer.mozilla.org/docs/Web/CSS/:has)                                               | 15.4   | 105      | 121     | A small image preview is not widened to its minimum size.                                            |
+| [CSS Custom Highlight API](https://developer.mozilla.org/docs/Web/API/CSS_Custom_Highlight_API)               | 17.2   | 105      | 149     | Optional. The engine draws its own selection, which also fills the margins beside the selected text. |
+
+Versions are from MDN browser compatibility data 8.1.5. `CSS.highlights` arrived in Firefox 140, but the `::highlight()` styling InkKit needs arrived in 149, so InkKit checks for both.
+
+Declare UTF-8 in the page that loads InkKit, for example with `<meta charset="utf-8">`. The bundle contains non-ASCII text, and WebKit reads an undeclared single-file page as Latin-1, which stops the script from loading.
+
 ## A simple writing tool
 
 A small host can mount the editor without an image adapter or custom toolbar. The event handlers connect to the host's own controls, link handling and clipboard. This example uses the core entry, which leaves Mermaid out of the build and keeps diagrams as editable source; see [Builds without diagrams](api.md#builds-without-diagrams).
@@ -35,7 +61,7 @@ The example's optional presentation switches require 0.0.11. Omit them to retain
 
 ## A richer document app
 
-Pass an adapter for image presentation, import and portable export. Observe command availability to enable native menus or toolbar buttons; keep the existing caret event for active formatting. The host owns localisation and controls outside the editor.
+Pass an adapter for image presentation, import and portable export. Observe `commandStateChanged` to enable native menus or toolbar buttons and to show active formatting from its `caret`. The host owns localisation and controls outside the editor.
 
 ```ts
 import {
@@ -84,7 +110,7 @@ After loading, `editor.commandState(1)` returns current availability without cha
 
 Keep the search field and match list in the host. Capture `editor.textSnapshot()` and search its readable `text`; carry its `snapshotId` with every UTF-16 match range. A selection-only search result can call `selectTextRange()` without taking focus away from the host field. Use explicit reveal/navigation when the user asks to visit a result. Capture fresh ranges after edits, mode changes, reloads or document replacement. Handle stale-range rejection rather than reusing old offsets.
 
-Supply your own scroll container and header/search-bar insets through `setViewport()`. Geometry and drop coordinates use client CSS pixels; translate them into native coordinates in the host. The editor owns no header rendering, toolbar layout or native search UI. `textRangeRects()` and `visibleTextRanges()` are demand-driven; they do not require a stream of per-character geometry across the bridge.
+Supply your own scroll container and header/search-bar insets through `setViewport()`. Geometry and drop coordinates use client CSS pixels; translate them into native coordinates in the host. The editor owns no header rendering, toolbar layout or native search UI. `textRangesRects()` and `visibleTextRanges()` are demand-driven; they do not require a stream of per-character geometry across the bridge.
 
 Loading a document does not grab focus or scroll a browsing host to a caret. External reload preserves valid selection, scrolling and focus. Explicit navigation reveals the target using the same inset-aware viewport on formatted and source/TXT surfaces. See the [API contract](api.md#native-readable-text-and-layout) for readable text, protected ranges and coordinate semantics.
 
@@ -92,7 +118,7 @@ Loading a document does not grab focus or scroll a browsing host to a caret. Ext
 
 Package styles are scoped to the InkKit root so another editor or unrelated host content does not inherit its rules. Set documented `--inkkit-*` properties on the mounted root or an ancestor. Keep your own layout, toolbar and menus in the host. The [API reference](api.md#appearance-labels-and-shortcuts) lists tokens, label names and shortcut contracts.
 
-InkKit owns attachment preview sizing, footer wrapping, control line height and resize-handle geometry. Long filenames use a single ellipsized line with the full name retained as accessible text and a tooltip; status descriptions remain readable. Attachment controls use the same documented color, font and focus tokens as the editor. Customize those tokens rather than overriding internal `.image`, `.image-handle` or `.inkkit-file-*` selectors. Internal classes and markup are not a supported styling API. The Open control is a compact arrow after the filename, labelled with the `fileOpen` label and the filename for assistive technology. Read-only images hide the resize handle; Open, Retry and media playback remain available.
+InkKit owns attachment preview sizing, footer wrapping, control line height and resize-handle geometry. Long filenames use a single ellipsized line with the full name retained as accessible text and a tooltip; status descriptions remain readable. Attachment controls, wiki links and media use the same documented color, font and focus tokens as the editor. Customize those tokens rather than overriding internal `.image`, `.image-handle` or `.inkkit-file-*` selectors. Internal classes and markup are not a supported styling API. The Open control is a compact arrow after the filename, labelled with the `fileOpen` label and the filename for assistive technology. Read-only images hide the resize handle; Open, Retry and media playback remain available. To draw no focus ring on the editing surfaces while keeping the controls' rings, set `--inkkit-surface-focus-width: 0` on the root rather than overriding `.ProseMirror` or `.inkkit-plain`.
 
 Mount-time `labels` override the editor's built-in accessible names and visible text. Supply plain text from the host's localisation catalogue; supplied labels are not interpreted as markup. Host toolbar and native menu labels are outside this option.
 
@@ -102,9 +128,9 @@ Pass `keymap` at mount or call `setKeymap()` with bindings in ProseMirror key no
 
 Image references are opaque. The adapter owns bytes, access control, storage and private display URLs. Keep imported bytes available through pending operations and unsaved edits. Validate document identity, generation and operation ID in native callbacks. Portable exports carry bytes rather than private URLs.
 
-For native clipboard writes, await `clipboardSnapshot()` and validate the captured document before replacing the clipboard. Supply `events.clipboard` for image or diagram selections and resolve its promise only after the native write succeeds. Cut waits for that acknowledgement before deleting content. Encode byte arrays explicitly when crossing a JSON bridge.
+For native clipboard writes, await `clipboardSnapshot(scope, generation)` and check the `documentId`, `generation` and `revision` it carries before replacing the clipboard; output that `events.clipboard` receives carries them too. Supply `events.clipboard` for image or diagram selections and resolve its promise only after the native write succeeds. Cut waits for that acknowledgement before deleting content. Encode byte arrays explicitly when crossing a JSON bridge.
 
-`printableSnapshot()` returns a complete frozen printable document with portable assets; the app owns Print/PDF commands, dialogs and file generation. Before switching or closing a document, capture a fresh save snapshot. Increment generation when replacing it, and await `editor.destroy()` before removing the mounted root.
+`printableSnapshot()` returns a complete frozen printable document with portable assets; the app owns Print/PDF commands, dialogs and file generation. Before switching or closing a document, capture a fresh save snapshot. Pass a greater generation on every load and reload, pass the current one as the expected generation on every call that takes one, and await `editor.destroy()` before removing the mounted root. Call `blur(generation)` to release focus from the editor, rather than finding its elements.
 
 ## Optional linked files
 

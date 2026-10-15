@@ -8,6 +8,20 @@ const original =
       `Paragraph ${index} has enough words to wrap over a line or two in the source editor.`,
   ).join('\n\n') + '\n'
 
+// Control-Up moves by paragraph outside macOS, so it is not a document start.
+const documentStart =
+  process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home'
+
+// Source typing groups keystrokes by the time between them (500 ms). The page
+// clock is fixed so that a slow runner cannot split a run of keys into steps,
+// and `pass` moves it by an exact amount to test the grouping rule itself.
+const clockStart = new Date('2026-01-01T00:00:00Z')
+
+async function pass(page: Page, milliseconds: number) {
+  const now = await page.evaluate(() => Date.now())
+  await page.clock.setFixedTime(now + milliseconds)
+}
+
 async function openSource(page: Page, at: number) {
   await page.goto('/?fixture=everyday&configuration=rich')
   await expect
@@ -17,6 +31,7 @@ async function openSource(page: Page, at: number) {
       ),
     )
     .toBe('fixture:everyday')
+  await page.clock.setFixedTime(clockStart)
   await page.evaluate(
     (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
     original,
@@ -70,12 +85,34 @@ test('source typing is undone as one step and redone', async ({ page }) => {
   )
 })
 
+test('source typing pauses of up to 500 ms stay one undo step and longer ones start another', async ({
+  page,
+}) => {
+  const area = await openSource(page, 20)
+  const at = (typed: string) =>
+    original.slice(0, 20) + typed + original.slice(20)
+  await page.keyboard.type('a')
+  await pass(page, 500)
+  await page.keyboard.type('b')
+  await pass(page, 501)
+  await page.keyboard.type('c')
+  await expect(area).toHaveValue(at('abc'))
+  await page.keyboard.press('ControlOrMeta+Z')
+  await expect(area).toHaveValue(at('ab'))
+  await page.keyboard.press('ControlOrMeta+Z')
+  await expect(area).toHaveValue(original)
+  await page.keyboard.press('ControlOrMeta+Shift+Z')
+  await expect(area).toHaveValue(at('ab'))
+  await page.keyboard.press('ControlOrMeta+Shift+Z')
+  await expect(area).toHaveValue(at('abc'))
+})
+
 test('a paste after typing is its own undo step and typing is not merged', async ({
   page,
 }) => {
   const area = await openSource(page, 20)
   await page.keyboard.type('abc')
-  await page.waitForTimeout(700)
+  await pass(page, 700)
   await page.keyboard.type('def')
   await operation(page, 'pastePlain', { text: 'PASTE' })
   const typed = original.slice(0, 20) + 'abcdef' + original.slice(20)
@@ -103,7 +140,7 @@ test('redo from source mode does not carry its steps into the formatted view', a
   expect(await operation(page, 'redo')).toBe(false)
   const editor = page.locator('.ProseMirror.editor')
   await editor.click()
-  await page.keyboard.press('ControlOrMeta+ArrowUp')
+  await page.keyboard.press(documentStart)
   await page.keyboard.type('Q')
   const text = (await observe(page)).snapshot!.text
   expect(text).toContain('QParagraph 0')
@@ -129,7 +166,7 @@ test('undo and redo cross between formatted history and source steps in order', 
   )
   const editor = page.locator('.ProseMirror.editor')
   await editor.click()
-  await page.keyboard.press('ControlOrMeta+ArrowUp')
+  await page.keyboard.press(documentStart)
   await page.keyboard.type('X')
   await page.waitForTimeout(700)
   await operation(page, 'editingMode', { mode: 'source' })

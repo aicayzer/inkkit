@@ -450,7 +450,7 @@ export async function diagramImage(source: string): Promise<PortableImage> {
   }
 }
 
-export function mermaidPreview(onError: (error: Error) => void) {
+export function mermaidPreview(onError: (error: InkKitError) => void) {
   return $prose(
     (ctx) =>
       new Plugin({
@@ -491,7 +491,11 @@ export function mermaidPreview(onError: (error: Error) => void) {
                             : 'The diagram could not be rendered.'
                         preview.textContent = `${editorLabels(ctx).diagramUnavailable} ${message}`
                         preview.dataset.state = 'error'
-                        onError(new InkKitError('diagram-unavailable', message))
+                        onError(
+                          new InkKitError('diagram-unavailable', message, {
+                            cause: error,
+                          }),
+                        )
                       },
                     )
                     return preview

@@ -1,18 +1,20 @@
+import { coded } from './errors'
 import type {
+  InkKitError,
   DocumentContext,
   FileAdapter,
   FileContext,
   FilePresentation,
   FileReference,
 } from './types'
-import type { EditorLabels } from './labels'
+import type { EditorLabels } from './types'
 
 export interface FileViewRuntime {
   adapter: FileAdapter
   capture(): { context: DocumentContext; isCurrent(): boolean }
   active(): boolean
   labels: Readonly<EditorLabels>
-  error?(error: Error): void
+  error?(error: InkKitError): void
 }
 
 function abort(signal: AbortSignal): void {
@@ -104,7 +106,7 @@ export type FileResolutionState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'resolved'; presentation: FilePresentation }
-  | { status: 'failed'; error: Error }
+  | { status: 'failed'; error: InkKitError }
 
 export class FileResolution {
   state: FileResolutionState = { status: 'idle' }
@@ -152,8 +154,7 @@ export class FileResolution {
       },
       (failure: unknown) => {
         if (!this.current(request)) return
-        const error =
-          failure instanceof Error ? failure : new Error(String(failure))
+        const error = coded(failure, 'file-unavailable')
         this.state = { status: 'failed', error }
         this.changed()
         this.runtime.error?.(error)

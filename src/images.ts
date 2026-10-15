@@ -4,7 +4,8 @@ import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import { $view } from '@milkdown/kit/utils'
 
-import type { FileReference, ImageAdapter } from './types'
+import { InkKitError, type FileReference, type ImageAdapter } from './types'
+import { coded } from './errors'
 import { FileResolution, type FileViewRuntime } from './files'
 import { fileReference } from './linked-syntax'
 import { imageBlockSchema } from './image-blocks'
@@ -165,9 +166,7 @@ class ImageView implements NodeView {
   }
 
   private report(error: unknown): void {
-    this.runtime?.error?.(
-      error instanceof Error ? error : new Error(String(error)),
-    )
+    this.runtime?.error?.(coded(error, 'file-unavailable'))
   }
 
   private card(label: string, status?: string, retry = false): void {
@@ -210,7 +209,9 @@ class ImageView implements NodeView {
 
   private failPreview(): void {
     this.previewFailed = true
-    this.runtime?.error?.(new Error(this.runtime.labels.filePreviewUnavailable))
+    this.runtime?.error?.(
+      new InkKitError('file-unavailable', 'The file could not be previewed'),
+    )
     this.render()
   }
 
@@ -250,6 +251,7 @@ class ImageView implements NodeView {
         state.status === 'resolved'
           ? state.presentation.label || alt || reference.reference
           : alt || reference.reference
+      this.element.setAttribute('role', 'group')
       this.element.setAttribute('aria-label', label)
       this.element.dataset.inkkitFileState = this.previewFailed
         ? 'error'

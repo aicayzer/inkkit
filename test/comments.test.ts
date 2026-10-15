@@ -185,7 +185,6 @@ async function withFacade(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
     },
@@ -268,7 +267,7 @@ test('partial comment selection exports Markdown only, frontmatter and TXT punct
         TextSelection.create(view.state.doc, position + 2, position + 5),
       ),
     )
-    const selected = await editor.clipboardSnapshot(false)
+    const selected = await editor.clipboardSnapshot('selection')
     expect(selected.markdown.trim()).toBe('<!--ecr-->')
     expect(selected.text).toBe('')
     expect(selected.html).not.toContain('ecr')
@@ -478,7 +477,6 @@ async function typedIntoComment(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
       error: (error) => errors.push(error.message),
@@ -577,7 +575,6 @@ async function withComments<T>(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
       error: (error) => errors.push(error.message),

@@ -8,7 +8,8 @@ import {
   type Schema,
 } from '@milkdown/kit/prose/model'
 import { isInTable, selectedRect } from '@milkdown/kit/prose/tables'
-import { InkKitError, type ClipboardInput } from './types'
+import { InkKitError } from './types'
+import type { PasteInput } from './paste'
 import { literalCommentSpans } from './comments'
 import { restoreConvertedSpaces } from './paste-html'
 import { importableSlice } from './html-import'
@@ -26,7 +27,7 @@ type Grid = { cells: Fragment[][]; width: number; alignment?: string[] }
  *  always lands outside a table. */
 export function pasteSpreadsheet(
   ctx: Ctx,
-  input: ClipboardInput,
+  input: PasteInput,
   at?: { from: number; to: number },
 ): boolean {
   const view = ctx.get(editorViewCtx)

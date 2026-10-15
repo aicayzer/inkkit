@@ -19,3 +19,9 @@ if (!('highlights' in CSS))
   Object.defineProperty(CSS, 'highlights', {
     value: new Map<string, Highlight>(),
   })
+// Nor does its CSS.supports know the ::highlight() pseudo-element.
+const supports = CSS.supports?.bind(CSS) as
+  ((condition: string) => boolean) | undefined
+CSS.supports = ((condition: string) =>
+  condition.startsWith('selector(::highlight(') ||
+  (supports?.(condition) ?? false)) as typeof CSS.supports

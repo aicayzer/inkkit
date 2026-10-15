@@ -199,6 +199,9 @@ test('text copied from a page pastes with ordinary spaces beside links', async (
     source.innerHTML =
       '<p><a href="https://example.com/a">The quote</a> for the record</p><p>See <a href="https://example.com/b">the quote</a> now</p><p>Run <code>pnpm check</code> first</p>'
     document.body.append(source)
+    // A person's click elsewhere blurs the editor. A focused editor can write
+    // its own selection back over this one before the copy key arrives.
+    ;(document.activeElement as HTMLElement | null)?.blur()
     const range = document.createRange()
     range.selectNodeContents(source)
     const selection = getSelection()!
