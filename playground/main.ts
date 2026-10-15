@@ -489,15 +489,8 @@ async function reset(
   syncUrl()
   return observe()
 }
-// ProseMirror checks the selection 20 ms after the editor gains focus and puts
-// its own back if the page's differs, which undoes a caret key handled in
-// between. A timer of the same length set after the focus runs after that
-// check, so a key pressed once this resolves always counts.
-const focusSettled = () =>
-  new Promise<void>((resolve) => setTimeout(resolve, 20))
 async function operation(name: string, args: Record<string, unknown> = {}) {
   const operationEpoch = mountEpoch
-  const focusedBefore = document.activeElement
   let result: unknown
   try {
     const target = args.instance === 'second' ? secondEditor : editor
@@ -722,11 +715,6 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         throw Error(`Unknown public operation: ${name}`)
     }
     if (operationEpoch === mountEpoch) lastResult = result ?? null
-    if (
-      document.activeElement !== focusedBefore &&
-      element('editor').contains(document.activeElement)
-    )
-      await focusSettled()
   } catch (error) {
     if (operationEpoch === mountEpoch) record(error)
     throw error
@@ -903,7 +891,6 @@ export const playground = {
   operation,
   observe,
   timings,
-  focusSettled,
   adapter: {
     setMode: (kind: 'import' | 'export', mode: AdapterMode) => {
       images.setMode(kind, mode)

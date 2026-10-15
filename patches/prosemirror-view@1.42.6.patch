@@ -1,0 +1,149 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index d52a5260a7b9924b2865053ea1e8c6484225277b..3892649dc4ce202eeee57c0fab7bcee6fbc587b0 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -2961,6 +2961,7 @@ var InputState = _createClass(function InputState() {
+   this.lastIOSEnter = 0;
+   this.lastIOSEnterFallbackTimeout = -1;
+   this.lastFocus = 0;
++  this.focusTimeout = -1;
+   this.lastTouch = 0;
+   this.lastChromeDelete = 0;
+   this.composing = false;
+@@ -2997,6 +2998,7 @@ function setSelectionOrigin(view, origin) {
+   view.input.lastSelectionTime = Date.now();
+ }
+ function destroyInput(view) {
++  clearTimeout(view.input.focusTimeout);
+   if (view.input.mouseDown) view.input.mouseDown.done();
+   view.domObserver.stop();
+   for (var type in view.input.eventHandlers) view.dom.removeEventListener(type, view.input.eventHandlers[type]);
+@@ -3027,6 +3029,10 @@ function _dispatchEvent(view, event) {
+ }
+ editHandlers.keydown = function (view, _event) {
+   var event = _event;
++  if (![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
++    clearTimeout(view.input.focusTimeout);
++    view.input.focusTimeout = -1;
++  }
+   view.input.shiftKey = event.keyCode == 16 || event.shiftKey;
+   if (inOrNearComposition(view)) return;
+   view.input.lastKeyCode = event.keyCode;
+@@ -3681,12 +3687,15 @@ handlers.focus = function (view) {
+     view.dom.classList.add("ProseMirror-focused");
+     view.domObserver.start();
+     view.focused = true;
+-    setTimeout(function () {
++    view.input.focusTimeout = setTimeout(function () {
++      view.input.focusTimeout = -1;
+       if (view.docView && view.hasFocus() && !view.domObserver.currentSelection.eq(view.domSelectionRange())) selectionToDOM(view);
+     }, 20);
+   }
+ };
+ handlers.blur = function (view, _event) {
++  clearTimeout(view.input.focusTimeout);
++  view.input.focusTimeout = -1;
+   var event = _event;
+   if (view.focused) {
+     view.domObserver.stop();
+diff --git a/dist/index.js b/dist/index.js
+index dc0d117b85e1da3eae915b4d8ff8e5e604683861..0e74b42c0869cc362454f89397f002fd2f243221 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -3132,6 +3132,7 @@ class InputState {
+         this.lastIOSEnter = 0;
+         this.lastIOSEnterFallbackTimeout = -1;
+         this.lastFocus = 0;
++    this.focusTimeout = -1;
+         this.lastTouch = 0;
+         this.lastChromeDelete = 0;
+         this.composing = false;
+@@ -3169,6 +3170,7 @@ function setSelectionOrigin(view, origin) {
+     view.input.lastSelectionTime = Date.now();
+ }
+ function destroyInput(view) {
++    clearTimeout(view.input.focusTimeout);
+     if (view.input.mouseDown)
+         view.input.mouseDown.done();
+     view.domObserver.stop();
+@@ -3208,6 +3210,10 @@ function dispatchEvent(view, event) {
+ }
+ editHandlers.keydown = (view, _event) => {
+     let event = _event;
++    if (![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
++        clearTimeout(view.input.focusTimeout);
++        view.input.focusTimeout = -1;
++    }
+     view.input.shiftKey = event.keyCode == 16 || event.shiftKey;
+     if (inOrNearComposition(view))
+         return;
+@@ -3927,13 +3933,16 @@ handlers.focus = view => {
+         view.dom.classList.add("ProseMirror-focused");
+         view.domObserver.start();
+         view.focused = true;
+-        setTimeout(() => {
++        view.input.focusTimeout = setTimeout(() => {
++            view.input.focusTimeout = -1;
+             if (view.docView && view.hasFocus() && !view.domObserver.currentSelection.eq(view.domSelectionRange()))
+                 selectionToDOM(view);
+         }, 20);
+     }
+ };
+ handlers.blur = (view, _event) => {
++    clearTimeout(view.input.focusTimeout);
++    view.input.focusTimeout = -1;
+     let event = _event;
+     if (view.focused) {
+         view.domObserver.stop();
+diff --git a/src/input.ts b/src/input.ts
+index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..0bd1d6f87f11cb8ca0b993a66605cd6341224f3e 100644
+--- a/src/input.ts
++++ b/src/input.ts
+@@ -27,6 +27,7 @@ export class InputState {
+   lastIOSEnter = 0
+   lastIOSEnterFallbackTimeout = -1
+   lastFocus = 0
++  focusTimeout = -1
+   lastTouch = 0
+   lastChromeDelete = 0
+   composing = false
+@@ -66,6 +67,7 @@ function setSelectionOrigin(view: EditorView, origin: string) {
+ }
+ 
+ export function destroyInput(view: EditorView) {
++  clearTimeout(view.input.focusTimeout)
+   if (view.input.mouseDown) view.input.mouseDown.done()
+   view.domObserver.stop()
+   for (let type in view.input.eventHandlers)
+@@ -106,6 +108,12 @@ export function dispatchEvent(view: EditorView, event: Event) {
+ 
+ editHandlers.keydown = (view: EditorView, _event: Event) => {
+   let event = _event as KeyboardEvent
++  // A native caret move can precede its selectionchange event. Do not let
++  // the deferred focus correction replace the user's new selection.
++  if (![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
++    clearTimeout(view.input.focusTimeout)
++    view.input.focusTimeout = -1
++  }
+   view.input.shiftKey = event.keyCode == 16 || event.shiftKey
+   if (inOrNearComposition(view, event)) return
+   view.input.lastKeyCode = event.keyCode
+@@ -839,7 +847,8 @@ handlers.focus = view => {
+     view.dom.classList.add("ProseMirror-focused")
+     view.domObserver.start()
+     view.focused = true
+-    setTimeout(() => {
++    view.input.focusTimeout = setTimeout(() => {
++      view.input.focusTimeout = -1
+       if (view.docView && view.hasFocus() && !view.domObserver.currentSelection.eq(view.domSelectionRange()))
+         selectionToDOM(view)
+     }, 20)
+@@ -847,6 +856,8 @@ handlers.focus = view => {
+ }
+ 
+ handlers.blur = (view, _event) => {
++  clearTimeout(view.input.focusTimeout)
++  view.input.focusTimeout = -1
+   let event = _event as FocusEvent
+   if (view.focused) {
+     view.domObserver.stop()

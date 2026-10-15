@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, focusSettled, observe, operation } from './fixtures'
+import { test, expect, observe, operation } from './fixtures'
 
 const axePath = createRequire(import.meta.url).resolve('axe-core')
 
@@ -100,7 +100,6 @@ test('a click in a cell places the caret, so typing adds to the cell', async ({
   const target = cell(page, 2, 0).locator('p')
   const box = (await target.boundingBox())!
   await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2)
-  await focusSettled(page)
   await page.keyboard.type('Z')
   const after = await saved(page)
   expect(cells(after[body + 1]!)).toEqual(['cZ', '2', '<!-- c -->'])
@@ -200,7 +199,6 @@ test('the keyboard reaches the controls, opens a menu, moves a row and returns t
   // Safari moves focus to buttons with Option-Tab unless set to Tab to all.
   const next = browserName === 'webkit' ? 'Alt+Tab' : 'Tab'
   await cell(page, 3, 2).click()
-  await focusSettled(page)
   await page.mouse.move(0, 0)
   await page.keyboard.press(next)
   const column = control(page, 'Move column')
@@ -225,7 +223,6 @@ test('the keyboard reaches the controls, opens a menu, moves a row and returns t
   // click there would leave the reloaded editor's selection where it is.
   await cell(page, 3, 1).click()
   await cell(page, 3, 2).click()
-  await focusSettled(page)
   await page.mouse.move(0, 0)
   await page.keyboard.press(next)
   await page.keyboard.press(next)
@@ -334,7 +331,16 @@ async function openGrid(page: Page, openFixture: () => Promise<void>) {
 async function caretAtEnd(page: Page, row: number, column: number) {
   const box = (await cell(page, row, column).locator('p').boundingBox())!
   await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2)
-  await focusSettled(page)
+  // These command tests move focus programmatically. Establish the clicked
+  // caret first so that blur cannot overtake the queued selectionchange.
+  const text = (await cell(page, row, column).textContent())!
+  await expect
+    .poll(async () => {
+      const snapshot = (await observe(page)).textSnapshot!
+      const { from, to } = snapshot.selection
+      return from === to && snapshot.text.slice(to - text.length, to) === text
+    })
+    .toBe(true)
 }
 
 const typed = async (page: Page) => {
