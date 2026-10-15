@@ -405,7 +405,7 @@ function footnoteLabel(label: string): boolean {
   return !!label && !/[\s\[\]\\]/.test(label) && label.length <= 999
 }
 
-/** Hints for the browser's input features. A field left out leaves the behavior to the browser. */
+/** Hints for the browser's input features, and smart punctuation. A field left out takes its default. */
 export interface TextInputPreferences {
   spellcheck?: boolean
   autocorrect?: boolean
@@ -1635,7 +1635,7 @@ export class InkKitEditor {
     this.publishCommandState()
   }
 
-  /** Replaces the input hints. A field left out leaves the browser's behavior. Throws `composition`
+  /** Replaces the input preferences. A field left out takes its default. Throws `composition`
    *  during text composition. */
   setTextInputPreferences(preferences: TextInputPreferences): void {
     this.assertAlive()

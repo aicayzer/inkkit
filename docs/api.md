@@ -250,7 +250,7 @@ The `revision` that `changed` receives is the revision of the change it reports,
 
 ### Smart punctuation
 
-`smartPunctuation: boolean` turns typed quotes and dashes into curly quotes and dashes. It is `false` by default, and it is an InkKit behavior, not an HTML attribute, so it works the same in every browser and in a web view. It applies to typing in formatted mode. You can turn it on at mount or with `setTextInputPreferences`, and a change takes effect on the next key press, with no remount.
+`smartPunctuation: boolean` turns typed quotes and dashes into curly quotes and dashes. It is `false` by default. It is InkKit's own behavior, not an HTML attribute, so it doesn't depend on the browser's settings. It applies to typing in formatted mode. You can turn it on at mount or with `setTextInputPreferences`, and a change takes effect on the next key press, with no remount.
 
 The rules change only the character being typed:
 
@@ -263,12 +263,12 @@ The rules change only the character being typed:
 
 Smart punctuation never rewrites text that is already in the note: straight quotes and hyphens that a note holds stay as they are, on open and on save. The curly character is saved as typed, as UTF-8 text, and reopening the note shows it unchanged.
 
-One Undo straight after a rule, or Backspace, puts back the plain character that was typed, such as `"` or `--`. A second Undo removes the typing as it does without the option. Undo after the caret has moved is the ordinary Undo.
+One Undo straight after a rule, or Backspace, puts back what was typed: `"` or `'` for a quote, `--` for an en dash, and the en dash and a hyphen, `–-`, for an em dash. A second Undo removes the typing as it does without the option. Undo after the caret has moved is the ordinary Undo.
 
 The rules don't apply:
 
 - In inline code, including a code span you are still typing (an unmatched backtick earlier in the block), in code blocks, in front matter, in comments and in any block that InkKit holds as literal Markdown.
-- In Markdown syntax that you are typing out: a link destination and title after `](`, a web address (`https://`, `www.` or `mailto:`), a wiki link or footnote label that isn't closed yet, an HTML tag or comment that isn't closed yet, a reference definition (`[label]: …`), and a line that starts with `|`, as a typed table row does.
+- In Markdown syntax that you are typing out: a link destination and title after `](`, a web address (`https://`, `www.` or `mailto:`), a wiki link or footnote label that isn't closed yet, an HTML tag or comment that isn't closed yet, a reference definition (`[label]: …`), and `--` in a line that starts with `|`, as a typed table row does.
 - In source view and TXT notes, where the text is typed as is. The same goes for `insertText` in those modes.
 
 Text typed inside the text of a link, a table cell, a heading, a list item, a quote or a callout follows the rules. Typing that arrives in one piece, such as dictation or a text replacement, follows them for its last character, like any other input rule.
