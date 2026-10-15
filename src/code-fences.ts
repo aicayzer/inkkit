@@ -185,6 +185,8 @@ export function restoreCodeEndings(
     if (node.type.name === 'code_block')
       endings.push(readFence(node.attrs.authoredFence)?.ending ?? '\n')
   })
+  // Only CRLF code needs patching, so other Markdown need not be read.
+  if (!endings.includes('\r\n')) return markdown
   const patches: Array<{ from: number; to: number; text: string }> = []
   let index = 0
   const visit = (node: Nodes) => {
