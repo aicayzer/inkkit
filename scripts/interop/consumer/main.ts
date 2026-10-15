@@ -1085,10 +1085,18 @@ window.interop = {
             )
             break
           case 'format':
-            result = editor.format(operation.command, operation.argument)
+            result = editor.format(
+              operation.command,
+              operation.options,
+              operation.generation,
+            )
             break
           case 'table':
-            result = editor.table(operation.command, operation.options)
+            result = editor.table(
+              operation.command,
+              operation.options,
+              operation.generation,
+            )
             break
           case 'tableCells':
             result = [...view().querySelectorAll('table')].map((table) =>
@@ -1117,12 +1125,14 @@ window.interop = {
           }
           case 'keyDown':
             result = editor.keyDown(
-              operation.key,
-              operation.code ?? '',
-              operation.metaKey ?? false,
-              operation.ctrlKey ?? false,
-              operation.altKey ?? false,
-              operation.shiftKey ?? false,
+              {
+                key: operation.key,
+                code: operation.code,
+                metaKey: operation.metaKey,
+                ctrlKey: operation.ctrlKey,
+                altKey: operation.altKey,
+                shiftKey: operation.shiftKey,
+              },
               operation.generation ?? generation,
             )
             break

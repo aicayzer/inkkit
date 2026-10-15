@@ -332,7 +332,7 @@ test('a new row saves its cells empty', async () => {
 })
 
 const shiftEnter = (editor: InkKitEditor) =>
-  editor.keyDown('Enter', 'Enter', false, false, false, true, 1)
+  editor.keyDown({ key: 'Enter', code: 'Enter', shiftKey: true }, 1)
 
 for (const [name, offset, saved] of [
   ['in the middle of', 1, '| a | b |\n| - | - |\n| x<br />y | q |\n'],

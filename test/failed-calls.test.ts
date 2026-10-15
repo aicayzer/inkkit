@@ -80,9 +80,9 @@ const scenarios: Scenario[] = [
     call: (editor: InkKitEditor) => editor.format(command),
   })),
   {
-    name: "format('heading', 2)",
+    name: "format('heading2')",
     setup: words('world'),
-    call: (editor) => editor.format('heading', 2),
+    call: (editor) => editor.format('heading2'),
   },
   {
     name: "format('paragraph') in a heading",
@@ -107,12 +107,14 @@ const scenarios: Scenario[] = [
   {
     name: "format('link', destination)",
     setup: words('world'),
-    call: (editor) => editor.format('link', 'https://example.org'),
+    call: (editor) =>
+      editor.format('link', { destination: 'https://example.org' }),
   },
   {
     name: "format('link') in a reference link",
     setup: words('link', true),
-    call: (editor) => editor.format('link', 'https://example.org'),
+    call: (editor) =>
+      editor.format('link', { destination: 'https://example.org' }),
   },
   ...(
     [
@@ -156,13 +158,14 @@ const scenarios: Scenario[] = [
     setup: words('world'),
     call: (editor) =>
       editor.insertImages([
-        { path: 'a.png', alt: 'A' },
-        { path: 'b.png', alt: 'B' },
+        { reference: 'a.png', alt: 'A' },
+        { reference: 'b.png', alt: 'B' },
       ]),
   },
   {
     name: 'insertPaths',
-    call: (editor) => editor.insertPaths(['a.txt', 'b.txt'], 0, 0),
+    call: (editor) =>
+      editor.insertPaths(['a.txt', 'b.txt'], { clientX: 0, clientY: 0 }),
   },
   {
     name: 'pasteAsPlainText',
@@ -178,15 +181,7 @@ const scenarios: Scenario[] = [
     name: 'keyDown Enter',
     setup: words('world', true),
     call: (editor) =>
-      editor.keyDown(
-        'Enter',
-        'Enter',
-        false,
-        false,
-        false,
-        false,
-        generation(),
-      ),
+      editor.keyDown({ key: 'Enter', code: 'Enter' }, generation()),
   },
   {
     name: 'replace',
@@ -336,7 +331,7 @@ test.each(scenarios)(
 test('the commands that take more than one step are among those refused at each step', () => {
   // format('taskList') wraps and then marks the items; a heading change runs two commands too.
   expect(stepCounts.get("format('taskList')")).toBe(2)
-  expect(stepCounts.get("format('heading', 2)")).toBe(2)
+  expect(stepCounts.get("format('heading2')")).toBe(2)
 })
 
 test('a call made from a state event handler leaves the host with the newest state', async () => {

@@ -178,11 +178,11 @@ test('buffered source input and native undo keys use current literal selection',
     editor.loadDocument({ ...input, text: 'A😀B' })
     editor.setEditingMode('source')
     plain.setSelectionRange(3, 3)
-    expect(
-      editor.keyDown('Backspace', 'Backspace', false, false, false, false, 12),
-    ).toBe(true)
+    expect(editor.keyDown({ key: 'Backspace', code: 'Backspace' }, 12)).toBe(
+      true,
+    )
     expect(editor.snapshot().text).toBe('AB')
-    expect(editor.keyDown('z', 'KeyZ', true, false, false, false, 12)).toBe(
+    expect(editor.keyDown({ key: 'z', code: 'KeyZ', metaKey: true }, 12)).toBe(
       true,
     )
     expect(editor.snapshot().text).toBe('A😀B')
@@ -229,7 +229,7 @@ test('composition and stale generation block source commands without mutation', 
     expect(editor.snapshot()).toEqual(before)
   }))
 
-test('source mode keeps formatted commands inert and rejects image insertion', () =>
+test('source mode keeps formatted commands inert and inserts no images', () =>
   run(async (editor, _plain, ctx) => {
     editor.loadDocument({
       ...input,
@@ -237,12 +237,12 @@ test('source mode keeps formatted commands inert and rejects image insertion', (
     })
     editor.setEditingMode('source')
     const before = editor.snapshot()
-    editor.format('bold')
+    expect(editor.format('bold')).toBe(false)
     expect(editor.table('insert')).toBe(false)
     editor.navigateFootnote('definition')
-    expect(() =>
-      editor.insertImages([{ path: 'opaque', alt: 'image' }]),
-    ).toThrow(InkKitError)
+    expect(editor.insertImages([{ reference: 'opaque', alt: 'image' }])).toBe(
+      false,
+    )
     expect(editor.snapshot()).toEqual(before)
     expect(ctx.get(editorViewCtx).state.doc.firstChild!.type.name).toBe(
       'heading',

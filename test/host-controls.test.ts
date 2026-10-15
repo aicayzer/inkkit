@@ -58,8 +58,8 @@ test('read-only blocks every facade mutation family while retaining navigation a
       () => editor.editReferenceDefinition('ref', 'new'),
       () => editor.replace('Text', 'new'),
       () => editor.replaceAll('Text', 'new'),
-      () => editor.insertPaths(['new'], 0, 0),
-      () => editor.insertImages([{ path: 'opaque', alt: 'x' }]),
+      () => editor.insertPaths(['new'], { clientX: 0, clientY: 0 }),
+      () => editor.insertImages([{ reference: 'opaque', alt: 'x' }]),
     ]
     for (const mutate of mutations)
       expect(mutate).toThrow(expect.objectContaining({ code: 'read-only' }))
@@ -277,7 +277,7 @@ test.each(['formatted', 'source'] as const)(
       editor.insertText('!', 8)
       const edited = editor.snapshot()
       const key = (key: string) =>
-        editor.keyDown(key, '', key === 'z', key !== 'z', false, false, 8)
+        editor.keyDown({ key, metaKey: key === 'z', ctrlKey: key !== 'z' }, 8)
       editor.setKeymap({ undo: [], redo: [] })
       expect(key('z')).toBe(true)
       expect(editor.snapshot()).toEqual(edited)
@@ -296,14 +296,14 @@ test('headings 4–6 and table commands are configurable and initial read-only i
       editor.setEditable(true)
       for (const level of [4, 5, 6]) {
         editor.setKeymap({ ['heading' + level]: ['Ctrl-h'] })
-        editor.keyDown('h', '', false, true, false, false, 8)
+        editor.keyDown({ key: 'h', ctrlKey: true }, 8)
         expect(editor.commandState().caret.block).toEqual({
           type: 'heading',
           level,
         })
       }
       editor.setKeymap({ tableInsert: ['Ctrl-t'] })
-      expect(editor.keyDown('t', '', false, true, false, false, 8)).toBe(true)
+      expect(editor.keyDown({ key: 't', ctrlKey: true }, 8)).toBe(true)
       expect(editor.snapshot().text).toContain('|')
     },
     { editable: false },
@@ -497,7 +497,7 @@ test('inline code is available at a caret and configured shortcuts retain stored
   run((editor) => {
     editor.setKeymap({ code: ['Ctrl-e'] })
     expect(editor.commandState().commands.format.code).toBe(true)
-    expect(editor.keyDown('e', '', false, true, false, false, 8)).toBe(true)
+    expect(editor.keyDown({ key: 'e', ctrlKey: true }, 8)).toBe(true)
     editor.insertText('code', 8)
     expect(editor.snapshot().text).toContain('`code`')
   }))
@@ -517,7 +517,7 @@ test('read-only buffered footnote navigation remains available', () =>
     )
     editor.setEditable(false)
     const before = editor.snapshot()
-    expect(editor.keyDown('Enter', '', false, false, true, false, 8)).toBe(true)
+    expect(editor.keyDown({ key: 'Enter', altKey: true }, 8)).toBe(true)
     expect(editor.snapshot()).toEqual(before)
     expect(view.state.selection.$from.parent.textContent).toBe('body')
   }))
@@ -535,12 +535,10 @@ test('table exit defaults can be disabled without blocking ordinary formatted En
       view.state.tr.setSelection(TextSelection.create(view.state.doc, cell)),
     )
     const before = editor.snapshot()
-    expect(editor.keyDown('Enter', '', true, false, false, false, 8)).toBe(
-      false,
-    )
+    expect(editor.keyDown({ key: 'Enter', metaKey: true }, 8)).toBe(false)
     expect(editor.snapshot()).toEqual(before)
     editor.setKeymap({})
-    expect(editor.keyDown('Enter', '', true, false, false, false, 8)).toBe(true)
+    expect(editor.keyDown({ key: 'Enter', metaKey: true }, 8)).toBe(true)
     expect(editor.snapshot().text).not.toBe(before.text)
   }))
 
@@ -619,7 +617,7 @@ test('read-only buffered table Tab permits navigation without editing or adding 
     )
     editor.setEditable(false)
     const before = editor.snapshot()
-    expect(editor.keyDown('Tab', '', false, false, false, false, 8)).toBe(true)
+    expect(editor.keyDown({ key: 'Tab' }, 8)).toBe(true)
     expect(view.state.selection.from).toBe(cells[1])
     expect(editor.snapshot()).toEqual(before)
     view.dispatch(
@@ -627,6 +625,6 @@ test('read-only buffered table Tab permits navigation without editing or adding 
         TextSelection.create(view.state.doc, cells.at(-1)!),
       ),
     )
-    expect(editor.keyDown('Tab', '', false, false, false, false, 8)).toBe(false)
+    expect(editor.keyDown({ key: 'Tab' }, 8)).toBe(false)
     expect(editor.snapshot()).toEqual(before)
   }))

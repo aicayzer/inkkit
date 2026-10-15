@@ -343,7 +343,7 @@ test('link editing works for authored reference labels containing entity spellin
     view.dispatch(
       view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)),
     )
-    editor.format('link', '/new')
+    editor.format('link', { destination: '/new' })
     expect(editor.snapshot().text).toBe(source.replace('/old', '/new'))
   }))
 

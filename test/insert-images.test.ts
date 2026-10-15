@@ -18,8 +18,8 @@ const images: ImageAdapter = {
 const table =
   '| Name | Size |\n| --- | --- |\n| one | two |\n| three | four |\n'
 const pair = [
-  { path: 'a.png', alt: 'A' },
-  { path: 'b.png', alt: 'B' },
+  { reference: 'a.png', alt: 'A' },
+  { reference: 'b.png', alt: 'B' },
 ]
 
 interface Harness {
@@ -114,7 +114,10 @@ test('a caret in a table cell inserts the image inline and leaves the other cell
 test('several images go inline in the cell on one line, in order', () =>
   run(table, ({ editor, text, at, select }) => {
     select(at('one', 1))
-    editor.insertImages([...pair, { path: 'c.png', alt: 'C', title: 'Third' }])
+    editor.insertImages([
+      ...pair,
+      { reference: 'c.png', alt: 'C', title: 'Third' },
+    ])
     expect(text()).toBe(
       '| Name | Size |\n| --- | --- |\n| o![A](a.png)![B](b.png)![C](c.png "Third")ne | two |\n| three | four |\n',
     )
@@ -189,7 +192,7 @@ test('alt text and titles with pipes or line breaks stay on one line in a cell',
   run(table, ({ editor, text, at, select }) => {
     select(at('two'))
     editor.insertImages([
-      { path: 'a.png', alt: 'left | right', title: 'first\nsecond' },
+      { reference: 'a.png', alt: 'left | right', title: 'first\nsecond' },
     ])
     const [, , row] = text().split('\n')
     expect(row).toBe('| one | two![left \\| right](a.png "first second") |')
