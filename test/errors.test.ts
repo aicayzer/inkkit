@@ -264,6 +264,8 @@ test('async methods reject bad arguments instead of throwing', () =>
     for (const mount of [
       () => InkKitEditor.mount(bad(null), events),
       () => InkKitEditor.mount(root, bad(null)),
+      () => InkKitEditor.mount(root, bad({ ...events, changed: undefined })),
+      () => InkKitEditor.mount(root, bad({ ...events, error: 'log' })),
       () => InkKitEditor.mount(root, events, bad({ editable: 'yes' })),
       () => InkKitEditor.mount(root, events, bad({ theme: 'dark' })),
       () => InkKitEditor.mount(root, events, { keymap: { underline: [] } }),
@@ -612,3 +614,44 @@ test('a shortcut that fails reports through the error event, and keyDown throws 
     ).toThrow(expect.objectContaining({ code: 'internal', cause: fault }))
     expect(errors).toHaveLength(1)
   }))
+
+test('an exception from a host event handler goes to reportError and does not fail InkKit', async () => {
+  const reported: unknown[] = []
+  vi.stubGlobal('reportError', (error: unknown) => reported.push(error))
+  const fault = new Error('host fault')
+  const fail = () => {
+    throw fault
+  }
+  try {
+    await open(
+      ({ editor }) => {
+        editor.loadDocument(input)
+        expect(editor.insertText('X', 1)).toBe(true)
+        expect(editor.snapshot().revision).toBe(1)
+        expect(() => editor.setEditable(false)).not.toThrow()
+        expect(editor.editable).toBe(false)
+      },
+      {},
+      { changed: fail, stateChanged: fail, commandStateChanged: fail },
+    )
+    expect(reported.length).toBeGreaterThan(0)
+    expect(reported.every((error) => error === fault)).toBe(true)
+    reported.length = 0
+    // A refused edit the person makes still reaches an error handler that throws, and the
+    // handler's exception does not escape the edit.
+    await open(
+      (session) => {
+        inComment(session)
+        const { view } = session
+        expect(() =>
+          view.dispatch(view.state.tr.insertText('-->')),
+        ).not.toThrow()
+      },
+      {},
+      { error: fail },
+    )
+    expect(reported).toEqual([fault])
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})

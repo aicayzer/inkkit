@@ -466,6 +466,45 @@ export interface EditorEvents {
   clipboard?(content: ClipboardOutput): void | Promise<void>
 }
 
+const requiredEvents = ['changed', 'stateChanged', 'openLink', 'copy'] as const
+const optionalEvents = ['commandStateChanged', 'error', 'clipboard'] as const
+
+/**
+ * Checks the host's handlers and returns them so that an exception thrown by one is the host's: it
+ * goes to the platform's `reportError`, never becomes an InkKit error and never stops InkKit's own
+ * work or makes a call throw. `clipboard` is left as it is, because its failure is
+ * `clipboard-unavailable`.
+ */
+function hostEvents(value: unknown): EditorEvents {
+  const events = expectRecord(value, 'events')
+  for (const name of [...requiredEvents, ...optionalEvents]) {
+    const optional = (optionalEvents as readonly string[]).includes(name)
+    if (
+      typeof events[name] !== 'function' &&
+      !(optional && isOmitted(events[name]))
+    )
+      throw invalidArgument(`events.${name} must be a function`)
+  }
+  return new Proxy(events, {
+    get(target, name) {
+      const handler: unknown = Reflect.get(target, name)
+      if (name === 'clipboard' || typeof handler !== 'function') return handler
+      return (...args: unknown[]) => {
+        try {
+          return handler.apply(target, args)
+        } catch (error) {
+          if (typeof globalThis.reportError === 'function')
+            globalThis.reportError(error)
+          else
+            setTimeout(() => {
+              throw error
+            })
+        }
+      }
+    },
+  }) as unknown as EditorEvents
+}
+
 /** Refuses a cut whose copy lost an image or a diagram, so the person keeps what the clipboard
  *  could not hold. */
 function refuseUnportableCut(content: ClipboardOutput): void {
@@ -2123,7 +2162,7 @@ export class InkKitEditor {
   ): Promise<InkKitEditor> {
     if (!(root instanceof HTMLElement))
       throw invalidArgument('root must be an HTML element')
-    expectRecord(events, 'events')
+    events = hostEvents(events)
     options = editorOptions(options)
     const instance = new InkKitEditor(events, options)
     instance.root = root
