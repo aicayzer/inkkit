@@ -190,8 +190,16 @@ test('editing a reference definition through the API saves one definition', asyn
     ).toHaveLength(1)
     expect(reread).not.toContain('literal_markdown')
 
-    editor.editReferenceDefinition('ref', 'https://example.test/\n\n# H', 'T')
+    // A destination with line breaks can't be saved as one definition, so it's refused.
+    expect(() =>
+      editor.editReferenceDefinition(
+        'ref',
+        'https://example.test/\n\n# H',
+        'T',
+      ),
+    ).toThrow(expect.objectContaining({ code: 'invalid-argument' }))
     const next = editor.snapshot().text
+    expect(next).toBe(text)
     expect(shape(ctx.get(parserCtx)(next))).not.toContain('heading')
   } finally {
     await editor.destroy()
