@@ -2,6 +2,7 @@ import type { TableCommand, TableOptions } from './types'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
+  createTable,
   insertTableCommand,
   exitTable,
   moveRowCommand,
@@ -21,12 +22,21 @@ import {
   isInTable,
   CellSelection,
 } from '@milkdown/kit/prose/tables'
-import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
+import {
+  Fragment,
+  type Mark,
+  type Node as ProseNode,
+} from '@milkdown/kit/prose/model'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
+import {
+  Selection,
+  type Command,
+  type EditorState,
+  type Transaction,
+} from '@milkdown/kit/prose/state'
 import { keymap } from '@milkdown/kit/prose/keymap'
-import { $prose } from '@milkdown/kit/utils'
+import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { clipboardText } from './clipboard'
 import { removesStructure } from './hidden-comments'
 import {
@@ -119,9 +129,155 @@ export function tableAvailability(ctx: Ctx): Record<TableCommand, boolean> {
   return available
 }
 
+/** Trims the whitespace at both ends of a cell's inline content. */
+function trimCell(nodes: ProseNode[]): ProseNode[] {
+  const trimmed = [...nodes]
+  for (const [edge, trim] of [
+    [0, (text: string) => text.trimStart()],
+    [-1, (text: string) => text.trimEnd()],
+  ] as const) {
+    for (;;) {
+      const node = trimmed.at(edge)
+      if (!node?.text) break
+      const text = trim(node.text)
+      if (text) {
+        trimmed.splice(
+          edge < 0 ? trimmed.length - 1 : 0,
+          1,
+          node.type.schema.text(text, node.marks),
+        )
+        break
+      }
+      trimmed.splice(edge < 0 ? trimmed.length - 1 : 0, 1)
+    }
+  }
+  return trimmed
+}
+
+/**
+ * The cells of a paragraph that is one table row typed as Markdown, such as `| Name | Date |`: it
+ * starts and ends with a pipe and holds at least two cells. A pipe written `\|` or inside inline
+ * code belongs to its cell. Returns nothing for any other paragraph, including one with a line
+ * break or an inline node, which a cell could not hold the same way.
+ */
+export function typedRowCells(paragraph: ProseNode): ProseNode[][] | undefined {
+  const rows: ProseNode[][] = [[]]
+  for (let index = 0; index < paragraph.childCount; index++) {
+    const child = paragraph.child(index)
+    if (!child.isText || /[\r\n]/.test(child.text!)) return undefined
+    if (child.marks.some((mark: Mark) => mark.type.spec.code)) {
+      rows.at(-1)!.push(child)
+      continue
+    }
+    let piece = '',
+      slashes = 0
+    const flush = () => {
+      if (piece) rows.at(-1)!.push(child.type.schema.text(piece, child.marks))
+      piece = ''
+    }
+    for (const character of child.text!) {
+      if (character !== '|') {
+        slashes = character === '\\' ? slashes + 1 : 0
+        piece += character
+      } else if (slashes % 2) {
+        piece = piece.slice(0, -1) + character
+        slashes = 0
+      } else {
+        flush()
+        rows.push([])
+        slashes = 0
+      }
+    }
+    flush()
+  }
+  const blank = (cell: ProseNode[]) =>
+    cell.every((node) => node.isText && !node.text!.trim())
+  if (rows.length < 4 || !blank(rows[0]!) || !blank(rows.at(-1)!))
+    return undefined
+  const cells = rows.slice(1, -1)
+  return cells.length <= 100 ? cells.map(trimCell) : undefined
+}
+
+/**
+ * Turns the paragraph holding the caret at its end into a table when it is a typed table row: the
+ * typed cells are the header, one empty row follows, and the caret is in its first cell. It builds
+ * the table `table('insert')` does and replaces the paragraph in one undo step of its own, so Undo
+ * restores the typed line with the caret at its end.
+ */
+function typedRowToTable(ctx: Ctx): Command {
+  return (state, dispatch) => {
+    const view = ctx.get(editorViewCtx)
+    const { $cursor } = state.selection as { $cursor?: Selection['$from'] }
+    if (
+      !$cursor ||
+      !view.editable ||
+      view.composing ||
+      $cursor.parent.type.name !== 'paragraph' ||
+      $cursor.parentOffset !== $cursor.parent.content.size ||
+      $cursor.depth < 1
+    )
+      return false
+    const cells = typedRowCells($cursor.parent)
+    if (!cells) return false
+    const template = createTable(ctx, 2, cells.length) as ProseNode
+    const [head, ...rest] = [template.child(0), template.child(1)]
+    const paragraph = state.schema.nodes.paragraph!
+    let table: ProseNode
+    try {
+      table = template.copy(
+        Fragment.from([
+          head!.copy(
+            Fragment.fromArray(
+              cells.map((cell, column) => {
+                const header = head!.child(column)
+                return header.copy(Fragment.from(paragraph.create(null, cell)))
+              }),
+            ),
+          ),
+          ...rest,
+        ]),
+      )
+      table.check()
+    } catch {
+      return false
+    }
+    // A list item opens with a paragraph, which stays, empty, above the table.
+    const index = $cursor.index(-1),
+      parent = $cursor.node(-1)
+    const replaces = parent.canReplaceWith(index, index + 1, table.type)
+    // A task item would be written with a spacer line beside its checkbox.
+    if (
+      !replaces &&
+      (parent.attrs.checked != null ||
+        !parent.canReplaceWith(index + 1, index + 1, table.type))
+    )
+      return false
+    if (dispatch) {
+      const tr = state.tr
+      if (replaces) tr.replaceWith($cursor.before(), $cursor.after(), table)
+      else {
+        tr.delete($cursor.start(), $cursor.end())
+        tr.insert($cursor.start() + 1, table)
+      }
+      const start = replaces ? $cursor.before() : $cursor.start() + 1
+      const body = start + 1 + table.child(0).nodeSize
+      tr.setSelection(Selection.findFrom(tr.doc.resolve(body), 1, true)!)
+      dispatchTableOperation(view, tr)
+    }
+    return true
+  }
+}
+
+// Above the list keys, so Tab in a list item that holds a typed row makes the table.
+const typedRowKeymap = $shortcut((ctx) => ({
+  Enter: { key: 'Enter', onRun: () => typedRowToTable(ctx), priority: 60 },
+  Tab: { key: 'Tab', onRun: () => typedRowToTable(ctx), priority: 60 },
+}))
+
 export const tablePlugins = [
   moveRowCommand,
   moveColCommand,
+  typedRowKeymap,
   $prose(() => keymap({ Tab: goToNextCell(1), 'Shift-Tab': goToNextCell(-1) })),
 ].flat()
 
