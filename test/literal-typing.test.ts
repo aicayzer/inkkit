@@ -231,3 +231,17 @@ test.each([
     })
   },
 )
+
+test('undo and redo restore a literal block as typed', async () => {
+  const source = 'Intro __bold__.\n\nA [full][ref] x.\n\n<br />\n'
+  await withNote(source, (editor, view) => {
+    caretAfter(view, 'x.')
+    for (const character of ' `*[') editor.insertText(character, 1)
+    const typed = source.replace('x.', 'x. `*[')
+    expect(editor.snapshot().text).toBe(typed)
+    while (editor.undo(1));
+    expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
+    while (editor.redo(1));
+    expect(editor.snapshot().text).toBe(typed)
+  })
+})
