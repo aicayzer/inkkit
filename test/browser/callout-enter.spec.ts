@@ -95,13 +95,23 @@ const edits: [string, string, string, boolean, string[], string, string][] = [
     'NOTE(p p) p',
   ],
   [
-    'Enter twice in the middle of a callout, which splits it as it splits a quote',
+    'Enter twice in the middle of a callout, which adds paragraphs and keeps one callout',
     '> [!NOTE] Title\n> a\n>\n> b\n',
     'a',
     true,
-    ['Enter', 'Enter'],
-    '> [!NOTE] Title\n> a\n\n> [!NOTE] Title\n> <br />\n>\n> b\n',
-    'NOTE(p) NOTE(p p)',
+    ['Enter', 'Enter', 'x'],
+    '> [!NOTE] Title\n> a\n>\n> <br />\n>\n> x\n>\n> b\n',
+    'NOTE(p p p p)',
+  ],
+  [
+    'Enter in an empty first paragraph of a callout',
+    '> [!NOTE]\n> <br />\n>\n> b\n',
+    // The empty paragraph shows no text; its place is just before `b`'s line.
+    '\nb',
+    false,
+    ['Enter', 'x'],
+    '> [!NOTE]\n> <br />\n>\n> x\n>\n> b\n',
+    'NOTE(p p p)',
   ],
   [
     'Enter at the end of a titled callout',
@@ -156,6 +166,24 @@ const edits: [string, string, string, boolean, string[], string, string][] = [
     ['Enter', 'Enter', 'Enter', 'next'],
     '> [!NOTE]\n> - one\n> - two\n\nnext\n',
     'NOTE(ul(li(p) li(p))) p',
+  ],
+  [
+    'Enter three times in a nested list item in a quote',
+    '> - a\n>   - b\n',
+    'b',
+    true,
+    ['Enter', 'Enter', 'Enter', 'next'],
+    '> - a\n>   - b\n>\n> next\n',
+    'blockquote(ul(li(p ul(li(p)))) p)',
+  ],
+  [
+    'Enter three times in a nested list item in a callout',
+    '> [!NOTE]\n> - a\n>   - b\n',
+    'b',
+    true,
+    ['Enter', 'Enter', 'Enter', 'next'],
+    '> [!NOTE]\n> - a\n>   - b\n>\n> next\n',
+    'NOTE(ul(li(p ul(li(p)))) p)',
   ],
   [
     'Enter in a quote inside a callout',
@@ -304,6 +332,61 @@ for (const [what, source, marker, saved, shape] of backspaces)
     await operation(page, 'reload', { text: saved })
     observed = await observe(page)
     expect(observed.diagnostics).toEqual([])
+    expect(observed.snapshot!.text).toBe(saved)
+    expect(await outline(page)).toBe(shape)
+  })
+
+test('Enter twice in the middle of a folded callout opened by its button keeps typing in it @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  const source = '> [!CAUTION]- Folded\n> a\n>\n> b\n'
+  await openFixture()
+  await operation(page, 'reload', { text: source })
+  const toggle = editor(page).locator('[data-inkkit-callout-toggle]')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await caret(page, 'a', true)
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('x')
+  const observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  const saved = '> [!CAUTION]- Folded\n> a\n>\n> <br />\n>\n> x\n>\n> b\n'
+  expect(observed.snapshot!.text).toBe(saved)
+  expect(await outline(page)).toBe('CAUTION(p p p p)')
+  await expect(toggle).toHaveCount(1)
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await operation(page, 'reload', { text: saved })
+  expect((await observe(page)).snapshot!.text).toBe(saved)
+})
+
+for (const [what, source, saved, shape] of [
+  [
+    'below a paragraph',
+    'Before\n\n> [!NOTE] Title\n> a\n',
+    'Before\n\nx\n',
+    'p p',
+  ],
+  ['that is the whole note', '> [!NOTE] Title\n> a\n', 'x\n', 'p'],
+] as const)
+  test(`Backspace in the emptied only paragraph of a callout ${what} removes the callout @preservation`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture()
+    await operation(page, 'reload', { text: source })
+    await caret(page, 'a', true)
+    await page.keyboard.press('Backspace')
+    expect(await outline(page)).toContain('NOTE(p)')
+    await page.keyboard.press('Backspace')
+    await page.keyboard.type('x')
+    let observed = await observe(page)
+    expect(observed.diagnostics).toEqual([])
+    expect(observed.snapshot!.text).toBe(saved)
+    expect(await outline(page)).toBe(shape)
+    await operation(page, 'reload', { text: saved })
+    observed = await observe(page)
     expect(observed.snapshot!.text).toBe(saved)
     expect(await outline(page)).toBe(shape)
   })
