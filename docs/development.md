@@ -28,6 +28,8 @@ Mermaid is the one runtime dependency, pinned exactly. It draws diagram previews
 - The build writes `dist/THIRD-PARTY-NOTICES.txt` with the name, version and licence of every bundled package. It is also the record of the tree a release ships.
 - To update a bundled package, change `pnpm-lock.yaml` in a pull request. CI then runs the preservation tests in `pnpm check`, the packed-consumer pages and the whole browser suite against the new tree before it can merge.
 
+The pinned `prosemirror-view@1.42.6` patch in `patches/` cancels deferred focus restoration when a key that can edit or move the caret arrives. Otherwise, the focus timer can restore an old caret before the browser delivers `selectionchange`. Pure modifier keys retain the normal focus correction; blur and destruction clear the pending timer. Keep the patch's source and both distributed JavaScript entries aligned. `test/focus-input.test.ts` controls that event ordering through the public facade and DOM; native host checks must also exercise real keyboard input. Reassess the patch when updating ProseMirror.
+
 The trade-off: a security fix in a bundled package reaches hosts only through an InkKit release, and a host's dependency audit does not see bundled packages. Dependabot alerts are on for this repository and read `pnpm-lock.yaml`, so they cover the bundled packages. When an alert affects a bundled package, update it in a pull request and release.
 
 ## Bounded verification
