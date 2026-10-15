@@ -3,7 +3,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { InkKitEditor } from '../src/index'
-import { Preservation } from '../src/preserve'
+import { Preservation, decodedOffsets } from '../src/preserve'
 
 async function run(
   callback: (editor: InkKitEditor, ctx: Ctx, errors: Error[]) => void,
@@ -181,3 +181,30 @@ test('splitting an address on an indented line keeps the indentation', () =>
     expect(errors).toEqual([])
     expect(editor.snapshot().text).toBe('- one\n  https://a.example/x y\n')
   }))
+
+// A busy machine slows a sample but never speeds one up, so the fastest of
+// many samples is the least disturbed. The sizes are sampled in turn, so a
+// stall slows both. Reading 20,000 spaces takes about 10 times as long as
+// reading 2,000 when time grows linearly and about 100 times when it grows
+// quadratically; the bound lies between.
+test('reading a long run of spaces takes time linear in its length', () => {
+  const time = (spaces: number) => {
+    const raw = `a${' '.repeat(spaces)}b\n  c`
+    const start = performance.now()
+    expect(decodedOffsets(raw, true)?.decoded).toBe(
+      `a${' '.repeat(spaces)}b\nc`,
+    )
+    return performance.now() - start
+  }
+  for (let i = 0; i < 3; i++) {
+    time(2_000)
+    time(20_000)
+  }
+  let fastestSmall = Infinity
+  let fastestLarge = Infinity
+  for (let i = 0; i < 15; i++) {
+    fastestSmall = Math.min(fastestSmall, time(2_000))
+    fastestLarge = Math.min(fastestLarge, time(20_000))
+  }
+  expect(fastestLarge).toBeLessThan(Math.max(fastestSmall, 0.1) * 40)
+}, 120_000)

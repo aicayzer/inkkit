@@ -173,7 +173,7 @@ function authoredNeighbour(
 // spaces and tabs before it or the quote markers and indentation after it,
 // which paragraph text leaves out; the offset before it is where those spaces
 // start, so text typed at the end of a line goes before them.
-function decodedOffsets(
+export function decodedOffsets(
   raw: string,
   lines = false,
 ): { decoded: string; offsets: number[] } | undefined {
@@ -181,7 +181,12 @@ function decodedOffsets(
   let decoded = ''
   for (let index = 0; index < raw.length;) {
     const rest = raw.slice(index)
-    const line = /^[ \t]*(?:\r\n?|\n)(?:[ \t]*>)*[ \t]*/.exec(rest)?.[0]
+    // Only a run of spaces and tabs from its start can lead to a line
+    // ending, which keeps a long run linear.
+    const line =
+      /[ \t]/.test(raw[index - 1] ?? '') && /[ \t]/.test(raw[index]!)
+        ? undefined
+        : /^[ \t]*(?:\r\n?|\n)(?:[ \t]*>)*[ \t]*/.exec(rest)?.[0]
     const token =
       line ??
       /^\\[!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~]/.exec(rest)?.[0] ??
