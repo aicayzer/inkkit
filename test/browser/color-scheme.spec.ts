@@ -27,7 +27,9 @@ async function open(
 ) {
   await openFixture('mermaid')
   await operation(page, 'replaceSource', { text: source })
-  await expect(page.locator('.inkkit-root .hljs-attr').first()).toBeVisible()
+  await expect(
+    page.locator('.inkkit-root .inkkit-hljs-attr').first(),
+  ).toBeVisible()
   await expect(
     page.locator('.inkkit-mermaid-preview[data-state="ready"]'),
   ).toHaveCount(1)
@@ -70,7 +72,9 @@ const codeColors = (page: Page) =>
     }
     const result: Record<string, unknown> = {}
     for (const kind of kinds) {
-      const element = document.querySelector(`.inkkit-root .hljs-${kind}`)!
+      const element = document.querySelector(
+        `.inkkit-root .inkkit-hljs-${kind}`,
+      )!
       const color = getComputedStyle(element).color
       const layers: number[][] = []
       for (

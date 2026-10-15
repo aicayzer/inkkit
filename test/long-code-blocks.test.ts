@@ -38,8 +38,9 @@ const note = (language: string, code: string) =>
 const typed = (source: string) => source.replace(/\n```\n$/, 'x\n```\n')
 
 const colors = (block: number) =>
-  root.querySelectorAll('pre')[block]!.querySelectorAll('[class*="hljs-"]')
-    .length
+  root
+    .querySelectorAll('pre')
+    [block]!.querySelectorAll('[class*="inkkit-hljs-"]').length
 
 function open(source: string): number {
   const start = performance.now()

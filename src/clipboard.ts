@@ -184,7 +184,7 @@ export function clipboardContent(
   }
   // The editor's roles and names describe its own view, not the copied text.
   for (const element of container.querySelectorAll(
-    '[data-inkkit-footnote-definition], .literal-markdown',
+    '[data-inkkit-footnote-definition], .inkkit-literal-markdown',
   )) {
     element.removeAttribute('role')
     element.removeAttribute('aria-label')

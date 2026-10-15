@@ -390,8 +390,8 @@ test('read-only task clicks and resize previews cannot mutate, including late po
         text: '- [ ] task\n\n![photo|120](opaque)\n',
       })
       const view = ctx.get(editorViewCtx)
-      const image = root.querySelector<HTMLImageElement>('.image img')!
-      const handle = root.querySelector('.image-handle')!
+      const image = root.querySelector<HTMLImageElement>('.inkkit-image img')!
+      const handle = root.querySelector('.inkkit-image-handle')!
       Object.defineProperty(view.dom, 'clientWidth', {
         value: 500,
         configurable: true,
@@ -414,7 +414,7 @@ test('read-only task clicks and resize previews cannot mutate, including late po
       const before = editor.snapshot()
       editor.setEditable(false)
       expect(
-        root.querySelector<HTMLImageElement>('.image img')!.style.width,
+        root.querySelector<HTMLImageElement>('.inkkit-image img')!.style.width,
       ).toBe('120px')
       const task = root.querySelector('li')!
       let taskPos = 0

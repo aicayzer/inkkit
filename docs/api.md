@@ -270,7 +270,7 @@ Formatted replacements retain surrounding structure and formatting; replacement 
 
 ## Appearance, labels and shortcuts
 
-The mounted root receives `.inkkit-root`. Package rules, including table styles, are scoped beneath it; they do not set the host's `:root` font size or colour scheme. Set these public CSS custom properties on the root or an ancestor. Properties beginning `--_inkkit-` are internal.
+The mounted root receives `.inkkit-root`. Package rules, including table styles, are scoped beneath it; they do not set the host's `:root` font size or colour scheme. Set these public CSS custom properties on the root or an ancestor. InkKit reads no other custom property, so a host's own `--accent`, `--text` or `--reading-width` never changes the editor. Properties beginning `--_inkkit-` are internal.
 
 | Tokens                                                                                                                                        | Default or purpose                                                                                                                                                                                                                                                                         |
 | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -278,6 +278,7 @@ The mounted root receives `.inkkit-root`. Package rules, including table styles,
 | `--inkkit-monospace-font`                                                                                                                     | System monospace stack for source, TXT and code.                                                                                                                                                                                                                                           |
 | `--inkkit-color-scheme`                                                                                                                       | `light dark`.                                                                                                                                                                                                                                                                              |
 | `--inkkit-min-height`, `--inkkit-reading-width`                                                                                               | `100%`, `100%`.                                                                                                                                                                                                                                                                            |
+| `--inkkit-column-inset`                                                                                                                       | The inline padding of the writing column on the formatted surface and on source and TXT. Defaults to the formula below.                                                                                                                                                                    |
 | `--inkkit-padding-top`, `--inkkit-padding-inline`, `--inkkit-padding-bottom`                                                                  | `10px`, `16px`, `48px`.                                                                                                                                                                                                                                                                    |
 | `--inkkit-paragraph-spacing`                                                                                                                  | About two-thirds of the editor font size.                                                                                                                                                                                                                                                  |
 | `--inkkit-accent-color`, `--inkkit-text-color`                                                                                                | `#0a84ff`, `CanvasText`.                                                                                                                                                                                                                                                                   |
@@ -291,7 +292,7 @@ The editor color scheme is `--inkkit-color-scheme`, or the system setting when i
 
 Diagram previews always use Mermaid's default light theme, whatever the editor color scheme, because the same rendering becomes the PNG for clipboard output and print. The preview card is therefore light by default in both schemes. The diagram tokens change the card around the diagram, not the colors inside it. Because the theme does not follow the scheme, a rendered diagram is cached by its source alone.
 
-Inherited legacy `--accent`, `--text`, `--muted`, `--rule`, `--code-bg`, `--mono` and `--reading-width` remain fallbacks when their new tokens are absent. Each editor root can have independent styling.
+Each editor root can have independent styling.
 
 ```css
 .document-editor {
@@ -301,6 +302,37 @@ Inherited legacy `--accent`, `--text`, `--muted`, `--rule`, `--code-bg`, `--mono
   --inkkit-accent-color: #286343;
 }
 ```
+
+**The writing column.** The formatted surface and the source and TXT surface use the same column: text starts `--inkkit-column-inset` from each side, so the text stays put when the mode changes. The default is a contract, so a host can rely on it:
+
+```css
+max(
+  var(--inkkit-padding-inline),
+  calc((100% - var(--inkkit-reading-width)) / 2 + var(--inkkit-padding-inline))
+)
+```
+
+As with any padding, the `100%` resolves against the containing block of the element that uses the value; for InkKit's surfaces, that block is as wide as the editor root. To line up a header or toolbar that the host draws outside the root with the column, set `--inkkit-column-inset` once on an ancestor of both, put the header in a container as wide as the editor root, and give the header no border or margin of its own:
+
+```css
+.page {
+  --inkkit-reading-width: 48rem;
+  --inkkit-padding-inline: 24px;
+  --inkkit-column-inset: max(
+    var(--inkkit-padding-inline),
+    calc(
+      (100% - var(--inkkit-reading-width)) / 2 + var(--inkkit-padding-inline)
+    )
+  );
+}
+.page-header {
+  padding-inline: var(--inkkit-column-inset);
+}
+```
+
+InkKit then uses that value on its surfaces, so the host overrides no InkKit selector. Leave the token unset to keep the default.
+
+**Classes.** Every class InkKit draws begins `inkkit-`. The classes that ProseMirror, its table plugin and Milkdown add, such as `ProseMirror`, `ProseMirror-selectednode` and `selectedCell`, keep their names, and so do the classes inside a diagram preview's SVG, which Mermaid draws. Classes and markup are not a styling API: style the editor through the tokens above, and expect a class to change in any release. Copied and printable HTML carry no class that does not begin `inkkit-`.
 
 `EditorOptions.labels` is `Partial<EditorLabels>`. Omitted labels keep their defaults; overrides are inserted safely as text. The label keys are:
 

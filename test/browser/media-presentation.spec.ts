@@ -21,7 +21,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     // Host typography must not collapse the attachment's own controls.
     await page.addStyleTag({
       content:
-        '#editor { max-width: 240px; --inkkit-font-size: 19px; } .ProseMirror .image { line-height: 0; }',
+        '#editor { max-width: 240px; --inkkit-font-size: 19px; } .ProseMirror .inkkit-image { line-height: 0; }',
     })
     const card = page.locator('.inkkit-file')
     await expect(card.locator('img')).toBeVisible()
@@ -36,7 +36,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const bounds = element.getBoundingClientRect()
       const label = element.querySelector('.inkkit-file-label')!
       const control = element.querySelector('button')!
-      const grip = element.querySelector('.image-handle')!
+      const grip = element.querySelector('.inkkit-image-handle')!
       const image = element.querySelector('img')!
       return {
         card: bounds.toJSON(),
@@ -80,11 +80,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
     })
     const before = (await observe(page)).snapshot!.text
     await operation(page, 'editable', { editable: false })
-    await expect(card.locator('.image-handle')).toBeHidden()
+    await expect(card.locator('.inkkit-image-handle')).toBeHidden()
     await open.click()
     expect((await observe(page)).snapshot!.text).toBe(before)
     await operation(page, 'editable', { editable: true })
-    await expect(card.locator('.image-handle')).toBeVisible()
+    await expect(card.locator('.inkkit-image-handle')).toBeVisible()
     expect(errors).toEqual([])
   })
 }
@@ -104,7 +104,7 @@ test('Retry remains keyboard operable in a read-only attachment @linked-files', 
   await retry.focus()
   await page.keyboard.press('Enter')
   await expect(page.locator('.inkkit-file img')).toBeVisible()
-  await expect(page.locator('.image-handle')).toBeHidden()
+  await expect(page.locator('.inkkit-image-handle')).toBeHidden()
   expect((await observe(page)).snapshot!.text).toBe('![[Photo|140]]\n')
 })
 
@@ -113,12 +113,12 @@ test('image-adapter handles follow read-only transitions @linked-files', async (
   openFixture,
 }) => {
   await openFixture('images', '&editable=false')
-  const image = page.locator('.image')
+  const image = page.locator('.inkkit-image')
   await expect(image.locator('img')).toBeVisible()
   await image.hover()
-  await expect(image.locator('.image-handle')).toBeHidden()
+  await expect(image.locator('.inkkit-image-handle')).toBeHidden()
   const before = (await observe(page)).snapshot!.text
   await operation(page, 'editable', { editable: true })
-  await expect(image.locator('.image-handle')).toBeVisible()
+  await expect(image.locator('.inkkit-image-handle')).toBeVisible()
   expect((await observe(page)).snapshot!.text).toBe(before)
 })

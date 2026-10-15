@@ -121,7 +121,7 @@ describe('a block that cannot be built is kept as source', () => {
         // The rest of the document is still formatted and editable.
         expect(root.querySelector('h1')?.textContent).toBe('Title')
         expect(
-          [...root.querySelectorAll('pre.literal-markdown')].map(
+          [...root.querySelectorAll('pre.inkkit-literal-markdown')].map(
             (pre) => pre.textContent,
           ),
         ).toEqual([block.replace(/\n/g, ending!)])
@@ -140,7 +140,9 @@ describe('a block that cannot be built is kept as source', () => {
         // Reopening what was saved keeps the block as source again.
         load(editor, saved, 2)
         expect(editor.snapshot(2).text).toBe(saved)
-        expect(root.querySelectorAll('pre.literal-markdown')).toHaveLength(1)
+        expect(
+          root.querySelectorAll('pre.inkkit-literal-markdown'),
+        ).toHaveLength(1)
       })
     }
   })
@@ -171,9 +173,9 @@ describe('a block that cannot be built is kept as source', () => {
       editor.replaceSource(source, 1)
       editor.setEditingMode('formatted', 1)
       expect(editor.snapshot().text).toBe(source)
-      expect(root.querySelector('pre.literal-markdown')?.textContent).toBe(
-        '- one\n- FAIL',
-      )
+      expect(
+        root.querySelector('pre.inkkit-literal-markdown')?.textContent,
+      ).toBe('- one\n- FAIL')
       caretAfter(ctx, 'After.')
       editor.insertText(' More', 1)
       expect(editor.snapshot().text).toBe(

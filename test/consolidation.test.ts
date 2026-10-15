@@ -87,7 +87,7 @@ test('minimal rendering preserves code and unsupported source across edit, outpu
         '\uFEFF~~~~mermaid  \r\nunsupported x\r\n~~~~~~  \r\n\r\n```typescript\r\nconst x = 1\r\n```\r\n\r\n<div>Raw **HTML**</div>\r\n'
       editor.loadDocument({ ...input, text })
       expect(root.querySelector('.inkkit-mermaid-preview')).toBeNull()
-      expect(root.querySelector('[class*="hljs-"]')).toBeNull()
+      expect(root.querySelector('[class*="inkkit-hljs-"]')).toBeNull()
       expect(editor.snapshot().text).toBe(text)
       editor.setEditingMode('source')
       editor.replaceSource(text + 'After\r\n')

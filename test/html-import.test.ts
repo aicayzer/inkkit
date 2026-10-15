@@ -200,7 +200,7 @@ for (const via of ['paste', 'drop'] as const) {
       ]) {
         const { doc, text } = await expectReadsBack(
           session,
-          `<p>a</p><pre class="literal-markdown">${source}</pre><p>b</p>`,
+          `<p>a</p><pre class="inkkit-literal-markdown">${source}</pre><p>b</p>`,
           via,
         )
         expect(names(doc), text).not.toContain('literal_markdown')
@@ -208,11 +208,24 @@ for (const via of ['paste', 'drop'] as const) {
       }
       const { doc, text } = await expectReadsBack(
         session,
-        '<p>a</p><pre class="literal-markdown">&lt;div&gt;\nhello\n&lt;/div&gt;</pre><p>b</p>',
+        '<p>a</p><pre class="inkkit-literal-markdown">&lt;div&gt;\nhello\n&lt;/div&gt;</pre><p>b</p>',
         via,
       )
       expect(names(doc)).toContain('literal_markdown')
       expect(text).toBe('a\n\n<div>\nhello\n</div>\n\nb\n')
+    })
+  })
+
+  test(`a pre with the old unprefixed class is plain code, not preserved Markdown (${via})`, async () => {
+    await withEditor(async (session) => {
+      const { doc, text } = await expectReadsBack(
+        session,
+        '<p>a</p><pre class="literal-markdown">&lt;div&gt;\nhello\n&lt;/div&gt;</pre><p>b</p>',
+        via,
+      )
+      expect(names(doc)).not.toContain('literal_markdown')
+      expect(names(doc)).toContain('code_block')
+      expect(text).toContain('```\n<div>\nhello\n</div>\n```')
     })
   })
 
@@ -492,7 +505,7 @@ test('HTML that ProseMirror parses itself is still checked', async () => {
   await withEditor(async (session) => {
     load(session)
     session.view.pasteHTML(
-      '<p>a</p><pre class="literal-markdown">&lt;b&gt;x&lt;/b&gt; [l](javascript:alert(1))</pre>',
+      '<p>a</p><pre class="inkkit-literal-markdown">&lt;b&gt;x&lt;/b&gt; [l](javascript:alert(1))</pre>',
       new Event('paste') as ClipboardEvent,
     )
     const text = session.editor.snapshot().text
@@ -595,7 +608,7 @@ function generate(next: () => number): string {
   const a = () => escape(next() < 0.3 ? 'https://example.test/' : raw())
   const templates = [
     () => `${t()}<b>${t()}</b><p>${t()}</p>`,
-    () => `<pre class="literal-markdown">${t()}</pre>`,
+    () => `<pre class="inkkit-literal-markdown">${t()}</pre>`,
     () =>
       `<blockquote data-inkkit-callout="${pick(['NOTE', 'TIP', 'X'])}"${next() < 0.5 ? ` data-inkkit-title="${a()}"` : ''}><strong class="inkkit-callout-title">${t()}</strong><div class="inkkit-callout-body"><p>${t()}</p></div></blockquote>`,
     () =>
@@ -713,8 +726,8 @@ test('Markdown kept inside HTML saves no address that a reader without raw HTML 
       for (const html of [
         '<p>a<span data-inkkit-comment="html">[y](javascript:alert(1))</span>b</p>',
         '<p>a<span data-inkkit-comment="obsidian">&lt;javascript:alert(1)&gt;</span>b</p>',
-        '<p>a</p><pre class="literal-markdown">&lt;div&gt;\n[y](javascript:alert(1))\n&lt;/div&gt;</pre><p>b</p>',
-        '<p>a</p><pre class="literal-markdown">&lt;x-a&gt;\n[y](javascript:alert(1))\n&lt;/x-a&gt;</pre><p>b</p>',
+        '<p>a</p><pre class="inkkit-literal-markdown">&lt;div&gt;\n[y](javascript:alert(1))\n&lt;/div&gt;</pre><p>b</p>',
+        '<p>a</p><pre class="inkkit-literal-markdown">&lt;x-a&gt;\n[y](javascript:alert(1))\n&lt;/x-a&gt;</pre><p>b</p>',
       ]) {
         const { doc } = await expectReadsBack(session, html, via)
         expect(names(doc), html).not.toContain('literal_markdown')
@@ -769,7 +782,8 @@ test("InkKit's own copied and dragged HTML imports as the same structure", async
     load(session, `${source}\n`)
     const expected = session.view.state.doc
     const data = copied(session)
-    expect(data['text/html']).toContain('literal-markdown')
+    expect(data['text/html']).toContain('class="inkkit-literal-markdown"')
+    expect(data['text/html']).not.toMatch(/class="literal-markdown"/)
     load(session)
     await session.editor.paste({
       text: data['text/plain'] ?? '',

@@ -41,12 +41,12 @@ test('labels are per editor, safely inserted and do not change authored source',
     one.editor.loadDocument({ ...input, text })
     two.editor.loadDocument({ ...input, text })
     expect(one.root.classList.contains('inkkit-root')).toBe(true)
-    expect(one.root.querySelector('.copy')?.getAttribute('aria-label')).toBe(
-      malicious,
-    )
-    expect(two.root.querySelector('.copy')?.getAttribute('aria-label')).toBe(
-      'Copy',
-    )
+    expect(
+      one.root.querySelector('.inkkit-copy')?.getAttribute('aria-label'),
+    ).toBe(malicious)
+    expect(
+      two.root.querySelector('.inkkit-copy')?.getAttribute('aria-label'),
+    ).toBe('Copy')
     const toggle = one.root.querySelector<HTMLButtonElement>(
       '[data-inkkit-callout-toggle]',
     )!
@@ -211,7 +211,7 @@ test('comments, footnote definitions and preserved blocks have roles that allow 
       'note',
       'Author comment',
     ])
-    expect(attributes(plain.root, '.literal-markdown')).toEqual([
+    expect(attributes(plain.root, '.inkkit-literal-markdown')).toEqual([
       'group',
       'Preserved Markdown',
     ])
@@ -220,7 +220,7 @@ test('comments, footnote definitions and preserved blocks have roles that allow 
       'Footnote a',
     ])
     expect(attributes(named.root, '.inkkit-comment')).toEqual(['note', 'Gloss'])
-    expect(attributes(named.root, '.literal-markdown')).toEqual([
+    expect(attributes(named.root, '.inkkit-literal-markdown')).toEqual([
       'group',
       'Verbatim',
     ])

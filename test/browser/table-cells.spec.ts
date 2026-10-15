@@ -1,4 +1,4 @@
-import { test, expect, observe, operation } from './fixtures'
+import { test, expect, observe, operation, caretAfterMatch } from './fixtures'
 
 test('typing spaces beside an image and formatted text in a table cell saves spaces', async ({
   page,
@@ -72,8 +72,7 @@ for (const table of tables)
       (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
       table.source,
     )
-    await operation(page, 'find', { text: table.find })
-    await page.keyboard.press('ArrowRight')
+    await caretAfterMatch(page, table.find)
     await page.keyboard.type(' Z')
     await expect
       .poll(async () => (await observe(page)).snapshot!.text)
@@ -95,14 +94,7 @@ test('Shift-Enter in a table cell saves a <br /> line break', async ({
     (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
     source,
   )
-  await operation(page, 'find', { text: 'xx' })
-  await page.keyboard.press('ArrowRight')
-  await expect
-    .poll(async () => {
-      const { selection } = (await observe(page)).textSnapshot!
-      return selection.to - selection.from
-    })
-    .toBe(0)
+  await caretAfterMatch(page, 'xx')
   await page.keyboard.press('Shift+Enter')
   const saved = '| Name | Other |\n| --- | --- |\n| xx<br />yy | rr |\n'
   await expect
