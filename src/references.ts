@@ -266,6 +266,9 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
         Record<string, unknown>,
       ]
       const attrs = { ...dom[1] }
+      // Milkdown's own list also allows `ftp:`; the address follows the same
+      // list as HTML import and print, so Mod-click opens nothing else.
+      if (!isSafeLinkTarget(String(mark.attrs.href ?? ''))) attrs.href = ''
       delete attrs.label
       delete attrs.identifier
       delete attrs.referenceType
