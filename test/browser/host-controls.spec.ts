@@ -243,6 +243,12 @@ test('task markers retain their gutter, tick offset and click target when scaled
         Number.parseFloat(style.height) / 2,
     }
   })
+  expect(
+    await task.evaluate(
+      (node, { x, y }) => node.contains(document.elementFromPoint(x, y)),
+      marker,
+    ),
+  ).toBe(true)
   await page.mouse.click(marker.x, marker.y)
   await expect(task).toHaveAttribute('data-checked', 'false')
   expect((await observe(page)).snapshot).toEqual(before)
