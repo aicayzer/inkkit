@@ -1,9 +1,13 @@
+/** `md` is Markdown; `txt` is literal text, shown and saved as typed. */
 export type DocumentFormat = 'md' | 'txt'
+/** What every adapter call receives, to tell which document, load and call it belongs to. The
+ *  operation ID is opaque and differs for each call from one editor. */
 export interface DocumentContext {
   documentId: string
   generation: number
   operationId: string
 }
+/** A document to load. `generation` must be greater than the loaded one. */
 export interface DocumentInput {
   documentId: string
   generation: number
@@ -17,10 +21,11 @@ export interface DocumentVersion {
   generation: number
   revision: number
 }
+/** The complete current text. `dirty` is true when it differs from the text of the last load. */
 export interface DocumentSnapshot extends DocumentInput, DocumentVersion {
   dirty: boolean
 }
-/** The closed list of failure codes; `docs/api.md` describes each one. */
+/** The closed list of failure codes. The API reference describes each one. */
 export const editorErrorCodes = [
   'not-ready',
   'destroyed',
@@ -53,51 +58,72 @@ export class InkKitError extends Error {
     this.code = code
   }
 }
+/** Image bytes that the editor captured from a paste or drop, for the adapter to store. */
 export interface CapturedImage {
   bytes: Uint8Array
   mimeType: string
   filename?: string
+  /** The `src` of the HTML image the bytes belong to, when there is one. */
   source?: string
 }
+/** Image bytes that leave the editor in clipboard and print output. */
 export interface PortableImage {
   bytes: Uint8Array
   mimeType: string
   filename?: string
 }
+/** Stores, shows and exports the images a host owns. References stay opaque to the editor. */
 export interface ImageAdapter {
+  /** The display URL for `reference`, or `undefined` when the image is unavailable. */
   presentation(reference: string): { url: string } | undefined
+  /** Stores the bytes and returns the reference to write into the Markdown. */
   importImage(
     input: CapturedImage,
     context: DocumentContext,
   ): Promise<{ reference: string }>
+  /** The stored bytes and type of `reference`, for portable clipboard and print output. */
   exportImage(
     reference: string,
     context: DocumentContext,
   ): Promise<PortableImage>
 }
+/** A wiki link as authored. */
 export interface WikiLinkReference {
+  /** The note name, with escapes removed. Empty for a link such as `[[#Heading]]`. */
   target: string
   fragment?: string
+  /** The text shown: the alias, or the target and fragment. */
   label: string
 }
+/** Resolves and opens wiki links. The host owns lookup, permissions and navigation. */
 export interface WikiLinkAdapter {
+  /** Whether the target is missing, for presentation only. */
   resolve?(
     reference: WikiLinkReference,
     context: DocumentContext,
   ): { missing?: boolean } | undefined
+  /** Called by Mod-click, and by Enter or Space on the focused link. */
   open(reference: WikiLinkReference, context: DocumentContext): void
 }
+/** A file the document refers to, as authored. */
 export interface FileReference {
+  /** The whole reference, including any fragment. */
   reference: string
+  /** `path` for `![alt](destination)`, `wiki` for `![[name]]`. */
   kind: 'path' | 'wiki'
+  /** The reference without its fragment. Use it to find the file. */
   target: string
+  /** Everything after the separating `#`, such as `t=10` or `page=3`. */
   fragment?: string
   label?: string
+  /** The authored width in pixels. */
   width?: number
 }
+/** The context of a file call. Abandon the work when `signal` aborts. */
 export interface FileContext extends DocumentContext {
   signal: AbortSignal
 }
+/** How the host shows a file. `url` must be private to the host and usable offline. */
 export type FilePresentation =
   | {
       kind: 'image' | 'audio' | 'video' | 'pdf'
@@ -107,36 +133,49 @@ export type FilePresentation =
     }
   | { kind: 'file' | 'missing'; label?: string }
   | { kind: 'error'; label?: string; message: string }
+/** Resolves, exports and opens files. The host owns storage, permissions and native actions. */
 export interface FileAdapter {
+  /** Decides what kind of file `reference` is and how to show it. InkKit never guesses from the
+   *  extension. */
   resolve(
     reference: FileReference,
     context: FileContext,
   ): Promise<FilePresentation>
+  /** Portable bytes of an image for copy and print. Named images need it. */
   exportImage?(
     reference: FileReference,
     context: FileContext,
   ): Promise<PortableImage>
+  /** Adds an Open button to file cards. */
   open?(reference: FileReference, context: DocumentContext): void
+  /** Called for a context-menu request on a file card. */
   contextMenu?(
     reference: FileReference,
     point: ClientPoint,
     context: DocumentContext,
   ): void
 }
+/** A position in CSS pixels in the web view's client area, as in DOM pointer events. */
 export interface ClientPoint {
   clientX: number
   clientY: number
 }
+/** What the host read from the native clipboard. */
 export interface ClipboardInput {
   text: string
+  /** Explicit Markdown source. It takes precedence over `text` and `html`. */
   markdown?: string
   html?: string
+  /** Bytes for the images that `html` refers to. */
   images?: CapturedImage[]
 }
+/** An image in clipboard output. */
 export interface ClipboardImage {
+  /** The authored reference. Empty for the picture of a diagram. */
   reference: string
   alt: string
   image?: PortableImage
+  /** Why `image` is missing. */
   error?: string
 }
 /** What `clipboardSnapshot` copies: the whole document or the current selection. */
@@ -149,28 +188,39 @@ export interface ClipboardOutput extends DocumentVersion {
   images: ClipboardImage[]
   diagrams: ClipboardDiagram[]
 }
+/** A complete Mermaid diagram in clipboard output. */
 export interface ClipboardDiagram {
   source: string
+  /** A PNG of the rendered diagram. */
   image?: PortableImage
+  /** Why `image` is missing. The source is still in the output. */
   error?: string
 }
+/** Output that degraded, such as a diagram printed as code or a file printed as a description. */
 export interface PrintableWarning {
   code: 'diagram-unavailable' | 'attachment-fallback' | 'attachment-unavailable'
   message: string
 }
+/** The whole document, ready to print. The host owns the Print or PDF command. */
 export interface PrintableDocument extends DocumentVersion {
   format: DocumentFormat
+  /** A standalone HTML document with the print CSS embedded and `data:` images only. */
   html: string
+  /** The print CSS on its own. */
   styles: string
+  /** The images, in the order they appear in `html`. */
   assets: readonly PortableImage[]
   warnings: readonly PrintableWarning[]
 }
 
+/** A range of readable text. Offsets are zero-based UTF-16 code units in the `text` of the
+ *  snapshot that `snapshotId` names, with `to` exclusive. */
 export interface TextRange {
   snapshotId: string
   from: number
   to: number
 }
+/** The editor's readable text and selection. Ranges from it go stale when the document changes. */
 export interface ReadableTextSnapshot extends DocumentVersion {
   snapshotId: string
   format: DocumentFormat
@@ -178,6 +228,7 @@ export interface ReadableTextSnapshot extends DocumentVersion {
   text: string
   selection: TextRange
 }
+/** A rectangle in CSS pixels in the web view's client coordinate space. */
 export interface TextRect {
   left: number
   top: number
@@ -186,6 +237,7 @@ export interface TextRect {
   width: number
   height: number
 }
+/** How far host chrome covers each edge of the visible area, in non-negative CSS pixels. */
 export interface ViewportInsets {
   top: number
   right: number
@@ -193,12 +245,15 @@ export interface ViewportInsets {
   left: number
 }
 export interface ViewportOptions {
+  /** The element that scrolls. It must be the root or an ancestor of it. Defaults to the root. */
   scrollContainer?: HTMLElement
   insets?: Partial<ViewportInsets>
 }
 export interface ViewportSnapshot {
+  /** The visible area, less the insets. */
   rect: TextRect
   insets: ViewportInsets
+  /** The combined scroll offsets of the container and, in source and TXT modes, the textarea. */
   scrollTop: number
   scrollLeft: number
 }
@@ -238,11 +293,15 @@ export interface EditorLabels {
   /** Name of a block of Markdown InkKit keeps as authored and does not render. */
   preservedMarkdown: string
 }
+/** An outline entry. Pass it back to `navigateHeading`; it goes stale when the document changes. */
 export interface Heading extends Readonly<DocumentVersion> {
+  /** Opaque. It belongs to the loaded document and editing mode. */
   readonly id: string
+  /** 1 to 6. */
   readonly level: number
   readonly text: string
 }
+/** A command for `table`. `insert` makes a table; the others work on the table at the selection. */
 export type TableCommand =
   | 'insert'
   | 'addRowBefore'
@@ -261,10 +320,16 @@ export type TableCommand =
   | 'moveColumnRight'
   | 'sortRows'
   | 'exit'
+/** Each option belongs to one command; any other combination is refused. */
 export interface TableOptions {
+  /** `insert`: 1 to 100, counting the header row. Defaults to 3. */
   rows?: number
+  /** `insert`: 1 to 100. Defaults to 2. */
   columns?: number
+  /** `sortRows`: zero-based. Defaults to the column of the selection. */
   column?: number
+  /** `sortRows`. Defaults to `ascending`. */
   order?: 'ascending' | 'descending'
+  /** `sortRows`. Defaults to `text`. */
   comparison?: 'text' | 'number'
 }

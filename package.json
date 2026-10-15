@@ -48,8 +48,9 @@
     "format:check": "prettier --check .",
     "dev": "vite playground",
     "build:playground": "vite build playground --config vite.config.ts",
+    "test:docs": "node scripts/check-api-docs.mjs",
     "test:package": "node scripts/test-package.mjs",
-    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm test:package",
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm test:docs && pnpm test:package",
     "test:browser": "playwright test --project=chromium",
     "test:built-playground": "playwright test --config playwright.built.config.ts"
   },

@@ -1,13 +1,13 @@
 # Supported syntax
 
-This matrix applies to 0.0.7–0.0.9. Versions 0.0.8 and 0.0.9 add host controls, development fixtures and native text/layout contracts without expanding syntax support. Source mode can edit all Markdown literally; the statuses below describe formatted mode.
+This matrix describes the current package. Source mode can edit all Markdown literally; the statuses below describe formatted mode.
 
 - **Rendered and editable:** InkKit recognises the construct and exposes its content for editing.
 - **Preserved literally:** source remains editable and saveable, without that construct's formatted behaviour.
 - **Adapter-dependent:** a host image adapter supplies presentation and portable bytes; the source reference stays opaque.
 - **Unsupported:** the file format or feature has no package implementation. Planned work is not supported content.
 
-| Content                                                           | Example                                                 | Status from 0.0.7                                                                                            |
+| Content                                                           | Example                                                 | Status                                                                                                       |
 | ----------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | CommonMark headings, paragraphs, emphasis, lists, quotes and code | `# Heading`, `**bold**`, `[link](https://example.com)`  | Rendered and editable.                                                                                       |
 | Task lists, strikethrough and autolinks                           | `- [x] Done`, `~~old~~`, `https://example.com`          | Rendered and editable.                                                                                       |
@@ -151,7 +151,7 @@ Complete Markdown source is editable through the facade alongside formatted edit
 
 ## Linked syntax
 
-These features are optional in 0.0.10 and later. Enable `wikiLinks` for wiki links and `files` for host-resolved named/path embeds. Disabled features and unsupported forms remain editable source.
+These features are optional. Enable `wikiLinks` for wiki links and `files` for host-resolved named/path embeds. Disabled features and unsupported forms remain editable source.
 
 - `[[target]]` and `[[target#fragment]]` resolve a target and optional fragment through the host. Unicode and internal spaces are retained.
 - `[[target|alias]]` and `[[target#fragment|alias]]` use a plain-text readable alias.
