@@ -986,7 +986,7 @@ export class InkKitEditor {
         props: {
           editable: () => this.writable && !this.literalSurface,
           // ProseMirror selects the clicked node when Mod is held; a click
-          // that opens a link leaves the selection alone.
+          // that opens a link must not.
           handleClick: (_view, _pos, event) =>
             modHeld(event) &&
             !!(event.target as HTMLElement).closest('a[href]'),
