@@ -72,6 +72,11 @@ function ownShape(node: SourceNode): string {
   )
 }
 
+// The shape two nodes must share to be the same child of a list or quote. A
+// task ticked since is still the same item.
+const matchShape = (node: SourceNode): string =>
+  ownShape({ ...node, checked: undefined })
+
 // The character that decides which list an item belongs to: its bullet, or the
 // delimiter after its number. Items with different ones start a new list.
 function markerAt(
@@ -179,6 +184,7 @@ function splitPart(
   candidates: readonly SourceNode[],
   after: SourceNode,
   source: string,
+  taken: ReadonlySet<SourceNode> = new Set(),
 ): SourceNode | undefined {
   if (
     (after.type !== 'list' && after.type !== 'blockquote') ||
@@ -187,13 +193,16 @@ function splitPart(
     return undefined
   const ids = new Map<string, number>()
   const id = (node: SourceNode) => {
-    const key = signature(node) + ownShape(node)
+    const key = signature(node) + matchShape(node)
     let value = ids.get(key)
     if (value === undefined) ids.set(key, (value = ids.size))
     return value
   }
   const wanted = after.children.map(id)
-  let best: { node: SourceNode; run: SourceNode[]; score: number } | undefined
+  // The placements with the best score; more than one is a tie.
+  // `from` is where the part's first child falls in the run.
+  let best: Array<{ node: SourceNode; run: SourceNode[]; from: number }> = []
+  let score = 0
   for (const node of candidates) {
     const children = node.children
     if (
@@ -205,6 +214,7 @@ function splitPart(
     const have = children.map(id)
     const positions = new Map<number, number[]>()
     have.forEach((key, index) => {
+      if (taken.has(children[index]!)) return
       const at = positions.get(key)
       if (at) at.push(index)
       else positions.set(key, [index])
@@ -212,6 +222,7 @@ function splitPart(
     // Each child found only a few times in the original suggests where the
     // part starts in it. A part can also run past either end of the original
     // by children it does not hold, such as an item added at its end.
+    // Children another part already kept are not this part's.
     const votes = new Map<number, number>()
     wanted.forEach((key, index) => {
       const at = positions.get(key) ?? []
@@ -230,28 +241,49 @@ function splitPart(
       ...(lead < 0 ? [] : [-lead, have.length - wanted.length + trail]),
     ])
     for (const from of offsets) {
-      const first = Math.max(0, from)
-      const last = Math.min(have.length, from + wanted.length)
-      let score = 0
+      // Children another part kept can end the run, as edits do; one kept
+      // inside it places the part elsewhere.
+      let first = Math.max(0, from)
+      let last = Math.min(have.length, from + wanted.length)
+      while (first < last && taken.has(children[first]!)) first++
+      while (last > first && taken.has(children[last - 1]!)) last--
+      const run = children.slice(first, last)
+      if (run.some((child) => taken.has(child))) continue
+      let matched = 0
       for (let index = first; index < last; index++)
-        if (have[index] === wanted[index - from]) score++
-      if (score > (best?.score ?? 0))
-        best = { node, run: children.slice(first, last), score }
+        if (have[index] === wanted[index - from]) matched++
+      if (!matched || matched < score) continue
+      if (matched > score) best = []
+      score = matched
+      best.push({ node, run, from: from - first })
     }
   }
-  if (!best) return undefined
-  const run = best.run
+  if (!best.length) return undefined
+  // Tied placements that would give the part different source leave which
+  // copy it is unknown, so it is written afresh.
+  const spelling = (placement: (typeof best)[number]) =>
+    JSON.stringify(
+      wanted.map((_, index) => {
+        const child = placement.run[index + placement.from]
+        return (
+          child &&
+          source.slice(child.position?.start.offset, child.position?.end.offset)
+        )
+      }),
+    )
+  if (new Set(best.map(spelling)).size > 1) return undefined
+  const { node: original, run } = best[0]!
   const start = run[0]!.position?.start.offset
   const end = run.at(-1)!.position?.end.offset
   if (start == null || end == null) return undefined
   const part: SourceNode = {
-    ...best.node,
+    ...original,
     children: run,
     position: { start: { offset: start }, end: { offset: end } },
   }
   if (part.type === 'blockquote') {
     // The part opens at the quote's marker on the line of its first child.
-    const opening = best.node.position!.start.offset!
+    const opening = original.position!.start.offset!
     const column = opening - (source.lastIndexOf('\n', opening - 1) + 1)
     const marker = source.lastIndexOf('\n', start - 1) + 1 + column
     if (source[marker] !== '>' || marker > start) return undefined
@@ -281,14 +313,16 @@ function retainSplit(
   source: string,
   canonical: string,
   lineEnding: string,
+  // Children of originals that other parts kept, which this part takes too.
+  taken: Set<SourceNode>,
 ): { from: number; text: string } | undefined {
-  const part = splitPart(candidates, after, source)
-  return (
-    part && {
-      from: part.position!.start.offset!,
-      text: retainSource(part, after, source, canonical, lineEnding),
-    }
-  )
+  const part = splitPart(candidates, after, source, taken)
+  if (!part) return undefined
+  for (const child of part.children!) taken.add(child)
+  return {
+    from: part.position!.start.offset!,
+    text: retainSource(part, after, source, canonical, lineEnding),
+  }
 }
 
 // Children written afresh between authored ones, each read against the
@@ -309,14 +343,22 @@ function retainParts(
   next?: Neighbour,
 ): string | undefined {
   let items: Map<string, SourceNode[]> | undefined
+  const taken = new Set<SourceNode>()
   const opening = (item: SourceNode) =>
     item.children?.length
-      ? ownShape(item) + signature(item.children[0]!)
+      ? matchShape(item) + signature(item.children[0]!)
       : undefined
   const pieces = after.map((child): string | undefined => {
     const end = child.position!.end.offset!
     if (child.type === 'list' || child.type === 'blockquote') {
-      const part = retainSplit(before, child, source, canonical, lineEnding)
+      const part = retainSplit(
+        before,
+        child,
+        source,
+        canonical,
+        lineEnding,
+        taken,
+      )
       // A list's range can take in the blank line its container gave it,
       // which the part, ending at its last child, does not hold.
       if (part)
@@ -2038,6 +2080,7 @@ export class Preservation {
     index: number,
     after: SourceNode,
     canonical: string,
+    taken: Set<SourceNode>,
   ): string | undefined {
     const source = this.source.slice(this.source.startsWith('\uFEFF') ? 1 : 0)
     const part = retainSplit(
@@ -2046,6 +2089,7 @@ export class Preservation {
       source,
       canonical,
       this.lineEnding,
+      taken,
     )
     if (!part) return undefined
     const indent = source.slice(
@@ -2556,6 +2600,31 @@ export class Preservation {
           position == null ? [] : [this.blocks[position]!],
         ),
       )
+      // The children each edited list or quote keeps at its start and end,
+      // which a part split from the same original cannot also be.
+      const taken = new Set<SourceNode>()
+      if (currentTree.children.length === current.length)
+        positions.forEach((position, index) => {
+          const kids =
+            position == null ? undefined : this.blocks[position]!.ast.children
+          const now = (currentTree.children[index] as unknown as SourceNode)
+            .children
+          if (!kids || !now || this.blocks[position!]!.form === current[index])
+            return
+          let start = 0,
+            end = 0
+          while (
+            start < Math.min(kids.length, now.length) &&
+            signature(kids[start]!) === signature(now[start]!)
+          )
+            taken.add(kids[start++]!)
+          while (
+            end < Math.min(kids.length, now.length) - start &&
+            signature(kids[kids.length - 1 - end]!) ===
+              signature(now[now.length - 1 - end]!)
+          )
+            taken.add(kids[kids.length - 1 - end++]!)
+        })
       const gaps: string[] = []
       const pieces: string[] = []
       const kept: Kept[] = []
@@ -2600,7 +2669,8 @@ export class Preservation {
                     )
                     .flatMap((other) => other.ast.children ?? []),
                 )
-              : ((node && this.retainPart(positions, index, node, canonical)) ??
+              : ((node &&
+                  this.retainPart(positions, index, node, canonical, taken)) ??
                 restoreCodeEndings(
                   this.ctx,
                   doc.type.create(null, [doc.child(index)]),
