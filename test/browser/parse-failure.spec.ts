@@ -1,4 +1,4 @@
-import { test, expect, observe, operation } from './fixtures'
+import { test, expect, observe, caretAfterMatch } from './fixtures'
 
 // Milkdown could not build a callout whose last paragraph is a lone HTML break, so the note loaded
 // without it and the first keystroke saved over it. The callout now loads formatted; the unit
@@ -28,8 +28,7 @@ for (const [name, source, at, saved] of [
       (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
       source,
     )
-    await operation(page, 'find', { text: at })
-    await page.keyboard.press('ArrowRight')
+    await caretAfterMatch(page, at)
     await page.keyboard.type('More')
     await expect
       .poll(async () => (await observe(page)).snapshot?.text)

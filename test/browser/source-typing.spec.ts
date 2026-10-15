@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { test, expect, observe, operation } from './fixtures'
+import { test, expect, observe, operation, focusSettled } from './fixtures'
 
 const original =
   Array.from(
@@ -140,6 +140,7 @@ test('redo from source mode does not carry its steps into the formatted view', a
   expect(await operation(page, 'redo')).toBe(false)
   const editor = page.locator('.ProseMirror.editor')
   await editor.click()
+  await focusSettled(page)
   await page.keyboard.press(documentStart)
   await page.keyboard.type('Q')
   const text = (await observe(page)).snapshot!.text
@@ -166,6 +167,7 @@ test('undo and redo cross between formatted history and source steps in order', 
   )
   const editor = page.locator('.ProseMirror.editor')
   await editor.click()
+  await focusSettled(page)
   await page.keyboard.press(documentStart)
   await page.keyboard.type('X')
   await page.waitForTimeout(700)

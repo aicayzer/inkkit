@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { test, expect, observe, operation } from './fixtures'
+import { test, expect, observe, caretAfterMatch } from './fixtures'
 
 // Puts the caret at the end of the first match of `at`.
 async function caretAfter(page: Page, source: string, at: string) {
@@ -7,18 +7,7 @@ async function caretAfter(page: Page, source: string, at: string) {
     (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
     source,
   )
-  await caretTo(page, at)
-}
-
-async function caretTo(page: Page, at: string) {
-  await operation(page, 'find', { text: at })
-  await page.keyboard.press('ArrowRight')
-  await expect
-    .poll(async () => {
-      const { selection } = (await observe(page)).textSnapshot!
-      return selection.to - selection.from
-    })
-    .toBe(0)
+  await caretAfterMatch(page, at)
 }
 
 // The saved text reopens as itself, unchanged and clean.
@@ -147,7 +136,7 @@ for (const [name, source, at, keys, saved] of [
     await caretAfter(page, source, at)
     // `end:` moves the caret to the end of some text.
     for (const key of keys)
-      if (key.startsWith('end:')) await caretTo(page, key.slice(4))
+      if (key.startsWith('end:')) await caretAfterMatch(page, key.slice(4))
       else await page.keyboard.press(key)
     await expect
       .poll(async () => (await observe(page)).snapshot!.text)

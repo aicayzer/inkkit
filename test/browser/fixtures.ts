@@ -30,6 +30,22 @@ export const operation = (
     async ({ name, args }) => window.inkkitPlayground.operation(name, args),
     { name, args },
   )
+// Call after a click or other focus that is not a playground operation, before
+// a key that only moves the caret; operations that focus the editor already
+// wait. The playground explains why.
+export const focusSettled = (page: Page) =>
+  page.evaluate(() => window.inkkitPlayground.focusSettled())
+// Puts the caret at the end of the next match of `text`.
+export async function caretAfterMatch(page: Page, text: string) {
+  expect(await operation(page, 'find', { text })).toBe(true)
+  await page.keyboard.press('ArrowRight')
+  await expect
+    .poll(async () => {
+      const { selection } = (await observe(page)).textSnapshot!
+      return selection.to - selection.from
+    })
+    .toBe(0)
+}
 export const reset = (page: Page, fixture?: string) =>
   page.evaluate(
     async (fixture) => window.inkkitPlayground.reset(fixture),

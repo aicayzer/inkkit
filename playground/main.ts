@@ -139,6 +139,13 @@ function record(error: unknown) {
   statusError = true
   element<HTMLOutputElement>('status').value = entry.message
 }
+function importPending() {
+  try {
+    return editor.commandState(generation).pending
+  } catch {
+    return false
+  }
+}
 const keystrokeTimes: number[] = []
 function percentile(sorted: number[], fraction: number) {
   return sorted[
@@ -267,6 +274,13 @@ function scheduleControls(epoch = mountEpoch) {
     if (epoch === mountEpoch) updateControls()
   }, 150)
 }
+// WebKit drops a click when the text under the pointer is replaced between
+// press and release, so a refresh replaces a control's text only when it
+// changes, and rebuilds the heading list only when the headings change.
+function setText(id: string, text: string) {
+  const target = element(id)
+  if (target.textContent !== text) target.textContent = text
+}
 function updateControls() {
   if (!editor || mounting) return
   clearTimeout(refreshTimer)
@@ -274,11 +288,11 @@ function updateControls() {
   element('observations').textContent = observation
     ? JSON.stringify(observation, null, 2)
     : 'Observation is off. Turn on Observe, or call window.inkkitPlayground.observe().'
-  element('editing-mode').textContent =
-    editor.editingMode === 'source' ? 'Edit formatted' : 'Edit source'
-  element('read-only').textContent = editor.editable
-    ? 'Make read-only'
-    : 'Make editable'
+  setText(
+    'editing-mode',
+    editor.editingMode === 'source' ? 'Edit formatted' : 'Edit source',
+  )
+  setText('read-only', editor.editable ? 'Make read-only' : 'Make editable')
   let state: CommandState | undefined = observation?.commandState ?? undefined
   if (!observation)
     try {
@@ -310,16 +324,25 @@ function updateControls() {
     headings = []
   }
   const select = element<HTMLSelectElement>('headings')
-  const selected = select.value
-  select.replaceChildren()
-  for (const heading of headings) {
-    const option = document.createElement('option')
-    option.value = heading.id
-    option.textContent = `${'  '.repeat(heading.level - 1)}${heading.text || 'Untitled heading'}`
-    select.append(option)
+  const options = headings.map((heading) => [
+    heading.id,
+    `${'  '.repeat(heading.level - 1)}${heading.text || 'Untitled heading'}`,
+  ])
+  if (
+    options.length !== select.options.length ||
+    options.some(
+      ([id, label], index) =>
+        select.options[index]!.value !== id ||
+        select.options[index]!.textContent !== label,
+    )
+  ) {
+    const selected = select.value
+    select.replaceChildren(
+      ...options.map(([id, label]) => new Option(label, id)),
+    )
+    if (headings.some((heading) => heading.id === selected))
+      select.value = selected
   }
-  if (headings.some((heading) => heading.id === selected))
-    select.value = selected
   select.disabled = !headings.length
   element<HTMLButtonElement>('navigate-heading').disabled = !headings.length
   if (!statusError && state)
@@ -384,7 +407,10 @@ async function reset(
     element('editor'),
     {
       changed: () => {
-        if (epoch === mountEpoch) statusError = false
+        // A change made while an import is pending is that import's own,
+        // such as the placeholder for an image it could not import, so it
+        // leaves the import's error in place.
+        if (epoch === mountEpoch && !importPending()) statusError = false
         update()
       },
       commandStateChanged: update,
@@ -463,8 +489,15 @@ async function reset(
   syncUrl()
   return observe()
 }
+// ProseMirror checks the selection 20 ms after the editor gains focus and puts
+// its own back if the page's differs, which undoes a caret key handled in
+// between. A timer of the same length set after the focus runs after that
+// check, so a key pressed once this resolves always counts.
+const focusSettled = () =>
+  new Promise<void>((resolve) => setTimeout(resolve, 20))
 async function operation(name: string, args: Record<string, unknown> = {}) {
   const operationEpoch = mountEpoch
+  const focusedBefore = document.activeElement
   let result: unknown
   try {
     const target = args.instance === 'second' ? secondEditor : editor
@@ -689,6 +722,11 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         throw Error(`Unknown public operation: ${name}`)
     }
     if (operationEpoch === mountEpoch) lastResult = result ?? null
+    if (
+      document.activeElement !== focusedBefore &&
+      element('editor').contains(document.activeElement)
+    )
+      await focusSettled()
   } catch (error) {
     if (operationEpoch === mountEpoch) record(error)
     throw error
@@ -865,6 +903,7 @@ export const playground = {
   operation,
   observe,
   timings,
+  focusSettled,
   adapter: {
     setMode: (kind: 'import' | 'export', mode: AdapterMode) => {
       images.setMode(kind, mode)

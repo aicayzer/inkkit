@@ -3,6 +3,10 @@ import { fixtures } from '../../scripts/interop/consumer/fixtures'
 
 const source = (page: import('@playwright/test').Page) =>
   page.getByRole('textbox', { name: 'Markdown source editor' })
+// The page sets up the playground after it loads, so this reads nothing until
+// then instead of failing.
+const openedDocument = (page: import('@playwright/test').Page) =>
+  page.evaluate(() => window.inkkitPlayground?.observe().snapshot?.documentId)
 
 test('an unknown fixture shows an error on the page and still opens @playground-tools', async ({
   page,
@@ -12,13 +16,7 @@ test('an unknown fixture shows an error on the page and still opens @playground-
   await expect(problems).toContainText('Unknown fixture "nope"')
   await expect(problems).toContainText('Unknown configuration "wide"')
   await expect(problems).toContainText('Unknown adapter "slow"')
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => window.inkkitPlayground?.observe().snapshot?.documentId,
-      ),
-    )
-    .toBe('fixture:everyday')
+  await expect.poll(() => openedDocument(page)).toBe('fixture:everyday')
   await page.locator('#fixture').selectOption('tables')
   await expect(problems).toBeHidden()
 })
@@ -29,9 +27,7 @@ test('a bad generator is reported and a good one builds a document @playground-t
   await page.goto('/?generate=lines:5')
   await expect(page.getByRole('alert')).toContainText('Unknown generator')
   await page.goto('/?generate=paragraphs:300')
-  await expect
-    .poll(async () => (await observe(page)).snapshot?.documentId)
-    .toBe('generated:paragraphs:300')
+  await expect.poll(() => openedDocument(page)).toBe('generated:paragraphs:300')
   const snapshot = (await observe(page)).snapshot!
   expect(snapshot.text.match(/^Paragraph /gm)?.length).toBeGreaterThan(280)
   expect(snapshot.dirty).toBe(false)
@@ -63,9 +59,7 @@ test('choices made on the page are written to the address and restore the same s
   const shared = page.url()
   await page.goto('about:blank')
   await page.goto(shared)
-  await expect
-    .poll(async () => (await observe(page)).snapshot?.documentId)
-    .toBe('fixture:mermaid')
+  await expect.poll(() => openedDocument(page)).toBe('fixture:mermaid')
   const restored = await observe(page)
   expect(restored.configuration).toBe('minimal')
   expect(restored.adapterMode).toBe('hold')
@@ -118,9 +112,12 @@ test('the status line leaves an error after the next valid edit @playground-tool
 }) => {
   await openFixture('images', '&adapter=reject')
   await operation(page, 'startImagePaste')
-  await expect
-    .poll(async () => (await observe(page)).diagnostics.length)
-    .toBeGreaterThan(0)
+  // The paste has reported its error and inserted its placeholder.
+  await operation(page, 'finishImagePaste')
+  expect((await observe(page)).diagnostics.length).toBeGreaterThan(0)
+  // Refreshes the controls now instead of when the refresh timer fires: the
+  // paste's own placeholder is not the next edit.
+  await operation(page, 'commandState')
   const status = page.locator('#status')
   await expect(status).toHaveText(/unavailable/)
   await page.getByRole('button', { name: 'Edit source', exact: true }).click()
@@ -130,6 +127,23 @@ test('the status line leaves an error after the next valid edit @playground-tool
   expect((await observe(page)).diagnostics.length).toBeGreaterThan(0)
   await page.getByRole('button', { name: 'Reset fixture' }).click()
   await expect(status).toHaveText(/fixture:images/)
+})
+
+test('a click on a control lands when the controls refresh during it @playground-tools', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  const box = (await page
+    .getByRole('button', { name: 'Edit source', exact: true })
+    .boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  // An edit's refresh of the controls lands between press and release.
+  await operation(page, 'commandState')
+  await page.mouse.up()
+  await expect(source(page)).toBeVisible()
+  expect((await observe(page)).mode).toBe('source')
 })
 
 test('a failed operation shows its error and a document load clears it @playground-tools', async ({

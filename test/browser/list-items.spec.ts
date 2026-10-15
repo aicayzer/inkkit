@@ -1,4 +1,4 @@
-import { test, expect, observe, operation } from './fixtures'
+import { test, expect, observe, caretAfterMatch } from './fixtures'
 
 for (const source of [
   '- ```\n  code\n  ```\n- two\n',
@@ -13,14 +13,7 @@ for (const source of [
       (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
       source,
     )
-    await operation(page, 'find', { text: 'cod' })
-    await page.keyboard.press('ArrowRight')
-    await expect
-      .poll(async () => {
-        const { selection } = (await observe(page)).textSnapshot!
-        return selection.to - selection.from
-      })
-      .toBe(0)
+    await caretAfterMatch(page, 'cod')
     await page.keyboard.type('Z')
     await expect
       .poll(async () => (await observe(page)).snapshot!.text)
