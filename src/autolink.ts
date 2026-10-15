@@ -182,6 +182,7 @@ function wantedLinks(
     const char = chars[index]
     return (
       char !== undefined &&
+      !char.marks.some((mark) => mark.type.spec.code) &&
       (released.has(index) ||
         (char.form !== 'angle' && !(char.link && !char.form)))
     )
