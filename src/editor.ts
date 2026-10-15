@@ -1767,10 +1767,7 @@ export class InkKitEditor {
     try {
       text = this.currentText()
     } catch (error) {
-      throw new InkKitError(
-        'preservation',
-        error instanceof Error ? error.message : 'Cannot preserve Markdown',
-      )
+      throw coded(error, 'preservation')
     }
     return {
       documentId: this.documentId,
