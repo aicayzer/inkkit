@@ -321,6 +321,27 @@ test.each([
     '- [ ] __alpha__\n- [ ] _beta_\n- [x] __gamma__\n',
   ],
   [
+    'a task ticked in the second part of a split list',
+    '- [ ] __a__\n- [ ] _b_\n- [ ] __c__\n- [ ] _d_\n',
+    'a',
+    ['Enter', 'Enter', 'tick:c'],
+    '- [ ] __a__\n\n<br />\n\n- [ ] _b_\n- [x] __c__\n- [ ] _d_\n',
+  ],
+  [
+    'a task ticked in the first part of a split list',
+    '- [ ] __a__\n- [ ] _b_\n- [ ] __c__\n- [ ] _d_\n',
+    'c',
+    ['Enter', 'Enter', 'tick:a'],
+    '- [x] __a__\n- [ ] _b_\n- [ ] __c__\n\n<br />\n\n- [ ] _d_\n',
+  ],
+  [
+    'a part whose items repeat with other spellings in the part before it',
+    '* __a__\n* b\n* __a__\n* c\n* **a**\n* d\n',
+    'c',
+    ['Enter', 'Enter', 'end:d', 'type:!', 'Enter', 'type:new'],
+    '* __a__\n* b\n* __a__\n* c\n\n<br />\n\n* **a**\n* d!\n* new\n',
+  ],
+  [
     'an item added at the end of the second part',
     '* __alpha__\n* _beta_\n* __gamma__\n* _delta_\n* epsilon\n',
     'beta',
