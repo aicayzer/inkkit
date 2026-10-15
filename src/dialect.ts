@@ -46,6 +46,7 @@ import { autolinkLiterals } from './autolink'
 import { followsText, remarkLinkForms, type LinkForm } from './link-form'
 import { isScriptAddress } from './link-safety'
 import { sourceAttribute } from './source'
+import { ownStarts } from './source-tree'
 import {
   linkedSyntax,
   wikiLinkSchema,
@@ -368,11 +369,28 @@ function remarkDialect(this: Processor) {
   add('fromMarkdownExtensions', gfmTaskListItemFromMarkdown())
   add('fromMarkdownExtensions', gfmAutolinkLiteralFromMarkdown())
   add('fromMarkdownExtensions', gfmTableFromMarkdown())
+  add('fromMarkdownExtensions', { transforms: [ownStarts] })
   add('toMarkdownExtensions', gfmStrikethroughToMarkdown())
   add('toMarkdownExtensions', gfmTaskListItemToMarkdown())
   add('toMarkdownExtensions', gfmAutolinkLiteralToMarkdown())
   add('toMarkdownExtensions', gfmTableToMarkdown())
   add('toMarkdownExtensions', {
+    // Without these, a bare destination that starts with `<` reads back as a
+    // bracketed one, and an entity in a definition, which is not phrasing,
+    // reads back as the character it stands for.
+    unsafe: [
+      { character: '<', inConstruct: 'destinationRaw' },
+      {
+        character: '&',
+        after: '[#A-Za-z]',
+        inConstruct: [
+          'destinationRaw',
+          'destinationLiteral',
+          'titleQuote',
+          'titleApostrophe',
+        ],
+      },
+    ],
     handlers: {
       text(node, parent, state, info) {
         const value = defaultHandlers.text(node, parent, state, info)
