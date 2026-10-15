@@ -158,6 +158,7 @@ import {
   type Heading,
   type TableCommand,
   type TableOptions,
+  type BlockMoveDirection,
 } from './types'
 import {
   readableProjection,
@@ -172,6 +173,11 @@ import {
   type TextProjection,
 } from './text-ranges'
 import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
+import {
+  canMoveBlock,
+  holdsMovableBlock,
+  moveBlockTransaction,
+} from './block-move'
 import {
   assertCommentsEndWhereWritten,
   commentSelectionContent,
@@ -360,11 +366,14 @@ function clientPoint(value: unknown, name: string): ClientPoint {
   }
 }
 
-/** A name in `Keymap`: every format command except `link`, history, and every table command. */
+/** A name in `Keymap`: every format command except `link`, history, block moves, and every table
+ *  command. */
 export type ShortcutName =
   | Exclude<FormatCommand, 'link'>
   | 'undo'
   | 'redo'
+  | 'moveBlockUp'
+  | 'moveBlockDown'
   | `table${Capitalize<TableCommand>}`
 
 /** Host bindings in ProseMirror key notation, by shortcut name. */
@@ -383,6 +392,8 @@ export const shortcutNames: readonly ShortcutName[] = [
   ...formatShortcuts,
   'undo',
   'redo',
+  'moveBlockUp',
+  'moveBlockDown',
   ...tableCommands.map(tableShortcut),
 ]
 
@@ -547,6 +558,8 @@ export interface CommandState extends DocumentVersion {
     editReferenceDefinition: boolean
     format: Record<FormatCommand, boolean>
     table: Record<TableCommand, boolean>
+    moveBlockUp: boolean
+    moveBlockDown: boolean
   }
 }
 
@@ -1785,6 +1798,8 @@ export class InkKitEditor {
           formatted && referenceDefinitions(state.doc).size > 0,
         format,
         table: tables,
+        moveBlockUp: formatted && canMoveBlock(state, 'up'),
+        moveBlockDown: formatted && canMoveBlock(state, 'down'),
       },
     }
   }
@@ -2572,6 +2587,25 @@ export class InkKitEditor {
     this.assertMutation(expectedGeneration)
     if (this.literalSurface) return false
     return tableCommand(this.editor.ctx, command, options)
+  }
+
+  /** Moves the blocks at the selection one place up or down in their list, quote, callout, footnote
+   *  or note, as one undo step. Returns whether they moved: false in source and TXT modes, in a
+   *  table, and when they are already first or last. */
+  moveBlock(
+    direction: BlockMoveDirection,
+    expectedGeneration?: number,
+  ): boolean {
+    this.assertAlive()
+    expectOneOf(direction, ['up', 'down'], 'direction')
+    this.assertMutation(expectedGeneration)
+    if (this.literalSurface) return false
+    const view = this.editor.ctx.get(editorViewCtx)
+    const tr = moveBlockTransaction(view.state, direction)
+    if (!tr) return false
+    view.dispatch(closeHistory(tr))
+    view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
+    return true
   }
 
   /** Cancels pending work and releases the editor. It never rejects. Afterwards every other member
@@ -4053,14 +4087,17 @@ export class InkKitEditor {
   }
 
   /** Replaces every binding. Keys are in ProseMirror's notation. A key given to two shortcuts goes
-   *  to the later one, in the order history, formatting, tables, so it lands the same way every
-   *  time. */
+   *  to the later one, in the order history, formatting, block moves, tables, so it lands the same
+   *  way every time. A table binding passes a key it shares with a block move to the move outside
+   *  a table. */
   setKeymap(keymap: Keymap): void {
     this.assertAlive()
     keymap = keymapBindings(keymap, 'keymap')
     this.configuredKeys = {
       undo: ['Mod-z'],
       redo: ['Mod-y', 'Shift-Mod-z'],
+      moveBlockUp: ['Alt-ArrowUp'],
+      moveBlockDown: ['Alt-ArrowDown'],
       tableExit: ['Mod-Enter', 'Enter'],
       ...keymap,
     }
@@ -4089,22 +4126,46 @@ export class InkKitEditor {
         }
       }
     }
+    const moves: Record<string, Command> = {}
+    for (const [name, direction] of [
+      ['moveBlockUp', 'up'],
+      ['moveBlockDown', 'down'],
+    ] as const) {
+      for (const key of this.configuredKeys[name] ?? []) {
+        moves[key] = bindings[key] = (state) => {
+          // In a table, and when nothing can be edited, the key goes on to the
+          // table's own bindings and the web view, which moves the caret.
+          if (
+            !this.ready ||
+            !this.writable ||
+            this.literalSurface ||
+            !holdsMovableBlock(state)
+          )
+            return false
+          if (this.commandState().commands[name])
+            this.forPerson(() => this.moveBlock(direction), false)
+          return true
+        }
+      }
+    }
     for (const command of tableCommands) {
       for (const key of this.configuredKeys[tableShortcut(command)] ?? [])
-        bindings[key] = () => {
+        bindings[key] = (state, dispatch, view) => {
           if (!this.ready || !this.commandState().commands.table[command])
-            return false
+            return moves[key]?.(state, dispatch, view) ?? false
           return this.forPerson(() => this.table(command), true)
         }
     }
     this.readOnlyKeys = keydownHandler(
       Object.fromEntries(
-        Object.keys(bindings).map((key) => [
-          key,
-          () => {
-            throw new InkKitError('read-only', 'The editor is read-only')
-          },
-        ]),
+        Object.keys(bindings)
+          .filter((key) => bindings[key] !== moves[key])
+          .map((key) => [
+            key,
+            () => {
+              throw new InkKitError('read-only', 'The editor is read-only')
+            },
+          ]),
       ),
     )
     this.keys = keydownHandler(bindings)
@@ -4758,6 +4819,7 @@ export class InkKitEditor {
       'replaceAll',
       'format',
       'table',
+      'moveBlock',
       'insertText',
       'keyDown',
       'insertPaths',
