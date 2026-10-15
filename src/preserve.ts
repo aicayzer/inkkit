@@ -1913,7 +1913,8 @@ type Kept = 'unchanged' | 'edited' | 'canonical'
 
 /** Retains the loaded source of blocks the edit leaves alone. */
 export class Preservation {
-  private readonly baseline: ProseNode
+  /** The document as loaded from `source`. */
+  readonly baseline: ProseNode
   private readonly blocks: Block[] = []
   private readonly lineEnding: string
   private readonly originalForms = new Set<string>()

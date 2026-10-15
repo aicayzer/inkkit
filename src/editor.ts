@@ -3,12 +3,15 @@ import {
   commandsCtx,
   type CmdKey,
   defaultValueCtx,
+  editorStateOptionsCtx,
   editorViewCtx,
   parserCtx,
   editorViewOptionsCtx,
+  prosePluginsCtx,
   remarkCtx,
   remarkStringifyOptionsCtx,
   rootCtx,
+  schemaCtx,
 } from '@milkdown/kit/core'
 import {
   visibleClipboard,
@@ -79,16 +82,11 @@ import {
   PluginKey,
   Selection,
   TextSelection,
+  EditorState,
   type Command,
-  type EditorState,
   type Transaction,
 } from '@milkdown/kit/prose/state'
-import {
-  $prose,
-  callCommand,
-  replaceAll,
-  type $UserKeymap,
-} from '@milkdown/kit/utils'
+import { $prose, callCommand, type $UserKeymap } from '@milkdown/kit/utils'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
 import { labelsCtx, defaultLabels } from './labels'
 import { createDialect, stringifyOptions } from './dialect'
@@ -2850,6 +2848,18 @@ export class InkKitEditor {
     this.assertAlive()
     input = documentInput(input)
     this.session.checkLoad(input.generation, 'input.generation')
+    const markdown = input.format === 'txt' ? '' : input.text
+    // Parsed before anything changes, so Markdown that cannot be loaded leaves the loaded document.
+    let preservation: Preservation
+    try {
+      preservation = new Preservation(this.editor.ctx, markdown)
+    } catch (error) {
+      throw new InkKitError(
+        'preservation',
+        'The document was not loaded because its Markdown could not be shown without losing part of it',
+        { cause: error },
+      )
+    }
     const container = this.viewportContainer ?? this.root
     const top = container.scrollTop,
       left = container.scrollLeft
@@ -2877,7 +2887,7 @@ export class InkKitEditor {
       this.plain.value.length,
       this.plain.value.length,
     )
-    this.load(input.format === 'txt' ? '' : input.text)
+    this.load(markdown, preservation)
     this.originalSource = input.text
     this.lastMarkdown = input.text
     this.updateSurface()
@@ -3445,17 +3455,26 @@ export class InkKitEditor {
     )
   }
 
-  private load(markdown: string): void {
+  private load(markdown: string, preservation: Preservation): void {
     this.originalSource = markdown
+    const { ctx } = this.editor
+    const view = ctx.get(editorViewCtx)
     this.loading = true
     try {
-      this.editor.action(replaceAll(markdown, true))
+      view.updateState(
+        EditorState.create(
+          ctx.get(editorStateOptionsCtx)({
+            schema: ctx.get(schemaCtx),
+            doc: preservation.baseline,
+            plugins: ctx.get(prosePluginsCtx),
+          }),
+        ),
+      )
     } finally {
       this.loading = false
     }
-    this.preservation = new Preservation(this.editor.ctx, markdown)
+    this.preservation = preservation
     this.lastMarkdown = markdown
-    const view = this.editor.ctx.get(editorViewCtx)
     // A caret at the end, where writing carries on; at the start it would sit in a first-line heading and
     // show its marks. The last place text can go, so a document ending in a rule takes a caret above it
     // rather than selecting the rule itself. After a final image, typing opens a paragraph below it.
