@@ -231,9 +231,12 @@ export function replaceFormattedRange(
   const start = view.state.doc.resolve(from)
   const end = view.state.doc.resolve(to)
   let textOnly = start.parent === end.parent && start.parent.inlineContent
-  view.state.doc.nodesBetween(from, to, (node) => {
-    if (!node.isText && !node.isTextblock) textOnly = false
-  })
+  // Visit only the block's own content. Walking the document would also
+  // visit the list, quote or table around the block and refuse the range.
+  if (textOnly)
+    start.parent.nodesBetween(start.parentOffset, end.parentOffset, (node) => {
+      if (!node.isText) textOnly = false
+    })
   if (!textOnly)
     throw new InkKitError(
       'invalid-range',
