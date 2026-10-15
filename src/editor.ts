@@ -1954,21 +1954,19 @@ export class InkKitEditor {
     })
     let parsed: ProseNode
     try {
-      parsed =
-        this.formatType === 'txt'
-          ? view.state.schema.topNodeType.create(
-              null,
-              view.state.schema.nodes.paragraph!.create(
-                null,
-                text ? view.state.schema.text(text) : undefined,
-              ),
-            )
-          : this.editor.ctx.get(parserCtx)(text)
-      if (this.formatType === 'md')
-        this.sourcePreservations.set(
-          provenance,
-          new Preservation(this.editor.ctx, text),
+      if (this.formatType === 'txt')
+        parsed = view.state.schema.topNodeType.create(
+          null,
+          view.state.schema.nodes.paragraph!.create(
+            null,
+            text ? view.state.schema.text(text) : undefined,
+          ),
         )
+      else {
+        const preservation = new Preservation(this.editor.ctx, text)
+        this.sourcePreservations.set(provenance, preservation)
+        parsed = preservation.baseline
+      }
     } catch (error) {
       throw coded(error, 'preservation')
     }
