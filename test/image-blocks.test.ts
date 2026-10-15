@@ -446,10 +446,10 @@ test('resizing re-emits only that image, in the width-in-alt form, keeping wiki 
     source,
     async ({ root, text }) => {
       await vi.waitFor(() =>
-        expect(root.querySelectorAll('.image img')).toHaveLength(2),
+        expect(root.querySelectorAll('.inkkit-image img')).toHaveLength(2),
       )
       const resize = (index: number, to: number) => {
-        const card = root.querySelectorAll<HTMLElement>('.image')[index]!
+        const card = root.querySelectorAll<HTMLElement>('.inkkit-image')[index]!
         const image = card.querySelector('img')!
         image.getBoundingClientRect = () => new DOMRect(0, 0, 100, 50)
         Object.defineProperty(
@@ -460,7 +460,7 @@ test('resizing re-emits only that image, in the width-in-alt form, keeping wiki 
             configurable: true,
           },
         )
-        const handle = card.querySelector('.image-handle')!
+        const handle = card.querySelector('.inkkit-image-handle')!
         handle.dispatchEvent(
           new MouseEvent('pointerdown', { bubbles: true, clientX: 100 }),
         )
@@ -541,7 +541,7 @@ test('resizing a linked sole image or deleting text beside it keeps the link', (
       expect(text()).toBe(
         '[![Badge](b.png)](https://example.com)\n\n[![Logo](l.png)](https://example.org)\n',
       )
-      const card = root.querySelectorAll<HTMLElement>('.image')[1]!
+      const card = root.querySelectorAll<HTMLElement>('.inkkit-image')[1]!
       card.querySelector('img')!.getBoundingClientRect = () =>
         new DOMRect(0, 0, 100, 50)
       Object.defineProperty(
@@ -552,7 +552,7 @@ test('resizing a linked sole image or deleting text beside it keeps the link', (
           configurable: true,
         },
       )
-      const handle = card.querySelector('.image-handle')!
+      const handle = card.querySelector('.inkkit-image-handle')!
       handle.dispatchEvent(
         new MouseEvent('pointerdown', { bubbles: true, clientX: 100 }),
       )

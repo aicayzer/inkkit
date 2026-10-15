@@ -231,12 +231,16 @@ export const literalBlock = $node('literal_markdown', (ctx) => ({
   code: true,
   defining: true,
   parseDOM: [
-    { tag: 'pre.literal-markdown', preserveWhitespace: 'full', priority: 100 },
+    {
+      tag: 'pre.inkkit-literal-markdown',
+      preserveWhitespace: 'full',
+      priority: 100,
+    },
   ],
   toDOM: () => [
     'pre',
     {
-      class: 'literal-markdown',
+      class: 'inkkit-literal-markdown',
       role: 'group',
       'aria-label': editorLabels(ctx).preservedMarkdown,
     },

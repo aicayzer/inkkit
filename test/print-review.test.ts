@@ -183,7 +183,7 @@ test('print exports the complete semantic model beyond selection and folded nest
     expect(document.querySelector('sup a')).not.toBeNull()
     expect(
       document.querySelector(
-        'button,[contenteditable],.copy,[data-inkkit-folded]',
+        'button,[contenteditable],.inkkit-copy,[data-inkkit-folded]',
       ),
     ).toBeNull()
     expect('markdown' in printed).toBe(false)

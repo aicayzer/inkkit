@@ -807,7 +807,7 @@ test('raw HTML copied with its HTML is kept only where the HTML shows it as sour
       await pasted({
         html: withMarkdown(
           'Text [a][]\n\n<div>block</div>\n\n[a]: https://a.test\n',
-          `<p>Text ${linked('a', 'https://a.test', 'a')}</p><pre class="literal-markdown">&lt;div&gt;block&lt;/div&gt;</pre>`,
+          `<p>Text ${linked('a', 'https://a.test', 'a')}</p><pre class="inkkit-literal-markdown">&lt;div&gt;block&lt;/div&gt;</pre>`,
         ),
       })
     ).markdown,
@@ -818,7 +818,7 @@ test('raw HTML copied with its HTML is kept only where the HTML shows it as sour
       await pasted({
         html: withMarkdown(
           'Text <b>raw</b> [a][]\n\n[a]: https://a.test\n',
-          '<pre class="literal-markdown">Text &lt;b&gt;raw&lt;/b&gt; [a][]</pre>',
+          '<pre class="inkkit-literal-markdown">Text &lt;b&gt;raw&lt;/b&gt; [a][]</pre>',
         ),
       })
     ).markdown,

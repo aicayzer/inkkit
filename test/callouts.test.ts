@@ -176,7 +176,7 @@ test.each([
 ])('unsupported variant remains editable literal source: %s', (source) =>
   run(source, (editor, _ctx, root) => {
     expect(root.querySelector('[data-inkkit-callout]')).toBeNull()
-    expect(root.querySelector('.literal-markdown')).toBeTruthy()
+    expect(root.querySelector('.inkkit-literal-markdown')).toBeTruthy()
     editor.find('Body')
     editor.insertText('Changed', 1)
     expect(editor.snapshot().text).toBe(source.replace('Body', 'Changed'))

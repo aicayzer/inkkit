@@ -233,7 +233,7 @@ test('image preview and footer keep resize and host controls separate', async ()
     { resolve: async () => image, open: vi.fn() },
     async (_, root) => {
       await vi.waitFor(() =>
-        expect(root.querySelector('.image img')).not.toBeNull(),
+        expect(root.querySelector('.inkkit-image img')).not.toBeNull(),
       )
       const preview = root.querySelector('.inkkit-image-preview')!
       const footer = root.querySelector('.inkkit-file-footer')!
@@ -243,12 +243,12 @@ test('image preview and footer keep resize and host controls separate', async ()
       expect(preview.querySelector('button')).toBeNull()
       // The grip belongs to the whole card, so it centres on the picture and its name together.
       expect(
-        preview.parentElement!.querySelector(':scope > .image-handle'),
+        preview.parentElement!.querySelector(':scope > .inkkit-image-handle'),
       ).not.toBeNull()
       expect(footer.querySelector('.inkkit-file-label')?.textContent).toBe(
         'Authored',
       )
-      const card = root.querySelector('.image.inkkit-file')!
+      const card = root.querySelector('.inkkit-image.inkkit-file')!
       expect(card.getAttribute('role')).toBe('group')
       expect(card.getAttribute('aria-label')).toBe('Authored')
       const open = footer.querySelector('.inkkit-file-name button')!
@@ -470,11 +470,11 @@ test('missing, failed and undecodable files provide retry without changing autho
       )
       retry()
       await vi.waitFor(() =>
-        expect(root.querySelector('.image img')).not.toBeNull(),
+        expect(root.querySelector('.inkkit-image img')).not.toBeNull(),
       )
-      root.querySelector('.image img')!.dispatchEvent(new Event('error'))
+      root.querySelector('.inkkit-image img')!.dispatchEvent(new Event('error'))
       expect(root.textContent).toContain('Preview unavailable')
-      expect(root.querySelector('.image img')).toBeNull()
+      expect(root.querySelector('.inkkit-image img')).toBeNull()
       expect(editor.snapshot()).toEqual(before)
     },
   )
@@ -497,7 +497,7 @@ test('reload and source mode abort held requests; late results cannot populate t
       expect(requests).toHaveLength(2)
       requests[0]!.complete(image)
       await Promise.resolve()
-      expect(root.querySelector('.image img')).toBeNull()
+      expect(root.querySelector('.inkkit-image img')).toBeNull()
       editor.setEditingMode('source')
       expect(requests[1]!.context.signal.aborted).toBe(true)
       requests[1]!.complete(image)
@@ -505,7 +505,7 @@ test('reload and source mode abort held requests; late results cannot populate t
       expect(requests).toHaveLength(3)
       requests[2]!.complete(image)
       await vi.waitFor(() =>
-        expect(root.querySelector('.image img')).not.toBeNull(),
+        expect(root.querySelector('.inkkit-image img')).not.toBeNull(),
       )
       expect(editor.snapshot().text).toBe(source.text)
     },
@@ -524,7 +524,7 @@ test('disabled files retain legacy ImageAdapter presentation without a file-reso
   await mounted(
     undefined,
     async (editor, root) => {
-      expect(root.querySelector('.image img')?.getAttribute('src')).toBe(
+      expect(root.querySelector('.inkkit-image img')?.getAttribute('src')).toBe(
         'private://legacy/image',
       )
       expect(root.querySelector('.inkkit-file')).toBeNull()
@@ -592,9 +592,9 @@ test('legacy resize obeys pending-import and composition guards through gesture 
       const surface = root.querySelector('.ProseMirror')!
       Object.defineProperty(surface, 'clientWidth', { value: 500 })
       const begin = () => {
-        const image = root.querySelector<HTMLImageElement>('.image img')!
+        const image = root.querySelector<HTMLImageElement>('.inkkit-image img')!
         image.getBoundingClientRect = () => new DOMRect(0, 0, 120, 80)
-        const handle = root.querySelector('.image-handle')!
+        const handle = root.querySelector('.inkkit-image-handle')!
         handle.dispatchEvent(
           new MouseEvent('pointerdown', {
             bubbles: true,
@@ -614,7 +614,7 @@ test('legacy resize obeys pending-import and composition guards through gesture 
       })
       begin().dispatchEvent(new MouseEvent('pointerup', { clientX: 160 }))
       expect(
-        root.querySelector<HTMLImageElement>('.image img')!.style.width,
+        root.querySelector<HTMLImageElement>('.inkkit-image img')!.style.width,
       ).toBe('120px')
       editor.setEditable(false)
       editor.setEditable(true)
@@ -631,7 +631,7 @@ test('legacy resize obeys pending-import and composition guards through gesture 
       expect(editor.snapshot()).toEqual(before)
       const handle = begin()
       expect(
-        root.querySelector<HTMLImageElement>('.image img')!.style.width,
+        root.querySelector<HTMLImageElement>('.inkkit-image img')!.style.width,
       ).toBe('180px')
       surface.dispatchEvent(
         new CompositionEvent('compositionstart', { bubbles: true }),
@@ -641,7 +641,7 @@ test('legacy resize obeys pending-import and composition guards through gesture 
         new CompositionEvent('compositionend', { bubbles: true }),
       )
       expect(
-        root.querySelector<HTMLImageElement>('.image img')!.style.width,
+        root.querySelector<HTMLImageElement>('.inkkit-image img')!.style.width,
       ).toBe('120px')
       expect(editor.snapshot()).toEqual(before)
       expect(editor.undo()).toBe(false)
@@ -661,20 +661,20 @@ test.each([
       { resolve: async () => image },
       async (editor, root) => {
         await vi.waitFor(() =>
-          expect(root.querySelector('.image img')).not.toBeNull(),
+          expect(root.querySelector('.inkkit-image img')).not.toBeNull(),
         )
         const original = editor.snapshot().text
         editor.insertText('Before ', 1)
         const typed = editor.snapshot().text
         const resize = (finish: 'pointerup' | 'pointercancel') => {
-          const image = root.querySelector('.image img')!
+          const image = root.querySelector('.inkkit-image img')!
           image.getBoundingClientRect = () => new DOMRect(0, 0, 120, 80)
           Object.defineProperty(
             root.querySelector('.ProseMirror')!,
             'clientWidth',
             { value: 500, configurable: true },
           )
-          const handle = root.querySelector('.image-handle')!
+          const handle = root.querySelector('.inkkit-image-handle')!
           handle.dispatchEvent(
             new MouseEvent('pointerdown', {
               clientX: 100,

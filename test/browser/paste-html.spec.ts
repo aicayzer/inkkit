@@ -45,7 +45,9 @@ test('a copied web article pastes as Markdown rather than raw HTML', async ({
     .toBe(
       '## Notes\n\nH2O is essential on 1 October.\n\nA fig caption\n\n- [x] Done\n- [ ] To do\n\n**Term**\n\nMeaning\n',
     )
-  await expect(page.locator('.ProseMirror pre.literal-markdown')).toHaveCount(0)
+  await expect(
+    page.locator('.ProseMirror pre.inkkit-literal-markdown'),
+  ).toHaveCount(0)
   await expect(
     page.locator('.ProseMirror li[data-item-type="task"]'),
   ).toHaveCount(2)
@@ -259,7 +261,7 @@ for (const via of ['paste', 'drop'] as const)
   }) => {
     await openEmpty(page)
     const html =
-      '<p>a</p><pre class="literal-markdown">&lt;b&gt;x&lt;/b&gt; [l](javascript:void(0))</pre><p>b<span data-inkkit-comment="obsidian">see [l](javascript:void(0))</span></p><p>Visit https://example.com/ now</p>'
+      '<p>a</p><pre class="inkkit-literal-markdown">&lt;b&gt;x&lt;/b&gt; [l](javascript:void(0))</pre><p>b<span data-inkkit-comment="obsidian">see [l](javascript:void(0))</span></p><p>Visit https://example.com/ now</p>'
     if (via === 'paste') await pasteHTML(page, html)
     else await dropHTML(page, html)
     await expect
@@ -267,9 +269,9 @@ for (const via of ['paste', 'drop'] as const)
       .toBe(
         'a\n\n```\n<b>x</b> [l](javascript:void(0))\n```\n\nbsee \\[l]\\(javascript:void(0))\n\nVisit https://example.com/ now\n',
       )
-    await expect(page.locator('.ProseMirror pre.literal-markdown')).toHaveCount(
-      0,
-    )
+    await expect(
+      page.locator('.ProseMirror pre.inkkit-literal-markdown'),
+    ).toHaveCount(0)
   })
 
 test('a drop and a paste of the same HTML save the same Markdown', async ({
