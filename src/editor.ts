@@ -67,7 +67,11 @@ import { keydownHandler, keymap } from '@milkdown/kit/prose/keymap'
 import { goToNextCell } from '@milkdown/kit/prose/tables'
 import { liftListItem } from '@milkdown/kit/prose/schema-list'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { findWrapping, liftTarget } from '@milkdown/kit/prose/transform'
+import {
+  Mapping,
+  findWrapping,
+  liftTarget,
+} from '@milkdown/kit/prose/transform'
 import {
   AllSelection,
   NodeSelection,
@@ -787,6 +791,195 @@ const liftItem: Command = (state, dispatch) => {
 }
 
 const listItemShiftTab = $prose(() => keymap({ 'Shift-Tab': liftItem }))
+
+// Backspace in the empty line left by ending a list in the middle removes it and joins the two
+// lists again, as they were before. In the empty item left by ending a nested list in the middle,
+// it moves the item back into the nested list before it, with the items it took along.
+const rejoinLists = $prose(() =>
+  keymap({
+    Backspace: (state, dispatch) => {
+      const { $from, empty } = state.selection
+      if (
+        !empty ||
+        $from.parent.type.name !== 'paragraph' ||
+        $from.parent.content.size > 0
+      )
+        return false
+      const index = $from.index(-1)
+      const container = $from.node(-1)
+      if (container.type.name === 'list_item') {
+        const list = $from.node(-2)
+        const sublist = container.maybeChild(1)
+        const previous = list.maybeChild($from.index(-2) - 1)?.lastChild
+        if (
+          index !== 0 ||
+          container.childCount !== 2 ||
+          !sublist ||
+          !isList(sublist) ||
+          previous?.type !== sublist.type
+        )
+          return false
+        if (dispatch) {
+          const at = $from.before(-1)
+          // The end of the content of the list the item before ends with.
+          const end = at - 2
+          const tr = state.tr
+            .delete(at, at + container.nodeSize)
+            .insert(
+              end,
+              Fragment.from(
+                container.copy(Fragment.from(container.firstChild!)),
+              ).append(sublist.content),
+            )
+          tr.setSelection(TextSelection.create(tr.doc, end + 2))
+          dispatch(tr.scrollIntoView())
+        }
+        return true
+      }
+      const before = container.maybeChild(index - 1)
+      const after = container.maybeChild(index + 1)
+      if (!before || !after || !isList(before) || after.type !== before.type)
+        return false
+      if (dispatch) {
+        const at = $from.before()
+        const tr = state.tr.delete(at, $from.after())
+        joinLists(tr, $from.start(-1), index)
+        tr.setSelection(Selection.near(tr.doc.resolve(at), -1))
+        dispatch(tr.scrollIntoView())
+      }
+      return true
+    },
+  }),
+)
+
+// Enter in an empty item in the middle of a nested list split that list around a line left in the
+// item holding it, which Markdown cannot write, so the edit was refused. The item moves out a level
+// instead, as the last item of a nested list does, and the items after it become its own.
+const nestedItemEnter = $prose(() =>
+  keymap({
+    Enter: (state, dispatch) => {
+      const { $from, empty } = state.selection
+      const itemType = state.schema.nodes.list_item!
+      if (
+        !empty ||
+        $from.depth < 5 ||
+        $from.parent.content.size > 0 ||
+        $from.node(-1).type !== itemType ||
+        $from.node(-1).childCount !== 1 ||
+        $from.node(-3).type !== itemType ||
+        $from.indexAfter(-2) === $from.node(-2).childCount
+      )
+        return false
+      return liftListItem(itemType)(state, dispatch)
+    },
+  }),
+)
+
+// Items an edit moves between lists, such as ending a list in the middle or lifting an item out a
+// level, keep the attributes ProseMirror copies with them, which then disagree with their new list.
+// An item takes its list's kind, which the reopened Markdown would give it. A list split from an
+// ordered list, which ProseMirror starts from the first list's number, continues from the items
+// left before it, as Markdown written so numbers it. Items are followed by position, since
+// relabelling replaces their nodes.
+const movedListItems = $prose(
+  () =>
+    new Plugin({
+      key: new PluginKey('movedListItems'),
+      appendTransaction(transactions, oldState, newState) {
+        if (!transactions.some((tr) => tr.docChanged)) return null
+        const {
+          bullet_list: bullet,
+          ordered_list: ordered,
+          list_item: itemType,
+        } = newState.schema.nodes
+        const maps = transactions.flatMap((tr) => tr.mapping.maps)
+        const mapping = new Mapping(maps)
+        const inverse = mapping.invert()
+        // The ordered list and index of the item whose content starts at a position.
+        const itemAt = (doc: ProseNode, pos: number) => {
+          const $pos = doc.resolve(pos)
+          return $pos.depth > 1 &&
+            $pos.parent.type === itemType &&
+            $pos.node(-1).type === ordered
+            ? {
+                list: $pos.node(-1),
+                at: $pos.before(-1),
+                index: $pos.index(-1),
+              }
+            : undefined
+        }
+        let ranges: Array<[number, number]> = []
+        for (const map of maps) {
+          ranges = ranges.map(([from, to]) => [map.map(from, -1), map.map(to)])
+          map.forEach((_from, _to, from, to) => ranges.push([from, to]))
+        }
+        const tr = newState.tr
+        const seen = new Set<number>()
+        const { doc } = newState
+        const continued = (list: ProseNode, pos: number) => {
+          const back = inverse.mapResult(pos + 2, 1)
+          const origin = back.deleted
+            ? undefined
+            : itemAt(oldState.doc, back.pos)
+          // The original list itself, which lost the items before this one.
+          if (!origin?.index || mapping.map(origin.at, 1) === pos) return
+          const $list = doc.resolve(pos)
+          let before = 0
+          for (
+            let index = 0, at = origin.at + 1;
+            index < origin.index;
+            at += origin.list.child(index++).nodeSize
+          ) {
+            const forward = mapping.mapResult(at + 1, 1)
+            const now = forward.deleted ? undefined : itemAt(doc, forward.pos)
+            if (
+              now &&
+              now.at < pos &&
+              doc.resolve(now.at).start() === $list.start()
+            )
+              before++
+          }
+          // A part split at its own level continues the numbering. A list
+          // that comes to follow the first line of an item starts from 1,
+          // since Markdown reads a list after a line only when it does.
+          const order = before
+            ? Number(origin.list.attrs.order) + before
+            : $list.parent.type === itemType
+              ? 1
+              : undefined
+          if (order !== undefined && list.attrs.order !== order)
+            tr.setNodeMarkup(pos, undefined, { ...list.attrs, order })
+        }
+        for (const [from, to] of ranges)
+          doc.nodesBetween(
+            Math.max(0, from - 1),
+            Math.min(doc.content.size, to + 1),
+            (node, pos, parent) => {
+              if (seen.has(pos)) return
+              seen.add(pos)
+              if (node.type === ordered) continued(node, pos)
+              const listType =
+                parent?.type === ordered
+                  ? 'ordered'
+                  : parent?.type === bullet
+                    ? 'bullet'
+                    : undefined
+              if (
+                node.type === itemType &&
+                listType &&
+                node.attrs.listType !== listType
+              )
+                tr.setNodeMarkup(pos, undefined, {
+                  ...node.attrs,
+                  listType,
+                  label: listType === 'ordered' ? node.attrs.label : '•',
+                })
+            },
+          )
+        return tr.docChanged ? tr : null
+      },
+    }),
+)
 
 // A control chord that nothing handles reaches the page as its ASCII control character
 // (Control-N as U+000E), which the web view would insert as text.
@@ -2371,6 +2564,9 @@ export class InkKitEditor {
       .use(quoteBackspace)
       .use(listItemBackspace)
       .use(listItemShiftTab)
+      .use(nestedItemEnter)
+      .use(rejoinLists)
+      .use(movedListItems)
       .use(textInputPolicy)
       .use(events.copy ? codeCopyPlugin((text) => events.copy?.(text)) : [])
       .use(placeholderPlugin)
