@@ -66,7 +66,12 @@ export const storedInlineCode = $prose((ctx) => {
             const tr = state.tr
             if (pending.from < selection.from)
               tr.addMark(pending.from, selection.from, type().create())
-            view.dispatch(tr.setStoredMarks(pending.marks))
+            // Part of the composition's undo step, so one Undo removes both.
+            view.dispatch(
+              tr
+                .setStoredMarks(pending.marks)
+                .setMeta('appendedTransaction', tr),
+            )
           })
           return false
         },

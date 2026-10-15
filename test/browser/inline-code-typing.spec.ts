@@ -119,3 +119,39 @@ test('composed text under a pending code mark lands in the code once @preservati
       .locator('code'),
   ).toHaveText('abにほcdんe')
 })
+
+test('one Undo removes composed code text together with its mark @preservation', async ({
+  page,
+  openFixture,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium',
+    'Only Chromium lets a test drive an input method',
+  )
+  await openFixture()
+  await operation(page, 'replaceSource', { text: 'Run now\n' })
+  await caretAfterMatch(page, 'Run')
+  await operation(page, 'format', { command: 'code' })
+  const session = await page.context().newCDPSession(page)
+  for (const composing of ['に', 'にほ']) {
+    await session.send('Input.imeSetComposition', {
+      text: composing,
+      selectionStart: composing.length,
+      selectionEnd: composing.length,
+    })
+  }
+  await session.send('Input.insertText', { text: 'にほ' })
+  await expect
+    .poll(async () => (await observe(page)).snapshot?.text)
+    .toBe('Run`にほ` now\n')
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect
+    .poll(async () => (await observe(page)).snapshot?.text)
+    .toBe('Run now\n')
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect
+    .poll(async () => (await observe(page)).snapshot?.text)
+    .toBe('Run`にほ` now\n')
+  expect((await observe(page)).diagnostics).toEqual([])
+})
