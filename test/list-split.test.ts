@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { InkKitEditor } from '../src/editor'
 import { semanticSignature } from '../src/preserve'
 
@@ -31,17 +31,47 @@ async function press(
     })
     const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
     const view = ctx.get(editorViewCtx)
-    editor.find(at)
-    expect(view.state.selection.empty).toBe(false)
-    view.dispatch(
-      view.state.tr.setSelection(
-        TextSelection.create(view.state.doc, view.state.selection.to),
-      ),
-    )
+    const caret = (text: string, end: boolean) => {
+      editor.find(text)
+      const { from, to, empty } = view.state.selection
+      expect(empty).toBe(false)
+      view.dispatch(
+        view.state.tr.setSelection(
+          TextSelection.create(view.state.doc, end ? to : from),
+        ),
+      )
+    }
+    caret(at, true)
     for (const key of keys) {
-      // Text typed at the caret, as `type:` and the text.
-      if (key.startsWith('type:')) {
-        expect(editor.insertText(key.slice(5), 1)).toBe(true)
+      // `type:` types text at the caret; `end:` and `start:` move the caret
+      // to the end or start of some text, and `end of note` to the end of the
+      // note; `tick:` toggles the task holding some text, as a click on its
+      // checkbox does.
+      const [action, text] = key.split(/:(.*)/s)
+      if (action === 'type') {
+        expect(editor.insertText(text!, 1)).toBe(true)
+        continue
+      }
+      if (key === 'end of note') {
+        view.dispatch(
+          view.state.tr.setSelection(Selection.atEnd(view.state.doc)),
+        )
+        continue
+      }
+      if (action === 'end' || action === 'start') {
+        caret(text!, action === 'end')
+        continue
+      }
+      if (action === 'tick') {
+        caret(text!, true)
+        const $at = view.state.selection.$from
+        const item = $at.node(-1)
+        view.dispatch(
+          view.state.tr.setNodeMarkup($at.before(-1), undefined, {
+            ...item.attrs,
+            checked: !item.attrs.checked,
+          }),
+        )
         continue
       }
       const [name, shift] = key === 'Shift-Tab' ? ['Tab', true] : [key, false]
@@ -282,6 +312,69 @@ test.each([
     'mid',
     ['Enter', 'Enter'],
     `${'* _x_\n'.repeat(400)}* mid\n\n<br />\n\n${'* _x_\n'.repeat(400)}`,
+  ],
+  [
+    'ticking a task in a list that was not split',
+    '- [ ] __alpha__\n- [ ] _beta_\n- [ ] __gamma__\n',
+    'beta',
+    ['tick:gamma'],
+    '- [ ] __alpha__\n- [ ] _beta_\n- [x] __gamma__\n',
+  ],
+  [
+    'an item added at the end of the second part',
+    '* __alpha__\n* _beta_\n* __gamma__\n* _delta_\n* epsilon\n',
+    'beta',
+    ['Enter', 'Enter', 'end:epsilon', 'Enter', 'type:new'],
+    '* __alpha__\n* _beta_\n\n<br />\n\n* __gamma__\n* _delta_\n* epsilon\n* new\n',
+  ],
+  [
+    'an item added at the start of the second part',
+    '* __alpha__\n* _beta_\n* __gamma__\n* _delta_\n* epsilon\n',
+    'beta',
+    ['Enter', 'Enter', 'start:gamma', 'Enter'],
+    '* __alpha__\n* _beta_\n\n<br />\n\n* <br />\n* __gamma__\n* _delta_\n* epsilon\n',
+  ],
+  [
+    'an item added at the end of the first part',
+    '* __alpha__\n* _beta_\n* __gamma__\n* _delta_\n* epsilon\n',
+    'gamma',
+    ['Enter', 'Enter', 'end:gamma', 'Enter', 'type:new'],
+    '* __alpha__\n* _beta_\n* __gamma__\n* new\n\n<br />\n\n* _delta_\n* epsilon\n',
+  ],
+  [
+    'an item added at the start of the first part',
+    '* __alpha__\n* _beta_\n* __gamma__\n* _delta_\n* epsilon\n',
+    'gamma',
+    ['Enter', 'Enter', 'start:alpha', 'Enter'],
+    '* <br />\n* __alpha__\n* _beta_\n* __gamma__\n\n<br />\n\n* _delta_\n* epsilon\n',
+  ],
+  [
+    'the first and last items of the second part edited',
+    '* __alpha__\n* _beta_\n* __gamma__\n* _delta_\n* epsilon\n',
+    'beta',
+    ['Enter', 'Enter', 'end:gamma', 'type:!', 'end:epsilon', 'type:!'],
+    '* __alpha__\n* _beta_\n\n<br />\n\n* __gamma!__\n* _delta_\n* epsilon!\n',
+  ],
+  [
+    'the first and last tasks of the second part ticked',
+    '- [ ] __alpha__\n- [ ] _beta_\n- [ ] __gamma__\n- [ ] _delta_\n- [ ] epsilon\n',
+    'beta',
+    ['Enter', 'Enter', 'tick:gamma', 'tick:epsilon'],
+    '- [ ] __alpha__\n- [ ] _beta_\n\n<br />\n\n- [x] __gamma__\n- [ ] _delta_\n- [x] epsilon\n',
+  ],
+  [
+    'an item added at the end of a part of a long list of equal items',
+    `${'* _x_\n'.repeat(400)}* mid\n${'* _x_\n'.repeat(400)}`,
+    'mid',
+    ['Enter', 'Enter', 'end of note', 'Enter', 'type:new'],
+    `${'* _x_\n'.repeat(400)}* mid\n\n<br />\n\n${'* _x_\n'.repeat(400)}* new\n`,
+  ],
+  [
+    'Backspace after ending a nested list in the middle',
+    '* __a__ one\n  * b two\n  * _c_ three\n* d\n',
+    'b two',
+    ['Enter', 'Enter', 'Backspace'],
+    '* __a__ one\n  * b two\n  * <br />\n  * _c_ three\n* d\n',
   ],
 ])('%s keeps the items it did not reach', async (_, source, at, keys, saved) =>
   expect(await press(source, at, keys)).toBe(saved),

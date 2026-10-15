@@ -7,6 +7,10 @@ async function caretAfter(page: Page, source: string, at: string) {
     (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
     source,
   )
+  await caretTo(page, at)
+}
+
+async function caretTo(page: Page, at: string) {
   await operation(page, 'find', { text: at })
   await page.keyboard.press('ArrowRight')
   await expect
@@ -120,6 +124,20 @@ for (const [name, source, at, keys, saved] of [
     ['Shift+Tab'],
     '**a** one\n\n1. _b_ two\n',
   ],
+  [
+    'Backspace after ending a nested list in the middle',
+    '* __a__ one\n  * b two\n  * _c_ three\n* d\n',
+    'b two',
+    ['Enter', 'Enter', 'Backspace'],
+    '* __a__ one\n  * b two\n  * <br />\n  * _c_ three\n* d\n',
+  ],
+  [
+    'an item added at the end of the part after a split',
+    '* __alpha__\n* _beta_\n* __gamma__\n* _delta_\n* epsilon\n',
+    'beta',
+    ['Enter', 'Enter', 'end:epsilon', 'Enter', 'n', 'e', 'w'],
+    '* __alpha__\n* _beta_\n\n<br />\n\n* __gamma__\n* _delta_\n* epsilon\n* new\n',
+  ],
 ] as const)
   test(`${name} keeps the items it did not reach`, async ({
     page,
@@ -127,7 +145,10 @@ for (const [name, source, at, keys, saved] of [
   }) => {
     await openFixture()
     await caretAfter(page, source, at)
-    for (const key of keys) await page.keyboard.press(key)
+    // `end:` moves the caret to the end of some text.
+    for (const key of keys)
+      if (key.startsWith('end:')) await caretTo(page, key.slice(4))
+      else await page.keyboard.press(key)
     await expect
       .poll(async () => (await observe(page)).snapshot!.text)
       .toBe(saved)
