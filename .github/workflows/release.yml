@@ -8,37 +8,40 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  validate:
+  tag:
     runs-on: ubuntu-latest
     steps:
+      # Full history, so the main branch is available for the ancestry check.
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: '26'
-      - run: npm install --global pnpm@11.0.9
-      - run: pnpm install --frozen-lockfile
-      - name: Validate release tag
-        run: node -e "const p=require('./package.json');if(process.env.GITHUB_REF_NAME!=='v'+p.version)process.exit(1)"
-      - run: pnpm format:check
-      - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: pnpm check
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-package
-          path: _local/release/
+          fetch-depth: 0
+      - name: Check the tag names the package version
+        run: node -e "const p=require('./package.json');if(process.env.GITHUB_REF_NAME!=='v'+p.version){console.error('::error::Tag '+process.env.GITHUB_REF_NAME+' does not match package.json version '+p.version);process.exit(1)}"
+      - name: Check the tagged commit is on main
+        run: |
+          commit=$(git rev-parse "$GITHUB_REF^{commit}")
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "::error::Tagged commit $commit is not on main"
+            exit 1
+          fi
+
+  checks:
+    needs: tag
+    uses: ./.github/workflows/ci.yml
+
   publish:
-    needs: validate
-    # The first release is deliberately published by the maintainer from the
-    # tested tarball. Later tags use npm's configured trusted publisher.
-    if: github.ref_name != 'v0.0.1'
+    needs: [tag, checks]
     runs-on: ubuntu-latest
+    # The environment accepts only v* tags, and npm accepts only this
+    # environment, so a workflow edited on a branch cannot publish.
+    environment: npm
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: release-package
+          name: package-candidate
           path: release
       - uses: actions/setup-node@v4
         with:

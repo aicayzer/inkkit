@@ -438,7 +438,7 @@
 }
 
 /* The selection plugin draws the selection over the text alone; the engine's own fills the margins too. */
-.inkkit-root .ProseMirror ::selection {
+.inkkit-root .ProseMirror.inkkit-painted-selection ::selection {
   background: transparent;
 }
 
