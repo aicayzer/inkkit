@@ -64,6 +64,7 @@ import {
   type Node as ProseNode,
   type ResolvedPos,
 } from '@milkdown/kit/prose/model'
+import { splitBlock } from '@milkdown/kit/prose/commands'
 import { keydownHandler, keymap } from '@milkdown/kit/prose/keymap'
 import { goToNextCell } from '@milkdown/kit/prose/tables'
 import { liftListItem } from '@milkdown/kit/prose/schema-list'
@@ -791,26 +792,60 @@ function blockAt(
   return { type: 'paragraph' }
 }
 
-// Backspace at the start of a quote's first block is left alone by the preset;
-// leaving the quote is what a Backspace there means.
+const quotes = new Set(['blockquote', 'inkkit_callout'])
+
+// Backspace at the start of a quote's or callout's first block is left alone
+// by the preset, or joins the block to the one above; leaving the quote is what
+// a Backspace there means. A callout's only block stays while it holds text,
+// because lifting it would remove the callout and its title.
 const quoteBackspace = $prose(() =>
   keymap({
     Backspace: (state, dispatch) => {
       const { $from, empty } = state.selection
       if (!empty || $from.parentOffset > 0 || $from.depth < 2) return false
-      if (
-        $from.node($from.depth - 1).type.name !== 'blockquote' ||
-        $from.index($from.depth - 1) > 0
-      )
+      const quote = $from.node($from.depth - 1)
+      if (!quotes.has(quote.type.name) || $from.index($from.depth - 1) > 0)
         return false
-      const range = $from.blockRange(
-        $from,
-        (node) => node.type.name === 'blockquote',
+      if (
+        quote.type.name === 'inkkit_callout' &&
+        quote.childCount === 1 &&
+        $from.parent.content.size > 0
+      )
+        return true
+      const range = $from.blockRange($from, (node) =>
+        quotes.has(node.type.name),
       )
       const target = range && liftTarget(range)
       if (!range || target == null) return false
       dispatch?.(state.tr.lift(range, target).scrollIntoView())
       return true
+    },
+  }),
+)
+
+// The preset's Enter in an empty block lifts it out of its parent, splitting
+// the parent when the block is not its last. A callout split that way repeats
+// its header, so Enter there adds a paragraph instead, and leaves the callout
+// only from its last block.
+const calloutEnter = $prose(() =>
+  keymap({
+    Enter: (state, dispatch) => {
+      const { $from, empty } = state.selection
+      if (
+        !empty ||
+        $from.depth < 2 ||
+        !$from.parent.isTextblock ||
+        $from.parent.type.spec.code ||
+        $from.parent.content.size > 0
+      )
+        return false
+      const callout = $from.node($from.depth - 1)
+      if (
+        callout.type.name !== 'inkkit_callout' ||
+        $from.index($from.depth - 1) === callout.childCount - 1
+      )
+        return false
+      return splitBlock(state, dispatch)
     },
   }),
 )
@@ -2653,6 +2688,7 @@ export class InkKitEditor {
       .use(cursor)
       .use(taskListPlugin)
       .use(quoteBackspace)
+      .use(calloutEnter)
       .use(listItemBackspace)
       .use(listItemShiftTab)
       .use(nestedItemEnter)
