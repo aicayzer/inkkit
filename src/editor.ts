@@ -793,7 +793,8 @@ const liftItem: Command = (state, dispatch) => {
 const listItemShiftTab = $prose(() => keymap({ 'Shift-Tab': liftItem }))
 
 // Backspace in the empty line left by ending a list in the middle removes it and joins the two
-// lists again, as they were before.
+// lists again, as they were before. In the empty item left by ending a nested list in the middle,
+// it moves the item back into the nested list before it, with the items it took along.
 const rejoinLists = $prose(() =>
   keymap({
     Backspace: (state, dispatch) => {
@@ -806,6 +807,35 @@ const rejoinLists = $prose(() =>
         return false
       const index = $from.index(-1)
       const container = $from.node(-1)
+      if (container.type.name === 'list_item') {
+        const list = $from.node(-2)
+        const sublist = container.maybeChild(1)
+        const previous = list.maybeChild($from.index(-2) - 1)?.lastChild
+        if (
+          index !== 0 ||
+          container.childCount !== 2 ||
+          !sublist ||
+          !isList(sublist) ||
+          previous?.type !== sublist.type
+        )
+          return false
+        if (dispatch) {
+          const at = $from.before(-1)
+          // The end of the content of the list the item before ends with.
+          const end = at - 2
+          const tr = state.tr
+            .delete(at, at + container.nodeSize)
+            .insert(
+              end,
+              Fragment.from(
+                container.copy(Fragment.from(container.firstChild!)),
+              ).append(sublist.content),
+            )
+          tr.setSelection(TextSelection.create(tr.doc, end + 2))
+          dispatch(tr.scrollIntoView())
+        }
+        return true
+      }
       const before = container.maybeChild(index - 1)
       const after = container.maybeChild(index + 1)
       if (!before || !after || !isList(before) || after.type !== before.type)
