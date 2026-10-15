@@ -345,3 +345,31 @@ test('blur releases only the editor’s text surfaces, and caret state follows r
   await operation(page, 'blur')
   await expect(source).not.toBeFocused()
 })
+
+test('blur and a load release a selection left in the editor after focus moved off it @host-controls', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture('untidy')
+  const formatted = page.getByRole('textbox', {
+    name: 'Formatted Markdown editor',
+    exact: true,
+  })
+  const blurElsewhere = () =>
+    page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await formatted.getByText('Before').click()
+  await blurElsewhere()
+  await operation(page, 'blur')
+  const before = (await observe(page)).snapshot
+  await page.keyboard.type('Lost')
+  expect((await observe(page)).snapshot).toEqual(before)
+  // Loading another document releases it the same way.
+  await formatted.getByText('Before').click()
+  await blurElsewhere()
+  await page.evaluate(() =>
+    window.inkkitPlayground.replaceDocument('Next text\n', 'md'),
+  )
+  const loaded = (await observe(page)).snapshot
+  await page.keyboard.type('Lost')
+  expect((await observe(page)).snapshot).toEqual(loaded)
+})

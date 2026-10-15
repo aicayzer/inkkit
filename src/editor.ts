@@ -2696,15 +2696,16 @@ export class InkKitEditor {
     const document = this.root.ownerDocument
     const surface = this.editor.ctx.get(editorViewCtx).dom
     const active = document.activeElement
-    if (active !== this.plain && active !== surface) return
-    ;(active as HTMLElement).blur()
-    // WebKit keeps typing into a blurred contenteditable while the document selection is in it.
+    if (active === this.plain) {
+      this.plain.blur()
+      return
+    }
+    if (active === surface) surface.blur()
+    else if (active && active !== document.body) return
+    // WebKit keeps typing into a contenteditable that has lost focus while the document
+    // selection is still in it, including after the host blurred it itself.
     const selection = document.getSelection()
-    if (
-      active === surface &&
-      selection?.anchorNode &&
-      surface.contains(selection.anchorNode)
-    )
+    if (selection?.anchorNode && surface.contains(selection.anchorNode))
       selection.removeAllRanges()
   }
 
