@@ -577,6 +577,20 @@ describe('selections, undo and bindings', () => {
       },
       { editable: false },
     )
+    // A key the host shares between a row move and a block move is still a
+    // caret key in a read-only editor, in a table or outside one.
+    await withNote(
+      'A\n\n| a |\n| - |\n| 1 |\n',
+      (note) => {
+        for (const text of ['A', '1']) {
+          note.caret(text, 0)
+          expect(note.editor.keyDown({ key: 'ArrowUp', altKey: true }, 1)).toBe(
+            false,
+          )
+        }
+      },
+      { editable: false, keymap: { tableMoveRowUp: ['Alt-ArrowUp'] } },
+    )
     await withNote('A\n\nB\n', (note) => {
       note.caret('B', 0)
       note.editor.setEditingMode('source')

@@ -173,11 +173,7 @@ import {
   type TextProjection,
 } from './text-ranges'
 import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
-import {
-  canMoveBlock,
-  holdsMovableBlock,
-  moveBlockTransaction,
-} from './block-move'
+import { blockMove, canMoveBlock, moveBlockTransaction } from './block-move'
 import {
   assertCommentsEndWhereWritten,
   commentSelectionContent,
@@ -4135,14 +4131,14 @@ export class InkKitEditor {
         moves[key] = bindings[key] = (state) => {
           // In a table, and when nothing can be edited, the key goes on to the
           // table's own bindings and the web view, which moves the caret.
+          if (!this.ready || !this.writable || this.literalSurface) return false
+          const move = blockMove(state, direction)
+          if (!move) return false
           if (
-            !this.ready ||
-            !this.writable ||
-            this.literalSurface ||
-            !holdsMovableBlock(state)
+            move === 'move' &&
+            !this.composing &&
+            !this.pasteController.pending
           )
-            return false
-          if (this.commandState().commands[name])
             this.forPerson(() => this.moveBlock(direction), false)
           return true
         }
@@ -4159,7 +4155,8 @@ export class InkKitEditor {
     this.readOnlyKeys = keydownHandler(
       Object.fromEntries(
         Object.keys(bindings)
-          .filter((key) => bindings[key] !== moves[key])
+          // A block move key is a caret key while nothing can be edited.
+          .filter((key) => !moves[key])
           .map((key) => [
             key,
             () => {

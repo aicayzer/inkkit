@@ -91,9 +91,17 @@ export function canMoveBlock(
   return typeof plan(state, direction) === 'object'
 }
 
-/** Whether the selection holds blocks a move can act on, even if they are at a boundary. */
-export function holdsMovableBlock(state: EditorState): boolean {
-  return plan(state, 'up') !== undefined
+/**
+ * `'move'` when `moveBlock` would move the blocks at the selection,
+ * `'boundary'` when they are already first or last in their container, and
+ * undefined when there are none to move, as in a table.
+ */
+export function blockMove(
+  state: EditorState,
+  direction: BlockMoveDirection,
+): 'move' | 'boundary' | undefined {
+  const move = plan(state, direction)
+  return typeof move === 'object' ? 'move' : move
 }
 
 /**

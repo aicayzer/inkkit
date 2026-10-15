@@ -393,7 +393,7 @@ During composition with the current generation, `keyDown` returns `false`. Other
 - **Alt+Enter** and **Alt+Shift+Enter** in formatted mode, which move between a footnote reference and its definition, as `navigateFootnote` does. They work in a read-only editor.
 - In formatted mode, every other key reaches the editor's own key handling, such as Enter, Tab and Backspace in lists and tables.
 - In source and TXT modes, Enter, Tab, Backspace and Delete edit the text when no Command, Control or Alt key is held. Other keys return `false`.
-- When the editor is read-only, a bound key throws `read-only`, and so do Enter, Tab, Backspace and Delete. The exception is formatted mode, where Tab and Shift+Tab with no Command, Control or Alt key move between table cells, and return `false` outside a table. A key bound only to a block move also returns `false`, so the host's native caret movement applies.
+- When the editor is read-only, a bound key throws `read-only`, and so do Enter, Tab, Backspace and Delete. The exception is formatted mode, where Tab and Shift+Tab with no Command, Control or Alt key move between table cells, and return `false` outside a table. A key bound to a block move also returns `false`, even when a table name shares it, so the host's native caret movement applies.
 
 `focus(expectedGeneration?)` puts focus in the formatted editor or the source and TXT textarea, whichever is showing. `blur(expectedGeneration?)` moves focus off InkKit's text surfaces and leaves focus anywhere else, such as in a host control or a button InkKit draws, where it is; use it instead of finding InkKit's elements yourself. Neither checks composition, read-only or pending imports. Both throw `not-ready` before the first load.
 
@@ -789,7 +789,7 @@ Omitted history bindings keep `Mod-z` for undo and `Mod-y` and `Shift-Mod-z` for
 
 - **History bindings** apply on the formatted, source and TXT surfaces. Formatting, block move and table bindings apply only on the formatted surface.
 - **When two names share a key,** the later group wins, in the order history, formatting, block moves, tables. A table binding that shares its key with a block move passes the key to the block move when the table command isn't available, so a host can give `tableMoveRowUp` and `moveBlockUp` the same key: rows move in a table, and blocks move elsewhere.
-- **A bound key is consumed** even when its history, formatting or block move command isn't available now, such as at the first or last place, so the key never reaches the web view. A table binding passes the key on when its command isn't available. A block move binding passes the key on in a read-only editor, in a table cell and where there's no block to move, so the table's bindings or the web view's own caret movement apply.
+- **A bound key is consumed** even when its history, formatting or block move command isn't available now, such as at the first or last place, so the key never reaches the web view. A table binding passes the key on when its command isn't available. A block move binding, and a table binding that shares its key, passes the key on in a read-only editor; a block move binding also passes it on in a table cell and where there's no block to move, so the table's bindings or the web view's own caret movement apply.
 - **A command that fails from a shortcut** reports its error through `events.error`.
 
 Query [command availability](#command-availability) to present the current state of shortcuts and menu items.
