@@ -646,13 +646,14 @@ describe('only the hyphen just received counts', () => {
       expect(s.save()).toBe('a-- b')
     }))
 
-  test('a hyphen typed earlier, then other text and a hyphen, is not a dash', () =>
+  test('a hyphen typed earlier, then text typed and deleted, stays a hyphen', () =>
     smart('a', (s) => {
       s.caret()
-      s.type(' -')
-      s.editor.undo(1)
+      s.type(' -x')
+      const end = s.view.state.selection.from
+      s.view.dispatch(s.view.state.tr.delete(end - 1, end))
       s.type('-')
-      expect(s.save()).toBe('a-')
+      expect(s.save()).toBe('a --')
     }))
 
   test('two hyphens typed one after the other still give an en dash', () =>
