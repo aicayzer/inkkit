@@ -700,11 +700,15 @@ const listItems = extendListItemSchemaForTask.extendSchema(
   },
 )
 
+// Replaces the preset's table schema, so a node view for tables keys on this
+// one's node; the preset's own id is never set.
+export const tableNode = tableSchema.extendSchema((previous) => (ctx) => ({
+  ...previous(ctx),
+  content: 'table_header_row table_row*',
+}))
+
 export const tables: MilkdownPlugin[] = [
-  tableSchema.extendSchema((previous) => (ctx) => ({
-    ...previous(ctx),
-    content: 'table_header_row table_row*',
-  })),
+  tableNode,
   tableHeaderRowSchema,
   tableHeaderSchema.extendSchema((previous) => (ctx) => {
     const schema = previous(ctx)

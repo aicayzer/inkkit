@@ -246,7 +246,7 @@ The `revision` that `changed` receives is the revision of the change it reports,
 | `autocorrect`    | `boolean`                                                             | `autocorrect`, as `on` or `off` |
 | `autocapitalize` | `'off'`, `'none'`, `'on'`, `'sentences'`, `'words'` or `'characters'` | `autocapitalize`                |
 
-Read-only permits selection, copying, find, navigation, folding, loading and reloading, and switching between formatted and source modes. Every method that changes the document throws `read-only`, and so does `undo` and `redo`, which keep their history for when editing returns. Typing, paste, drop, cut completion, task toggles, table controls, reference editing and resizing can't change content.
+Read-only permits selection, copying, find, navigation, folding, loading and reloading, and switching between formatted and source modes. Every method that changes the document throws `read-only`, and so does `undo` and `redo`, which keep their history for when editing returns. Typing, paste, drop, cut completion, task toggles, reference editing and resizing can't change content, and tables show no [table controls](#table-controls).
 
 Entering read-only cancels pending imports and invalidates deferred destructive operations, including an acknowledged Cut, so a late result can't change the editor after editing is enabled again. Active image resize previews are canceled. Imported asset retention and cleanup remain the host adapter's responsibility.
 
@@ -509,6 +509,18 @@ Inserting images needs an image adapter or a file adapter, because either one sh
 `table('sortRows', { column?, order?, comparison? })` sorts all body rows. The `text` comparison is case-sensitive UTF-16 code-unit comparison of the complete readable clipboard text of each cell, including surrounding whitespace. Author comments are excluded, images contribute their alt text, and footnote references contribute `[label]`. The `number` comparison trims surrounding whitespace and accepts finite decimal numbers, including signs, fractions and exponents; when the column holds any other nonblank value, the call returns `false` without changing the table. Empty and whitespace-only cells always come last, and equal keys keep their authored order. The header and the column alignments stay fixed. The selection follows the original top-left row and keeps the selected columns within that row.
 
 Ordinary paste accepts rectangular tab-separated spreadsheet text and supported simple HTML tables. Inside a table it begins at the selection's top-left cell, replaces the selected rectangle and clears selected cells that the incoming rectangle doesn't cover. It grows the table to the right and bottom as needed. Outside a table it inserts a new table that uses the first incoming row as the header. Explicit Markdown, plain-text paste and image imports keep their existing paths. Each movement, sort and spreadsheet paste is one isolated undo operation. See [supported syntax](supported-syntax.md) for input limits and safe fallback.
+
+### Table controls
+
+In formatted mode, an editable table shows a control above its active column and one beside its active row. The active cell is the one under the pointer or, when the pointer isn't over the table, the one that holds the selection. Each control is a button named by the `tableMoveColumn` or `tableMoveRow` [label](#labels):
+
+- Activating a control highlights its column or row and opens a menu. A column's menu holds `tableAlignLeft`, `tableAlignCenter`, `tableAlignRight`, `tableAddColumn`, which adds a column after it, and `tableDeleteColumn`. A row's menu holds `tableAddRow`, which adds a row after it, and `tableDeleteRow`, which the header row doesn't offer.
+- Dragging a control moves its column or row. When a control has focus, Left Arrow and Right Arrow move the column, and Up Arrow and Down Arrow move the row. The header row stays first.
+- Opening a menu moves focus to its control. Escape closes the menu and returns focus to the text.
+
+The controls never select a row or column: each operation runs from a caret in the line's cell. When focus returns to the text, after an operation, Escape or a drag, the caret is in the cell it came from, or in the new row or column after an addition. Undo and redo restore a caret too, so the next key types into one cell.
+
+Each operation is the matching `table()` command, or the same movement for a drag, and runs with the same guards, source guarantees and single undo step. A refused operation changes nothing and is reported to `events.error`. While only the selection chooses the cell, the controls stay transparent until one has keyboard focus, so typing in a table doesn't show them; on a device without hover, they stay visible. Focus navigation reaches them after the text: Option-Tab in Safari reaches the controls for the caret's cell. In Chromium, Tab moves between cells and leaves a table only from its last cell, so it reaches only the controls for the last row and column. From any cell, the keyboard route is the table shortcuts a host binds through the [keymap](#shortcuts), such as `tableAddRowAfter`, `tableDeleteColumn` and `tableMoveRowUp`, which act on the caret's row and column. Read-only editors, copied HTML and print show no controls.
 
 ## Source editing and history
 

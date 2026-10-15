@@ -1,14 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { expect, test } from 'vitest'
 
-// The classes that ProseMirror, the Milkdown table block and the table plugin
-// add and read themselves. InkKit styles them and cannot rename them.
-const upstream = [
-  /^ProseMirror(-[\w-]+)?$/,
-  /^(editor|milkdown-table-block|table-wrapper|tableWrapper)$/,
-  /^(handle|cell-handle|line-handle|button-group|add-button|drag-preview)$/,
-  /^(selectedCell|column-resize-handle|column-resize-dragging|resize-cursor)$/,
-]
+// The classes that ProseMirror and the table plugin add and read themselves.
+// InkKit styles them and cannot rename them.
+const upstream = [/^ProseMirror(-[\w-]+)?$/, /^(editor|selectedCell)$/]
 const allowed = (name: string) =>
   name.startsWith('inkkit-') || upstream.some((pattern) => pattern.test(name))
 
