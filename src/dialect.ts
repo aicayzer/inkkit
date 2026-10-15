@@ -44,6 +44,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { keymap } from '@milkdown/kit/prose/keymap'
 import { autolinkLiterals } from './autolink'
+import { storedInlineCode } from './inline-code'
 import { followsText, remarkLinkForms, type LinkForm } from './link-form'
 import { isScriptAddress } from './link-safety'
 import { sourceAttribute } from './source'
@@ -822,6 +823,7 @@ export function createDialect(
     normalizedImages,
     imageBlocks,
     autolinkLiterals,
+    storedInlineCode,
     breaksWithoutMarks,
     listItems,
     strikethroughAttr,
