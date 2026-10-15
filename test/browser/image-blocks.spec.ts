@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { test, expect, observe, operation } from './fixtures'
+import { test, expect, observe, operation, focusSettled } from './fixtures'
 
 const standalone = 'Before\n\n![Fixture](images/native.png)\n\nAfter\n'
 
@@ -55,6 +55,7 @@ async function caretIn(page: Page, content: string, side: 'start' | 'end') {
     side === 'start' ? box.x + 1 : box.x + box.width - 1,
     box.y + box.height / 2,
   )
+  await focusSettled(page)
   await page.keyboard.press(side === 'start' ? 'Home' : 'End')
   await expect
     .poll(async () => {
