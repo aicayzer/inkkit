@@ -26,7 +26,7 @@ Mermaid is the one runtime dependency, pinned exactly. It draws diagram previews
 - The build writes `dist/THIRD-PARTY-NOTICES.txt` with the name, version and licence of every bundled package. It is also the record of the tree a release ships.
 - To update a bundled package, change `pnpm-lock.yaml` in a pull request. CI then runs the preservation tests in `pnpm check`, the packed-consumer pages and the whole browser suite against the new tree before it can merge.
 
-The trade-off: a security fix in a bundled package reaches hosts only through an InkKit release, and a host's dependency audit does not see bundled packages. Watch InkKit's own lockfile, and release when a bundled package needs a fix.
+The trade-off: a security fix in a bundled package reaches hosts only through an InkKit release, and a host's dependency audit does not see bundled packages. Dependabot alerts are on for this repository and read `pnpm-lock.yaml`, so they cover the bundled packages. When an alert affects a bundled package, update it in a pull request and release.
 
 ## Bounded verification
 

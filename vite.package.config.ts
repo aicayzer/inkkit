@@ -7,6 +7,37 @@ import { defineConfig, type Plugin } from 'vite'
 // changes saved bytes, and bundling it would multiply the package size.
 const external = /^mermaid(?:\/|$)/
 
+// A few packages ship no licence file. Their MIT notice comes from the
+// upstream repository's licence, with its copyright line.
+const missingLicenceCopyright: Record<string, string> = {
+  // https://github.com/shlroland/remark-highlight-mark/blob/master/License
+  'mdast-util-highlight-mark': 'Copyright (c) 2024 remark-highlight-mark',
+  'micromark-extension-highlight-mark':
+    'Copyright (c) 2024 remark-highlight-mark',
+}
+
+const mit = (copyright: string) => `MIT License
+
+${copyright}
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`
+
 // MIT, BSD and similar licences require their notices to travel with copies,
 // so the build collects them from every bundled package.
 function thirdPartyNotices(): Plugin {
@@ -24,39 +55,22 @@ function thirdPartyNotices(): Plugin {
         .map((root) => {
           const manifest = JSON.parse(
             readFileSync(join(root, 'package.json'), 'utf8'),
-          ) as {
-            name: string
-            version: string
-            license?: string
-            author?: string | { name: string }
-            repository?: string | { url: string }
-          }
+          ) as { name: string; version: string; license?: string }
           if (!manifest.license)
             throw new Error(`${manifest.name} declares no licence`)
           const file = readdirSync(root).find((name) =>
             /^(?:licen[cs]e|copying)(?:\.|$)/i.test(name),
           )
-          const author =
-            typeof manifest.author === 'object'
-              ? manifest.author.name
-              : manifest.author
-          const repository =
-            typeof manifest.repository === 'object'
-              ? manifest.repository.url
-              : manifest.repository
+          const copyright = missingLicenceCopyright[manifest.name]
+          if (!file && (manifest.license !== 'MIT' || !copyright))
+            throw new Error(
+              `${manifest.name} ships no licence file; add its copyright line to missingLicenceCopyright`,
+            )
           return {
             title: `${manifest.name}@${manifest.version} (${manifest.license})`,
-            // A few packages ship no licence file; name the licence, the
-            // author and the source instead.
             text: file
               ? readFileSync(join(root, file), 'utf8').trim()
-              : [
-                  `Licensed under ${manifest.license}. The package includes no licence text.`,
-                  author && `Author: ${author}`,
-                  repository && `Source: ${repository}`,
-                ]
-                  .filter(Boolean)
-                  .join('\n'),
+              : mit(copyright!),
           }
         })
         .sort((a, b) => a.title.localeCompare(b.title))
@@ -85,8 +99,14 @@ function packageRoot(id: string): string | undefined {
 
 export default defineConfig({
   plugins: [thirdPartyNotices()],
-  // Fixed here so the bundle runs the same whatever the host's build defines.
-  define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+  // Fixed here so the bundle runs the same whatever the host's build defines,
+  // and the bundled Vue sets no feature flags on the host's window.
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+    __VUE_OPTIONS_API__: 'true',
+    __VUE_PROD_DEVTOOLS__: 'false',
+    __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
+  },
   build: {
     lib: {
       entry: { index: 'src/index.ts', core: 'src/core.ts' },
