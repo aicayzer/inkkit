@@ -1446,10 +1446,17 @@ function retainSource(
     const newFirst = cell ? after.children[0]!.position?.start.offset : newStart
     const newLast = cell ? after.children.at(-1)!.position?.end.offset : newEnd
     // In a quote, a list's range takes in the `>` of the blank lines after
-    // it. They separate it from what follows, so the kept part ends with the
-    // list's last item and the separator comes from the canonical text.
-    const ending = (node: SourceNode) =>
-      (node.type === 'list' ? node.children?.at(-1) : undefined) ?? node
+    // it, and so does the range of an item that ends with a sublist. They
+    // separate the list from what follows, so the kept part ends where the
+    // innermost last item does and the separator comes from the canonical text.
+    const ending = (node: SourceNode): SourceNode => {
+      const last = node.children?.at(-1)
+      return last &&
+        (node.type === 'list' ||
+          (node.type === 'listItem' && last.type === 'list'))
+        ? ending(last)
+        : node
+    }
     const from = prefix
       ? ending(before.children[prefix - 1]!).position?.end.offset
       : first

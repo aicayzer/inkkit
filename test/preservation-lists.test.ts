@@ -148,6 +148,18 @@ test.each([
     '> * a\n> * b\n>\n> para\n',
   ],
   [
+    'a paragraph after the last nested list in a quote',
+    '> - a\n>   - b\n',
+    '> - a\n>   - b\n>\n> para\n',
+    '> - a\n>   - b\n>\n> para\n',
+  ],
+  [
+    'an empty paragraph after the last nested list in a callout',
+    '> [!NOTE]\n> - a\n>   - b\n',
+    '> [!NOTE]\n> - a\n>   - b\n>\n> <br />\n',
+    '> [!NOTE]\n> - a\n>   - b\n>\n> <br />\n',
+  ],
+  [
     'an empty paragraph after the last list in a callout',
     '> [!NOTE]\n> * a\n> * b\n',
     '> [!NOTE]\n> * a\n> * b\n>\n> <br />\n',
