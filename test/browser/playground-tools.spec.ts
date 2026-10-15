@@ -118,9 +118,12 @@ test('the status line leaves an error after the next valid edit @playground-tool
 }) => {
   await openFixture('images', '&adapter=reject')
   await operation(page, 'startImagePaste')
-  await expect
-    .poll(async () => (await observe(page)).diagnostics.length)
-    .toBeGreaterThan(0)
+  // The paste has reported its error and inserted its placeholder.
+  await operation(page, 'finishImagePaste')
+  expect((await observe(page)).diagnostics.length).toBeGreaterThan(0)
+  // Refreshes the controls now instead of when the refresh timer fires: the
+  // paste's own placeholder is not the next edit.
+  await operation(page, 'commandState')
   const status = page.locator('#status')
   await expect(status).toHaveText(/unavailable/)
   await page.getByRole('button', { name: 'Edit source', exact: true }).click()
@@ -130,6 +133,23 @@ test('the status line leaves an error after the next valid edit @playground-tool
   expect((await observe(page)).diagnostics.length).toBeGreaterThan(0)
   await page.getByRole('button', { name: 'Reset fixture' }).click()
   await expect(status).toHaveText(/fixture:images/)
+})
+
+test('a click on a control lands when the controls refresh during it @playground-tools', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  const box = (await page
+    .getByRole('button', { name: 'Edit source', exact: true })
+    .boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  // An edit's refresh of the controls lands between press and release.
+  await operation(page, 'commandState')
+  await page.mouse.up()
+  await expect(source(page)).toBeVisible()
+  expect((await observe(page)).mode).toBe('source')
 })
 
 test('a failed operation shows its error and a document load clears it @playground-tools', async ({
