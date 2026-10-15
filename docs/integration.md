@@ -1,7 +1,5 @@
 # Integration and customisation
 
-Editability, text-input preferences, command availability and mount-time labels/keymaps require 0.0.8 or later. Native text ranges and viewport coordination require 0.0.9 or later. Optional linked syntax and file adapters require 0.0.10 or later.
-
 InkKit supplies document editing and portable exports. Your app supplies its interface, files and storage. Use exports from `@aicayzer/inkkit`; hosts do not import Milkdown or ProseMirror internals. The [API reference](api.md) defines errors and asynchronous contracts, and [preservation](preservation.md) explains source and clipboard fidelity.
 
 ## Supported engines
@@ -57,7 +55,7 @@ Capture `editor.snapshot(1)` when saving. Persist its complete `text` only after
 
 Without an image adapter, image references remain literal Markdown. TXT documents use `format: 'txt'` and remain literal on both screen and export. The host can offer formatted/source switching through `setEditingMode()` without replacing the document; source edits made in source mode become one history step when the formatted view is shown again.
 
-The example's optional presentation switches require 0.0.11. Omit them to retain highlighting and diagram previews. Explicit clipboard and printable diagram exports still render when previews are disabled. The generic isolated native consumer and its selectable `integration` group exercise assembled minimal/rich interactions; these fixture hosts establish engine contracts without proving app storage, permissions or opening actions. See [measured costs](performance.md) and the [native runner](../scripts/interop/README.md).
+Omit `rendering` to keep highlighting and diagram previews. Explicit clipboard and printable diagram exports still render when previews are disabled. The generic isolated native consumer and its selectable `integration` group exercise assembled minimal/rich interactions; these fixture hosts establish engine contracts without proving app storage, permissions or opening actions. See [measured costs](performance.md) and the [native runner](../scripts/interop/README.md).
 
 ## A richer document app
 
@@ -104,7 +102,7 @@ After loading, `editor.commandState(1)` returns current availability without cha
 
 `editor.setEditable(false)` makes both editing surfaces read-only. Selection, copying, find, heading navigation, folding and mode switching remain available. Host document loading is still allowed. Re-enable editing with `editor.setEditable(true)`; history is retained. Pending imports and deferred destructive operations invalidated by the transition cannot later commit, even after editing is re-enabled. The host adapter remains responsible for retained bytes and orphan cleanup.
 
-`editor.setTextInputPreferences({ spellcheck: false })` changes native HTML input attributes on both surfaces. It replaces the preference set; omitted fields remove earlier explicit attributes and leave behaviour to the browser. Editability and input-policy changes reject during composition without partial changes; successful transitions preserve source, revision, dirty state, history, focus and selection. Browser and OS support determines whether an input preference takes effect.
+`editor.setTextInputPreferences({ spellcheck: false })` changes native HTML input attributes on both surfaces. It replaces the preference set; omitted fields remove earlier explicit attributes and leave behaviour to the browser. Editability and input-policy changes throw `composition` during composition, without partial changes; successful transitions preserve source, revision, dirty state, history, focus and selection. Browser and OS support determines whether an input preference takes effect.
 
 ## Host search and overlapping chrome
 

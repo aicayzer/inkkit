@@ -130,6 +130,7 @@ import {
   tableOptions,
   configureTableMovement,
 } from './tables'
+import { tableBlock, tableControlCtx } from './table-block'
 import {
   InkKitError,
   type ClientPoint,
@@ -226,21 +227,26 @@ import {
   printableText,
 } from './print'
 
+/** An inline format that `CaretState` can report. */
 export type Mark =
   'bold' | 'italic' | 'strikethrough' | 'highlight' | 'code' | 'link'
 
+/** The kind of block that holds the start of the selection. Any other block reports `paragraph`. */
 export type Block =
   | { type: 'paragraph' }
-  | { type: 'heading'; level: number }
+  | { type: 'heading'; level: number } // `level` is 1 to 6
   | { type: 'codeBlock' }
   | { type: 'bulletList' }
   | { type: 'orderedList' }
   | { type: 'taskList' }
 
+/** `source` shows the Markdown or literal text in a textarea. A TXT document is always `source`. */
 export type EditingMode = 'source' | 'formatted'
 const editingModes: readonly EditingMode[] = ['source', 'formatted']
 
+/** The formatting at the selection, for host toolbars. */
 export interface CaretState {
+  /** At a caret, the marks the next typed text takes. For a range, every mark found in it. */
   marks: Mark[]
   block: Block
   /** One quote holds the whole selection; the block is what sits inside it. */
@@ -268,6 +274,7 @@ const formatCommands = [
   'link',
 ] as const
 
+/** A command for `format`. */
 export type FormatCommand = (typeof formatCommands)[number]
 
 /** `destination` goes only with `link`, and `language` only with `codeBlock`. */
@@ -396,6 +403,7 @@ function footnoteLabel(label: string): boolean {
   return !!label && !/[\s\[\]\\]/.test(label) && label.length <= 999
 }
 
+/** Hints for the browser's input features. A field left out leaves the behavior to the browser. */
 export interface TextInputPreferences {
   spellcheck?: boolean
   autocorrect?: boolean
@@ -433,16 +441,25 @@ function textInputPreferences(
   }
 }
 
+/** Mount options. Adapters, `labels` and `rendering` are fixed at mount; the rest can change. */
 export interface EditorOptions {
+  /** Shows, imports and exports images. Without it and `files`, image Markdown stays literal. */
   images?: ImageAdapter
+  /** Resolves path images and `![[name]]` embeds into images, audio, video, PDFs and file cards. */
   files?: FileAdapter
+  /** Resolves and opens `[[wiki links]]`. Without it they stay literal. */
   wikiLinks?: WikiLinkAdapter
+  /** Defaults to true. See `setEditable`. */
   editable?: boolean
   textInput?: TextInputPreferences
+  /** Replaces built-in text and accessible names. */
   labels?: Partial<EditorLabels>
+  /** See `setKeymap`. */
   keymap?: Keymap
   rendering?: {
+    /** Defaults to true. */
     codeHighlighting?: boolean
+    /** Defaults to true. */
     diagramPreview?: boolean
   }
 }
@@ -496,13 +513,17 @@ function editorOptions(value: unknown): EditorOptions {
   } as EditorOptions
 }
 
+/** What the editor can do now. Availability is the state at the time of the call, not a promise. */
 export interface CommandState extends DocumentVersion {
   format: 'md' | 'txt'
   mode: EditingMode
   editable: boolean
+  /** Text composition (IME) is in progress. */
   composing: boolean
+  /** An image import is running. */
   pending: boolean
   caret: CaretState
+  /** Present when the selection is in a table. `rows` includes the header row. */
   table?: { row: number; column: number; rows: number; columns: number }
   commands: {
     undo: boolean
@@ -520,12 +541,20 @@ export interface CommandState extends DocumentVersion {
   }
 }
 
+/** The host's handlers, passed to `mount`. Only `changed` is required. */
 export interface EditorEvents {
+  /** The document's text changed. Not sent for a load, a reload or a refused edit. */
   changed(snapshot: DocumentSnapshot): void
+  /** Availability or the caret changed, and once after each load. */
   commandStateChanged?(state: CommandState): void
+  /** A primary click with Mod on a link. Without it, links don't open. */
   openLink?(href: string): void
+  /** The Copy button on a code block was clicked. Without this handler, no button is drawn. */
   copy?(text: string): void
+  /** A failure that no call is waiting for, such as one in an edit the person made. */
   error?(error: InkKitError): void
+  /** The person copied or cut a selection that holds an image or a diagram. Resolve after the
+   *  native clipboard write succeeds; a cut removes the selection only then. */
   clipboard?(content: ClipboardOutput): void | Promise<void>
 }
 
@@ -1174,6 +1203,10 @@ interface TypedSource {
   closed: boolean
 }
 
+/**
+ * The editor. Create it with `InkKitEditor.mount`, load a document, and read it back with
+ * `snapshot`. The reference is https://github.com/aicayzer/inkkit/blob/main/docs/api.md.
+ */
 export class InkKitEditor {
   private editor!: Editor
   private lastMarkdown = ''
@@ -1563,11 +1596,13 @@ export class InkKitEditor {
       : this.editor.ctx.get(editorViewCtx).composing
   }
 
+  /** Whether the person can edit. A read-only editor still permits selection, copying and find. */
   get editable(): boolean {
     this.assertAlive()
     return this.writable
   }
 
+  /** Turns editing on or off for both surfaces. Throws `composition` during text composition. */
   setEditable(editable: boolean): void {
     this.assertAlive()
     expectBoolean(editable, 'editable')
@@ -1591,6 +1626,8 @@ export class InkKitEditor {
     this.publishCommandState()
   }
 
+  /** Replaces the input hints. A field left out leaves the browser's behavior. Throws `composition`
+   *  during text composition. */
   setTextInputPreferences(preferences: TextInputPreferences): void {
     this.assertAlive()
     const checked = textInputPreferences(preferences, 'preferences')
@@ -1652,6 +1689,8 @@ export class InkKitEditor {
     this.events.commandStateChanged?.(this.commandState())
   }
 
+  /** What the editor can do now, for enabling host controls. Unlike `snapshot`, it works during
+   *  composition. */
   commandState(expectedGeneration?: number): CommandState {
     this.assertReady(expectedGeneration)
     const view = this.editor.ctx.get(editorViewCtx)
@@ -1816,6 +1855,7 @@ export class InkKitEditor {
     return this.formatType === 'txt' || this.mode === 'source'
   }
 
+  /** `formatted` or `source`. A TXT document is always `source`. */
   get editingMode(): EditingMode {
     this.assertAlive()
     return this.literalSurface ? 'source' : 'formatted'
@@ -1847,6 +1887,8 @@ export class InkKitEditor {
     return text
   }
 
+  /** Switches between formatted and source editing. Returns false when the mode is already set, and
+   *  for TXT. */
   setEditingMode(mode: EditingMode, expectedGeneration?: number): boolean {
     this.assertAlive()
     expectOneOf(mode, editingModes, 'mode')
@@ -1908,6 +1950,7 @@ export class InkKitEditor {
     this.mediaPolicy()
   }
 
+  /** Replaces the complete source as one undo step. Returns false for identical source. */
   replaceSource(text: string, expectedGeneration?: number): boolean {
     this.assertAlive()
     expectString(text, 'text')
@@ -2136,6 +2179,7 @@ export class InkKitEditor {
     return true
   }
 
+  /** Returns whether a history step applied. */
   undo(expectedGeneration?: number): boolean {
     this.assertMutation(expectedGeneration)
     if (this.literalSurface && this.stepTypedSource('undo')) return true
@@ -2149,6 +2193,7 @@ export class InkKitEditor {
     return undone
   }
 
+  /** Returns whether a history step applied. */
   redo(expectedGeneration?: number): boolean {
     this.assertMutation(expectedGeneration)
     const view = this.editor.ctx.get(editorViewCtx)
@@ -2185,6 +2230,8 @@ export class InkKitEditor {
     this.applySource(source, isolated, caret, caret)
   }
 
+  /** The complete current text, which is what a host saves. It throws rather than return partial
+   *  text. */
   snapshot(expectedGeneration?: number): DocumentSnapshot {
     this.assertCurrent(expectedGeneration)
     const text = this.currentText()
@@ -2196,6 +2243,8 @@ export class InkKitEditor {
     }
   }
 
+  /** The whole document as standalone HTML for printing. Rejects rather than return partial
+   *  output. */
   async printableSnapshot(
     expectedGeneration?: number,
   ): Promise<PrintableDocument> {
@@ -2260,6 +2309,8 @@ export class InkKitEditor {
       : doc
   }
 
+  /** Prepares the document or the selection for the native clipboard. Rejects with `stale-document`
+   *  if the document changes first. */
   async clipboardSnapshot(
     scope?: ClipboardScope,
     expectedGeneration?: number,
@@ -2371,6 +2422,8 @@ export class InkKitEditor {
     return { ...version, ...result }
   }
 
+  /** Pastes content the host read from the native clipboard. Capture it once; don't read the
+   *  clipboard again while this runs. */
   async paste(
     input: ClipboardInput,
     expectedGeneration?: number,
@@ -2389,6 +2442,8 @@ export class InkKitEditor {
     await this.pasteController.paste(input)
   }
 
+  /** Shows or hides author comments. Presentation only: the revision, history and dirty state don't
+   *  change. */
   setCommentsVisible(visible: boolean): void {
     this.assertAlive()
     expectBoolean(visible, 'visible')
@@ -2464,6 +2519,8 @@ export class InkKitEditor {
     }
   }
 
+  /** Runs a table command and returns whether it applied. False in source and TXT modes, outside a
+   *  table for commands that need one, and at a boundary a move can't cross. */
   table(
     command: TableCommand,
     options?: TableOptions,
@@ -2476,6 +2533,8 @@ export class InkKitEditor {
     return tableCommand(this.editor.ctx, command, options)
   }
 
+  /** Cancels pending work and releases the editor. It never rejects. Afterwards every other member
+   *  throws `destroyed`. */
   async destroy(): Promise<void> {
     if (this.destroyed) return
     this.destroyed = true
@@ -2569,6 +2628,8 @@ export class InkKitEditor {
     }
   }
 
+  /** Builds the editor in `root`. It has no document until `loadDocument`. Rejects with
+   *  `invalid-argument` for a bad root, handler or option. */
   static async mount(
     root: HTMLElement,
     events: EditorEvents,
@@ -2603,6 +2664,16 @@ export class InkKitEditor {
           ...defaultLabels,
           ...options.labels,
         }))
+        ctx.set(tableControlCtx.key, (operation) =>
+          instance.forPerson(
+            () =>
+              instance.facadeCall(() => {
+                instance.assertMutation()
+                return !instance.literalSurface && operation()
+              }),
+            false,
+          ),
+        )
         ctx.set(defaultValueCtx, '')
         ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
         // The preset also binds Mod-[ and Mod-] here; the app uses those for back and forward.
@@ -2685,6 +2756,7 @@ export class InkKitEditor {
         ),
       )
       .use(tablePlugins)
+      .use(tableBlock)
       .use(instance.changePlugin)
       .use(history)
       .use(clipboard)
@@ -2976,6 +3048,8 @@ export class InkKitEditor {
     return instance
   }
 
+  /** Replaces the document. The generation must be greater than the loaded one. A failed load
+   *  changes nothing. */
   loadDocument(input: DocumentInput): void {
     this.assertAlive()
     input = documentInput(input)
@@ -3126,6 +3200,8 @@ export class InkKitEditor {
     }
   }
 
+  /** Names the scroll container and the host chrome that overlaps the editor. It replaces earlier
+   *  settings. */
   setViewport(options: ViewportOptions): void {
     this.assertAlive()
     const record = expectRecord(options, 'options', [
@@ -3156,6 +3232,7 @@ export class InkKitEditor {
     this.viewportInsets = insets
   }
 
+  /** The visible rectangle, the insets and the scroll offsets. */
   viewport(): ViewportSnapshot {
     this.assertAlive()
     const container = this.viewportContainer ?? this.root
@@ -3240,6 +3317,8 @@ export class InkKitEditor {
     return this.textScope
   }
 
+  /** The readable text and selection. Ranges from it go stale when the document, its revision or
+   *  the mode changes. */
   textSnapshot(expectedGeneration?: number): ReadableTextSnapshot {
     this.assertCurrent(expectedGeneration)
     const scope = this.readableScope()
@@ -3343,6 +3422,7 @@ export class InkKitEditor {
     if (this.preservation) this.currentText(after)
   }
 
+  /** Replaces `range` with literal text as one undo step. Returns whether the text changed. */
   replaceTextRange(range: TextRange, text: string): boolean {
     this.assertAlive()
     expectString(text, 'text')
@@ -3393,6 +3473,8 @@ export class InkKitEditor {
     )
   }
 
+  /** Measures ranges in client coordinates, with one array of rectangles for each. It measures only
+   *  when called. */
   textRangesRects(
     ranges: readonly TextRange[],
   ): readonly (readonly TextRect[])[] {
@@ -3420,6 +3502,7 @@ export class InkKitEditor {
     )
   }
 
+  /** The ranges of the snapshot that are inside the viewport now. */
   visibleTextRanges(snapshotId: string): readonly TextRange[] {
     this.assertAlive()
     expectString(snapshotId, 'snapshotId')
@@ -3456,6 +3539,7 @@ export class InkKitEditor {
     return Object.freeze(ranges.map((range) => Object.freeze(range)))
   }
 
+  /** Scrolls `range` into the viewport, unfolding a callout that holds it. */
   revealTextRange(range: TextRange): void {
     const projection = this.validateTextRange(range)
     if (!this.literalSurface) {
@@ -3666,6 +3750,7 @@ export class InkKitEditor {
     return found
   }
 
+  /** Replaces the selected match, or the next one, and returns whether text changed. */
   replace(
     search: string,
     replacement: string,
@@ -3678,6 +3763,7 @@ export class InkKitEditor {
     return this.replaceMatches(search, replacement, false) > 0
   }
 
+  /** Replaces every non-overlapping match once and returns how many. */
   replaceAll(
     search: string,
     replacement: string,
@@ -3736,6 +3822,7 @@ export class InkKitEditor {
     return { documentId, generation, revision, key }
   }
 
+  /** The outline in document order. Entries go stale when the document changes. */
   headings(expectedGeneration?: number): readonly Heading[] {
     this.assertCurrent(expectedGeneration)
     if (this.formatType === 'txt') return Object.freeze([])
@@ -3751,6 +3838,7 @@ export class InkKitEditor {
         )
   }
 
+  /** Moves to `heading`. Returns true, or throws `stale-document` for a stale entry. */
   navigateHeading(heading: Heading): boolean {
     this.assertAlive()
     headingEntry(heading)
@@ -3990,6 +4078,8 @@ export class InkKitEditor {
     return true
   }
 
+  /** Inserts images by reference, at the selection or the drop point `at`. Returns false when it
+   *  does nothing. */
   insertImages(
     images: ImageInsertion[],
     at?: ClientPoint,
@@ -4455,6 +4545,8 @@ export class InkKitEditor {
     )
   }
 
+  /** Changes the destination, and optionally the title, of the shared definition for `label`.
+   *  Returns false when no definition has that label. */
   editReferenceDefinition(
     label: string,
     destination: string,
@@ -4535,6 +4627,8 @@ export class InkKitEditor {
     return true
   }
 
+  /** Moves to the definition, or the first reference, of the footnote at the caret. Returns whether
+   *  there was one. */
   navigateFootnote(
     target: 'definition' | 'reference',
     expectedGeneration?: number,

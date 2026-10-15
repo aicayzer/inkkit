@@ -1,11 +1,6 @@
-import { editorLabels } from './labels'
-import type { EditorLabels, TableCommand, TableOptions } from './types'
+import type { TableCommand, TableOptions } from './types'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import {
-  tableBlock,
-  tableBlockConfig,
-} from '@milkdown/kit/component/table-block'
 import {
   insertTableCommand,
   exitTable,
@@ -124,37 +119,9 @@ export function tableAvailability(ctx: Ctx): Record<TableCommand, boolean> {
   return available
 }
 
-const tableLabels: Record<string, keyof EditorLabels> = {
-  add_row: 'tableAddRow',
-  add_col: 'tableAddColumn',
-  delete_row: 'tableDeleteRow',
-  delete_col: 'tableDeleteColumn',
-  align_col_left: 'tableAlignLeft',
-  align_col_center: 'tableAlignCenter',
-  align_col_right: 'tableAlignRight',
-  col_drag_handle: 'tableMoveColumn',
-  row_drag_handle: 'tableMoveRow',
-}
-
-function tableButton(label: string): string {
-  const span = document.createElement('span')
-  span.setAttribute('role', 'img')
-  span.setAttribute('aria-label', label)
-  span.textContent = label
-  return span.outerHTML
-}
 export const tablePlugins = [
   moveRowCommand,
   moveColCommand,
-  tableBlockConfig,
-  (ctx: Ctx) => () => {
-    ctx.update(tableBlockConfig.key, (config) => ({
-      ...config,
-      renderButton: (type) =>
-        tableButton(editorLabels(ctx)[tableLabels[type]!]),
-    }))
-  },
-  tableBlock,
   $prose(() => keymap({ Tab: goToNextCell(1), 'Shift-Tab': goToNextCell(-1) })),
 ].flat()
 

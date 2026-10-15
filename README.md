@@ -15,11 +15,11 @@ A Markdown editor for the web and for apps that host a web view. It edits format
 npm install @aicayzer/inkkit
 ```
 
-An app that does not render diagrams can import from `@aicayzer/inkkit/core` instead. That entry leaves Mermaid out of the app's bundle and keeps diagrams as editable source. See [Builds without diagrams](docs/api.md#builds-without-diagrams).
+An app that does not render diagrams can import from `@aicayzer/inkkit/core` instead. That entry leaves Mermaid out of the app's bundle and keeps diagrams as editable source. See [Builds without diagrams](https://github.com/aicayzer/inkkit/blob/main/docs/api.md#builds-without-diagrams).
 
 ## Supported engines
 
-InkKit supports Safari and `WKWebView` 17.5 or later (iOS 17.5, macOS 14.5), Chrome and Edge 123 or later, and Firefox 125 or later. The host page must declare UTF-8. See [Supported engines](docs/integration.md#supported-engines) for the APIs behind these versions.
+InkKit supports Safari and `WKWebView` 17.5 or later (iOS 17.5, macOS 14.5), Chrome and Edge 123 or later, and Firefox 125 or later. The host page must declare UTF-8. See [Supported engines](https://github.com/aicayzer/inkkit/blob/main/docs/integration.md#supported-engines) for the APIs behind these versions.
 
 ## Use
 
@@ -51,10 +51,10 @@ const { text } = editor.snapshot(1)
 
 ## Learn more
 
-- [Supported syntax](docs/supported-syntax.md)
-- [Integration guide](docs/integration.md)
-- [API reference](docs/api.md)
-- [All documentation](docs/README.md)
+- [Supported syntax](https://github.com/aicayzer/inkkit/blob/main/docs/supported-syntax.md)
+- [Integration guide](https://github.com/aicayzer/inkkit/blob/main/docs/integration.md)
+- [API reference](https://github.com/aicayzer/inkkit/blob/main/docs/api.md)
+- [All documentation](https://github.com/aicayzer/inkkit/blob/main/docs/README.md)
 
 ## License
 

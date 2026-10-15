@@ -3,7 +3,6 @@ import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
-import { tableBlockConfig } from '@milkdown/kit/component/table-block'
 import { InkKitEditor } from '../src/index'
 import { tableAvailability, tableContext, tableCommands } from '../src/tables'
 import type { EditorLabels } from '../src/types'
@@ -37,7 +36,7 @@ test('labels are per editor, safely inserted and do not change authored source',
   const two = await mount()
   try {
     const text =
-      '```txt\nHello\n```\n\n> [!NOTE]- Folded\n> body\n\nFootnote[^a]\n\n[^a]: note'
+      '```txt\nHello\n```\n\n> [!NOTE]- Folded\n> body\n\nFootnote[^a]\n\n| a |\n| - |\n| b |\n\n[^a]: note'
     one.editor.loadDocument({ ...input, text })
     two.editor.loadDocument({ ...input, text })
     expect(one.root.classList.contains('inkkit-root')).toBe(true)
@@ -59,12 +58,12 @@ test('labels are per editor, safely inserted and do not change authored source',
         .querySelector('.inkkit-footnote-reference')
         ?.getAttribute('aria-label'),
     ).toBe(`${malicious} a`)
-    const markup = one.ctx.get(tableBlockConfig.key).renderButton('add_row')
-    const holder = document.createElement('div')
-    holder.innerHTML = markup
-    expect(holder.textContent).toBe(malicious)
-    expect(holder.querySelector('img')).toBeNull()
-    expect(holder.firstElementChild?.getAttribute('aria-label')).toBe(malicious)
+    const addRow = [
+      ...one.root.querySelectorAll('.inkkit-table-block button'),
+    ].filter((button) => button.getAttribute('aria-label') === malicious)
+    expect(addRow).toHaveLength(1)
+    expect(addRow[0]!.getAttribute('title')).toBe(malicious)
+    expect(addRow[0]!.querySelector('img')).toBeNull()
     expect(one.root.querySelector('img[onerror]')).toBeNull()
     expect(one.editor.snapshot()).toMatchObject({
       text,

@@ -53,14 +53,13 @@ async function open(
   await expect(page.locator('.inkkit-root td')).not.toHaveCount(0)
 }
 
-// The classes that ProseMirror, the Milkdown table block and the table plugin
-// add and read themselves.
+// The classes that ProseMirror, Milkdown and the table plugin add and read
+// themselves.
 const upstream = [
   /^ProseMirror(-[\w-]+)?$/,
-  /^(editor|table-wrapper|tableWrapper|children|content-dom)$/,
+  /^editor$/,
   /^milkdown(-[\w-]+)?$/,
-  /^(handle|cell-handle|line-handle|button-group|add-button|drag-preview)$/,
-  /^(selectedCell|column-resize-handle|resize-cursor)$/,
+  /^selectedCell$/,
 ]
 const inkkit = /^inkkit-[\w-]+$/
 
