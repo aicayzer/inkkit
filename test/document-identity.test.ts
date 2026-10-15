@@ -322,7 +322,9 @@ test('changed receives a snapshot of the document it reports', () =>
   open(({ editor, view, changes, root }) => {
     editor.loadDocument(input)
     expect(changes).toEqual([])
+    // An edit to heading text, which once took a second transaction for the heading's ID.
     view.dispatch(view.state.tr.insertText('!', 3))
+    expect(changes).toEqual([editor.snapshot()])
     const text = editor.snapshot().text
     expect(changes).toEqual([
       {
@@ -335,13 +337,21 @@ test('changed receives a snapshot of the document it reports', () =>
       },
     ])
     editor.undo(3)
-    // A step that leaves the text as it was advances the revision without an event, so the
-    // event's revision can be lower than a later snapshot's, but never higher.
-    expect(changes.at(-1)).toMatchObject({ text: input.text, dirty: false })
-    expect(changes.at(-1)!.revision).toBeGreaterThan(1)
-    expect(changes.at(-1)!.revision).toBeLessThanOrEqual(
-      editor.snapshot().revision,
+    expect(changes.at(-1)).toEqual(editor.snapshot())
+    expect(changes.at(-1)).toMatchObject({
+      revision: 2,
+      text: input.text,
+      dirty: false,
+    })
+    // A paragraph edit and its undo report the revision later outputs carry.
+    view.dispatch(
+      view.state.tr.insertText('?', view.state.doc.content.size - 2),
     )
+    expect(changes.at(-1)).toEqual(editor.snapshot())
+    expect(changes.at(-1)!.revision).toBe(3)
+    editor.undo(3)
+    expect(changes.at(-1)).toEqual(editor.snapshot())
+    expect(changes.at(-1)!.revision).toBe(4)
     // Source typing reports at once, with the revision snapshots carry.
     editor.setEditingMode('source', 3)
     const plain = root.querySelector('textarea')!

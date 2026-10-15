@@ -113,7 +113,7 @@ Pass the handlers as the second argument to `mount`. Only `changed` is required.
 | `error`               | No       | A failure that no call is waiting for; see [Error sources](#error-sources).                                                                                                                    | An `InkKitError`.                                                                                                          |
 | `clipboard`           | No       | The person copies or cuts a selection that holds an image or a diagram. Return a promise that resolves after the native clipboard write succeeds; a cut removes the selection only after that. | A `ClipboardOutput` of the selection, with the version that the copy started from.                                         |
 
-The `revision` that `changed` receives is the revision of the change it reports. A step that leaves the text as it was, such as part of an undo, advances the revision without sending `changed`, so a later snapshot can have a higher revision and the same text.
+The `revision` that `changed` receives is the revision of the change it reports, the same revision that a snapshot or other output taken in the handler carries, so work the handler starts with it is current. A change to the document that leaves its saved text as it was advances the revision without sending `changed`.
 
 ## Editability and text input
 
