@@ -49,6 +49,57 @@ function wholeOnly(ctx: Ctx, source: string): Preservation {
   return full
 }
 
+// The whole-document path pairing blocks in order only, as it did before
+// blocks that change places kept their source.
+function inOrder(ctx: Ctx, source: string): Preservation {
+  const full = wholeOnly(ctx, source)
+  ;(full as unknown as { moved(): Map<number, number> }).moved = () => new Map()
+  return full
+}
+
+// The nodes whose children a move reorders.
+const movable = new Set([
+  'doc',
+  'bullet_list',
+  'ordered_list',
+  'blockquote',
+  'inkkit_callout',
+  'footnote_definition',
+])
+
+// Swaps two neighbours in a list, quote, callout, footnote or the document,
+// and sometimes deletes a top-level block too. Returns false when the
+// document has nothing to swap.
+function move(doc: ProseNode, tr: Transform, random: () => number): boolean {
+  const containers: Array<{ node: ProseNode; start: number }> = []
+  if (doc.childCount > 1) containers.push({ node: doc, start: 0 })
+  doc.descendants((node, pos) => {
+    if (movable.has(node.type.name) && node.childCount > 1)
+      containers.push({ node, start: pos + 1 })
+    return true
+  })
+  if (!containers.length) return false
+  const { node, start } = containers[Math.floor(random() * containers.length)]!
+  const index = Math.floor(random() * (node.childCount - 1))
+  let from = start
+  for (let at = 0; at < index; at++) from += node.child(at).nodeSize
+  const first = node.child(index)
+  const second = node.child(index + 1)
+  tr.replaceWith(
+    from,
+    from + first.nodeSize + second.nodeSize,
+    Fragment.from([second, first]),
+  )
+  if (random() < 0.4 && tr.doc.childCount > 2) {
+    const removed = Math.floor(random() * tr.doc.childCount)
+    let at = 0
+    for (let child = 0; child < removed; child++)
+      at += tr.doc.child(child).nodeSize
+    tr.delete(at, at + tr.doc.child(removed).nodeSize)
+  }
+  return true
+}
+
 test(
   'local validation saves exactly what whole-document preservation saves',
   () =>
@@ -56,6 +107,7 @@ test(
       const ctx = editor.ctx
       const parse = ctx.get(parserCtx)
       let localSaves = 0
+      let moves = 0
       const kinds = new Map<string, number>()
       for (let seed = 1; seed <= Number(process.env.SEEDS ?? 600); seed++) {
         let state = seed
@@ -81,8 +133,34 @@ test(
           (random() < 0.8 ? ending : '')
         const local = new Preservation(ctx, source)
         const full = wholeOnly(ctx, source)
+        const ordered = inOrder(ctx, source)
         let doc = parse(source)
         for (let step = 0; step < 4; step++) {
+          // A move made beside the text edits, from the document they have
+          // reached so far, so moved blocks can be edited ones.
+          const moving = new Transform(doc)
+          if (random() < 0.4 && move(doc, moving, random)) {
+            const moved = moving.doc
+            // Keeping moved blocks' source never refuses an edit that
+            // pairing in order alone saves, and every path saves alike.
+            let saved: string | Error
+            try {
+              saved = local.serialize(moved)
+            } catch (error) {
+              saved = error as Error
+            }
+            let before: string | Error
+            try {
+              before = ordered.serialize(moved)
+            } catch (error) {
+              before = error as Error
+            }
+            const label = `seed ${seed} step ${step}: ${JSON.stringify(source)}`
+            if (typeof before === 'string') {
+              expect(saved, label).toBeTypeOf('string')
+              moves++
+            }
+          }
           const textblocks: Array<{
             node: ProseNode
             pos: number
@@ -183,6 +261,7 @@ test(
         }
       }
       expect(localSaves).toBeGreaterThan(500)
+      expect(moves).toBeGreaterThan(200)
       for (const kind of [
         'paragraph',
         'heading',
@@ -193,7 +272,8 @@ test(
       ])
         expect(kinds.get(kind), kind).toBeGreaterThan(10)
     }),
-  120_000,
+  // Longer runs with more seeds.
+  Math.max(120_000, Number(process.env.SEEDS ?? 600) * 100),
 )
 
 // Applies `edit` to the loaded document and saves it both ways.

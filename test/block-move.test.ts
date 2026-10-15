@@ -586,3 +586,107 @@ describe('selections, undo and bindings', () => {
     })
   })
 })
+
+// Pairing a block with an original it did not stay beside must never refuse an
+// edit, or give a new block source that is not its own.
+describe('blocks that change places beside other edits', () => {
+  // Deletes the top-level block at `index`.
+  const remove = (note: Note, index: number) => {
+    const { doc } = note.view.state
+    let pos = 0
+    for (let at = 0; at < index; at++) pos += doc.child(at).nodeSize
+    note.view.dispatch(
+      note.view.state.tr.delete(pos, pos + doc.child(index).nodeSize),
+    )
+  }
+  // Adds a paragraph at the end of the note.
+  const append = (note: Note, text: string) => {
+    const { state } = note.view
+    note.view.dispatch(
+      state.tr.insert(
+        state.doc.content.size,
+        state.schema.nodes.paragraph!.create(null, state.schema.text(text)),
+      ),
+    )
+  }
+  const saves = async (
+    source: string,
+    edit: (note: Note) => unknown,
+    expected: string,
+  ) => {
+    await withNote(source, async (note) => {
+      await edit(note)
+      expect(note.saved()).toBe(expected)
+    })
+    await Promise.all(reopenings)
+    reopenings = []
+  }
+
+  test('a moved block whose source would read differently is written afresh', async () => {
+    await saves(
+      '- a\n\nPara\n\n    code\n',
+      (note) => {
+        note.caret('code', 0)
+        expect(note.editor.moveBlock('up')).toBe(true)
+      },
+      '- a\n\n```\ncode\n```\n\nPara\n',
+    )
+    await saves(
+      '- a\n\nPara\n\n   three\n',
+      (note) => {
+        note.caret('three', 0)
+        expect(note.editor.moveBlock('up')).toBe(true)
+      },
+      '- a\n\nthree\n\nPara\n',
+    )
+  })
+
+  test('a new block does not take the source of a deleted one', async () => {
+    await saves(
+      '   Old intro.\n\n# Title\n\n- a\n',
+      (note) => {
+        remove(note, 0)
+        append(note, 'New')
+      },
+      '# Title\n\n- a\n\nNew\n',
+    )
+    await saves(
+      '+ gone\n\nText\n\n* alpha\n* beta\n* [ ]  delta   item\n',
+      (note) => {
+        remove(note, 0)
+        note.caret('beta', 0)
+        expect(note.editor.format('bulletList')).toBe(true)
+      },
+      'Text\n\n* alpha\n\nbeta\n\n* [ ]  delta   item\n',
+    )
+    await saves(
+      '|Name|Qty|\n|-|-|\n|a|1|\n\nP\n',
+      (note) => {
+        remove(note, 0)
+        note.caret('P', 1)
+        return note.editor.paste({
+          text: '',
+          markdown: '\n\n| X | Y |\n| - | - |\n| 1 | 2 |',
+        })
+      },
+      'P\n\n| X | Y |\n| - | - |\n| 1 | 2 |\n',
+    )
+  })
+
+  test('ordered items pasted in a new order keep their own source', async () => {
+    await saves(
+      '8. a\n9. b\n10. c\n    more c\n',
+      (note) => {
+        const { state } = note.view
+        note.view.dispatch(
+          state.tr.setSelection(
+            TextSelection.create(state.doc, 0, state.doc.content.size),
+          ),
+        )
+        const markdown = '8. a\n9. c\n   more c\n10. b'
+        return note.editor.paste({ text: markdown, markdown })
+      },
+      '8. a\n9. c\n   more c\n10. b\n',
+    )
+  })
+})

@@ -1793,6 +1793,15 @@ function definitionLabel(label: string): string {
     : normalizeIdentifier(label)
 }
 
+// The same item, whatever its number and spacing, which come from its list.
+function sameItem(left: ProseNode, right: ProseNode): boolean {
+  if (left === right) return true
+  if (left.type !== right.type || !left.content.eq(right.content)) return false
+  const { label: _label, spread: _spread, ...own } = left.attrs
+  const { label: _l, spread: _s, ...other } = right.attrs
+  return JSON.stringify(own) === JSON.stringify(other)
+}
+
 // Whether two nodes have the same blocks, leaving inline content aside.
 function sameBlocks(left: ProseNode, right: ProseNode): boolean {
   if (left.type !== right.type || left.isTextblock !== right.isTextblock)
@@ -2236,7 +2245,7 @@ export class Preservation {
   >()
   private readonly itemEdits = new WeakMap<
     ProseNode,
-    { index: number; item: number; text: string }
+    { index: number; item: number; from?: number; text: string }
   >()
   private readonly regionEdits = new WeakMap<
     ProseNode,
@@ -2690,28 +2699,59 @@ export class Preservation {
         return undefined
     }
     const marker = authoredMarker(list, source)
+    // An item that equals an original which left its own place moved there
+    // from it, and keeps that original's source, as whole-document matching
+    // pairs it. More than one such original leaves the pairing to that path.
+    const changed: number[] = []
+    for (let at = 0; at < node.childCount; at++)
+      if (!sameItem(node.child(at), before.child(at))) changed.push(at)
+    const from = new Map<number, number>()
+    const claimed = new Set<number>()
+    for (const at of changed) {
+      const sources = changed.filter(
+        (other) =>
+          other !== at && sameItem(before.child(other), node.child(at)),
+      )
+      if (sources.length > 1 || claimed.has(sources[0]!)) return undefined
+      if (sources.length) {
+        from.set(at, sources[0]!)
+        claimed.add(sources[0]!)
+      }
+    }
     let output = ''
     let previous = block.start
     for (let at = 0; at < node.childCount; at++) {
       const item = node.child(at)
       const original = before.child(at)
       if (item === original || item.eq(original)) continue
-      // An item that equals another original is one that moved, which the
-      // whole-document path pairs with that original.
-      for (let other = 0; other < before.childCount; other++)
-        if (other !== at && before.child(other).eq(item)) return undefined
+      const moved = from.get(at)
       let retained = this.itemEdits.get(item)
-      if (retained?.index !== index || retained.item !== at) {
-        const text = this.localItem(
-          node,
-          item,
-          before.child(at),
-          list.children[at]!,
-          source,
-          marker,
-        )
+      if (
+        retained?.index !== index ||
+        retained.item !== at ||
+        retained.from !== moved
+      ) {
+        const text =
+          moved === undefined
+            ? this.localItem(
+                node,
+                item,
+                original,
+                list.children[at]!,
+                source,
+                marker,
+              )
+            : this.movedItem(
+                node,
+                item,
+                list,
+                list.children[moved]!,
+                list.children[at]!,
+                source,
+                marker,
+              )
         if (text === undefined) return undefined
-        retained = { index, item: at, text }
+        retained = { index, item: at, from: moved, text }
         this.itemEdits.set(item, retained)
       }
       const ast = list.children[at]!
@@ -2721,6 +2761,55 @@ export class Preservation {
       previous = ast.position!.end.offset! + offset
     }
     return output + this.source.slice(previous, block.end)
+  }
+
+  // The source of an item moved from `original`'s place to `place`'s, when it
+  // reads there as the same item and keeps the content column of that place.
+  private movedItem(
+    node: ProseNode,
+    item: ProseNode,
+    list: SourceNode,
+    original: SourceNode,
+    place: SourceNode,
+    source: string,
+    marker: string | undefined,
+  ): string | undefined {
+    const start = original.position!.start.offset!
+    const end = original.position!.end.offset!
+    if (
+      !Preservation.plainInline(item) ||
+      !this.inContext(source.slice(start, end))
+    )
+      return undefined
+    let text = source.slice(start, end)
+    if (list.ordered) text = renumberItem(text, source, original, place)
+    if (marker) text = relabel(text, [0], marker)
+    return this.readsAsItem(node, item, text, place, source)
+  }
+
+  // `text` in place of `ast`, when it starts with the same marker and spacing,
+  // which set the column that continuation lines and blocks after the list
+  // are read against, and reads alone as `item`.
+  private readsAsItem(
+    list: ProseNode,
+    item: ProseNode,
+    text: string,
+    ast: SourceNode,
+    source: string,
+  ): string | undefined {
+    const start = ast.position!.start.offset!
+    const content = ast.children?.[0]?.position?.start.offset
+    if (content == null || !text.startsWith(source.slice(start, content)))
+      return undefined
+    // An item with nothing on its first line has a different content column.
+    if (/^(?:[-*+]|\d{1,9}[.)])[ \t]*(?:\r?\n|$)/.test(text)) return undefined
+    const indent = source.slice(source.lastIndexOf('\n', start - 1) + 1, start)
+    if (!/^[ \t]*$/.test(indent)) return undefined
+    const reopened = this.parseLocally(indent + text)
+    if (reopened?.type !== list.type || reopened.childCount !== 1)
+      return undefined
+    const reread = reopened.firstChild!
+    return sameItem(reread, item) ? text : undefined
   }
 
   private localItem(
@@ -2765,27 +2854,7 @@ export class Preservation {
       this.lineEnding,
     )
     if (marker) text = relabel(text, [0], marker)
-    // The marker and the spaces after it set the column that continuation
-    // lines, and blocks after the list, are read against.
-    const content = ast.children?.[0]?.position?.start.offset
-    if (content == null || !text.startsWith(source.slice(start, content)))
-      return undefined
-    // An item with nothing on its first line has a different content column.
-    if (/^(?:[-*+]|\d{1,9}[.)])[ \t]*(?:\r?\n|$)/.test(text)) return undefined
-    const indent = source.slice(source.lastIndexOf('\n', start - 1) + 1, start)
-    if (!/^[ \t]*$/.test(indent)) return undefined
-    const reopened = this.parseLocally(indent + text)
-    if (reopened?.type !== list.type || reopened.childCount !== 1)
-      return undefined
-    const reread = reopened.firstChild!
-    // The label and spacing of an item come from its list.
-    const { label: _label, spread: _spread, ...attrs } = reread.attrs
-    const { label: _l, spread: _s, ...expected } = item.attrs
-    return reread.type === item.type &&
-      JSON.stringify(attrs) === JSON.stringify(expected) &&
-      reread.content.eq(item.content)
-      ? text
-      : undefined
+    return this.readsAsItem(list, item, text, ast, source)
   }
 
   // Two lists of one kind side by side are one list unless their markers
@@ -3036,6 +3105,7 @@ export class Preservation {
     doc: ProseNode,
     positions: Array<number | undefined>,
     current: string[],
+    moved: Map<number, number>,
     from: number,
     to: number,
     canonical: string,
@@ -3092,11 +3162,20 @@ export class Preservation {
     const gaps: string[] = []
     const pieces: string[] = []
     const kept: Kept[] = []
-    const moved = this.moved(doc, positions, current)
     for (let index = from; index < to; index++) {
       const text = current[index]!
       const position = positions[index]
-      const block = position == null ? moved.get(index) : this.blocks[position]
+      const node = tree
+        ? positionalNode(tree.raw, transformed(index))
+        : undefined
+      // A list or quote split from an original keeps that original's items
+      // before an edited block that moved is paired with one.
+      const part =
+        position == null && node && moved.get(index) !== undefined
+          ? this.retainPart(positions, index, node, canonical, taken)
+          : undefined
+      const pairing = position ?? (part ? undefined : moved.get(index))
+      const block = pairing == null ? undefined : this.blocks[pairing]
       gaps.push(this.gap(index, positions))
       const kind: Kept =
         block && block.form === text
@@ -3107,67 +3186,73 @@ export class Preservation {
             ? 'edited'
             : 'canonical'
       kept.push(kind)
-      const node = tree
-        ? positionalNode(tree.raw, transformed(index))
-        : undefined
       pieces.push(
-        kind === 'unchanged' || kind === 'moved'
-          ? this.source.slice(block!.start, block!.end)
-          : kind === 'edited'
-            ? this.retainBlock(
-                block!,
-                node!,
-                canonical,
-                position == null
-                  ? []
-                  : this.around(positions, index)
-                      .filter(
-                        (other) =>
-                          !paired.has(other) &&
-                          other.ast.type === block!.ast.type,
-                      )
-                      .flatMap((other) => other.ast.children ?? []),
-              )
-            : ((node &&
-                this.retainPart(positions, index, node, canonical, taken)) ??
-              restoreCodeEndings(
-                this.ctx,
-                doc.type.create(null, [doc.child(index)]),
-                withEnding(text, this.lineEnding),
-              )),
+        part !== undefined && kind === 'canonical'
+          ? part
+          : kind === 'unchanged' || kind === 'moved'
+            ? this.source.slice(block!.start, block!.end)
+            : kind === 'edited'
+              ? this.retainBlock(
+                  block!,
+                  node!,
+                  canonical,
+                  position == null
+                    ? []
+                    : this.around(positions, index)
+                        .filter(
+                          (other) =>
+                            !paired.has(other) &&
+                            other.ast.type === block!.ast.type,
+                        )
+                        .flatMap((other) => other.ast.children ?? []),
+                )
+              : ((node &&
+                  this.retainPart(positions, index, node, canonical, taken)) ??
+                restoreCodeEndings(
+                  this.ctx,
+                  doc.type.create(null, [doc.child(index)]),
+                  withEnding(text, this.lineEnding),
+                )),
       )
     }
     return { gaps, pieces, kept }
   }
 
   // Pairing keeps order, so a block moved past others is left unpaired, and
-  // so is its original. A block keeps the source of the one unpaired original
-  // it equals; a form that repeats among either stays unpaired. A block edited
-  // and then moved is paired with the original it was edited from when each
-  // is the only one of its type left unpaired.
+  // so is its original. Returns the original each such block takes its source
+  // from, by the block's index: the one unpaired original it equals, where its
+  // form repeats among neither. A block edited and then moved is paired with
+  // the original it was edited from when each is the only unpaired block of
+  // its type and they resemble each other as `pairSimilar` measures it, with
+  // at least half of the longer form kept at its start and end.
   private moved(
     doc: ProseNode,
     positions: Array<number | undefined>,
     current: string[],
-  ): Map<number, Block> {
+  ): Map<number, number> {
+    const moved = new Map<number, number>()
+    // Unpaired positions are holes, which `forEach` and `some` skip.
+    const unpaired: number[] = []
+    for (let index = 0; index < current.length; index++)
+      if (positions[index] == null) unpaired.push(index)
+    if (!unpaired.length) return moved
     const paired = new Set(positions)
     const originals = new Map<string, number>()
     this.blocks.forEach((block, index) => {
       if (!paired.has(index))
         originals.set(block.form, originals.has(block.form) ? -1 : index)
     })
-    // Unpaired positions are holes, which `forEach` would skip.
+    if (!originals.size) return moved
     const found = new Map<string, number>()
-    for (let index = 0; index < current.length; index++) {
+    for (const index of unpaired) {
       const form = current[index]!
-      if (positions[index] == null && (originals.get(form) ?? -1) >= 0)
+      if ((originals.get(form) ?? -1) >= 0)
         found.set(form, found.has(form) ? -1 : index)
     }
-    const moved = new Map<number, Block>()
     for (const [form, index] of found)
       if (index >= 0) {
         const original = originals.get(form)!
-        moved.set(index, this.blocks[original]!)
+        moved.set(index, original)
         paired.add(original)
       }
     if (this.baseline.childCount !== this.blocks.length) return moved
@@ -3183,14 +3268,19 @@ export class Preservation {
       (index) => this.baseline.child(index).type.name,
     )
     const edited = once(
-      current.flatMap((_, index) =>
-        positions[index] != null || moved.has(index) ? [] : [index],
-      ),
+      unpaired.filter((index) => !moved.has(index)),
       (index) => doc.child(index).type.name,
     )
     for (const [type, index] of edited) {
       const original = left.get(type) ?? -1
-      if (index >= 0 && original >= 0) moved.set(index, this.blocks[original]!)
+      if (index < 0 || original < 0) continue
+      const before = this.blocks[original]!.form
+      const after = current[index]!
+      if (
+        2 * similarity(before, after) >=
+        Math.max(before.length, after.length)
+      )
+        moved.set(index, original)
     }
     return moved
   }
@@ -3332,6 +3422,7 @@ export class Preservation {
     doc: ProseNode,
     positions: Array<number | undefined>,
     current: string[],
+    moved: Map<number, number>,
     run: Run,
   ): { gaps: string[]; pieces: string[]; kept: Kept[] } {
     const from = run.previous === undefined ? 0 : run.previous + 1
@@ -3343,7 +3434,7 @@ export class Preservation {
       from === 0 && to === doc.childCount
         ? this.canonicalDocument(doc)
         : this.canonicalBlocks(doc, nodes)
-    return this.build(doc, positions, current, from, to, canonical, tree)
+    return this.build(doc, positions, current, moved, from, to, canonical, tree)
   }
 
   // Saves an edit that inserts, removes, splits or joins blocks by validating
@@ -3381,6 +3472,7 @@ export class Preservation {
       !this.readAlone(doc, positions, runs)
     )
       return undefined
+    const moved = this.moved(doc, positions, current)
     let output = ''
     let at = 0
     for (const run of runs) {
@@ -3392,7 +3484,7 @@ export class Preservation {
         run.next === undefined
           ? this.source.length
           : this.blocks[positions[run.next]!]!.start
-      const text = this.region(doc, positions, current, run)
+      const text = this.region(doc, positions, current, moved, run)
       if (text === undefined) return undefined
       output += this.source.slice(at, from) + text
       at = to
@@ -3417,6 +3509,7 @@ export class Preservation {
     doc: ProseNode,
     positions: Array<number | undefined>,
     current: string[],
+    moved: Map<number, number>,
     run: Run,
   ): string | undefined {
     const from = run.previous === undefined ? 0 : run.previous + 1
@@ -3432,7 +3525,11 @@ export class Preservation {
     const identity = [
       original(run.previous),
       original(run.next),
-      ...positions.slice(from, to),
+      // Unpaired positions are holes, which `map` would keep as holes.
+      ...Array.from(
+        { length: to - from },
+        (_, at) => positions[from + at] ?? `m${moved.get(from + at) ?? ''}`,
+      ),
     ].join()
     const cached = this.regionEdits.get(key)
     if (
@@ -3457,7 +3554,7 @@ export class Preservation {
       index++
     )
       if (list(index) && list(index) === list(index - 1)) return undefined
-    const { gaps, pieces } = this.runPieces(doc, positions, current, run)
+    const { gaps, pieces } = this.runPieces(doc, positions, current, moved, run)
     let text = pieces.map((piece, index) => gaps[index] + piece).join('')
     if (run.next !== undefined) text += this.gap(run.next, positions)
     else
@@ -3573,31 +3670,45 @@ export class Preservation {
               this.blocks[position]!.end,
             ),
       )
-      const kept: Kept[] = current.map(() => 'unchanged')
       const runs = this.runs(positions, current)
-      for (const run of this.readAlone(doc, positions, runs) ? runs : [{}]) {
-        const from = run.previous === undefined ? 0 : run.previous + 1
-        const written = this.runPieces(doc, positions, current, run)
-        written.pieces.forEach((piece, index) => {
-          pieces[from + index] = piece
-          kept[from + index] = written.kept[index]!
-        })
+      const alone = this.readAlone(doc, positions, runs)
+      const attempt = (moved: Map<number, number>): string => {
+        const written = [...pieces]
+        const kept: Kept[] = current.map(() => 'unchanged')
+        for (const run of alone ? runs : [{}]) {
+          const from = run.previous === undefined ? 0 : run.previous + 1
+          const part = this.runPieces(doc, positions, current, moved, run)
+          part.pieces.forEach((piece, index) => {
+            written[from + index] = piece
+            kept[from + index] = part.kept[index]!
+          })
+        }
+        const previous = positions.at(-1)
+        this.separateLists(doc, written, kept, positions, current)
+        let output = written.map((piece, index) => gaps[index] + piece).join('')
+        if (previous === this.blocks.length - 1 && this.blocks.length)
+          output += this.source.slice(this.blocks[previous]!.end)
+        else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
+        // A `---` rule that opens the file reads back as front matter when
+        // another `---` line follows, whether it is new or moved there.
+        const bom = output.startsWith('\uFEFF') ? 1 : 0
+        if (
+          doc.firstChild?.type.name === 'hr' &&
+          sourceFrontmatter(output.slice(bom))?.startsWith('---')
+        )
+          output = output.slice(0, bom) + '***' + output.slice(bom + 3)
+        return output
       }
-      const previous = positions.at(-1)
-      this.separateLists(doc, pieces, kept, positions, current)
-      let output = pieces.map((piece, index) => gaps[index] + piece).join('')
-      if (previous === this.blocks.length - 1 && this.blocks.length)
-        output += this.source.slice(this.blocks[previous]!.end)
-      else if (output) output += finalCodeEnding(doc) ?? this.lineEnding
-      // A `---` rule that opens the file reads back as front matter when
-      // another `---` line follows, whether it is new or moved there.
-      const bom = output.startsWith('\uFEFF') ? 1 : 0
-      if (
-        doc.firstChild?.type.name === 'hr' &&
-        sourceFrontmatter(output.slice(bom))?.startsWith('---')
-      )
-        output = output.slice(0, bom) + '***' + output.slice(bom + 3)
+      const moved = this.moved(doc, positions, current)
+      const output = attempt(moved)
       if (this.reopens(doc, output, canonical)) return output
+      // A block's source can read differently where it now stands, such as
+      // indented code after a list. Writing such blocks afresh is what
+      // pairing in order alone gives.
+      if (moved.size) {
+        const fresh = attempt(new Map())
+        if (this.reopens(doc, fresh, canonical)) return fresh
+      }
       throw new PreservationError(
         'The edited Markdown cannot be reopened without changing its content',
       )
