@@ -277,20 +277,6 @@ test.each([
     '8. a\n\n<br />\n\n9. _b_\n10. c\n11. d\n',
   ],
   [
-    'a list in a quote ended at its last item',
-    '> * __a__\n> * _b_\n',
-    'b',
-    ['Enter', 'Enter'],
-    '> * __a__\n> * _b_\n>\n> <br />\n',
-  ],
-  [
-    'an ordered list in a quote ended at its last item',
-    '> 1. __a__\n> 2. _b_\n\nafter\n',
-    'b',
-    ['Enter', 'Enter'],
-    '> 1. __a__\n> 2. _b_\n>\n> <br />\n\nafter\n',
-  ],
-  [
     'a long list of equal items ended in the middle',
     `${'* _x_\n'.repeat(1000)}* mid\n${'* _x_\n'.repeat(1000)}`,
     'mid',

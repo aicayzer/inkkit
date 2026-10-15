@@ -1362,17 +1362,15 @@ function retainSource(
     const last = cell ? before.children.at(-1)!.position?.end.offset : end
     const newFirst = cell ? after.children[0]!.position?.start.offset : newStart
     const newLast = cell ? after.children.at(-1)!.position?.end.offset : newEnd
-    // A list's range can take in the blank line its container gave it, which
-    // the edit may now need before what follows, so the kept part of a list
-    // ends at its last item.
-    const kept = (node: SourceNode) =>
-      (node.type === 'list' ? node.children?.at(-1) : node)?.position?.end
-        .offset
-    const from = prefix ? kept(before.children[prefix - 1]!) : first
+    const from = prefix
+      ? before.children[prefix - 1]!.position?.end.offset
+      : first
     const to = suffix
       ? before.children[before.children.length - suffix]!.position?.start.offset
       : last
-    const newFrom = prefix ? kept(after.children[prefix - 1]!) : newFirst
+    const newFrom = prefix
+      ? after.children[prefix - 1]!.position?.end.offset
+      : newFirst
     const newTo = suffix
       ? after.children[after.children.length - suffix]!.position?.start.offset
       : newLast

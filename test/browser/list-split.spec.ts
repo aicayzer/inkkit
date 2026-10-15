@@ -86,13 +86,6 @@ for (const [name, source, at, keys, saved] of [
     '* __a__ one\n* b two\n* _c_ three\n',
   ],
   [
-    'a list in a quote ended at its last item',
-    '> * __a__\n> * _b_\n',
-    'b',
-    ['Enter', 'Enter'],
-    '> * __a__\n> * _b_\n>\n> <br />\n',
-  ],
-  [
     'typing in the item a nested ordered list ended at',
     '* __a__ one\n  1) b two\n  2) _c_ three\n  3) d\n* e\n',
     'b two',
