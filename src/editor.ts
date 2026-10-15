@@ -31,25 +31,26 @@ import {
   blockquoteSchema,
   bulletListKeymap,
   codeBlockKeymap,
-  createCodeBlockCommand,
+  codeBlockSchema,
   emphasisKeymap,
   headingKeymap,
+  headingSchema,
   inlineCodeKeymap,
   inlineCodeSchema,
   linkSchema,
   listItemKeymap,
   orderedListKeymap,
   paragraphKeymap,
+  paragraphSchema,
   strongKeymap,
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
   toggleLinkCommand,
   toggleStrongCommand,
-  turnIntoTextCommand,
   wrapInBulletListCommand,
-  wrapInHeadingCommand,
   wrapInOrderedListCommand,
 } from '@milkdown/kit/preset/commonmark'
+import { authoredSourcesCtx, setTextblockType } from './block-conversion'
 import {
   strikethroughKeymap,
   tableKeymap,
@@ -1663,8 +1664,12 @@ export class InkKitEditor {
     const manager = this.editor.ctx.get(commandsCtx)
     const check = <T>(key: CmdKey<T>, payload?: T): boolean =>
       formatted && manager.get(key)(payload)(state)
+    const canBecome = (
+      type: 'paragraph' | 'heading' | 'codeBlock',
+      level?: number,
+    ): boolean => formatted && this.textblockType(type, level)(state)
     const heading = (level: number) =>
-      check(wrapInHeadingCommand.key, level) || check(turnIntoTextCommand.key)
+      canBecome('heading', level) || canBecome('paragraph')
     const format: Record<FormatCommand, boolean> = {
       heading1: heading(1),
       heading2: heading(2),
@@ -1672,7 +1677,7 @@ export class InkKitEditor {
       heading4: heading(4),
       heading5: heading(5),
       heading6: heading(6),
-      paragraph: check(turnIntoTextCommand.key),
+      paragraph: canBecome('paragraph'),
       bold: check(toggleStrongCommand.key),
       italic: check(toggleEmphasisCommand.key),
       strikethrough: check(toggleStrikethroughCommand.key),
@@ -1685,8 +1690,7 @@ export class InkKitEditor {
               inlineCodeSchema.type(this.editor.ctx),
             )
           : check(toggleInlineCodeCommand.key)),
-      codeBlock:
-        check(createCodeBlockCommand.key, '') || check(turnIntoTextCommand.key),
+      codeBlock: canBecome('codeBlock') || canBecome('paragraph'),
       quote: formatted && this.canQuote(state),
       bulletList:
         formatted &&
@@ -2596,6 +2600,9 @@ export class InkKitEditor {
     instance.editor = await Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, root)
+        ctx.set(authoredSourcesCtx.key, (doc, positions) =>
+          instance.authoredSources(doc, positions),
+        )
         ctx.update(labelsCtx.key, () => ({
           ...defaultLabels,
           ...options.labels,
@@ -4173,6 +4180,82 @@ export class InkKitEditor {
     view.dispatch(view.state.tr.lift(range, target))
   }
 
+  /** Changes the selected textblocks' type, keeping everything they hold. */
+  private textblockType(
+    type: 'paragraph' | 'heading' | 'codeBlock',
+    attr?: string | number,
+  ): Command {
+    const ctx = this.editor.ctx
+    if (type === 'codeBlock')
+      return setTextblockType(ctx, codeBlockSchema.type(ctx), {
+        language: String(attr ?? ''),
+      })
+    if (type === 'heading')
+      return setTextblockType(ctx, headingSchema.type(ctx), {
+        level: Number(attr),
+      })
+    return setTextblockType(ctx, paragraphSchema.type(ctx))
+  }
+
+  /**
+   * The authored Markdown of the textblocks at `positions`, found by saving
+   * the document once with each block's content replaced by a numbered mark
+   * no one writes. The saved text between the marks is the current text
+   * between those blocks, so what lies between the same pieces of the current
+   * text is each block's source.
+   */
+  private authoredSources(
+    doc: ProseNode,
+    positions: readonly number[],
+  ): Map<number, string> {
+    const none = new Map<number, string>()
+    if (this.literalSurface || !positions.length) return none
+    try {
+      let marked = doc
+      // Positions are in document order, so marking the last first leaves
+      // the earlier ones where they are.
+      for (let index = positions.length - 1; index >= 0; index--) {
+        const pos = positions[index]!
+        const node = doc.nodeAt(pos)
+        if (!node?.isTextblock) return none
+        marked = marked.replace(
+          pos + 1,
+          pos + node.nodeSize - 1,
+          new Slice(
+            Fragment.from(doc.type.schema.text(`\uE000${index}\uE001`)),
+            0,
+            0,
+          ),
+        )
+      }
+      const text = this.currentText(doc)
+      const pieces = this.currentText(marked).split(/\uE000(\d+)\uE001/)
+      // Pieces alternate between saved text and a mark's number.
+      if (pieces.length !== positions.length * 2 + 1) return none
+      for (let index = 0; index < positions.length; index++)
+        if (pieces[index * 2 + 1] !== String(index)) return none
+      const first = pieces[0]!
+      const last = pieces.at(-1)!
+      if (!text.startsWith(first) || !text.endsWith(last)) return none
+      const found = new Map<number, string>()
+      let cursor = first.length
+      const end = text.length - last.length
+      for (let index = 0; index < positions.length; index++) {
+        const lastBlock = index + 1 === positions.length
+        const next = lastBlock ? '' : pieces[index * 2 + 2]!
+        // Saved text always separates two blocks.
+        if (!lastBlock && !next) return none
+        const at = lastBlock ? end : text.indexOf(next, cursor)
+        if (at < 0 || at > end) return none
+        found.set(positions[index]!, text.slice(cursor, at))
+        cursor = at + next.length
+      }
+      return cursor === end ? found : none
+    } catch {
+      return none
+    }
+  }
+
   /** Returns whether the document or the marks the next typed text takes changed. */
   format(
     command: FormatCommand,
@@ -4190,15 +4273,19 @@ export class InkKitEditor {
     const run = (cmd: Parameters<typeof callCommand>[0], payload?: unknown) =>
       this.editor.action(callCommand(cmd, payload))
     const state = caretState(before)
+    const become = (
+      type: 'paragraph' | 'heading' | 'codeBlock',
+      attr?: string | number,
+    ) => this.textblockType(type, attr)(view.state, view.dispatch)
     const level = headingLevel(command)
     if (level != null) {
       if (state.block.type === 'heading' && state.block.level === level)
-        run(turnIntoTextCommand.key)
-      else run(wrapInHeadingCommand.key, level)
+        become('paragraph')
+      else become('heading', level)
     }
     switch (command) {
       case 'paragraph':
-        run(turnIntoTextCommand.key)
+        become('paragraph')
         break
       case 'bold':
         run(toggleStrongCommand.key)
@@ -4216,8 +4303,8 @@ export class InkKitEditor {
         this.toggleInlineCode()
         break
       case 'codeBlock':
-        if (state.block.type === 'codeBlock') run(turnIntoTextCommand.key)
-        else run(createCodeBlockCommand.key, checked?.language ?? '')
+        if (state.block.type === 'codeBlock') become('paragraph')
+        else become('codeBlock', checked?.language ?? '')
         break
       case 'quote':
         if (state.quoted) this.unquote()
