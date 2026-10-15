@@ -989,7 +989,9 @@ export class InkKitEditor {
           // that opens a link must not.
           handleClick: (_view, _pos, event) =>
             modHeld(event) &&
-            !!(event.target as HTMLElement).closest('a[href]'),
+            !!(event.target as HTMLElement).closest(
+              'a[href], .inkkit-wiki-link',
+            ),
           handleDOMEvents: {
             compositionstart: () => {
               queueMicrotask(() => this.publishCommandState())

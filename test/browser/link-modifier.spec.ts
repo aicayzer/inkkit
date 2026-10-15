@@ -185,16 +185,24 @@ for (const editable of [true, false])
     if (!editable) expect((await observe(page)).snapshot!.text).toBe(source)
   })
 
-test('Mod-click on a link leaves the selection where it was', async ({
-  page,
-  openFixture,
-}) => {
-  await open(page, openFixture)
-  const site = page.getByRole('link', { name: 'Site' })
-  await site.click()
-  await site.click({ modifiers: ['ControlOrMeta'] })
-  await page.keyboard.type('Z')
-  await expect
-    .poll(async () => (await observe(page)).snapshot!.text)
-    .toBe(source.replace('Site', 'SiZte'))
-})
+// A wiki link takes focus when clicked, so the key reaches neither it nor
+// the text; a Markdown link leaves the caret in the text.
+for (const [name, expected] of [
+  ['Site', source.replace('Site', 'SiZte')],
+  ['Travel plan', source],
+])
+  test(`Mod-click on ${name} leaves the selection where it was`, async ({
+    page,
+    openFixture,
+  }) => {
+    await open(page, openFixture)
+    const site = page.getByRole('link', { name: 'Site' })
+    await site.click()
+    await page
+      .getByRole('link', { name, exact: true })
+      .click({ modifiers: ['ControlOrMeta'] })
+    await page.keyboard.type('Z')
+    await expect
+      .poll(async () => (await observe(page)).snapshot!.text)
+      .toBe(expected)
+  })
