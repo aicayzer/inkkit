@@ -155,12 +155,70 @@ test('inline code at a caret applies to what is typed next', async () => {
     const view = ctxOf(editor).get(editorViewCtx)
     view.dispatch(view.state.tr.insertText('xy'))
     expect(serialize(ctxOf(editor))).toBe('A `xy`line\n')
-    // The mark is not inclusive, so typing on leaves the code span.
-    expect(states.at(-1)?.marks).toEqual([])
+    // Typing on stays in the span, as with bold, until the command is toggled.
+    expect(states.at(-1)?.marks).toEqual(['code'])
     placeCaret(editor, 4)
     expect(states.at(-1)?.marks).toEqual(['code'])
     editor.format('code')
     expect(serialize(ctxOf(editor))).toBe('A xyline\n')
+  })
+})
+
+// Types one character at a time at the selection, as keystrokes do.
+function typeKeys(editor: InkKitEditor, text: string) {
+  const view = ctxOf(editor).get(editorViewCtx)
+  for (const character of text) {
+    const { from, to } = view.state.selection
+    view.dispatch(view.state.tr.insertText(character, from, to))
+  }
+}
+
+test('inline code at a caret holds every character typed one by one', async () => {
+  await withInkKitEditor('A line\n', (editor, states) => {
+    placeCaret(editor, 3)
+    editor.format('code')
+    typeKeys(editor, 'abc')
+    expect(serialize(ctxOf(editor))).toBe('A `abc`line\n')
+    expect(states.at(-1)?.marks).toEqual(['code'])
+    // A space and a second word stay in the span; toggling the command ends it.
+    typeKeys(editor, ' d')
+    editor.format('code')
+    expect(states.at(-1)?.marks).toEqual([])
+    typeKeys(editor, 'e')
+    expect(serialize(ctxOf(editor))).toBe('A `abc d`eline\n')
+    expect(states.at(-1)?.marks).toEqual([])
+  })
+})
+
+test('typing at the end of a code span that was not started at the caret leaves it', async () => {
+  await withInkKitEditor('A `foo`\n', (editor, states) => {
+    placeCaret(editor, 6)
+    expect(states.at(-1)?.marks).toEqual([])
+    typeKeys(editor, 'bar')
+    expect(serialize(ctxOf(editor))).toBe('A `foo`bar\n')
+  })
+})
+
+test('moving the caret ends a pending code span', async () => {
+  await withInkKitEditor('A line\n', (editor, states) => {
+    placeCaret(editor, 3)
+    editor.format('code')
+    typeKeys(editor, 'ab')
+    placeCaret(editor, 9)
+    expect(states.at(-1)?.marks).toEqual([])
+    typeKeys(editor, 'c')
+    expect(serialize(ctxOf(editor))).toBe('A `ab`linec\n')
+  })
+})
+
+test('deleting while a code span is pending does not restart it', async () => {
+  await withInkKitEditor('A line\n', (editor, states) => {
+    placeCaret(editor, 3)
+    editor.format('code')
+    typeKeys(editor, 'ab')
+    const view = ctxOf(editor).get(editorViewCtx)
+    view.dispatch(view.state.tr.delete(4, 5))
+    expect(states.at(-1)?.marks).toEqual([])
   })
 })
 
