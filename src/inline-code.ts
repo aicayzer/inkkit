@@ -9,8 +9,8 @@ import { $prose } from '@milkdown/kit/utils'
 // would then apply to one character only, since ProseMirror clears stored
 // marks when text goes in. This keeps the stored mark while the person types,
 // corrects with Backspace or Delete, or composes text, as bold does, until the
-// command is toggled, the caret moves out of the line, or Enter starts a new
-// block, since a code span never crosses blocks.
+// command is toggled, the caret moves, or Enter starts a new block, since a
+// code span never crosses blocks.
 //
 // While an input method composes text, the marks are held aside, since
 // storing them then would stop the composition and draw the text twice.
