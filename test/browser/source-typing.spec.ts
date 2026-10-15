@@ -8,6 +8,10 @@ const original =
       `Paragraph ${index} has enough words to wrap over a line or two in the source editor.`,
   ).join('\n\n') + '\n'
 
+// Control-Up moves by paragraph outside macOS, so it is not a document start.
+const documentStart =
+  process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home'
+
 async function openSource(page: Page, at: number) {
   await page.goto('/?fixture=everyday&configuration=rich')
   await expect
@@ -103,7 +107,7 @@ test('redo from source mode does not carry its steps into the formatted view', a
   expect(await operation(page, 'redo')).toBe(false)
   const editor = page.locator('.ProseMirror.editor')
   await editor.click()
-  await page.keyboard.press('ControlOrMeta+ArrowUp')
+  await page.keyboard.press(documentStart)
   await page.keyboard.type('Q')
   const text = (await observe(page)).snapshot!.text
   expect(text).toContain('QParagraph 0')
@@ -129,7 +133,7 @@ test('undo and redo cross between formatted history and source steps in order', 
   )
   const editor = page.locator('.ProseMirror.editor')
   await editor.click()
-  await page.keyboard.press('ControlOrMeta+ArrowUp')
+  await page.keyboard.press(documentStart)
   await page.keyboard.type('X')
   await page.waitForTimeout(700)
   await operation(page, 'editingMode', { mode: 'source' })
