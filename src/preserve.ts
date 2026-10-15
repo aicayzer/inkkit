@@ -64,6 +64,15 @@ function ordered(node: SourceNode): SourceNode {
     : current
 }
 
+/** Where the delimiter row ends, given where the header row before it ends. */
+function delimiterRowEnd(text: string, headerEnd: number): number {
+  const next = text.indexOf('\n', headerEnd)
+  if (next < 0) return headerEnd
+  const ending = /\r?\n/g
+  ending.lastIndex = next + 1
+  return ending.exec(text)?.index ?? text.length
+}
+
 function ownShape(node: SourceNode): string {
   return JSON.stringify(ordered(node), (key, value) =>
     ['position', 'data', 'children', 'value', 'marker'].includes(key)
@@ -1434,14 +1443,27 @@ function retainSource(
         ? ending(last)
         : node
     }
+    // The delimiter row follows the header and belongs to no row. Alignment
+    // is part of the table's own shape, so it is unchanged here, and a kept
+    // header keeps the delimiter row as written.
+    const header = (text: string, offset: number | undefined) =>
+      before.type === 'table' && prefix === 1 && offset != null
+        ? delimiterRowEnd(text, offset)
+        : offset
     const from = prefix
-      ? ending(before.children[prefix - 1]!).position?.end.offset
+      ? header(
+          source,
+          ending(before.children[prefix - 1]!).position?.end.offset,
+        )
       : first
     const to = suffix
       ? before.children[before.children.length - suffix]!.position?.start.offset
       : last
     const newFrom = prefix
-      ? ending(after.children[prefix - 1]!).position?.end.offset
+      ? header(
+          canonical,
+          ending(after.children[prefix - 1]!).position?.end.offset,
+        )
       : newFirst
     const newTo = suffix
       ? after.children[after.children.length - suffix]!.position?.start.offset
