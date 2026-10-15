@@ -2554,7 +2554,7 @@ export class InkKitEditor {
               .replaceSelection(new Slice(Fragment.from(paragraph), 1, 1))
               .scrollIntoView()
         if (!transaction) return
-        this.currentText(transaction.doc)
+        // Dispatch validates after appended plugins have normalized the edit.
         view.dispatch(transaction)
       }
     }
