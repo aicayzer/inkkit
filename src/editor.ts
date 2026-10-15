@@ -54,6 +54,7 @@ import {
   wrapInOrderedListCommand,
 } from '@milkdown/kit/preset/commonmark'
 import { authoredSourcesCtx, setTextblockType } from './block-conversion'
+import { smartPunctuationCtx, undoSmartPunctuation } from './smart-punctuation'
 import {
   strikethroughKeymap,
   tableKeymap,
@@ -409,6 +410,8 @@ export interface TextInputPreferences {
   spellcheck?: boolean
   autocorrect?: boolean
   autocapitalize?: 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters'
+  /** Typing a quote or `--` gives a curly quote or a dash, in formatted mode. Off unless true. */
+  smartPunctuation?: boolean
 }
 
 const autocapitalizeValues = [
@@ -428,10 +431,15 @@ function textInputPreferences(
     'spellcheck',
     'autocorrect',
     'autocapitalize',
+    'smartPunctuation',
   ])
   return {
     spellcheck: optionalBoolean(record.spellcheck, `${name}.spellcheck`),
     autocorrect: optionalBoolean(record.autocorrect, `${name}.autocorrect`),
+    smartPunctuation: optionalBoolean(
+      record.smartPunctuation,
+      `${name}.smartPunctuation`,
+    ),
     autocapitalize: isOmitted(record.autocapitalize)
       ? undefined
       : expectOneOf(
@@ -2185,7 +2193,10 @@ export class InkKitEditor {
     this.assertMutation(expectedGeneration)
     if (this.literalSurface && this.stepTypedSource('undo')) return true
     const view = this.editor.ctx.get(editorViewCtx)
-    const undone = undoHistory(view.state, view.dispatch)
+    const undone =
+      (!this.literalSurface &&
+        undoSmartPunctuation(view.state, view.dispatch)) ||
+      undoHistory(view.state, view.dispatch)
     if (undone) {
       // Source steps that were undone come back after the formatted ones.
       if (this.literalSurface && this.undoneSteps.length) this.formattedUndone++
@@ -2660,6 +2671,10 @@ export class InkKitEditor {
         ctx.set(rootCtx, root)
         ctx.set(authoredSourcesCtx.key, (doc, positions) =>
           instance.authoredSources(doc, positions),
+        )
+        ctx.set(
+          smartPunctuationCtx.key,
+          () => instance.inputPreferences.smartPunctuation === true,
         )
         ctx.update(labelsCtx.key, () => ({
           ...defaultLabels,

@@ -93,7 +93,7 @@ InkKitEditor.mount(
 | `files`     | `FileAdapter`                                              | None                         | Resolves path images and `![[name]]` embeds into images, audio, video, PDFs and file cards. See [Optional wiki links and files](#optional-wiki-links-and-files). |
 | `wikiLinks` | `WikiLinkAdapter`                                          | None                         | Resolves and opens `[[wiki links]]`. Without it, they stay literal source.                                                                                       |
 | `editable`  | `boolean`                                                  | `true`                       | Whether the person can edit. Change it later with `setEditable`.                                                                                                 |
-| `textInput` | `TextInputPreferences`                                     | `{}`, the browser's behavior | Spell check, autocorrect and autocapitalization hints. Change them later with `setTextInputPreferences`.                                                         |
+| `textInput` | `TextInputPreferences`                                     | `{}`, the browser's behavior | Spell check, autocorrect and autocapitalization hints, and smart punctuation. Change them later with `setTextInputPreferences`.                                  |
 | `labels`    | `Partial<EditorLabels>`                                    | The English defaults         | Replaces built-in text and accessible names. See [Labels](#labels).                                                                                              |
 | `keymap`    | `Keymap`                                                   | Undo, redo and table exit    | Shortcut bindings. Change them later with `setKeymap`. See [Shortcuts](#shortcuts).                                                                              |
 | `rendering` | `{ codeHighlighting?: boolean, diagramPreview?: boolean }` | Both `true`                  | Turns code highlighting or diagram previews off. See [Code highlighting and diagram previews](#code-highlighting-and-diagram-previews).                          |
@@ -238,13 +238,40 @@ The `revision` that `changed` receives is the revision of the change it reports,
 | `setEditable(editable: boolean)`                             | `void`    | Changes the policy on the formatted surface and on the source and TXT surface. |
 | `setTextInputPreferences(preferences: TextInputPreferences)` | `void`    | Replaces the input preferences on both surfaces.                               |
 
-`TextInputPreferences` sets the matching HTML attributes on both editing surfaces. Every field is optional. A field you omit removes its attribute instead of keeping an earlier override, which leaves the behavior to the browser. These are hints; the browser and the operating system decide whether they take effect.
+`TextInputPreferences` has two kinds of fields. Every field is optional. `setTextInputPreferences` replaces the whole set, so a field you omit goes back to its default instead of keeping an earlier override.
+
+`spellcheck`, `autocorrect` and `autocapitalize` set the matching HTML attributes on both editing surfaces. Omitting one removes its attribute, which leaves the behavior to the browser. These are hints; the browser and the operating system decide whether they take effect.
 
 | Field            | Type                                                                  | HTML attribute                  |
 | ---------------- | --------------------------------------------------------------------- | ------------------------------- |
 | `spellcheck`     | `boolean`                                                             | `spellcheck`                    |
 | `autocorrect`    | `boolean`                                                             | `autocorrect`, as `on` or `off` |
 | `autocapitalize` | `'off'`, `'none'`, `'on'`, `'sentences'`, `'words'` or `'characters'` | `autocapitalize`                |
+
+### Smart punctuation
+
+`smartPunctuation: boolean` turns typed quotes and dashes into curly quotes and dashes. It is `false` by default, and it is an InkKit behavior, not an HTML attribute, so it works the same in every browser and in a web view. It applies to typing in formatted mode. You can turn it on at mount or with `setTextInputPreferences`, and a change takes effect on the next key press, with no remount.
+
+The rules change only the character being typed:
+
+| You type                                   | You get                      | When                                                                                                                                               |
+| ------------------------------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"` or `'`                                 | `“` or `‘`, an opening quote | At the start of a block or after a line break, whitespace, an opening bracket (`(`, `[`, `{`, `<`), an en or em dash, or another opening quote.    |
+| `"` or `'`                                 | `”` or `’`, a closing quote  | Anywhere else. A `'` between letters is an apostrophe, which is the closing form. A `'` that starts a word, as in `'tis` or `'90s`, opens a quote. |
+| `--`                                       | `–`, an en dash              | After other text in the block. At the start of a block `--` stays as typed, so that a third hyphen makes a divider.                                |
+| `-` straight after an en dash it just made | `—`, an em dash              | So `---` gives an em dash. On an otherwise empty line `---` is still a divider, and never an em dash.                                              |
+
+Smart punctuation never rewrites text that is already in the note: straight quotes and hyphens that a note holds stay as they are, on open and on save. The curly character is saved as typed, as UTF-8 text, and reopening the note shows it unchanged.
+
+One Undo straight after a rule, or Backspace, puts back the plain character that was typed, such as `"` or `--`. A second Undo removes the typing as it does without the option. Undo after the caret has moved is the ordinary Undo.
+
+The rules don't apply:
+
+- In inline code, including a code span you are still typing (an unmatched backtick earlier in the block), in code blocks, in front matter, in comments and in any block that InkKit holds as literal Markdown.
+- In Markdown syntax that you are typing out: a link destination and title after `](`, a web address (`https://`, `www.` or `mailto:`), a wiki link or footnote label that isn't closed yet, an HTML tag or comment that isn't closed yet, a reference definition (`[label]: …`), and a line that starts with `|`, as a typed table row does.
+- In source view and TXT notes, where the text is typed as is. The same goes for `insertText` in those modes.
+
+Text typed inside the text of a link, a table cell, a heading, a list item, a quote or a callout follows the rules. Typing that arrives in one piece, such as dictation or a text replacement, follows them for its last character, like any other input rule.
 
 Read-only permits selection, copying, find, navigation, folding, loading and reloading, and switching between formatted and source modes. Every method that changes the document throws `read-only`, and so does `undo` and `redo`, which keep their history for when editing returns. Typing, paste, drop, cut completion, task toggles, reference editing and resizing can't change content, and tables show no [table controls](#table-controls).
 
