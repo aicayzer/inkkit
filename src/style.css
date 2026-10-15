@@ -125,9 +125,13 @@
 }
 .inkkit-root .inkkit-table-controls button {
   display: grid;
+  /* The icon is larger than the grabbers' short side, so the track itself is
+     centered; otherwise it overflows to one side. */
+  place-content: center;
   place-items: center;
   box-sizing: border-box;
   margin: 0;
+  padding: 0;
   border: 0;
   color: var(--_inkkit-muted);
   background: Canvas;
@@ -569,9 +573,13 @@
   top: 6px;
   right: 6px;
   display: grid;
+  place-content: center;
   place-items: center;
+  box-sizing: border-box;
   width: 26px;
   height: 24px;
+  margin: 0;
+  padding: 0;
   border: 0;
   border-radius: 6px;
   background: color-mix(in srgb, CanvasText 10%, transparent);
@@ -646,15 +654,22 @@
 .inkkit-root .ProseMirror li[data-item-type='task'] {
   list-style: none;
   position: relative;
+  /* The box is centered on the first line: 1lh is the line height the item's
+     text uses, including when it is normal, and --inkkit-checkbox-offset
+     moves the box down for a font whose lines look off-center. */
+  --_inkkit-task-size: calc(var(--inkkit-font-size, 15px) * 0.933);
+  --_inkkit-task-top: calc(
+    (1lh - var(--_inkkit-task-size)) / 2 + var(--inkkit-checkbox-offset, 0px)
+  );
 }
 
 .inkkit-root .ProseMirror li[data-item-type='task']::before {
   content: '';
   position: absolute;
   left: calc(var(--inkkit-font-size, 15px) * -1.667);
-  top: 0.32em;
-  width: calc(var(--inkkit-font-size, 15px) * 0.933);
-  height: calc(var(--inkkit-font-size, 15px) * 0.933);
+  top: var(--_inkkit-task-top);
+  width: var(--_inkkit-task-size);
+  height: var(--_inkkit-task-size);
   box-sizing: border-box;
   border: 1.5px solid color-mix(in srgb, CanvasText 35%, transparent);
   border-radius: 4px;
@@ -674,8 +689,7 @@
   content: '';
   position: absolute;
   left: calc(var(--inkkit-font-size, 15px) * -1.333);
-  top: 0.32em;
-  margin-top: calc(var(--inkkit-font-size, 15px) * 0.133);
+  top: calc(var(--_inkkit-task-top) + var(--inkkit-font-size, 15px) * 0.133);
   width: calc(var(--inkkit-font-size, 15px) * 0.2);
   height: calc(var(--inkkit-font-size, 15px) * 0.467);
   border: solid Canvas;
