@@ -18,7 +18,6 @@ for (const operation of ['copy', 'cut']) {
       root,
       {
         changed() {},
-        stateChanged() {},
         copy() {},
         openLink() {},
         error(error) {

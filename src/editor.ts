@@ -135,6 +135,8 @@ import {
   type CapturedImage,
   type ClipboardInput,
   type ClipboardOutput,
+  type ClipboardScope,
+  type DocumentVersion,
   type PrintableDocument,
   type TextRange,
   type ReadableTextSnapshot,
@@ -174,6 +176,7 @@ import {
 } from './hidden-comments'
 import { scrollOutward, scrollWholePixels } from './scroll'
 import { PasteController } from './paste'
+import { DocumentSession, type SessionCapture } from './session'
 import {
   coded,
   expectArray,
@@ -430,10 +433,7 @@ function editorOptions(value: unknown): EditorOptions {
   } as EditorOptions
 }
 
-export interface CommandState {
-  documentId: string
-  generation: number
-  revision: number
+export interface CommandState extends DocumentVersion {
   format: 'md' | 'txt'
   mode: EditingMode
   editable: boolean
@@ -458,17 +458,34 @@ export interface CommandState {
 }
 
 export interface EditorEvents {
-  changed(markdown: string, generation: number): void
-  stateChanged(state: CaretState): void
+  changed(snapshot: DocumentSnapshot): void
   commandStateChanged?(state: CommandState): void
-  openLink(href: string): void
-  copy(text: string): void
+  openLink?(href: string): void
+  copy?(text: string): void
   error?(error: InkKitError): void
   clipboard?(content: ClipboardOutput): void | Promise<void>
 }
 
-const requiredEvents = ['changed', 'stateChanged', 'openLink', 'copy'] as const
-const optionalEvents = ['commandStateChanged', 'error', 'clipboard'] as const
+const requiredEvents = ['changed'] as const
+const optionalEvents = [
+  'commandStateChanged',
+  'openLink',
+  'copy',
+  'error',
+  'clipboard',
+] as const
+
+/** Every member of `EditorEvents`. The type check below fails to compile when one is left out. */
+export const editorEvents = [
+  ...requiredEvents,
+  ...optionalEvents,
+] as const satisfies readonly (keyof EditorEvents)[]
+const everyEvent: [
+  Exclude<keyof EditorEvents, (typeof editorEvents)[number]>,
+] extends [never]
+  ? true
+  : never = true
+void everyEvent
 
 /**
  * Checks the host's handlers and returns them so that an exception thrown by one is the host's: it
@@ -477,8 +494,8 @@ const optionalEvents = ['commandStateChanged', 'error', 'clipboard'] as const
  * `clipboard-unavailable`.
  */
 function hostEvents(value: unknown): EditorEvents {
-  const events = expectRecord(value, 'events')
-  for (const name of [...requiredEvents, ...optionalEvents]) {
+  const events = expectRecord(value, 'events', editorEvents)
+  for (const name of editorEvents) {
     const optional = (optionalEvents as readonly string[]).includes(name)
     if (
       typeof events[name] !== 'function' &&
@@ -514,7 +531,7 @@ function refuseUnportableCut(content: ClipboardOutput): void {
       'image-unavailable',
       'The selected content could not be cut, because an image in it cannot be copied',
     )
-  if (content.diagrams?.some((diagram) => diagram.error))
+  if (content.diagrams.some((diagram) => diagram.error))
     throw new InkKitError(
       'diagram-unavailable',
       'The selected content could not be cut, because a diagram in it cannot be copied',
@@ -575,8 +592,15 @@ function headingEntry(value: unknown): void {
   expectInteger(heading.revision, 'heading.revision', { min: 0 })
 }
 
+const clipboardScopes: readonly ClipboardScope[] = ['document', 'selection']
+
 function clipboardInput(value: unknown): ClipboardInput {
-  const input = expectRecord(value, 'input')
+  const input = expectRecord(value, 'input', [
+    'text',
+    'markdown',
+    'html',
+    'images',
+  ])
   return {
     text: expectString(input.text, 'input.text'),
     markdown: optionalString(input.markdown, 'input.markdown'),
@@ -586,7 +610,6 @@ function clipboardInput(value: unknown): ClipboardInput {
       : expectArray(input.images, 'input.images').map((image, index) =>
           capturedImage(image, `input.images[${index}]`),
         ),
-    plainText: optionalBoolean(input.plainText, 'input.plainText'),
   }
 }
 
@@ -780,30 +803,6 @@ const textInputPolicy = $prose(
     }),
 )
 
-// The listener plugin reports selection changes from inside state.apply, before
-// the view holds the new state, so the caret state is read from the view instead.
-function caretStatePlugin(events: EditorEvents, active = () => true) {
-  return $prose(
-    () =>
-      new Plugin({
-        key: new PluginKey('caretState'),
-        view: () => ({
-          update(view, previous) {
-            if (!active()) return
-            const { state } = view
-            if (
-              state.selection.eq(previous.selection) &&
-              state.doc.eq(previous.doc) &&
-              state.storedMarks === previous.storedMarks
-            )
-              return
-            events.stateChanged(caretState(state))
-          },
-        }),
-      }),
-  )
-}
-
 function outermostListDepth($pos: ResolvedPos): number | null {
   for (let depth = 1; depth <= $pos.depth; depth++) {
     if (isList($pos.node(depth))) return depth
@@ -843,7 +842,6 @@ interface FacadeCall {
 /** Host events that report the editor's state, which a failed call must not have changed. */
 const stateEvents: readonly (string | symbol)[] = [
   'changed',
-  'stateChanged',
   'commandStateChanged',
 ]
 
@@ -867,11 +865,8 @@ interface TypedSource {
 export class InkKitEditor {
   private editor!: Editor
   private lastMarkdown = ''
-  private documentId = ''
   private formatType: 'md' | 'txt' = 'md'
-  private revision = 0
-  private documentEpoch = 0
-  private operationSequence = 0
+  private readonly session = new DocumentSession()
   private exportControllers = new Set<AbortController>()
   private plainComposing = false
   private plainSearch = ''
@@ -881,8 +876,7 @@ export class InkKitEditor {
     to: number
     displayedFrom: number
     displayedTo: number
-    revision: number
-    epoch: number
+    version: SessionCapture
   }
   private beforePlainInput?: { from: number; to: number }
   // Source typed in the source editor that the hidden formatted document has
@@ -903,7 +897,6 @@ export class InkKitEditor {
   private mode: EditingMode = 'formatted'
   private sourcePreservations = new WeakMap<SourceProvenance, Preservation>()
   private sourceTexts = new WeakMap<ProseNode, string>()
-  private outlineEpoch = 0
   private ready = false
   private destroyed = false
   private preservation?: Preservation
@@ -917,7 +910,6 @@ export class InkKitEditor {
   private footnoteKeyHandler?: (event: KeyboardEvent) => void
   private copyHandler?: (event: ClipboardEvent) => void
   private originalSource = ''
-  private generation = 0
   private reportingSuppressed = false
   private loading = false
   private readonly textIdentity = ++editorSequence
@@ -932,7 +924,6 @@ export class InkKitEditor {
   }
   private writable = true
   private inputPreferences: TextInputPreferences = {}
-  private policyEpoch = 0
   private literalKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
   private configuredKeys: Keymap = {}
@@ -951,7 +942,7 @@ export class InkKitEditor {
               this.mediaPolicy()
               return
             }
-            this.revision += 1
+            this.session.changed()
             this.cancelExports()
             this.mediaPolicy()
             this.literalMatch = undefined
@@ -979,7 +970,7 @@ export class InkKitEditor {
             }
             if (markdown === this.lastMarkdown) return
             this.lastMarkdown = markdown
-            this.events.changed(markdown, this.generation)
+            this.events.changed(this.changeSnapshot(markdown))
           },
         }),
       }),
@@ -1019,10 +1010,21 @@ export class InkKitEditor {
   }
 
   private context(): DocumentContext {
+    return this.session.context()
+  }
+
+  /** The generation of the loaded document, for the composition check of native input. */
+  private get generation(): number | undefined {
+    return this.session.generation
+  }
+
+  /** What `changed` reports for the document's new text. */
+  private changeSnapshot(text: string): DocumentSnapshot {
     return {
-      documentId: this.documentId,
-      generation: this.generation,
-      operationId: `${this.documentEpoch}:${this.generation}:${++this.operationSequence}`,
+      ...this.session.version(),
+      format: this.formatType,
+      text,
+      dirty: text !== this.originalSource,
     }
   }
 
@@ -1031,12 +1033,12 @@ export class InkKitEditor {
     this.exportControllers.clear()
   }
 
+  /** Runs asynchronous output work for the document `captured` describes, and throws
+   *  `stale-document` when the document, its revision or the editing mode changed meanwhile. */
   private async exportContent<T>(
-    snapshot: DocumentSnapshot,
+    captured: SessionCapture,
     operation: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> {
-    const epoch = this.documentEpoch
-    const mode = this.editingMode
     const controller = new AbortController()
     this.exportControllers.add(controller)
     try {
@@ -1046,19 +1048,44 @@ export class InkKitEditor {
       )
     } finally {
       this.exportControllers.delete(controller)
-      this.assertCurrent(snapshot.generation)
-      if (
-        controller.signal.aborted ||
-        epoch !== this.documentEpoch ||
-        snapshot.documentId !== this.documentId ||
-        snapshot.revision !== this.revision ||
-        mode !== this.editingMode
-      )
-        throw new InkKitError(
-          'stale-document',
-          'Document changed while preparing output',
-        )
+      this.assertCaptured(captured, controller.signal.aborted)
     }
+  }
+
+  /** Throws unless the document `captured` describes is still current, alive, not composing and
+   *  has no import pending. */
+  private assertCaptured(captured: SessionCapture, aborted = false): void {
+    this.assertAlive()
+    if (aborted || !captured.isCurrent())
+      throw new InkKitError(
+        'stale-document',
+        'Document changed while preparing output',
+      )
+    this.assertCurrent()
+  }
+
+  /** Throws unless a deferred cut can still remove what it copied: the document, its revision,
+   *  the editing mode and editability are as they were when the cut started. */
+  private assertCut(captured: SessionCapture): void {
+    this.assertAlive()
+    if (!captured.isCurrent())
+      throw new InkKitError('stale-document', 'Document changed before cutting')
+    this.assertMutation()
+    if (!captured.isCurrent({ editability: true }))
+      throw new InkKitError(
+        'stale-document',
+        'Editability changed before cutting',
+      )
+  }
+
+  /** What file and wiki-link views capture: the adapter context, and whether the same load is
+   *  still current. Edits do not make their work stale. */
+  private adapterCapture(): {
+    context: DocumentContext
+    isCurrent(): boolean
+  } {
+    const captured = this.session.capture()
+    return { context: this.context(), isCurrent: captured.isLoaded }
   }
 
   private mediaPolicy(): void {
@@ -1075,10 +1102,10 @@ export class InkKitEditor {
 
   private assertReady(expectedGeneration?: unknown): void {
     this.assertAlive()
-    const generation = optionalGeneration(expectedGeneration) ?? this.generation
+    const expected = optionalGeneration(expectedGeneration)
     if (!this.ready)
       throw new InkKitError('not-ready', 'No document has been loaded')
-    if (generation !== this.generation)
+    if (expected !== undefined && expected !== this.session.generation)
       throw new InkKitError('stale-document', 'Document changed')
   }
 
@@ -1162,7 +1189,7 @@ export class InkKitEditor {
   private restorePoint() {
     return {
       state: this.editor.ctx.get(editorViewCtx).state,
-      revision: this.revision,
+      revision: this.session.mark(),
       lastMarkdown: this.lastMarkdown,
       literalMatch: this.literalMatch,
       textScope: this.textScope,
@@ -1189,7 +1216,7 @@ export class InkKitEditor {
         this.loading = loading
       }
     }
-    this.revision = before.revision
+    this.session.restore(before.revision)
     this.lastMarkdown = before.lastMarkdown
     this.literalMatch = before.literalMatch
     this.textScope = before.textScope
@@ -1239,7 +1266,7 @@ export class InkKitEditor {
     this.reportingSuppressed = true
     try {
       this.writable = editable
-      this.policyEpoch += 1
+      this.session.editabilityChanged()
       if (!editable) this.pasteController.cancelPending()
       this.editor.ctx
         .get(editorViewCtx)
@@ -1362,9 +1389,7 @@ export class InkKitEditor {
           tableCommands.map((name) => [name, false]),
         ) as Record<TableCommand, boolean>)
     return {
-      documentId: this.documentId,
-      generation: this.generation,
-      revision: this.revision,
+      ...this.session.version(),
       format: this.formatType,
       mode: this.editingMode,
       editable: this.writable,
@@ -1509,8 +1534,8 @@ export class InkKitEditor {
       left = container.scrollLeft
     const text = this.snapshot().text
     this.mode = mode
+    this.session.modeChanged()
     this.cancelExports()
-    this.outlineEpoch += 1
     this.plainSearch = ''
     this.literalMatch = undefined
     if (mode === 'source') {
@@ -1533,11 +1558,6 @@ export class InkKitEditor {
     }
     container.scrollTop = top
     container.scrollLeft = left
-    this.events.stateChanged(
-      this.literalSurface
-        ? { marks: [], block: { type: 'paragraph' }, quoted: false }
-        : caretState(this.editor.ctx.get(editorViewCtx).state),
-    )
     this.publishCommandState()
     return true
   }
@@ -1618,14 +1638,14 @@ export class InkKitEditor {
       closed,
     }
     this.pendingSource = pending
-    this.revision += 1
+    this.session.changed()
     this.cancelExports()
     this.literalMatch = undefined
     // Text that did not come from the textarea is shown there.
     if (!native) this.showTypedSource(pending.text, pending.from, pending.to)
     if (text !== this.lastMarkdown) {
       this.lastMarkdown = text
-      this.events.changed(text, this.generation)
+      this.events.changed(this.changeSnapshot(text))
     }
     this.publishCommandState()
     return true
@@ -1667,13 +1687,13 @@ export class InkKitEditor {
       ;({ from, to } = next)
     }
     this.lastSourceInput = 0
-    this.revision += 1
+    this.session.changed()
     this.cancelExports()
     this.literalMatch = undefined
     this.showTypedSource(text, from, to)
     if (text !== this.lastMarkdown) {
       this.lastMarkdown = text
-      this.events.changed(text, this.generation)
+      this.events.changed(this.changeSnapshot(text))
     }
     this.publishCommandState()
     return true
@@ -1845,9 +1865,7 @@ export class InkKitEditor {
       throw coded(error, 'preservation')
     }
     return {
-      documentId: this.documentId,
-      generation: this.generation,
-      revision: this.revision,
+      ...this.session.version(),
       format: this.formatType,
       text,
       dirty: text !== this.originalSource,
@@ -1858,9 +1876,10 @@ export class InkKitEditor {
     expectedGeneration?: number,
   ): Promise<PrintableDocument> {
     const snapshot = this.snapshot(expectedGeneration)
+    const captured = this.session.capture()
     const state = this.editor.ctx.get(editorViewCtx).state
     const doc = this.exportDocument(snapshot.text)
-    const output = await this.exportContent(snapshot, async (signal) => {
+    const output = await this.exportContent(captured, async (signal) => {
       if (
         snapshot.format === 'md' &&
         !this.options.images &&
@@ -1917,11 +1936,19 @@ export class InkKitEditor {
       : doc
   }
 
-  async clipboardSnapshot(all?: boolean): Promise<ClipboardOutput> {
+  async clipboardSnapshot(
+    scope?: ClipboardScope,
+    expectedGeneration?: number,
+  ): Promise<ClipboardOutput> {
     this.assertAlive()
-    all = optionalBoolean(all, 'all') ?? true
-    const snapshot = this.snapshot()
-    const epoch = this.documentEpoch
+    const all =
+      (isOmitted(scope)
+        ? 'document'
+        : expectOneOf(scope, clipboardScopes, 'scope')) === 'document'
+    const snapshot = this.snapshot(expectedGeneration)
+    const captured = this.session.capture()
+    const { documentId, generation, revision } = captured
+    const version = { documentId, generation, revision }
     if (this.formatType === 'txt') {
       const text = all
         ? snapshot.text
@@ -1932,6 +1959,7 @@ export class InkKitEditor {
       const pre = document.createElement('pre')
       pre.textContent = text
       return {
+        ...version,
         text,
         html: pre.outerHTML,
         markdown: text,
@@ -1996,7 +2024,7 @@ export class InkKitEditor {
     } catch (error) {
       throw coded(error, 'preservation')
     }
-    const result = await this.exportContent(snapshot, (signal) =>
+    const result = await this.exportContent(captured, (signal) =>
       portableClipboard(
         all || selectedDoc ? content : selectionContent(doc, content),
         schema,
@@ -2015,21 +2043,18 @@ export class InkKitEditor {
     )
     if (metadata != null)
       result.html = withReferenceMetadata(result.html, metadata)
-    this.assertCurrent(snapshot.generation)
-    if (
-      snapshot.documentId !== this.documentId ||
-      epoch !== this.documentEpoch ||
-      snapshot.revision !== this.revision
-    )
-      throw new InkKitError('stale-document', 'Document changed')
-    return result
+    this.assertCaptured(captured)
+    return { ...version, ...result }
   }
 
-  async paste(input: ClipboardInput): Promise<void> {
+  async paste(
+    input: ClipboardInput,
+    expectedGeneration?: number,
+  ): Promise<void> {
     this.assertAlive()
     input = clipboardInput(input)
-    this.assertMutation()
-    if (this.literalSurface || input.plainText) {
+    this.assertMutation(expectedGeneration)
+    if (this.literalSurface) {
       this.pasteAsPlainText(
         this.mode === 'source' && this.formatType === 'md'
           ? (input.markdown ?? input.text)
@@ -2046,10 +2071,17 @@ export class InkKitEditor {
     setCommentVisibility(this.editor.ctx.get(editorViewCtx), visible)
   }
 
-  pasteAsPlainText(text: string): void {
+  /** Inserts `text` literally at the selection and returns whether the document changed. */
+  pasteAsPlainText(text: string, expectedGeneration?: number): boolean {
     this.assertAlive()
     expectString(text, 'text')
-    this.assertMutation()
+    this.assertMutation(expectedGeneration)
+    const before = this.session.capture()
+    this.insertPlainText(text)
+    return !before.isCurrent()
+  }
+
+  private insertPlainText(text: string): void {
     if (this.literalSurface) {
       this.replaceLiteralSelection(text, true, this.formatType === 'md')
     } else {
@@ -2129,6 +2161,7 @@ export class InkKitEditor {
     if (this.destroyed) return
     this.destroyed = true
     this.ready = false
+    this.session.close()
     this.pendingSource = undefined
     this.typedSteps = []
     this.undoneSteps = []
@@ -2188,24 +2221,14 @@ export class InkKitEditor {
         if (isImage(node) || isMermaid(node)) portable = true
       })
       const cut = event.type === 'cut' && this.writable
-      const policyEpoch = this.policyEpoch
-      const epoch = this.documentEpoch
+      const captured = this.session.capture()
       if (portable && this.events.clipboard) {
-        void this.clipboardSnapshot(false)
+        void this.clipboardSnapshot('selection')
           .then(async (content) => {
             if (cut) refuseUnportableCut(content)
             await writeClipboard(this.events, content)
             if (cut) {
-              this.assertMutation(snapshot.generation)
-              if (
-                epoch !== this.documentEpoch ||
-                policyEpoch !== this.policyEpoch ||
-                snapshot.revision !== this.revision
-              )
-                throw new InkKitError(
-                  'stale-document',
-                  'Document changed before cutting',
-                )
+              this.assertCut(captured)
               this.plain.setSelectionRange(from, to)
               this.replaceLiteralSelection('')
             }
@@ -2329,12 +2352,6 @@ export class InkKitEditor {
         }))
       })
       .use(labelsCtx)
-      .use(
-        caretStatePlugin(
-          events,
-          () => !instance.loading && !instance.literalSurface,
-        ),
-      )
       .use(instance.pasteController.plugin)
       .use(visibleClipboard)
       .use(instance.keymapPlugin)
@@ -2355,7 +2372,7 @@ export class InkKitEditor {
       .use(listItemBackspace)
       .use(listItemShiftTab)
       .use(textInputPolicy)
-      .use(codeCopyPlugin((text) => events.copy(text)))
+      .use(events.copy ? codeCopyPlugin((text) => events.copy?.(text)) : [])
       .use(placeholderPlugin)
       .use(
         options.rendering?.codeHighlighting === false
@@ -2373,18 +2390,7 @@ export class InkKitEditor {
       .use(
         options.wikiLinks
           ? wikiLinkView(options.wikiLinks, {
-              capture: () => {
-                const epoch = instance.documentEpoch
-                const context = instance.context()
-                return {
-                  context,
-                  isCurrent: () =>
-                    !instance.destroyed &&
-                    epoch === instance.documentEpoch &&
-                    context.documentId === instance.documentId &&
-                    context.generation === instance.generation,
-                }
-              },
+              capture: () => instance.adapterCapture(),
               active: () =>
                 instance.ready &&
                 !instance.destroyed &&
@@ -2401,18 +2407,7 @@ export class InkKitEditor {
               options.files
                 ? {
                     adapter: options.files,
-                    capture: () => {
-                      const epoch = instance.documentEpoch
-                      const context = instance.context()
-                      return {
-                        context,
-                        isCurrent: () =>
-                          !instance.destroyed &&
-                          epoch === instance.documentEpoch &&
-                          context.documentId === instance.documentId &&
-                          context.generation === instance.generation,
-                      }
-                    },
+                    capture: () => instance.adapterCapture(),
                     active: () =>
                       instance.ready &&
                       !instance.destroyed &&
@@ -2557,7 +2552,7 @@ export class InkKitEditor {
       // The renderer leaves the address empty when it is not on the list in
       // link-safety.ts.
       const href = anchor.getAttribute('href')
-      if (href) events.openLink(href)
+      if (href) events.openLink?.(href)
     }
     root.addEventListener('click', instance.clickHandler)
     instance.auxClickHandler = (event) => {
@@ -2623,27 +2618,16 @@ export class InkKitEditor {
       event.preventDefault()
       event.stopPropagation()
       if (events.clipboard) {
-        const epoch = instance.documentEpoch,
-          revision = instance.revision
+        const captured = instance.session.capture()
         const { from, to } = view.state.selection
         const cut = event.type === 'cut' && instance.writable
-        const policyEpoch = instance.policyEpoch
         void instance
-          .clipboardSnapshot(false)
+          .clipboardSnapshot('selection')
           .then(async (content) => {
             if (cut) refuseUnportableCut(content)
             await writeClipboard(events, content)
             if (cut) {
-              instance.assertMutation()
-              if (
-                epoch !== instance.documentEpoch ||
-                policyEpoch !== instance.policyEpoch ||
-                revision !== instance.revision
-              )
-                throw new InkKitError(
-                  'stale-document',
-                  'Document changed before cutting',
-                )
+              instance.assertCut(captured)
               view.dispatch(
                 view.state.tr.deleteRange(from, to).scrollIntoView(),
               )
@@ -2669,21 +2653,17 @@ export class InkKitEditor {
   loadDocument(input: DocumentInput): void {
     this.assertAlive()
     input = documentInput(input)
+    this.session.checkLoad(input.generation, 'input.generation')
     const container = this.viewportContainer ?? this.root
     const top = container.scrollTop,
       left = container.scrollLeft
-    const active = this.root.ownerDocument.activeElement
-    if (
-      active === this.plain ||
-      active === this.editor.ctx.get(editorViewCtx).dom
-    )
-      (active as HTMLElement).blur()
+    this.releaseFocus()
     this.ready = false
     this.cancelExports()
     this.mediaPolicy()
     this.pasteController.cancelPending()
-    this.documentEpoch += 1
-    this.outlineEpoch += 1
+    // Views made while the new document loads capture its generation.
+    this.session.load(input.documentId, input.generation)
     this.sourcePreservations = new WeakMap()
     this.sourceTexts = new WeakMap()
     this.pendingSource = undefined
@@ -2695,15 +2675,13 @@ export class InkKitEditor {
     this.beforePlainInput = undefined
     this.plainSearch = ''
     this.literalMatch = undefined
-    this.documentId = input.documentId
     this.formatType = input.format
-    this.revision = 0
     this.plain.value = input.text
     this.plain.setSelectionRange(
       this.plain.value.length,
       this.plain.value.length,
     )
-    this.load(input.format === 'txt' ? '' : input.text, input.generation)
+    this.load(input.format === 'txt' ? '' : input.text)
     this.originalSource = input.text
     this.lastMarkdown = input.text
     this.updateSurface()
@@ -2711,17 +2689,35 @@ export class InkKitEditor {
     this.mediaPolicy()
     container.scrollTop = top
     container.scrollLeft = left
-    this.events.stateChanged(
-      this.literalSurface
-        ? { marks: [], block: { type: 'paragraph' }, quoted: false }
-        : caretState(this.editor.ctx.get(editorViewCtx).state),
-    )
     this.publishCommandState()
   }
 
-  reloadDocument(input: DocumentInput): void {
+  /** Moves focus off whichever of InkKit's text surfaces holds it; other focus is left alone. */
+  private releaseFocus(): void {
+    const document = this.root.ownerDocument
+    const surface = this.editor.ctx.get(editorViewCtx).dom
+    const active = document.activeElement
+    if (active === this.plain) {
+      this.plain.blur()
+      return
+    }
+    if (active === surface) surface.blur()
+    else if (active && active !== document.body) return
+    // WebKit keeps typing into a contenteditable that has lost focus while the document
+    // selection is still in it, including after the host blurred it itself.
+    const selection = document.getSelection()
+    if (selection?.anchorNode && surface.contains(selection.anchorNode))
+      selection.removeAllRanges()
+  }
+
+  /** Replaces the document with a newer version of it, keeping the selection, focus, scroll
+   *  position and Markdown editing mode. With `expectedGeneration`, the loaded document must be
+   *  that generation. */
+  reloadDocument(input: DocumentInput, expectedGeneration?: number): void {
     this.assertAlive()
     input = documentInput(input)
+    if (!isOmitted(expectedGeneration)) this.assertReady(expectedGeneration)
+    this.session.checkLoad(input.generation, 'input.generation')
     const view = this.editor.ctx.get(editorViewCtx)
     const wasLiteral = this.literalSurface
     const previousMode = this.editingMode
@@ -2894,7 +2890,7 @@ export class InkKitEditor {
   }
 
   private readableScope(): NonNullable<InkKitEditor['textScope']> {
-    const key = `${this.documentEpoch}:${this.revision}:${this.outlineEpoch}:${this.editingMode}`
+    const { key } = this.session.capture()
     if (this.textScope?.key !== key)
       this.textScope = {
         key,
@@ -2912,9 +2908,7 @@ export class InkKitEditor {
     const selection = this.editor.ctx.get(editorViewCtx).state.selection
     return Object.freeze({
       snapshotId: scope.id,
-      documentId: this.documentId,
-      generation: this.generation,
-      revision: this.revision,
+      ...this.session.version(),
       format: this.formatType,
       mode: this.editingMode,
       text: scope.projection.text,
@@ -3061,10 +3055,6 @@ export class InkKitEditor {
     )
   }
 
-  textRangeRects(range: TextRange): readonly TextRect[] {
-    return this.textRangesRects([range])[0]!
-  }
-
   textRangesRects(
     ranges: readonly TextRange[],
   ): readonly (readonly TextRect[])[] {
@@ -3145,7 +3135,7 @@ export class InkKitEditor {
         element = element.parentElement
       }
     }
-    this.revealRects(this.textRangeRects(range))
+    this.revealRects(this.textRangesRects([range])[0]!)
   }
 
   private revealRects(rects: readonly TextRect[]): void {
@@ -3259,8 +3249,7 @@ export class InkKitEditor {
     )
   }
 
-  private load(markdown: string, generation: number): void {
-    this.generation = generation
+  private load(markdown: string): void {
     this.originalSource = markdown
     this.loading = true
     try {
@@ -3287,7 +3276,8 @@ export class InkKitEditor {
     )
   }
 
-  find(text: string, expectedGeneration?: number): void {
+  /** Selects the next match and returns whether there was one. */
+  find(text: string, expectedGeneration?: number): boolean {
     this.assertAlive()
     expectString(text, 'text')
     this.assertCurrent(expectedGeneration)
@@ -3313,8 +3303,7 @@ export class InkKitEditor {
           query: text,
           displayedFrom,
           displayedTo,
-          revision: this.revision,
-          epoch: this.documentEpoch,
+          version: this.session.capture(),
         }
       } else if (this.plainSearch)
         this.plain.setSelectionRange(
@@ -3323,10 +3312,11 @@ export class InkKitEditor {
         )
       this.plainSearch = text
       this.revealLiteralSelection()
-      return
+      return !!match
     }
-    if (findFormatted(this.editor.ctx.get(editorViewCtx), text))
-      this.revealCurrentSelection()
+    const found = findFormatted(this.editor.ctx.get(editorViewCtx), text)
+    if (found) this.revealCurrentSelection()
+    return found
   }
 
   replace(
@@ -3364,8 +3354,7 @@ export class InkKitEditor {
       const selection =
         remembered &&
         remembered.query === search &&
-        remembered.revision === this.revision &&
-        remembered.epoch === this.documentEpoch &&
+        remembered.version.isCurrent() &&
         remembered.displayedFrom === this.plain.selectionStart &&
         remembered.displayedTo === this.plain.selectionEnd
           ? { from: remembered.from, to: remembered.to }
@@ -3396,13 +3385,8 @@ export class InkKitEditor {
   }
 
   private outlineContext(): OutlineContext {
-    return {
-      documentId: this.documentId,
-      generation: this.generation,
-      revision: this.revision,
-      epoch: this.outlineEpoch,
-      mode: this.editingMode,
-    }
+    const { documentId, generation, revision, key } = this.session.capture()
+    return { documentId, generation, revision, key }
   }
 
   headings(expectedGeneration?: number): readonly Heading[] {
@@ -3588,12 +3572,17 @@ export class InkKitEditor {
     )
   }
 
-  focus(): void {
-    this.assertAlive()
-    if (!this.ready)
-      throw new InkKitError('not-ready', 'No document has been loaded')
+  focus(expectedGeneration?: number): void {
+    this.assertReady(expectedGeneration)
     if (this.literalSurface) this.plain.focus()
     else this.editor.ctx.get(editorViewCtx).focus()
+  }
+
+  /** Moves focus off InkKit's text surfaces. Focus anywhere else, such as in a host control or a
+   *  control InkKit draws, is left alone. */
+  blur(expectedGeneration?: number): void {
+    this.assertReady(expectedGeneration)
+    this.releaseFocus()
   }
 
   /** Binds keys, in ProseMirror's names, to the formatting each shortcut runs. Walked in the table's
@@ -3989,12 +3978,13 @@ export class InkKitEditor {
     label: string,
     destination: string,
     title?: string,
+    expectedGeneration?: number,
   ): boolean {
     this.assertAlive()
     expectString(label, 'label')
     expectString(destination, 'destination')
     optionalString(title, 'title')
-    this.assertMutation()
+    this.assertMutation(expectedGeneration)
     if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
     const definitions = referenceDefinitions(view.state.doc)
@@ -4015,15 +4005,17 @@ export class InkKitEditor {
     return true
   }
 
-  insertFootnote(label?: string): void {
+  /** Inserts a footnote reference, and a definition when the label has none, and returns whether
+   *  it did: formatted Markdown only. */
+  insertFootnote(label?: string, expectedGeneration?: number): boolean {
     this.assertAlive()
     const given = optionalString(label, 'label')
     if (given !== undefined && !footnoteLabel(given))
       throw invalidArgument(
         'A footnote label must be 1 to 999 characters without whitespace, brackets or backslashes',
       )
-    this.assertMutation()
-    if (this.literalSurface) return
+    this.assertMutation(expectedGeneration)
+    if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
     const definitions = footnoteDefinitions(view.state.doc)
     if (label == null) {
@@ -4056,12 +4048,16 @@ export class InkKitEditor {
     }
     view.dispatch(tr.scrollIntoView())
     this.focus()
+    return true
   }
 
-  navigateFootnote(target: 'definition' | 'reference'): boolean {
+  navigateFootnote(
+    target: 'definition' | 'reference',
+    expectedGeneration?: number,
+  ): boolean {
     this.assertAlive()
     expectOneOf(target, footnoteTargets, 'target')
-    this.assertCurrent()
+    this.assertCurrent(expectedGeneration)
     if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
     const { $from } = view.state.selection
@@ -4132,12 +4128,12 @@ export class InkKitEditor {
       'editReferenceDefinition',
       'setCommentsVisible',
       'focus',
+      'blur',
       'setKeymap',
       'textSnapshot',
       'selectTextRange',
       'revealTextRange',
       'replaceTextRange',
-      'textRangeRects',
       'textRangesRects',
       'visibleTextRanges',
       'setViewport',

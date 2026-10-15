@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { InkKitEditor, type EditorOptions } from '../src/index'
 import { Preservation } from '../src/preserve'
 
-const events = { changed() {}, stateChanged() {}, copy() {}, openLink() {} }
+const events = { changed() {}, copy() {}, openLink() {} }
 const input = {
   documentId: 'consolidation',
   generation: 1,

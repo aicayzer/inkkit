@@ -345,7 +345,6 @@ async function withLinkedEditor(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
     },
@@ -386,7 +385,7 @@ test('mixed selection preserves wiki/media Markdown and pastes descriptive rich 
         from: 0,
         to: text.text.indexOf(' excluded'),
       })
-      const copied = await editor.clipboardSnapshot(false)
+      const copied = await editor.clipboardSnapshot('selection')
       expect(copied.text).toBe(
         'Before Wiki alias and [Audio: Song name] after.',
       )
@@ -447,7 +446,8 @@ for (const operation of ['copy', 'print'] as const) {
           await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
           const exportSignal = signal
           const completeExport = finish
-          if (mutation === 'reload') editor.reloadDocument(input)
+          if (mutation === 'reload')
+            editor.reloadDocument({ ...input, generation: 2 })
           else if (mutation === 'source') editor.replaceSource('Replacement\n')
           else if (mutation === 'mode') editor.setEditingMode('source')
           else await editor.destroy()

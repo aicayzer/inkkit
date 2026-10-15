@@ -468,7 +468,7 @@ test('public source replacement, mode round trips, history and reload retain opt
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+    { changed() {}, copy() {}, openLink() {} },
     {
       wikiLinks: { open() {} },
       files: { resolve: async () => ({ kind: 'file', label: 'Opaque file' }) },

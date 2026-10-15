@@ -315,3 +315,71 @@ for (const mode of ['source', 'formatted'] as const) {
       .toBe('Original text')
   })
 }
+
+test('blur releases only the editor’s text surfaces, and caret state follows real clicks @host-controls', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture('untidy')
+  const formatted = page.getByRole('textbox', {
+    name: 'Formatted Markdown editor',
+    exact: true,
+  })
+  await formatted.getByText('Authored heading').click()
+  await expect(formatted).toBeFocused()
+  await expect
+    .poll(async () => (await observe(page)).commandState?.caret.block)
+    .toEqual({ type: 'heading', level: 1 })
+  await formatted.getByText('Before').click()
+  await expect
+    .poll(async () => (await observe(page)).commandState?.caret.block)
+    .toEqual({ type: 'paragraph' })
+  expect((await observe(page)).commandState!.documentId).toBe('fixture:untidy')
+  await operation(page, 'blur')
+  await expect(formatted).not.toBeFocused()
+  const before = (await observe(page)).snapshot
+  await page.keyboard.type('Lost')
+  expect((await observe(page)).snapshot).toEqual(before)
+  // Focus in a host control stays where it is.
+  const fixture = page.locator('#fixture')
+  await fixture.focus()
+  await operation(page, 'blur')
+  await expect(fixture).toBeFocused()
+  await operation(page, 'editingMode', { mode: 'source' })
+  const source = page.getByRole('textbox', { name: 'Markdown source editor' })
+  await source.click()
+  await expect(source).toBeFocused()
+  await operation(page, 'blur')
+  await expect(source).not.toBeFocused()
+  // Blurring with nothing focused does nothing.
+  await operation(page, 'blur')
+  await expect(source).not.toBeFocused()
+})
+
+test('blur and a load release a selection left in the editor after focus moved off it @host-controls', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture('untidy')
+  const formatted = page.getByRole('textbox', {
+    name: 'Formatted Markdown editor',
+    exact: true,
+  })
+  const blurElsewhere = () =>
+    page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await formatted.getByText('Before').click()
+  await blurElsewhere()
+  await operation(page, 'blur')
+  const before = (await observe(page)).snapshot
+  await page.keyboard.type('Lost')
+  expect((await observe(page)).snapshot).toEqual(before)
+  // Loading another document releases it the same way.
+  await formatted.getByText('Before').click()
+  await blurElsewhere()
+  await page.evaluate(() =>
+    window.inkkitPlayground.replaceDocument('Next text\n', 'md'),
+  )
+  const loaded = (await observe(page)).snapshot
+  await page.keyboard.type('Lost')
+  expect((await observe(page)).snapshot).toEqual(loaded)
+})

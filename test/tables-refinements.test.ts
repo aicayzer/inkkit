@@ -19,7 +19,6 @@ async function run(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
     },

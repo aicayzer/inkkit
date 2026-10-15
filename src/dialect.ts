@@ -9,6 +9,7 @@ import {
   imageSchema,
   paragraphSchema,
   remarkInlineLinkPlugin,
+  syncHeadingIdPlugin,
 } from '@milkdown/kit/preset/commonmark'
 import {
   extendListItemSchemaForTask,
@@ -426,11 +427,15 @@ function padShortRows(node: Nodes): void {
 
 export const remarkDialectPlugin = $remark('remarkDialect', () => remarkDialect)
 
-// Reference links retain their authored form instead of expanding to inline links.
+// Reference links retain their authored form instead of expanding to inline links. The preset's
+// heading ID plugin follows every heading edit with a second transaction that only rewrites the
+// ID attribute, so one edit would count as two revisions; the heading schema's own ID fallback
+// still names headings in the DOM, and saved Markdown never carries the attribute.
 const commonmarkWithLiteralReferences = commonmark.filter(
   (plugin) =>
     !remarkInlineLinkPlugin.includes(plugin) &&
-    plugin !== hardbreakClearMarkPlugin,
+    plugin !== hardbreakClearMarkPlugin &&
+    plugin !== syncHeadingIdPlugin,
 )
 
 // A line break inserted inside formatting does not take its marks, and no

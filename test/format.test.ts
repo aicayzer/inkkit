@@ -16,8 +16,8 @@ async function withInkKitEditor<T>(
   const states: CaretState[] = []
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged(state) {
-      states.push(state)
+    commandStateChanged(state) {
+      states.push(state.caret)
     },
     openLink() {},
     copy() {},
@@ -584,7 +584,7 @@ test('authored spacing between list groups survives switching documents and relo
         documentId: 'test',
         format: 'md',
         text: saved,
-        generation: 3,
+        generation: 4,
       })
       expect(view.state.doc.toJSON()).toEqual(authored)
     },

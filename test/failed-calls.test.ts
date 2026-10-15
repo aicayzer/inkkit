@@ -243,7 +243,6 @@ test.each(scenarios)(
       root,
       {
         changed: () => sent.push('changed'),
-        stateChanged: () => sent.push('stateChanged'),
         commandStateChanged: () => sent.push('commandStateChanged'),
         error: (error) => sent.push(`error ${error.code}`),
         copy() {},
@@ -334,9 +333,10 @@ test.each(scenarios)(
 )
 
 test('the commands that take more than one step are among those refused at each step', () => {
-  // format('taskList') wraps and then marks the items; a heading change runs two commands too.
+  // format('taskList') wraps and then marks the items. A heading change is one step: no plugin
+  // follows it with a transaction of its own.
   expect(stepCounts.get("format('taskList')")).toBe(2)
-  expect(stepCounts.get("format('heading', 2)")).toBe(2)
+  expect(stepCounts.get("format('heading', 2)")).toBe(1)
 })
 
 test('a call made from a state event handler leaves the host with the newest state', async () => {
@@ -346,14 +346,13 @@ test('a call made from a state event handler leaves the host with the newest sta
   const revisions: number[] = []
   let rewrite = false
   const editor: InkKitEditor = await InkKitEditor.mount(root, {
-    changed: (markdown) => {
-      texts.push(markdown)
+    changed: ({ text }) => {
+      texts.push(text)
       if (rewrite) {
         rewrite = false
         editor.replaceSource('Rewritten\n')
       }
     },
-    stateChanged() {},
     commandStateChanged: (state) => revisions.push(state.revision),
     copy() {},
     openLink() {},

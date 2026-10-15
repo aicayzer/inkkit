@@ -18,6 +18,7 @@ import type {
   ClipboardDiagram,
   ClipboardOutput,
   DocumentContext,
+  DocumentVersion,
   ImageAdapter,
   FileAdapter,
 } from './types'
@@ -218,7 +219,7 @@ export async function portableClipboard(
   completeDiagrams?: ReadonlySet<string>,
   files?: FileAdapter,
   signal: AbortSignal = new AbortController().signal,
-): Promise<ClipboardOutput> {
+): Promise<Omit<ClipboardOutput, keyof DocumentVersion>> {
   signal.throwIfAborted()
   content = shareableFragment(content)
   const base = clipboardContent(content, schema)
