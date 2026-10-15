@@ -76,6 +76,7 @@ import {
 import { references, remarkReferencesPlugin } from './references'
 import { callouts, remarkCalloutsPlugin } from './callouts'
 import { inlineHighlight } from './inline-highlight'
+import { smartPunctuation } from './smart-punctuation'
 import { comments, remarkCommentsPlugin } from './comments'
 import { hiddenCommentEditing } from './hidden-comments'
 import {
@@ -158,6 +159,16 @@ function writesBare(node: Link, index: number, ancestors: Parents[]): boolean {
   const follows = (parent: Parents, text: PhrasingContent): boolean => {
     if (text.type !== 'text') return false
     const run = /^\S*/.exec(text.value)![0]
+    // Edge spaces become character references even after punctuation. The
+    // reader would then include that punctuation in a bare address. An email
+    // address stops at the reference, so it stays bare.
+    if (
+      !node.url.startsWith('mailto:') &&
+      blocks.has(parent.type) &&
+      parent.children.at(-1) === text &&
+      /^[ \t]+$/.test(text.value.slice(run.length))
+    )
+      return false
     return (
       trailing.test(run) &&
       (run.length < text.value.length ||
@@ -821,6 +832,7 @@ export function createDialect(
     strikethroughKeymap,
     toggleStrikethroughCommand,
     wrapInTaskListInputRule,
+    smartPunctuation,
     remarkDialectPlugin,
     tables,
     literalBlock,
