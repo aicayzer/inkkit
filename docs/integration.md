@@ -6,7 +6,7 @@ InkKit supplies document editing and portable exports. Your app supplies its int
 
 ## Supported engines
 
-InkKit supports these engines. Each version is the oldest in which every API below works as designed.
+InkKit supports these engines. Each version is the oldest in which every API below, except the optional one, works as designed.
 
 | Engine                                     | Oldest supported version                         |
 | ------------------------------------------ | ------------------------------------------------ |
@@ -19,6 +19,7 @@ The versions come from these APIs. Each one shipped in at least one engine after
 | API                                                                                                           | WebKit | Chromium | Firefox | Below that version                                                                                   |
 | ------------------------------------------------------------------------------------------------------------- | ------ | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
 | [`Intl.Segmenter`](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/Segmenter) | 14.1   | 87       | 125     | The editor does not load.                                                                            |
+| Regular expression lookbehind assertions                                                                      | 16.4   | 62       | 78      | The editor does not load.                                                                            |
 | ES2022 class static blocks                                                                                    | 16.4   | 94       | 93      | The editor does not load.                                                                            |
 | CSS [`light-dark()`](https://developer.mozilla.org/docs/Web/CSS/color_value/light-dark)                       | 17.5   | 123      | 120     | Code text takes the editor text color until the host sets the `--inkkit-code-*` tokens.              |
 | CSS [`color-mix()`](https://developer.mozilla.org/docs/Web/CSS/color_value/color-mix)                         | 16.2   | 111      | 113     | Muted text, rules, code backgrounds and the selection lose their default colors.                     |

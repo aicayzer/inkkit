@@ -18,7 +18,7 @@ The public API is `src/core.ts`; `src/index.ts` registers Mermaid and re-exports
 
 ## Dependencies
 
-The package bundles its runtime dependencies into `dist`, so a host runs the exact code that InkKit tested. Milkdown, ProseMirror, micromark, the mdast utilities, lowlight, DOMPurify and their own dependencies are `devDependencies`. `pnpm build` bundles the versions in `pnpm-lock.yaml`, the same tree that Vitest, the browser suite and the playground run. A host's lockfile cannot resolve a different parser, serializer or ProseMirror version for InkKit.
+The package bundles its runtime dependencies into `dist`, so a host runs the exact code that InkKit tested. Milkdown, ProseMirror, micromark, the mdast utilities, lowlight and DOMPurify are `devDependencies`, and the build bundles them with their own dependencies. `pnpm build` bundles the versions in `pnpm-lock.yaml`, the same tree that Vitest, the browser suite and the playground run. A host's lockfile cannot resolve a different parser, serializer or ProseMirror version for InkKit.
 
 Mermaid is the one runtime dependency, pinned exactly. It draws diagram previews and validates diagram source, never changes saved bytes, and would multiply the package size if bundled.
 
