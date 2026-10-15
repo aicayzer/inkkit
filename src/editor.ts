@@ -835,7 +835,16 @@ let editorSequence = 0
 
 interface FacadeCall {
   refusal?: InkKitError
+  /** Host events raised during the call, sent when it succeeds and dropped when it fails. */
+  events: (() => void)[]
 }
+
+/** Host events that report the editor's state, which a failed call must not have changed. */
+const stateEvents: readonly (string | symbol)[] = [
+  'changed',
+  'stateChanged',
+  'commandStateChanged',
+]
 
 // A pause in source typing longer than this ends an undo step, as in the
 // formatted editor's history.
@@ -977,10 +986,25 @@ export class InkKitEditor {
   private keys: (view: EditorView, event: KeyboardEvent) => boolean = () =>
     false
 
+  private readonly events: EditorEvents
+
   private constructor(
-    private readonly events: EditorEvents,
+    events: EditorEvents,
     private readonly options: EditorOptions,
   ) {
+    // During a facade call, state events wait until the call has succeeded.
+    this.events = new Proxy(events, {
+      get: (target, name) => {
+        const handler: unknown = Reflect.get(target, name)
+        if (!stateEvents.includes(name) || typeof handler !== 'function')
+          return handler
+        return (...args: unknown[]) => {
+          const send = () => handler.apply(target, args)
+          if (this.call) this.call.events.push(send)
+          else send()
+        }
+      },
+    })
     this.writable = options.editable ?? true
     this.inputPreferences = textInputPreferences(
       options.textInput ?? {},
@@ -1076,48 +1100,78 @@ export class InkKitEditor {
   }
 
   /**
-   * Runs one facade call, so that its failure reaches the caller once and coded. An edit that the
-   * preservation check refuses during the call is thrown, not sent to `events.error`; steps the call
-   * took before it, such as selecting a run to format it, are undone. Anything else thrown arrives
-   * as an `InkKitError`. A call made inside another runs as part of it. Promises reject instead.
+   * Runs one facade call, so that its failure reaches the caller once and coded, and a failed call
+   * changes nothing and sends nothing. An edit that the preservation check refuses during the call
+   * is thrown, not sent to `events.error`. When the call fails with a refusal or another coded
+   * failure, every step it took is undone: the document, selection and history return to their
+   * state before the call, and the state events it raised are dropped. An `internal` failure keeps
+   * what happened and sends its events, since the editor's state can no longer be trusted to match.
+   * Anything else thrown arrives as an `InkKitError`. A call made inside another runs as part of
+   * it. Promises reject instead of throwing.
    */
   private facadeCall<T>(operation: () => T): T {
     if (this.call) return operation()
-    const call: FacadeCall = {}
-    const before = this.destroyed
-      ? undefined
-      : this.editor.ctx.get(editorViewCtx).state
+    const call: FacadeCall = { events: [] }
+    const before = this.destroyed ? undefined : this.restorePoint()
     this.call = call
     let result: T
     try {
       result = operation()
     } catch (error) {
-      throw this.refusal(call, before) ?? coded(error)
-    } finally {
+      const failure = call.refusal ?? coded(error)
       this.call = undefined
+      this.finish(call, before, failure)
+      throw failure
     }
-    const refusal = this.refusal(call, before)
+    this.call = undefined
+    this.finish(call, before, call.refusal)
     if (result instanceof Promise) {
       const settled = result.catch((error: unknown) => {
         throw coded(error)
       })
-      if (!refusal) return settled as T
+      if (!call.refusal) return settled as T
       settled.catch(() => {})
-      return Promise.reject(refusal) as T
+      return Promise.reject(call.refusal) as T
     }
-    if (refusal) throw refusal
+    if (call.refusal) throw call.refusal
     return result
   }
 
-  private refusal(
+  /** What a failed call puts back. */
+  private restorePoint() {
+    return {
+      state: this.editor.ctx.get(editorViewCtx).state,
+      revision: this.revision,
+      lastMarkdown: this.lastMarkdown,
+      literalMatch: this.literalMatch,
+      textScope: this.textScope,
+    }
+  }
+
+  private finish(
     call: FacadeCall,
-    before: EditorState | undefined,
-  ): InkKitError | undefined {
-    if (!call.refusal || !before) return call.refusal
+    before: ReturnType<InkKitEditor['restorePoint']> | undefined,
+    failure: InkKitError | undefined,
+  ): void {
+    if (!failure || failure.code === 'internal' || !before) {
+      for (const send of call.events) send()
+      return
+    }
     const view = this.editor.ctx.get(editorViewCtx)
-    if (view.state !== before && view.state.doc.eq(before.doc))
-      view.updateState(before)
-    return call.refusal
+    if (view.state !== before.state) {
+      // Loading keeps the change plugin from counting the restored document as another edit.
+      const loading = this.loading
+      this.loading = true
+      try {
+        view.updateState(before.state)
+      } finally {
+        this.loading = loading
+      }
+    }
+    this.revision = before.revision
+    this.lastMarkdown = before.lastMarkdown
+    this.literalMatch = before.literalMatch
+    this.textScope = before.textScope
   }
 
   /** Reports a refused edit to the facade call that made it, or else to `events.error`. */
@@ -2162,6 +2216,7 @@ export class InkKitEditor {
     events = hostEvents(events)
     options = editorOptions(options)
     const instance = new InkKitEditor(events, options)
+    events = instance.events
     instance.root = root
     instance.ownsRootClass = !root.classList.contains('inkkit-root')
     root.classList.add('inkkit-root')
