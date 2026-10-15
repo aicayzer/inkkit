@@ -94,8 +94,8 @@ Source and TXT disable formatted commands. Read-only disables mutations while re
 
 `link` works on the link that holds the caret, including a caret just before its first character, or that holds the whole selection:
 
-- **With a destination,** an inline link keeps its text and title and takes the new destination. A reference link's shared definition is edited instead, as `editReferenceDefinition` does. A selection outside a link becomes a link to the destination, replacing any links inside it; at a caret outside a link, the text typed next is linked.
-- **Without a destination,** the whole link is removed and its text stays. A selection that is not inside one link loses every link inside it. If there is no link to remove, `format` returns `false` and changes nothing.
+- **With a destination,** an inline link keeps its text and title and takes the new destination. An autolink given a new destination becomes an inline link with the same text. In a reference link, the shared definition is edited instead, as `editReferenceDefinition` does, so every link that uses that definition changes. A selection that isn't inside one link becomes a link to the destination, replacing the links in the selected text; at a caret outside a link, the text typed next is linked.
+- **Without a destination,** the whole link is removed and its text stays. A selection that isn't inside one link removes the links from the selected text; the part of a link outside the selection stays a link. If there is no link to remove, `format` returns `false` and changes nothing.
 
 `keyDown(input: KeyInput, expectedGeneration)` passes a key that the host's native input received to InkKit, as if it were pressed in the editor. `KeyInput` is `{ key, code?, metaKey?, ctrlKey?, altKey?, shiftKey? }`, with the `KeyboardEvent` meanings; an omitted or `null` modifier isn't held. It returns `true` when InkKit handled the key, and then the host mustn't also handle it natively; `false` means the host's native handling applies. The expected generation is required. During composition with the current generation, `keyDown` returns `false`. InkKit handles:
 
