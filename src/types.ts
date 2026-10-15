@@ -71,6 +71,7 @@ export interface WikiLinkAdapter {
 export interface FileReference {
   reference: string
   kind: 'path' | 'wiki'
+  target: string
   fragment?: string
   label?: string
   width?: number
@@ -99,9 +100,13 @@ export interface FileAdapter {
   open?(reference: FileReference, context: DocumentContext): void
   contextMenu?(
     reference: FileReference,
-    point: { clientX: number; clientY: number },
+    point: ClientPoint,
     context: DocumentContext,
   ): void
+}
+export interface ClientPoint {
+  clientX: number
+  clientY: number
 }
 export interface ClipboardInput {
   text: string

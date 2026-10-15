@@ -249,6 +249,7 @@ fixtures['linked-files'] = {
 type FixtureReference = {
   reference: string
   kind: 'path' | 'wiki'
+  target: string
   fragment?: string
   label?: string
   width?: number
@@ -386,7 +387,7 @@ export class ControlledFiles {
   readonly adapter = {
     resolve: async (reference: FixtureReference, context: FixtureContext) => {
       await this.pending('resolve', reference, context)
-      const name = reference.reference.split('#')[0]!
+      const name = reference.target
       const label = reference.label || name
       if (name === 'Missing') return { kind: 'missing' as const, label }
       if (name === 'Broken')

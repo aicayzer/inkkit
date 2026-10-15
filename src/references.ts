@@ -507,6 +507,7 @@ export const footnoteDefinition = $node('footnote_definition', (ctx) => ({
     'div',
     {
       class: 'inkkit-footnote-definition',
+      role: 'note',
       'aria-label': `${editorLabels(ctx).footnote} ${node.attrs.label}`,
       'data-inkkit-footnote-definition': node.attrs.identifier,
       'data-inkkit-label': node.attrs.label,
