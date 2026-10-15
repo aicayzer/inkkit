@@ -4036,7 +4036,8 @@ export class InkKitEditor {
    * or that the Markdown writer cannot save so that it reads back the same.
    */
   private checkDestination(destination: string, name: string): void {
-    if (destination === '') throw invalidArgument(`${name} must not be empty`)
+    if (destination.trim() === '')
+      throw invalidArgument(`${name} must not be empty`)
     if (!isSafeLinkTarget(destination))
       throw invalidArgument(
         `${name} must be relative, or an http, https, mailto or tel address, with no control characters`,

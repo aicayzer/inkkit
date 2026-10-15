@@ -92,7 +92,7 @@ Source and TXT disable formatted commands. Read-only disables mutations while re
 
 `FormatOptions` has two optional fields: `destination`, only with `link`, and `language`, only with `codeBlock`. Any other option, or an option with another command, throws `invalid-argument`, as does an unknown command. `null` counts as omitted.
 
-A link destination, in `format('link', { destination })` and in `editReferenceDefinition`, must be one that the editor would open and can save. It throws `invalid-argument` when it's empty; when it isn't relative, a fragment, a query, or an `http`, `https`, `mailto` or `tel` address, the same list that [opening links](#opening-links) uses; when it contains a control character, such as a line break; or when Markdown can't write it so that it reads back the same, such as `<x>`. Spaces, parentheses and non-ASCII characters are written in a form that reads back as given.
+A link destination, in `format('link', { destination })` and in `editReferenceDefinition`, must be one that the editor would open and can save. It throws `invalid-argument` when it's empty or only spaces; when it isn't relative, a fragment, a query, or an `http`, `https`, `mailto` or `tel` address, the same list that [opening links](#opening-links) uses; when it contains a control character, such as a line break; or when Markdown can't write it so that it reads back the same, such as `<x>`. Spaces, parentheses and non-ASCII characters are written in a form that reads back as given.
 
 `link` works on the link that holds the caret, including a caret just before its first character, or that holds the whole selection:
 

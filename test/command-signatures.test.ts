@@ -310,6 +310,8 @@ test('a link destination must be one the editor opens and can save', () =>
     const state = view.state
     for (const destination of [
       '',
+      ' ',
+      '\t \t',
       'javascript:alert(1)',
       'ftp://example.com',
       'file:///etc/hosts',
