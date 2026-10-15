@@ -287,6 +287,35 @@ test('front matter stays literal while its delimiter is edited', async () => {
   }
 })
 
+describe('a literal block is read again as it reads in the note', () => {
+  test('with a footnote the note defines', async () => {
+    expect(
+      await edit(
+        'Note[^1] <b>y</b>.\n\n[^1]: Foot.\n',
+        [{ select: ' <b>y</b>' }, { key: 'Backspace' }],
+        (view) => expect(names(view)[0]).toBe('paragraph'),
+      ),
+    ).toBe('Note[^1].\n\n[^1]: Foot.\n')
+  })
+
+  test('with a link definition the note holds', async () => {
+    expect(
+      await edit(
+        'See [x] and <b>y</b>.\n\n[x]: /u\n',
+        [{ select: ' <b>y</b>' }, { key: 'Backspace' }],
+        (view) => expect(names(view)[0]).toBe('paragraph'),
+      ),
+    ).toBe('See [x] and.\n\n[x]: /u\n')
+  })
+
+  test('after TOML front matter with no blank line before it', async () => {
+    const source = '+++\na = 1\n+++\nbody\n\nNext.\n'
+    expect(await edit(source, [{ after: 'body' }, { type: 'x *y*' }])).toBe(
+      source.replace('body', 'bodyx *y*'),
+    )
+  })
+})
+
 describe('a blank line typed into a literal block splits it', () => {
   test('into the blocks its text reads as', async () => {
     expect(
