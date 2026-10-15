@@ -240,3 +240,70 @@ test('Enter in a folded callout opened by its button stays inside it @preservati
   expect((await observe(page)).snapshot!.text).toBe(saved)
   expect(await outline(page)).toBe('CAUTION(p p)')
 })
+
+// [what, source, caret before, saved, outline]
+const backspaces: [string, string, string, string, string][] = [
+  [
+    'lifts the first paragraph out of a callout below a paragraph',
+    'Before\n\n> [!NOTE]\n> a\n>\n> b\n',
+    'a',
+    'Before\n\na\n\n> [!NOTE]\n> b\n',
+    'p p NOTE(p)',
+  ],
+  [
+    'keeps the title and fold marker of the callout it lifts a paragraph from',
+    'Before\n\n> [!tip]+ Tips &amp; tricks\n> a\n>\n> b\n',
+    'a',
+    'Before\n\na\n\n> [!tip]+ Tips &amp; tricks\n> b\n',
+    'p p TIP(p)',
+  ],
+  [
+    'lifts the first paragraph out of a callout that opens the document',
+    '> [!NOTE]\n> a\n>\n> b\n',
+    'a',
+    'a\n\n> [!NOTE]\n> b\n',
+    'p NOTE(p)',
+  ],
+  [
+    'lifts the first paragraph out of a callout inside a quote',
+    '> Before\n>\n> > [!NOTE]\n> > a\n> >\n> > b\n',
+    'a',
+    '> Before\n>\n> a\n>\n> > [!NOTE]\n> > b\n',
+    'blockquote(p p NOTE(p))',
+  ],
+  [
+    'does nothing in the only paragraph of a callout, which would lose its title',
+    'Before\n\n> [!NOTE] Title\n> a\n',
+    'a',
+    'Before\n\n> [!NOTE] Title\n> a\n',
+    'p NOTE(p)',
+  ],
+]
+
+for (const [what, source, marker, saved, shape] of backspaces)
+  test(`Backspace at the start of a callout ${what} @preservation`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture()
+    await operation(page, 'reload', { text: source })
+    await caret(page, marker, false)
+    await page.keyboard.press('Backspace')
+    let observed = await observe(page)
+    expect(observed.diagnostics).toEqual([])
+    expect(observed.snapshot!.text).toBe(saved)
+    expect(await outline(page)).toBe(shape)
+    if (saved === source) {
+      expect(observed.snapshot!.dirty).toBe(false)
+      return
+    }
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect
+      .poll(async () => (await observe(page)).snapshot)
+      .toMatchObject({ text: source, dirty: false })
+    await operation(page, 'reload', { text: saved })
+    observed = await observe(page)
+    expect(observed.diagnostics).toEqual([])
+    expect(observed.snapshot!.text).toBe(saved)
+    expect(await outline(page)).toBe(shape)
+  })

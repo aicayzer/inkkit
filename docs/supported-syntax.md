@@ -66,7 +66,7 @@ The bounded callout set follows [GitHub alerts](https://docs.github.com/en/get-s
 | `> [!note]- Custom title`                                      | Initially collapsed, keyboard-operable fold control.                    |
 | Other types, spaced or repeated fold markers, formatted titles | Editable literal Markdown.                                              |
 
-Put the body on subsequent quoted lines. Fold markers must directly follow the closing bracket. In the body, Enter starts a new paragraph, and Enter in an empty last paragraph leaves the callout, as in a quote. An empty paragraph is saved as a quoted `<br />` line. Enter and Space operate the focused fold button. Folding changes presentation without changing source or dirty state. Ordinary export and printing include the complete body and title without fold controls.
+Put the body on subsequent quoted lines. Fold markers must directly follow the closing bracket. In the body, Enter starts a new paragraph, and Enter in an empty last paragraph leaves the callout, as in a quote. An empty paragraph is saved as a quoted `<br />` line. Backspace at the start of the body's first block moves that block out of the callout, which keeps its title; when that block is the callout's only one, Backspace does nothing. Enter and Space operate the focused fold button. Folding changes presentation without changing source or dirty state. Ordinary export and printing include the complete body and title without fold controls.
 
 ## Highlights
 

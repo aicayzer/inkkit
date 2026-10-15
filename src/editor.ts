@@ -702,21 +702,24 @@ function blockAt(
   return { type: 'paragraph' }
 }
 
-// Backspace at the start of a quote's first block is left alone by the preset;
-// leaving the quote is what a Backspace there means.
+const quotes = new Set(['blockquote', 'inkkit_callout'])
+
+// Backspace at the start of a quote's or callout's first block is left alone
+// by the preset, or joins the block to the one above; leaving the quote is what
+// a Backspace there means. A callout's only block stays, because lifting it
+// would remove the callout and its title.
 const quoteBackspace = $prose(() =>
   keymap({
     Backspace: (state, dispatch) => {
       const { $from, empty } = state.selection
       if (!empty || $from.parentOffset > 0 || $from.depth < 2) return false
-      if (
-        $from.node($from.depth - 1).type.name !== 'blockquote' ||
-        $from.index($from.depth - 1) > 0
-      )
+      const quote = $from.node($from.depth - 1)
+      if (!quotes.has(quote.type.name) || $from.index($from.depth - 1) > 0)
         return false
-      const range = $from.blockRange(
-        $from,
-        (node) => node.type.name === 'blockquote',
+      if (quote.type.name === 'inkkit_callout' && quote.childCount === 1)
+        return true
+      const range = $from.blockRange($from, (node) =>
+        quotes.has(node.type.name),
       )
       const target = range && liftTarget(range)
       if (!range || target == null) return false
