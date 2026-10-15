@@ -64,6 +64,7 @@ import {
   fencedCodeHandler,
 } from './code-fences'
 import { literalBlock, createLiteralPreservation } from './literals'
+import { checkedParser } from './parser'
 import {
   imageAttrs,
   imageBlockName,
@@ -817,6 +818,7 @@ export function createDialect(
     remarkDialectPlugin,
     tables,
     literalBlock,
+    checkedParser,
   ].flat()
 }
 
