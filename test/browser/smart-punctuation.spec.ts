@@ -76,6 +76,21 @@ test('Undo right after a quote or a dash restores the plain character', async ({
   await saved(page).toBe('say " x ---\n')
 })
 
+test('Undo with the option off is the ordinary Undo', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await start(page, 'one\n')
+  await page.keyboard.type(' "a" --')
+  await saved(page).toBe('one "a" --\n')
+  await page.keyboard.press('ControlOrMeta+z')
+  await saved(page).toBe('one\n')
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await saved(page).toBe('one "a" --\n')
+  expect((await observe(page)).diagnostics).toEqual([])
+})
+
 test('Backspace right after a quote restores the plain character', async ({
   page,
   openFixture,
