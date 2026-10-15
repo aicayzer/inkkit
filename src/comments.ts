@@ -407,13 +407,15 @@ function commentNode(inline: boolean) {
     ],
     parseMarkdown: {
       match: (node) => node.type === mdastType,
+      // Milkdown's closeNode drops the marks open around a node, which would
+      // end formatting around an inline comment at the comment. Added whole,
+      // the comment takes those marks and they carry on after it.
       runner: (state, node, type) => {
-        state.openNode(type, {
-          syntax: node.syntax,
-          block: inline ? Boolean(node.block) : true,
-        })
-        if (node.value) state.addText(String(node.value))
-        state.closeNode()
+        state.addNode(
+          type,
+          { syntax: node.syntax, block: inline ? Boolean(node.block) : true },
+          node.value ? [state.schema.text(String(node.value))] : undefined,
+        )
       },
     },
     toMarkdown: {
