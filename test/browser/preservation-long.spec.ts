@@ -1,4 +1,4 @@
-import { test, expect, observe, operation, focusSettled } from './fixtures'
+import { test, expect, observe, operation } from './fixtures'
 import type { Page } from '@playwright/test'
 
 // Selects the first `text`, then moves the caret to one end of it with `key`.
@@ -115,7 +115,6 @@ test('rejected typing and composition restore visible DOM and leave saving and h
   }, `/@fs${process.cwd()}/src/preserve.ts`)
   const surface = page.locator('#editor .ProseMirror')
   await surface.click()
-  await focusSettled(page)
   await page.keyboard.press('End')
   await page.keyboard.insertText('Rejected')
   await expect(surface).toHaveText('Before')
@@ -154,7 +153,6 @@ test('rejected typing and composition restore visible DOM and leave saving and h
   await expect(surface).toHaveText('Before')
   expect((await observe(page)).snapshot).toEqual(before)
   await surface.click()
-  await focusSettled(page)
   await page.keyboard.press('End')
   await page.keyboard.type(' accepted')
   expect((await observe(page)).snapshot?.text).toBe('Before accepted\n')

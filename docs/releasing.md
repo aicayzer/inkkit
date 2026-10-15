@@ -7,7 +7,7 @@ Release `0.0.1` was published manually from the verified tarball. The [verificat
 Pushing a `v*` tag starts `.github/workflows/release.yml`. It publishes only when every step passes:
 
 1. The tag is `v` followed by the `version` in `package.json`.
-2. The tagged commit is on `main`: it is the tip of `main` or an ancestor of it. A tag on a feature branch or an unmerged commit fails.
+2. The tagged commit is on `main` (its tip or an ancestor), or is exactly the tip of the explicit `release/<version>` maintenance branch matching `package.json`. A tag on an unmerged feature branch, a different version's maintenance branch, or an obsolete maintenance candidate fails.
 3. The whole CI workflow runs on the tagged commit, the same checks as a pull request: formatting, `pnpm check` with the packed-consumer pages in Chromium and WebKit, the built-playground check, and the whole browser suite in Chromium and WebKit.
 4. The publish job publishes the `package-candidate` archive that the CI `check` job packed and tested, through npm trusted publishing.
 
@@ -17,6 +17,12 @@ These checks live in the tagged commit's own `release.yml`, and two settings out
 - A tag ruleset lets only repository administrators create, move or delete `v*` tags.
 
 ## Publication checklist
+
+### Focused maintenance releases
+
+When `main` already contains features excluded from an authorized maintenance release, create `release/<version>` from the last published version. Merge only the reviewed correction, regression coverage, release metadata and required release tooling through a green pull request into that branch. The release tag must point to its exact tip. All normal CI, native verification, package-integrity and trusted-publishing gates still apply. Forward-port the correction and any release-tooling changes to `main` through a separate reviewed pull request so subsequent releases retain the fix. Keep future feature milestones separate from the maintenance version.
+
+### Every release
 
 Implementation and publication require explicit delivery authority. Record publication checklists in the version milestone and release evidence without opening another version-shaped release issue. Retain existing historical release issues unchanged.
 
