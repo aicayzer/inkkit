@@ -1,53 +1,3 @@
-/* Scoped ProseMirror table styles; attribution and licence are in NOTICE. */
-.inkkit-root .ProseMirror .tableWrapper {
-  overflow-x: auto;
-}
-.inkkit-root .ProseMirror table {
-  border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
-  overflow: hidden;
-}
-.inkkit-root .ProseMirror td,
-.inkkit-root .ProseMirror th {
-  vertical-align: top;
-  box-sizing: border-box;
-  position: relative;
-}
-
-.inkkit-root .ProseMirror td:not([data-colwidth]):not(.column-resize-dragging),
-.inkkit-root .ProseMirror th:not([data-colwidth]):not(.column-resize-dragging) {
-  /* Scoped equivalent of the upstream ProseMirror table sizing rules. */
-  min-width: 0;
-}
-
-.inkkit-root .ProseMirror .column-resize-handle {
-  position: absolute;
-  right: -2px;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  z-index: 20;
-  background-color: var(--_inkkit-accent);
-  pointer-events: none;
-}
-.inkkit-root .ProseMirror.resize-cursor {
-  cursor: ew-resize;
-  cursor: col-resize;
-}
-
-.inkkit-root .ProseMirror .selectedCell:after {
-  z-index: 2;
-  position: absolute;
-  content: '';
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  background: color-mix(in srgb, var(--_inkkit-accent) 25%, transparent);
-  pointer-events: none;
-}
-
 .inkkit-root {
   box-sizing: border-box;
   color-scheme: var(--inkkit-color-scheme, light dark);
@@ -118,96 +68,148 @@
   display: none;
 }
 
-.inkkit-root .milkdown-table-block {
+/* Tables: the table block draws the table in a horizontal scroller, with
+   controls for the active column and row beside it. The cell and selection
+   rules are adapted from prosemirror-tables; attribution and licence are in
+   NOTICE. */
+.inkkit-root .inkkit-table-block {
   position: relative;
-  margin: calc(var(--inkkit-font-size, 15px) * 1.5) 0;
+  margin: 0 0
+    var(--inkkit-paragraph-spacing, calc(var(--inkkit-font-size, 15px) * 0.667));
 }
-.inkkit-root .milkdown-table-block .table-wrapper {
+.inkkit-root .inkkit-table-scroll {
   overflow-x: auto;
 }
-.inkkit-root .milkdown-table-block table {
+.inkkit-root .ProseMirror table {
   border-collapse: collapse;
+  width: 100%;
 }
-.inkkit-root .milkdown-table-block th,
-.inkkit-root .milkdown-table-block td {
-  border: 1px solid var(--_inkkit-rule);
-  min-width: calc(var(--inkkit-font-size, 15px) * 3);
+.inkkit-root .ProseMirror td,
+.inkkit-root .ProseMirror th {
+  position: relative;
+  box-sizing: border-box;
+  min-width: calc(var(--inkkit-font-size, 15px) * 4);
   padding: calc(var(--inkkit-font-size, 15px) * 0.4)
     calc(var(--inkkit-font-size, 15px) * 0.6);
+  border: 1px solid var(--_inkkit-rule);
   vertical-align: top;
 }
-.inkkit-root .milkdown-table-block th {
+.inkkit-root .ProseMirror th {
   background: var(--_inkkit-code-bg);
+  font-weight: 600;
 }
-.inkkit-root .milkdown-table-block th p,
-.inkkit-root .milkdown-table-block td p {
+.inkkit-root .ProseMirror td p,
+.inkkit-root .ProseMirror th p {
   margin: 0;
 }
-.inkkit-root .milkdown-table-block .handle,
-.inkkit-root .milkdown-table-block .button-group,
-.inkkit-root .milkdown-table-block .drag-preview {
+.inkkit-root .ProseMirror .selectedCell::after {
   position: absolute;
-  z-index: 20;
+  inset: 0;
+  z-index: 2;
+  content: '';
+  background: color-mix(in srgb, var(--_inkkit-accent) 25%, transparent);
+  pointer-events: none;
 }
-.inkkit-root .milkdown-table-block [data-show='false'],
-.inkkit-root .milkdown-table-block .button-group[data-show='false'] {
+
+.inkkit-root .inkkit-table-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.inkkit-root .inkkit-table-controls[hidden],
+.inkkit-root .inkkit-table-controls [hidden],
+.inkkit-root .ProseMirror[contenteditable='false'] .inkkit-table-controls {
   display: none;
 }
-.inkkit-root .milkdown-table-block .cell-handle {
-  cursor: grab;
-  font-size: calc(var(--inkkit-font-size, 15px) * 0.75);
-  padding: 2px 5px;
-  border-radius: 5px;
-  background: Canvas;
+.inkkit-root .inkkit-table-controls button {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
   color: var(--_inkkit-muted);
-  box-shadow: 0 0 0 1px var(--_inkkit-rule);
+  background: Canvas;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
 }
-.inkkit-root .milkdown-table-block .button-group {
+.inkkit-root .inkkit-table-controls button:hover:not(:disabled) {
+  color: var(--_inkkit-text);
+}
+.inkkit-root .inkkit-table-controls button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+/* Each grip sits across the table's edge, so the pointer can reach it
+   without leaving the table. */
+.inkkit-root .inkkit-table-grip {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--_inkkit-rule);
+  cursor: grab;
+  touch-action: none;
+}
+.inkkit-root .inkkit-table-grip[data-inkkit-axis='column'] {
+  width: 24px;
+  height: 14px;
+}
+.inkkit-root .inkkit-table-grip[data-inkkit-axis='row'] {
+  width: 14px;
+  height: 24px;
+}
+.inkkit-root .inkkit-table-grip[aria-expanded='true'] {
+  color: Canvas;
+  background: var(--_inkkit-accent);
+  box-shadow: none;
+}
+/* At the caret alone the grips wait out of sight, for the keyboard. */
+.inkkit-root
+  .inkkit-table-controls[data-inkkit-shown='false']
+  .inkkit-table-grip:not(:focus-visible) {
+  opacity: 0;
+}
+@media (hover: none) {
+  .inkkit-root
+    .inkkit-table-controls[data-inkkit-shown='false']
+    .inkkit-table-grip:not(:focus-visible) {
+    opacity: 1;
+  }
+}
+.inkkit-root .inkkit-table-menu {
+  position: absolute;
   display: flex;
-  gap: 3px;
-  padding: 4px;
+  gap: 2px;
+  padding: 3px;
   border-radius: 6px;
   background: Canvas;
-  box-shadow: 0 0 0 1px var(--_inkkit-rule);
-}
-.inkkit-root .milkdown-table-block button {
-  color: var(--_inkkit-text);
-  background: Canvas;
-  border: 1px solid var(--_inkkit-rule);
-  border-radius: 4px;
-  padding: 4px 6px;
-  cursor: pointer;
+  box-shadow:
+    0 0 0 1px var(--_inkkit-rule),
+    0 2px 8px color-mix(in srgb, CanvasText 12%, transparent);
   white-space: nowrap;
 }
-.inkkit-root .milkdown-table-block button:hover {
+.inkkit-root .inkkit-table-menu button {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+}
+.inkkit-root .inkkit-table-menu button:hover:not(:disabled) {
   background: var(--_inkkit-code-bg);
 }
-.inkkit-root .milkdown-table-block .line-handle {
-  background: var(--_inkkit-accent);
-  min-width: 1px;
-  min-height: 1px;
-}
-.inkkit-root .milkdown-table-block .add-button {
+.inkkit-root .inkkit-table-marker {
   position: absolute;
-  padding: 2px 5px;
-  transform: translate(-50%, -50%);
-  background: Canvas;
-  color: var(--_inkkit-text);
-  border: 1px solid var(--_inkkit-rule);
-  border-radius: 4px;
-  white-space: nowrap;
-  cursor: pointer;
+  background: var(--_inkkit-accent);
+  pointer-events: none;
 }
-.inkkit-root
-  .milkdown-table-block
-  .line-handle[data-display-type='indicator']
-  .add-button {
-  display: none;
+.inkkit-root .inkkit-table-marker[data-inkkit-axis='column'] {
+  width: 2px;
+  transform: translateX(-1px);
 }
-.inkkit-root .milkdown-table-block .drag-preview {
-  opacity: 0.6;
-  background: Canvas;
-  outline: 1px solid var(--_inkkit-accent);
+.inkkit-root .inkkit-table-marker[data-inkkit-axis='row'] {
+  height: 2px;
+  transform: translateY(-1px);
 }
 
 .inkkit-root .ProseMirror .inkkit-image {
@@ -871,7 +873,7 @@
     overflow: visible;
   }
 
-  .inkkit-root .milkdown-table-block .table-wrapper,
+  .inkkit-root .inkkit-table-scroll,
   .inkkit-root .ProseMirror pre {
     overflow: visible;
   }
@@ -879,9 +881,7 @@
   .inkkit-root .inkkit-comment,
   .inkkit-root [data-inkkit-callout-toggle],
   .inkkit-root .ProseMirror pre .inkkit-copy,
-  .inkkit-root .milkdown-table-block .handle,
-  .inkkit-root .milkdown-table-block .button-group,
-  .inkkit-root .milkdown-table-block .line-handle {
+  .inkkit-root .inkkit-table-controls {
     display: none !important;
   }
 

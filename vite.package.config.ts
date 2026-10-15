@@ -99,13 +99,9 @@ function packageRoot(id: string): string | undefined {
 
 export default defineConfig({
   plugins: [thirdPartyNotices()],
-  // Fixed here so the bundle runs the same whatever the host's build defines,
-  // and the bundled Vue sets no feature flags on the host's window.
+  // Fixed here so the bundle runs the same whatever the host's build defines.
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),
-    __VUE_OPTIONS_API__: 'true',
-    __VUE_PROD_DEVTOOLS__: 'false',
-    __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
   },
   build: {
     lib: {

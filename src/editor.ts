@@ -130,6 +130,7 @@ import {
   tableOptions,
   configureTableMovement,
 } from './tables'
+import { tableBlock, tableControlCtx } from './table-block'
 import {
   InkKitError,
   type ClientPoint,
@@ -2663,6 +2664,16 @@ export class InkKitEditor {
           ...defaultLabels,
           ...options.labels,
         }))
+        ctx.set(tableControlCtx.key, (operation) =>
+          instance.forPerson(
+            () =>
+              instance.facadeCall(() => {
+                instance.assertMutation()
+                return !instance.literalSurface && operation()
+              }),
+            false,
+          ),
+        )
         ctx.set(defaultValueCtx, '')
         ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
         // The preset also binds Mod-[ and Mod-] here; the app uses those for back and forward.
@@ -2745,6 +2756,7 @@ export class InkKitEditor {
         ),
       )
       .use(tablePlugins)
+      .use(tableBlock)
       .use(instance.changePlugin)
       .use(history)
       .use(clipboard)
