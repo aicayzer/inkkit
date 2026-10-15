@@ -331,6 +331,16 @@ async function openGrid(page: Page, openFixture: () => Promise<void>) {
 async function caretAtEnd(page: Page, row: number, column: number) {
   const box = (await cell(page, row, column).locator('p').boundingBox())!
   await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2)
+  // These command tests move focus programmatically. Establish the clicked
+  // caret first so that blur cannot overtake the queued selectionchange.
+  const text = (await cell(page, row, column).textContent())!
+  await expect
+    .poll(async () => {
+      const snapshot = (await observe(page)).textSnapshot!
+      const { from, to } = snapshot.selection
+      return from === to && snapshot.text.slice(to - text.length, to) === text
+    })
+    .toBe(true)
 }
 
 const typed = async (page: Page) => {
