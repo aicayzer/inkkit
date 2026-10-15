@@ -194,3 +194,51 @@ test('an item whose source would nest under its new neighbor still moves @preser
   expect(await saved(page)).toBe(expected)
   await reopens(page, expected)
 })
+
+test('an undone move leaves the end of the note as it was @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  for (const [source, expected] of [
+    ['A\n\nB\n\nC', 'A\n\nC'],
+    ['A\n\nB\n\nC\n\n\n', 'A\n\nC\n\n\n'],
+  ] as const) {
+    await operation(page, 'reload', { text: source })
+    await caret(page, 'C')
+    await page.keyboard.press('Alt+ArrowUp')
+    await page.keyboard.press('ControlOrMeta+z')
+    expect(await saved(page)).toBe(source)
+    // Deletes B: its letter, then its empty paragraph.
+    await caret(page, 'B')
+    await page.keyboard.press('Shift+ArrowRight')
+    await expect
+      .poll(async () => {
+        await operation(page, 'textSnapshot')
+        const { text, selection } = (await observe(page)).textSnapshot!
+        return text.slice(selection.from, selection.to)
+      })
+      .toBe('B')
+    await page.keyboard.press('Backspace')
+    await page.keyboard.press('Backspace')
+    expect(await saved(page)).toBe(expected)
+  }
+})
+
+test('a move of blocks that read alike is saved at once @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await operation(page, 'reload', {
+    text: 'Heading\n===\n\n# Heading\n\nTail\n',
+  })
+  await caret(page, 'Heading')
+  await page.keyboard.press('Alt+ArrowDown')
+  const expected = '# Heading\n\nHeading\n===\n\nTail\n'
+  expect((await observe(page)).snapshot).toMatchObject({
+    text: expected,
+    dirty: true,
+  })
+  await reopens(page, expected)
+})

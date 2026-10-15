@@ -13,6 +13,8 @@ interface Note {
   editor: InkKitEditor
   view: EditorView
   errors: Error[]
+  /** The text of each `changed` event. */
+  changes: string[]
   /** Presses Option with an arrow key in the editor, as a person does; returns whether it was handled. */
   press(key: 'ArrowUp' | 'ArrowDown', modifiers?: KeyboardEventInit): boolean
   /** Puts the caret `offset` characters into the first textblock that holds `text`, or after `text`. */
@@ -31,9 +33,13 @@ async function withNote(
   const root = document.createElement('div')
   document.body.append(root)
   const errors: Error[] = []
+  const changes: string[] = []
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, error: (error) => errors.push(error) },
+    {
+      changed: (snapshot) => changes.push(snapshot.text),
+      error: (error) => errors.push(error),
+    },
     options,
   )
   try {
@@ -60,6 +66,7 @@ async function withNote(
       editor,
       view,
       errors,
+      changes,
       press(key, modifiers = { altKey: true }) {
         const event = new KeyboardEvent('keydown', {
           key,
@@ -789,5 +796,74 @@ describe('blocks that change places beside other edits', () => {
       },
       '-   beta\r\n  - alpha\r\n\r\nAfter\r\n',
     )
+  })
+})
+
+// A move is part of the document's state: Undo takes it back, and a move of
+// blocks that read alike is saved like any other.
+describe('moves in the history of the note', () => {
+  const removeSecond = (note: Note) => {
+    const { doc } = note.view.state
+    const at = doc.child(0).nodeSize
+    note.view.dispatch(
+      note.view.state.tr.delete(at, at + doc.child(1).nodeSize),
+    )
+  }
+
+  test('an undone move leaves the end of the note as it was', async () => {
+    for (const [source, expected] of [
+      ['A\n\nB\n\nC', 'A\n\nC'],
+      ['A\r\n\r\nB\r\n\r\nC', 'A\r\n\r\nC'],
+      ['A\n\nB\n\nC\n\n\n', 'A\n\nC\n\n\n'],
+    ]) {
+      // Without the move, deleting B gives the expected text.
+      await withNote(source!, (note) => {
+        removeSecond(note)
+        expect(note.saved()).toBe(expected)
+      })
+      await withNote(source!, (note) => {
+        note.caret('C', 0)
+        expect(note.press('ArrowUp')).toBe(true)
+        expect(note.editor.undo()).toBe(true)
+        expect(note.editor.snapshot().text).toBe(source)
+        removeSecond(note)
+        expect(note.saved()).toBe(expected)
+      })
+    }
+    await Promise.all(reopenings)
+    reopenings = []
+  })
+
+  test('a move of blocks that read alike is saved at once', async () => {
+    for (const [source, caret, moved] of [
+      [
+        'Heading\n===\n\n# Heading\n\nTail\n',
+        'Heading',
+        '# Heading\n\nHeading\n===\n\nTail\n',
+      ],
+      ['   same\n\nsame\n\nTail\n', 'same', 'same\n\n   same\n\nTail\n'],
+      ['__same__\r\n\r\n**same**', 'same', '**same**\r\n\r\n__same__'],
+      ['- **a**\n- __a__\n\nTail\n', 'a', '- __a__\n- **a**\n\nTail\n'],
+    ])
+      await withNote(source!, (note) => {
+        note.caret(caret!, 0)
+        expect(note.press('ArrowDown')).toBe(true)
+        expect(note.editor.snapshot()).toMatchObject({
+          text: moved,
+          dirty: true,
+          revision: 1,
+        })
+        expect(note.changes).toEqual([moved])
+        expect(note.saved()).toBe(moved)
+        expect(note.editor.undo()).toBe(true)
+        expect(note.editor.snapshot()).toMatchObject({
+          text: source,
+          dirty: false,
+        })
+        expect(note.editor.redo()).toBe(true)
+        expect(note.editor.snapshot().text).toBe(moved)
+      })
+    await Promise.all(reopenings)
+    reopenings = []
   })
 })

@@ -1306,7 +1306,8 @@ export class InkKitEditor {
         key: new PluginKey('documentChanges'),
         view: () => ({
           update: (view, previous) => {
-            if (this.loading || view.state.doc.eq(previous.doc)) return
+            if (this.loading || this.sameDocument(view.state.doc, previous.doc))
+              return
             // Settling typed source brings the document up to a revision and a
             // change event that were already reported.
             if (this.syncingSource) {
@@ -3509,6 +3510,19 @@ export class InkKitEditor {
     this.publishCommandState()
   }
 
+  /** Whether two documents are the same note. A move of blocks that read alike, such as a setext
+   *  heading and the same heading written with `#`, gives an equal document with other source. */
+  private sameDocument(after: ProseNode, before: ProseNode): boolean {
+    if (after === before) return true
+    if (!after.eq(before)) return false
+    if (!this.carried || !this.preservation) return true
+    try {
+      return this.currentText(after) === this.currentText(before)
+    } catch {
+      return false
+    }
+  }
+
   /** Throws when a document reached by an edit, after every appended normalisation, cannot be
    *  saved as preserved Markdown. Dispatch and the replacement commands share this check.
    *  `written` is false for history steps and source replacement, which restore or supply a
@@ -3518,7 +3532,7 @@ export class InkKitEditor {
     after: ProseNode,
     written = true,
   ): void {
-    if (this.literalSurface || after.eq(before)) return
+    if (this.literalSurface || this.sameDocument(after, before)) return
     if (written) assertCommentsEndWhereWritten(before, after)
     if (this.preservation) this.currentText(after)
   }

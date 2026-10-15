@@ -7,7 +7,7 @@ import {
   Slice,
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
-import { Transform } from '@milkdown/kit/prose/transform'
+import { Transform, type Step } from '@milkdown/kit/prose/transform'
 import type { Root } from 'mdast'
 import { Preservation, PreservationError } from '../src/preserve'
 import { withEditor } from './harness'
@@ -195,7 +195,8 @@ test(
       ])
         expect(kinds.get(kind), kind).toBeGreaterThan(10)
     }),
-  120_000,
+  // Longer runs with more seeds.
+  Math.max(120_000, Number(process.env.SEEDS ?? 600) * 100),
 )
 
 // Applies `edit` to the loaded document and saves it both ways.
@@ -519,18 +520,22 @@ function swap(
   return carried
 }
 
-// Each top-level block's source in `text`, when it reads as `count` blocks.
+// Each top-level block's source in `text`, when it reads as `count` blocks,
+// and the text after the last.
 function blockSources(
   ctx: Ctx,
   text: string,
   count: number,
-): string[] | undefined {
-  const body = text.replace(/^﻿/, '')
+): { blocks: string[]; tail: string } | undefined {
+  const body = text.replace(/^\uFEFF/, '')
   const tree = ctx.get(remarkCtx).parse(body) as Root
-  if (tree.children.length !== count) return undefined
-  return tree.children.map((node) =>
-    body.slice(node.position!.start.offset, node.position!.end.offset),
-  )
+  if (tree.children.length !== count || !count) return undefined
+  return {
+    blocks: tree.children.map((node) =>
+      body.slice(node.position!.start.offset, node.position!.end.offset),
+    ),
+    tail: body.slice(tree.children.at(-1)!.position!.end.offset),
+  }
 }
 
 // The serializer moves are compared with: by default this one without the
@@ -554,6 +559,8 @@ test(
       const ctx = editor.ctx
       let compared = 0
       let checked = 0
+      let carriedBlocks = 0
+      let keptSource = 0
       for (let seed = 1; seed <= Number(process.env.SEEDS ?? 600); seed++) {
         let state = seed
         const random = () =>
@@ -582,14 +589,21 @@ test(
         own.baseline.forEach((node, _, index) => original.set(node, index))
         const authored = blockSources(ctx, source, own.baseline.childCount)
         let doc = own.baseline
-        for (let step = 0; step < 5; step++) {
+        // The last move, which Undo can take back while nothing has changed
+        // since. Undo restores the nodes the move took out of place.
+        let undo: { after: ProseNode; steps: Step[] } | undefined
+        for (let step = 0; step < 6; step++) {
           const tr = new Transform(doc)
           const schema = doc.type.schema
           const action = random()
+          let moved = false
           try {
-            if (action < 0.55) {
+            if (action < 0.12 && undo?.after === doc) {
+              for (const inverse of undo.steps) tr.step(inverse)
+            } else if (action < 0.55) {
               const nodes = swap(doc, tr, random)
               if (!nodes) continue
+              moved = true
               for (const node of nodes) carried.add(node)
               // Sometimes another block goes in the same step.
               if (random() < 0.3 && tr.doc.childCount > 2) {
@@ -645,6 +659,14 @@ test(
           } catch {
             continue
           }
+          undo = moved
+            ? {
+                after: tr.doc,
+                steps: tr.steps
+                  .map((step, at) => step.invert(tr.docs[at]!))
+                  .reverse(),
+              }
+            : undefined
           doc = tr.doc
           let saved: string | Error
           try {
@@ -672,16 +694,31 @@ test(
           checked++
           doc.forEach((node, _, index) => {
             const from = original.get(node)
-            if (from === undefined || carried.has(node)) return
-            if (mine[index] !== authored[from])
-              expect(mine[index], `${label}, block ${index}`).toBe(
-                theirs[index],
+            if (from === undefined) return
+            if (carried.has(node)) {
+              // A carried block keeps its source unless that would read
+              // differently where it stands.
+              carriedBlocks++
+              if (mine.blocks[index] === authored.blocks[from]) keptSource++
+              return
+            }
+            if (mine.blocks[index] !== authored.blocks[from])
+              expect(mine.blocks[index], `${label}, block ${index}`).toBe(
+                theirs.blocks[index],
               )
           })
+          // The text after the note's last block stays as it was while that
+          // block ends the note, including after Undo puts it back.
+          if (
+            doc.lastChild === own.baseline.lastChild &&
+            mine.tail !== authored.tail
+          )
+            expect(mine.tail, `${label}, end`).toBe(theirs.tail)
         }
       }
       expect(compared).toBeGreaterThan(1000)
       expect(checked).toBeGreaterThan(800)
+      expect(keptSource / carriedBlocks).toBeGreaterThan(0.9)
     }),
   Math.max(120_000, Number(process.env.SEEDS ?? 600) * 100),
 )
