@@ -18,7 +18,7 @@
 .inkkit-root .ProseMirror td:not([data-colwidth]):not(.column-resize-dragging),
 .inkkit-root .ProseMirror th:not([data-colwidth]):not(.column-resize-dragging) {
   /* Scoped equivalent of the upstream ProseMirror table sizing rules. */
-  min-width: var(--default-cell-min-width);
+  min-width: 0;
 }
 
 .inkkit-root .ProseMirror .column-resize-handle {
@@ -51,7 +51,7 @@
 .inkkit-root {
   box-sizing: border-box;
   color-scheme: var(--inkkit-color-scheme, light dark);
-  color: var(--inkkit-text-color, var(--text, CanvasText));
+  color: var(--inkkit-text-color, CanvasText);
   font-family: var(
     --inkkit-font-family,
     -apple-system,
@@ -63,23 +63,39 @@
   line-height: var(--inkkit-line-height, normal);
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: none;
-  --_inkkit-accent: var(--inkkit-accent-color, var(--accent, #0a84ff));
-  --_inkkit-text: var(--inkkit-text-color, var(--text, CanvasText));
+  --_inkkit-accent: var(--inkkit-accent-color, #0a84ff);
+  --_inkkit-text: var(--inkkit-text-color, CanvasText);
   --_inkkit-muted: var(
     --inkkit-muted-color,
-    var(--muted, color-mix(in srgb, CanvasText 55%, transparent))
+    color-mix(in srgb, CanvasText 55%, transparent)
   );
   --_inkkit-rule: var(
     --inkkit-rule-color,
-    var(--rule, color-mix(in srgb, CanvasText 14%, transparent))
+    color-mix(in srgb, CanvasText 14%, transparent)
   );
   --_inkkit-code-bg: var(
     --inkkit-code-background,
-    var(--code-bg, color-mix(in srgb, CanvasText 8%, transparent))
+    color-mix(in srgb, CanvasText 8%, transparent)
   );
   --_inkkit-mono: var(
     --inkkit-monospace-font,
-    var(--mono, ui-monospace, 'SF Mono', Menlo, monospace)
+    ui-monospace,
+    'SF Mono',
+    Menlo,
+    monospace
+  );
+  /* The percentage resolves against the containing block of the element that
+     uses the value, so both surfaces, and a host header in a container as wide
+     as the root, line up. */
+  --_inkkit-column-inset: var(
+    --inkkit-column-inset,
+    max(
+      var(--inkkit-padding-inline, 16px),
+      calc(
+        (100% - var(--inkkit-reading-width, 100%)) / 2 +
+          var(--inkkit-padding-inline, 16px)
+      )
+    )
   );
 }
 
@@ -90,7 +106,7 @@
   border: 0;
   resize: none;
   outline: none;
-  padding: var(--inkkit-padding-top, 10px) var(--inkkit-padding-inline, 16px)
+  padding: var(--inkkit-padding-top, 10px) var(--_inkkit-column-inset)
     var(--inkkit-padding-bottom, 48px);
   background: transparent;
   color: var(--_inkkit-text);
@@ -134,8 +150,7 @@
   z-index: 20;
 }
 .inkkit-root .milkdown-table-block [data-show='false'],
-.inkkit-root .milkdown-table-block .button-group[data-show='false'],
-.inkkit-root .milkdown-table-block.readonly .handle {
+.inkkit-root .milkdown-table-block .button-group[data-show='false'] {
   display: none;
 }
 .inkkit-root .milkdown-table-block .cell-handle {
@@ -195,7 +210,7 @@
   outline: 1px solid var(--_inkkit-accent);
 }
 
-.inkkit-root .ProseMirror .image {
+.inkkit-root .ProseMirror .inkkit-image {
   position: relative;
   display: inline-block;
   max-width: 100%;
@@ -208,11 +223,14 @@
     var(--inkkit-paragraph-spacing, calc(var(--inkkit-font-size, 15px) * 0.667));
   line-height: 0;
 }
-.inkkit-root .ProseMirror .inkkit-image-block > .image {
+.inkkit-root .ProseMirror .inkkit-image-block > .inkkit-image {
   line-height: normal;
 }
 /* A card that shares its paragraph with text sits on its own line within it. */
-.inkkit-root .ProseMirror :not(.inkkit-image-block) > .image.inkkit-file {
+.inkkit-root
+  .ProseMirror
+  :not(.inkkit-image-block)
+  > .inkkit-image.inkkit-file {
   display: block;
   width: fit-content;
 }
@@ -222,7 +240,7 @@
 .inkkit-root
   .ProseMirror
   .inkkit-image-block.ProseMirror-selectednode
-  > .image {
+  > .inkkit-image {
   outline: 2px solid color-mix(in srgb, var(--_inkkit-accent) 60%, transparent);
   outline-offset: 2px;
   border-radius: 6px;
@@ -249,7 +267,7 @@
 .inkkit-root .ProseMirror-focused .ProseMirror-gapcursor {
   display: block;
 }
-.inkkit-root .ProseMirror .image img {
+.inkkit-root .ProseMirror .inkkit-image img {
   display: block;
   max-width: 100%;
   height: auto;
@@ -262,11 +280,11 @@
   max-width: 100%;
   line-height: 0;
 }
-.inkkit-root .ProseMirror .image-absent {
+.inkkit-root .ProseMirror .inkkit-image-absent {
   color: var(--_inkkit-muted);
   font-style: italic;
 }
-.inkkit-root .ProseMirror .image-handle {
+.inkkit-root .ProseMirror .inkkit-image-handle {
   position: absolute;
   right: 0;
   top: 50%;
@@ -279,11 +297,11 @@
   cursor: col-resize;
   opacity: 0;
 }
-.inkkit-root .ProseMirror .image:hover .image-handle,
-.inkkit-root .ProseMirror .image-handle:active {
+.inkkit-root .ProseMirror .inkkit-image:hover .inkkit-image-handle,
+.inkkit-root .ProseMirror .inkkit-image-handle:active {
   opacity: 1;
 }
-.inkkit-root .ProseMirror .image-handle::after {
+.inkkit-root .ProseMirror .inkkit-image-handle::after {
   content: '';
   position: absolute;
   right: 8px;
@@ -295,7 +313,7 @@
   border-radius: 2px;
   background: var(--_inkkit-accent);
 }
-.inkkit-root .ProseMirror[contenteditable='false'] .image-handle {
+.inkkit-root .ProseMirror[contenteditable='false'] .inkkit-image-handle {
   display: none;
 }
 
@@ -326,7 +344,9 @@
   width: 0;
   min-width: 100%;
 }
-.inkkit-root .ProseMirror .image.inkkit-file:has(> .inkkit-image-preview) {
+.inkkit-root
+  .ProseMirror
+  .inkkit-image.inkkit-file:has(> .inkkit-image-preview) {
   min-width: min(100%, 8em);
 }
 /* The name truncates; the open arrow stays visible right after it. */
@@ -410,14 +430,7 @@
   box-sizing: border-box;
   /* Scroll the final line above the floating footer without reserving a solid row. */
   /* Keep the editor full-width for hit testing; center only the writing column. */
-  padding: var(--inkkit-padding-top, 10px)
-    max(
-      var(--inkkit-padding-inline, 16px),
-      calc(
-        (100% - var(--inkkit-reading-width, var(--reading-width, 100%))) / 2 +
-          var(--inkkit-padding-inline, 16px)
-      )
-    )
+  padding: var(--inkkit-padding-top, 10px) var(--_inkkit-column-inset)
     var(--inkkit-padding-bottom, 48px);
   outline: none;
   white-space: pre-wrap;
@@ -426,11 +439,11 @@
   cursor: text;
 }
 
-.inkkit-root .ProseMirror .empty {
+.inkkit-root .ProseMirror .inkkit-empty {
   position: relative;
 }
 
-.inkkit-root .ProseMirror .empty::before {
+.inkkit-root .ProseMirror .inkkit-empty::before {
   content: attr(data-placeholder);
   position: absolute;
   color: var(--_inkkit-muted);
@@ -548,7 +561,7 @@
   user-select: none;
 }
 
-.inkkit-root .ProseMirror pre .copy {
+.inkkit-root .ProseMirror pre .inkkit-copy {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -566,12 +579,12 @@
   user-select: none;
 }
 
-.inkkit-root .ProseMirror pre:hover .copy,
-.inkkit-root .ProseMirror pre .copy[data-copied] {
+.inkkit-root .ProseMirror pre:hover .inkkit-copy,
+.inkkit-root .ProseMirror pre .inkkit-copy[data-copied] {
   opacity: 1;
 }
 
-.inkkit-root .ProseMirror pre .copy:hover {
+.inkkit-root .ProseMirror pre .inkkit-copy:hover {
   color: var(--_inkkit-text);
 }
 
@@ -694,59 +707,59 @@
   --_inkkit-code-attr: light-dark(#c82c1e, #e37981);
 }
 
-.inkkit-root .hljs-comment,
-.inkkit-root .hljs-quote {
+.inkkit-root .inkkit-hljs-comment,
+.inkkit-root .inkkit-hljs-quote {
   color: var(--inkkit-code-comment, var(--_inkkit-code-comment));
   font-style: italic;
 }
 
-.inkkit-root .hljs-keyword,
-.inkkit-root .hljs-literal,
-.inkkit-root .hljs-built_in,
-.inkkit-root .hljs-type,
-.inkkit-root .hljs-selector-tag,
-.inkkit-root .hljs-doctag {
+.inkkit-root .inkkit-hljs-keyword,
+.inkkit-root .inkkit-hljs-literal,
+.inkkit-root .inkkit-hljs-built_in,
+.inkkit-root .inkkit-hljs-type,
+.inkkit-root .inkkit-hljs-selector-tag,
+.inkkit-root .inkkit-hljs-doctag {
   color: var(--inkkit-code-keyword, var(--_inkkit-code-keyword));
 }
 
-.inkkit-root .hljs-string,
-.inkkit-root .hljs-regexp,
-.inkkit-root .hljs-addition,
-.inkkit-root .hljs-template-tag {
+.inkkit-root .inkkit-hljs-string,
+.inkkit-root .inkkit-hljs-regexp,
+.inkkit-root .inkkit-hljs-addition,
+.inkkit-root .inkkit-hljs-template-tag {
   color: var(--inkkit-code-string, var(--_inkkit-code-string));
 }
 
-.inkkit-root .hljs-number,
-.inkkit-root .hljs-symbol,
-.inkkit-root .hljs-bullet,
-.inkkit-root .hljs-link,
-.inkkit-root .hljs-meta {
+.inkkit-root .inkkit-hljs-number,
+.inkkit-root .inkkit-hljs-symbol,
+.inkkit-root .inkkit-hljs-bullet,
+.inkkit-root .inkkit-hljs-link,
+.inkkit-root .inkkit-hljs-meta {
   color: var(--inkkit-code-number, var(--_inkkit-code-number));
 }
 
-.inkkit-root .hljs-title,
-.inkkit-root .hljs-section,
-.inkkit-root .hljs-name,
-.inkkit-root .hljs-selector-id,
-.inkkit-root .hljs-selector-class {
+.inkkit-root .inkkit-hljs-title,
+.inkkit-root .inkkit-hljs-section,
+.inkkit-root .inkkit-hljs-name,
+.inkkit-root .inkkit-hljs-selector-id,
+.inkkit-root .inkkit-hljs-selector-class {
   color: var(--inkkit-code-title, var(--_inkkit-code-title));
 }
 
-.inkkit-root .hljs-attr,
-.inkkit-root .hljs-attribute,
-.inkkit-root .hljs-property,
-.inkkit-root .hljs-variable,
-.inkkit-root .hljs-template-variable,
-.inkkit-root .hljs-tag,
-.inkkit-root .hljs-deletion {
+.inkkit-root .inkkit-hljs-attr,
+.inkkit-root .inkkit-hljs-attribute,
+.inkkit-root .inkkit-hljs-property,
+.inkkit-root .inkkit-hljs-variable,
+.inkkit-root .inkkit-hljs-template-variable,
+.inkkit-root .inkkit-hljs-tag,
+.inkkit-root .inkkit-hljs-deletion {
   color: var(--inkkit-code-attr, var(--_inkkit-code-attr));
 }
 
-.inkkit-root .hljs-emphasis {
+.inkkit-root .inkkit-hljs-emphasis {
   font-style: italic;
 }
 
-.inkkit-root .hljs-strong {
+.inkkit-root .inkkit-hljs-strong {
   font-weight: 700;
 }
 
@@ -761,7 +774,7 @@
   background: color-mix(in srgb, var(--_inkkit-accent) 55%, transparent);
 }
 
-.inkkit-root .ProseMirror .literal-markdown {
+.inkkit-root .ProseMirror .inkkit-literal-markdown {
   white-space: pre-wrap;
   font-family: var(--_inkkit-mono);
   font-size: calc(var(--inkkit-font-size, 15px) * 0.9);
@@ -795,24 +808,24 @@
 }
 
 .inkkit-root .ProseMirror .inkkit-callout {
-  --callout-color: var(--_inkkit-accent);
-  border-inline-start: 3px solid var(--callout-color);
+  --_inkkit-callout-color: var(--_inkkit-accent);
+  border-inline-start: 3px solid var(--_inkkit-callout-color);
   padding: calc(var(--inkkit-font-size, 15px) * 0.65)
     calc(var(--inkkit-font-size, 15px) * 1);
-  background: color-mix(in srgb, var(--callout-color) 7%, transparent);
+  background: color-mix(in srgb, var(--_inkkit-callout-color) 7%, transparent);
 }
 
 .inkkit-root .ProseMirror [data-inkkit-callout='TIP'] {
-  --callout-color: #30a46c;
+  --_inkkit-callout-color: #30a46c;
 }
 .inkkit-root .ProseMirror [data-inkkit-callout='IMPORTANT'] {
-  --callout-color: #8e4ec6;
+  --_inkkit-callout-color: #8e4ec6;
 }
 .inkkit-root .ProseMirror [data-inkkit-callout='WARNING'] {
-  --callout-color: #d28b00;
+  --_inkkit-callout-color: #d28b00;
 }
 .inkkit-root .ProseMirror [data-inkkit-callout='CAUTION'] {
-  --callout-color: #e5484d;
+  --_inkkit-callout-color: #e5484d;
 }
 
 .inkkit-root .inkkit-callout-header {
@@ -865,7 +878,7 @@
 
   .inkkit-root .inkkit-comment,
   .inkkit-root [data-inkkit-callout-toggle],
-  .inkkit-root .ProseMirror pre .copy,
+  .inkkit-root .ProseMirror pre .inkkit-copy,
   .inkkit-root .milkdown-table-block .handle,
   .inkkit-root .milkdown-table-block .button-group,
   .inkkit-root .milkdown-table-block .line-handle {

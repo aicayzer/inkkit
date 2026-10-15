@@ -16,7 +16,9 @@ async function open(page: Page, text: string, fixture = 'images') {
     (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
     text,
   )
-  await expect(page.locator('.ProseMirror .image img').first()).toBeVisible()
+  await expect(
+    page.locator('.ProseMirror .inkkit-image img').first(),
+  ).toBeVisible()
 }
 
 const text = async (page: Page) => (await observe(page)).snapshot!.text
@@ -67,7 +69,7 @@ async function caretIn(page: Page, content: string, side: 'start' | 'end') {
 }
 
 async function clickBesideImage(page: Page, index = 0) {
-  const card = page.locator('.inkkit-image-block > .image').nth(index)
+  const card = page.locator('.inkkit-image-block > .inkkit-image').nth(index)
   const row = page.locator('.inkkit-image-block').nth(index)
   await scrollSettled(page)
   const cardBox = (await card.boundingBox())!
@@ -225,7 +227,7 @@ test('inserting images with the caret in a table cell puts them inline in it', a
   await page.keyboard.type('!')
   const saved = `| Name | Size |\n| --- | --- |\n| one | two![One](images/one.png)![Two](images/two.png)! |\n\n![Fixture](images/native.png)\n`
   expect(await text(page)).toBe(saved)
-  await expect(page.locator('td .image')).toHaveCount(2)
+  await expect(page.locator('td .inkkit-image')).toHaveCount(2)
   await operation(page, 'undo')
   await operation(page, 'undo')
   expect(await text(page)).toBe(`${source}\n![Fixture](images/native.png)\n`)
@@ -341,7 +343,7 @@ for (const colorScheme of ['light', 'dark'] as const)
         footer: box('.inkkit-file-footer'),
         label: box('.inkkit-file-label'),
         open: box('.inkkit-file-open'),
-        grip: box('.image-handle'),
+        grip: box('.inkkit-image-handle'),
         openText: element.querySelector('.inkkit-file-open')!.textContent,
       }
     })
@@ -374,7 +376,7 @@ test('the readable range of a standalone image covers its card, not the whole ro
     })) as { left: number; width: number }[][]
   )[0]!
   const card = (await page
-    .locator('.inkkit-image-block > .image')
+    .locator('.inkkit-image-block > .inkkit-image')
     .boundingBox())!
   const row = (await page.locator('.inkkit-image-block').boundingBox())!
   expect(row.width).toBeGreaterThan(card.width + 20)

@@ -45,7 +45,7 @@ class ImageView implements NodeView {
     private readonly canMutate: () => boolean = () => true,
   ) {
     this.element = document.createElement('span')
-    this.element.className = 'image'
+    this.element.className = 'inkkit-image'
     if (node.isBlock) {
       this.dom = document.createElement('div')
       this.dom.className = 'inkkit-image-block'
@@ -94,7 +94,7 @@ class ImageView implements NodeView {
     return (
       event.target instanceof Element &&
       !!event.target.closest(
-        '.image-handle, .inkkit-file-control, audio, video, iframe',
+        '.inkkit-image-handle, .inkkit-file-control, audio, video, iframe',
       )
     )
   }
@@ -318,11 +318,11 @@ class ImageView implements NodeView {
       String(this.node.attrs.src ?? ''),
     )
     if (!presentation) {
-      this.element.classList.add('image-absent')
+      this.element.classList.add('inkkit-image-absent')
       this.element.textContent = alt || String(this.node.attrs.src ?? '')
       return
     }
-    this.element.classList.remove('image-absent')
+    this.element.classList.remove('inkkit-image-absent')
     this.renderImage(presentation.url, alt, width)
   }
 
@@ -342,7 +342,7 @@ class ImageView implements NodeView {
     preview.append(image)
     // The grip sits on the whole card, so it centres on the picture and its name together.
     const handle = document.createElement('span')
-    handle.className = 'image-handle'
+    handle.className = 'inkkit-image-handle'
     handle.addEventListener('pointerdown', this.startResize)
     this.element.append(preview, handle)
   }

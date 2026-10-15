@@ -496,7 +496,9 @@ test('openLink and copy are optional, and without copy no Copy button is drawn',
         ...input,
         text: '```js\ncode()\n```\n\n[link](https://example.com)\n',
       })
-      const button = root.querySelector<HTMLButtonElement>('pre button.copy')
+      const button = root.querySelector<HTMLButtonElement>(
+        'pre button.inkkit-copy',
+      )
       expect(!!button).toBe(!!copy)
       button?.click()
       if (copy) expect(copy).toHaveBeenCalledWith('code()')

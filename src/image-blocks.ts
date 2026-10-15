@@ -366,7 +366,7 @@ const interaction = $prose(
             !view.editable ||
             !isImageBlock(node) ||
             !(event.target instanceof Element) ||
-            event.target.closest('.image')
+            event.target.closest('.inkkit-image')
           )
             return false
           view.dispatch(

@@ -58,7 +58,9 @@ function expected(doc: ProseNode): Span[] {
         } else if (child.type === 'element') {
           walk(child.children, [
             ...classes,
-            ...((child.properties?.className as string[] | undefined) ?? []),
+            ...(
+              (child.properties?.className as string[] | undefined) ?? []
+            ).map((name) => `inkkit-${name}`),
           ])
         }
       }

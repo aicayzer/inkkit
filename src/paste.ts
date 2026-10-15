@@ -883,7 +883,7 @@ function visibleContent(ctx: Ctx, html: string): DocumentFragment {
   for (const element of [...container.querySelectorAll('*')]) {
     if (!container.contains(element) || isRichElement(element)) continue
     const literal = document.createElement('pre')
-    literal.className = 'literal-markdown'
+    literal.className = 'inkkit-literal-markdown'
     literal.textContent = element.outerHTML
     element.replaceWith(literal)
   }
@@ -902,7 +902,7 @@ function visibleContent(ctx: Ctx, html: string): DocumentFragment {
     }
     if (unsupported) {
       const literal = document.createElement('pre')
-      literal.className = 'literal-markdown'
+      literal.className = 'inkkit-literal-markdown'
       literal.textContent = table.outerHTML
       table.replaceWith(literal)
     }

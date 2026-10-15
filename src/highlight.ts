@@ -45,7 +45,11 @@ function blockDecorations(
           )
         offset = end
       } else if (child.type === 'element') {
-        const own = (child.properties?.className as string[] | undefined) ?? []
+        // The grammar names its tokens `hljs-*`; InkKit's own prefix keeps a
+        // host's highlight.js theme out of the editor.
+        const own = (
+          (child.properties?.className as string[] | undefined) ?? []
+        ).map((name) => `inkkit-${name}`)
         walk(child.children, [...classes, ...own])
       }
     }

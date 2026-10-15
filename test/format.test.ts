@@ -315,10 +315,12 @@ test('a fenced block with a known language is colored, one without stays plain',
     '```js\nconst x = 1\n```\n\n```\nplain\n```\n',
     (editor) => {
       const view = ctxOf(editor).get(editorViewCtx)
-      const spans = view.dom.querySelectorAll('pre [class*="hljs-"]')
+      const spans = view.dom.querySelectorAll('pre [class*="inkkit-hljs-"]')
       expect(spans.length).toBeGreaterThan(0)
       expect(
-        view.dom.querySelectorAll('pre')[1]?.querySelector('[class*="hljs-"]'),
+        view.dom
+          .querySelectorAll('pre')[1]
+          ?.querySelector('[class*="inkkit-hljs-"]'),
       ).toBeNull()
       expect(serialize(ctxOf(editor))).toBe(
         '```js\nconst x = 1\n```\n\n```\nplain\n```\n',
