@@ -28,7 +28,7 @@ async function run(
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {}, ...events },
+    { changed() {}, copy() {}, openLink() {}, ...events },
     options,
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
@@ -96,7 +96,7 @@ test.each(['md', 'txt'] as const)(
   'source/TXT read-only rejects synthetic DOM input and preserves input-policy focus, selection, source and history (%s)',
   (format) =>
     run((editor, root) => {
-      editor.loadDocument({ ...input, format })
+      editor.loadDocument({ ...input, generation: 9, format })
       editor.setEditingMode('source')
       const plain = root.querySelector('textarea')!
       plain.focus()
@@ -320,7 +320,11 @@ test.each(['formatted', 'source'] as const)(
     const errors: Error[] = []
     return run(
       async (editor, root, ctx) => {
-        editor.loadDocument({ ...input, text: '![photo](opaque)\r\n' })
+        editor.loadDocument({
+          ...input,
+          generation: 9,
+          text: '![photo](opaque)\r\n',
+        })
         editor.setEditingMode(mode)
         if (mode === 'source') {
           const plain = root.querySelector('textarea')!
@@ -382,6 +386,7 @@ test('read-only task clicks and resize previews cannot mutate, including late po
     (editor, root, ctx) => {
       editor.loadDocument({
         ...input,
+        generation: 9,
         text: '- [ ] task\n\n![photo|120](opaque)\n',
       })
       const view = ctx.get(editorViewCtx)
@@ -504,7 +509,11 @@ test('inline code is available at a caret and configured shortcuts retain stored
 
 test('read-only buffered footnote navigation remains available', () =>
   run((editor, _root, ctx) => {
-    editor.loadDocument({ ...input, text: 'Text[^note]\n\n[^note]: body\n' })
+    editor.loadDocument({
+      ...input,
+      generation: 9,
+      text: 'Text[^note]\n\n[^note]: body\n',
+    })
     const view = ctx.get(editorViewCtx)
     let reference = 0
     view.state.doc.descendants((node, pos) => {
@@ -517,7 +526,7 @@ test('read-only buffered footnote navigation remains available', () =>
     )
     editor.setEditable(false)
     const before = editor.snapshot()
-    expect(editor.keyDown('Enter', '', false, false, true, false, 8)).toBe(true)
+    expect(editor.keyDown('Enter', '', false, false, true, false, 9)).toBe(true)
     expect(editor.snapshot()).toEqual(before)
     expect(view.state.selection.$from.parent.textContent).toBe('body')
   }))
@@ -555,7 +564,6 @@ test('policy events publish only after both DOM surfaces receive the completed p
   }[] = []
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     openLink() {},
     copy() {},
     commandStateChanged: (state) => {
@@ -604,6 +612,7 @@ test('read-only buffered table Tab permits navigation without editing or adding 
   run((editor, _root, ctx) => {
     editor.loadDocument({
       ...input,
+      generation: 9,
       text: '| A | B |\n| --- | --- |\n| C | D |\n',
     })
     const view = ctx.get(editorViewCtx)
@@ -619,7 +628,7 @@ test('read-only buffered table Tab permits navigation without editing or adding 
     )
     editor.setEditable(false)
     const before = editor.snapshot()
-    expect(editor.keyDown('Tab', '', false, false, false, false, 8)).toBe(true)
+    expect(editor.keyDown('Tab', '', false, false, false, false, 9)).toBe(true)
     expect(view.state.selection.from).toBe(cells[1])
     expect(editor.snapshot()).toEqual(before)
     view.dispatch(
@@ -627,6 +636,6 @@ test('read-only buffered table Tab permits navigation without editing or adding 
         TextSelection.create(view.state.doc, cells.at(-1)!),
       ),
     )
-    expect(editor.keyDown('Tab', '', false, false, false, false, 8)).toBe(false)
+    expect(editor.keyDown('Tab', '', false, false, false, false, 9)).toBe(false)
     expect(editor.snapshot()).toEqual(before)
   }))

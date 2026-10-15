@@ -23,7 +23,6 @@ async function mount() {
   const errors: Error[] = []
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
     error: (error) => errors.push(error),
@@ -37,13 +36,18 @@ async function mount() {
 async function session(source: string, run: (session: Session) => void) {
   const main = await mount()
   const other = await mount()
+  let saves = 0
   try {
     main.editor.loadDocument({ ...input, generation: 1, text: source })
     run({
       ...main,
       save() {
         const saved = main.editor.snapshot().text
-        other.editor.loadDocument({ ...input, generation: 1, text: saved })
+        other.editor.loadDocument({
+          ...input,
+          generation: ++saves,
+          text: saved,
+        })
         return {
           saved,
           same:

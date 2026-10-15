@@ -6,9 +6,9 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { tableBlockConfig } from '@milkdown/kit/component/table-block'
 import { InkKitEditor } from '../src/index'
 import { tableAvailability, tableContext, tableCommands } from '../src/tables'
-import type { EditorLabels } from '../src/labels'
+import type { EditorLabels } from '../src/types'
 
-const events = { changed() {}, stateChanged() {}, openLink() {}, copy() {} }
+const events = { changed() {}, openLink() {}, copy() {} }
 const input = { documentId: 'custom', generation: 1, format: 'md' as const }
 async function mount(labels: Partial<EditorLabels> = {}) {
   const root = document.createElement('div')
@@ -192,5 +192,40 @@ test('package CSS scopes every selector including upstream table styles', () => 
     expect(css).not.toContain(':root')
   } finally {
     sheet.remove()
+  }
+})
+
+test('comments, footnote definitions and preserved blocks have roles that allow names, and the comment and preserved names are labels', async () => {
+  const text =
+    'Before <!--secret--> after[^a]\n\n<section>raw</section>\n\n[^a]: note'
+  const named = await mount({ comment: 'Gloss', preservedMarkdown: 'Verbatim' })
+  const plain = await mount()
+  try {
+    named.editor.loadDocument({ ...input, text })
+    plain.editor.loadDocument({ ...input, text })
+    const attributes = (root: HTMLElement, selector: string) => {
+      const element = root.querySelector(selector)!
+      return [element.getAttribute('role'), element.getAttribute('aria-label')]
+    }
+    expect(attributes(plain.root, '.inkkit-comment')).toEqual([
+      'note',
+      'Author comment',
+    ])
+    expect(attributes(plain.root, '.literal-markdown')).toEqual([
+      'group',
+      'Preserved Markdown',
+    ])
+    expect(attributes(plain.root, '.inkkit-footnote-definition')).toEqual([
+      'note',
+      'Footnote a',
+    ])
+    expect(attributes(named.root, '.inkkit-comment')).toEqual(['note', 'Gloss'])
+    expect(attributes(named.root, '.literal-markdown')).toEqual([
+      'group',
+      'Verbatim',
+    ])
+  } finally {
+    await named.destroy()
+    await plain.destroy()
   }
 })

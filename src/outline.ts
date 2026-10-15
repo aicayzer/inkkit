@@ -5,22 +5,11 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { clipboardText } from './clipboard'
 import { revealCalloutAncestors } from './callouts'
-import { InkKitError } from './types'
+import { InkKitError, type DocumentVersion, type Heading } from './types'
 
-export interface Heading {
-  readonly id: string
-  readonly level: number
-  readonly text: string
-  readonly documentId: string
-  readonly generation: number
-  readonly revision: number
-}
-export interface OutlineContext {
-  documentId: string
-  generation: number
-  revision: number
-  epoch: number
-  mode: 'source' | 'formatted'
+/** The document version headings are read from, and the session key that names it and its mode. */
+export interface OutlineContext extends DocumentVersion {
+  key: string
 }
 interface LocatedHeading {
   node: ProseNode
@@ -73,7 +62,7 @@ function sourceLocations(ctx: Ctx, source: string): LocatedHeading[] {
 }
 function entry(heading: LocatedHeading, context: OutlineContext): Heading {
   return Object.freeze({
-    id: `heading:${context.epoch}:${context.mode}:${context.generation}:${context.revision}:${heading.position}`,
+    id: `heading:${context.key}:${heading.position}`,
     level: Number(heading.node.attrs.level),
     text: clipboardText(heading.node.content),
     documentId: context.documentId,

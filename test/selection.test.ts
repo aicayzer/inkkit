@@ -11,7 +11,6 @@ async function withEditor(
   document.body.append(root)
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     openLink() {},
     copy() {},
   })

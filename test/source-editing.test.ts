@@ -23,7 +23,7 @@ async function run(
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {}, ...events },
+    { changed() {}, copy() {}, openLink() {}, ...events },
     { images },
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
@@ -92,7 +92,7 @@ test('source spelling changes have exact events, revision and undo despite equal
       })
     },
     {
-      changed(text, generation) {
+      changed({ text, generation }) {
         expect(generation).toBe(12)
         expect([input.text, '**bold**\r\n\r\nText\r\n']).toContain(text)
       },
@@ -255,13 +255,13 @@ test('source selection Markdown maps CRLF exactly and ordinary copy omits partia
     editor.loadDocument({ ...input, text: raw })
     editor.setEditingMode('source')
     plain.setSelectionRange(0, plain.value.length)
-    const all = await editor.clipboardSnapshot(false)
+    const all = await editor.clipboardSnapshot('selection')
     expect(all.markdown).toBe(raw)
     expect(all.text).toContain('bold')
     expect(all.text).not.toContain('PRIVATE')
     const start = plain.value.indexOf('PRIVATE') + 2
     plain.setSelectionRange(start, start + 4)
-    const privateSlice = await editor.clipboardSnapshot(false)
+    const privateSlice = await editor.clipboardSnapshot('selection')
     expect(privateSlice.markdown).toBe('IVAT')
     expect(privateSlice.text).toBe('')
     expect(privateSlice.html).not.toContain('IVAT')
@@ -275,10 +275,12 @@ test('source fragment copying leaves code literal and does not import unselected
     })
     editor.setEditingMode('source')
     plain.setSelectionRange(0, 10)
-    expect((await editor.clipboardSnapshot(false)).text).toContain('%%CODE%%')
+    expect((await editor.clipboardSnapshot('selection')).text).toContain(
+      '%%CODE%%',
+    )
     const from = plain.value.indexOf('[link]')
     plain.setSelectionRange(from, from + '[link][target]'.length)
-    const clip = await editor.clipboardSnapshot(false)
+    const clip = await editor.clipboardSnapshot('selection')
     expect(clip.markdown).toBe('[link][target]')
     expect(clip.html).not.toContain('example.com/private')
   }))
@@ -324,13 +326,18 @@ test('source edits invalidate headings and switching presentation invalidates na
     )
   }))
 
-test('same-generation document switching clears source history and rejects old outline identity', () =>
+test('document switching clears source history and rejects old outline identity', () =>
   run((editor) => {
     editor.loadDocument(input)
     editor.setEditingMode('source')
     editor.replaceSource('# Old\n')
     const old = editor.headings()[0]!
-    editor.loadDocument({ ...input, documentId: 'other', text: '# New\n' })
+    editor.loadDocument({
+      ...input,
+      documentId: 'other',
+      generation: 13,
+      text: '# New\n',
+    })
     expect(editor.editingMode).toBe('formatted')
     expect(editor.snapshot()).toMatchObject({
       documentId: 'other',
@@ -338,7 +345,9 @@ test('same-generation document switching clears source history and rejects old o
       dirty: false,
     })
     expect(editor.undo()).toBe(false)
-    expect(() => editor.navigateHeading(old)).toThrow('no longer current')
+    expect(() => editor.navigateHeading(old)).toThrow(
+      expect.objectContaining({ code: 'stale-document' }),
+    )
   }))
 
 test('source reload retains presentation, normalized selected range and scroll', () =>
@@ -398,8 +407,14 @@ test('literal replacement matches raw endings and preserves replacement bytes', 
 
 test('each document load displays only its active editing surface', () =>
   run((editor, plain, ctx) => {
+    let generation = input.generation
     for (const format of ['txt', 'md', 'txt', 'md'] as const) {
-      editor.loadDocument({ ...input, format, text: '**literal**' })
+      editor.loadDocument({
+        ...input,
+        generation: generation++,
+        format,
+        text: '**literal**',
+      })
       expect(plain.hidden).toBe(format === 'md')
       expect(ctx.get(editorViewCtx).dom.parentElement!.hidden).toBe(
         format === 'txt',
@@ -412,7 +427,7 @@ test('TXT selection clipboard retains exact mixed endings without filtering comm
     const text = '**literal**\r\n%%PRIVATE%%\nlast\r'
     editor.loadDocument({ ...input, format: 'txt', text })
     plain.setSelectionRange(0, plain.value.length)
-    const clip = await editor.clipboardSnapshot(false)
+    const clip = await editor.clipboardSnapshot('selection')
     expect(clip.text).toBe(text)
     expect(clip.markdown).toBe(text)
   }))
@@ -491,7 +506,6 @@ test('destroyed editors reject source mode, replacement and history calls', asyn
   const root = document.createElement('div')
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
   })
@@ -536,7 +550,7 @@ test('BOM source selection preserves adjacent text while excluding complete comm
     editor.loadDocument({ ...input, text: '\uFEFFbefore %%PRIVATE%% after' })
     editor.setEditingMode('source')
     plain.setSelectionRange(0, plain.value.length)
-    const clip = await editor.clipboardSnapshot(false)
+    const clip = await editor.clipboardSnapshot('selection')
     expect(clip.text).toBe('before  after')
     expect(clip.markdown).toBe('\uFEFFbefore %%PRIVATE%% after')
   }))

@@ -1,13 +1,21 @@
 name: CI
 on:
   push:
-    branches: [main, 'feat/**', 'fix/**']
+    branches: [main]
   pull_request:
+  # The release workflow runs these same checks on the tagged commit.
+  workflow_call:
 permissions:
   contents: read
+# A new push to a pull request supersedes its running checks. The group never
+# uses github.workflow, which a calling workflow would share.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,21 +24,29 @@ jobs:
       - run: npm install --global pnpm@11.0.9
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
+      # The packed-consumer test opens its pages in both engines.
+      - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm check
       - run: pnpm build:playground
-      - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:built-playground
       - uses: actions/upload-artifact@v4
         with:
           name: package-candidate
           path: _local/release/
 
-  browser-smoke:
+  browser:
+    name: browser (${{ matrix.engine }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - engine: chromium
+            os: ubuntu-latest
+          # Every current host embeds WebKit on Apple platforms.
+          - engine: webkit
+            os: macos-latest
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,10 +54,10 @@ jobs:
           node-version: '26'
       - run: npm install --global pnpm@11.0.9
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm exec playwright test --project=chromium --grep @smoke
+      - run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
+      - run: pnpm exec playwright test --project=${{ matrix.engine }}
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure() || cancelled()
         with:
-          name: browser-smoke-${{ matrix.os }}
+          name: browser-${{ matrix.engine }}
           path: _local/playwright/

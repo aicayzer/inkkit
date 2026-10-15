@@ -183,7 +183,6 @@ async function typed(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
       error: (error) => errors.push(error.message),

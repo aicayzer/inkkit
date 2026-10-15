@@ -11,6 +11,15 @@ const rangeFor = (snapshot: TextSnapshot, text: string): TextRange => {
 }
 const readText = async (page: Parameters<typeof operation>[0]) =>
   (await operation(page, 'textSnapshot')) as TextSnapshot
+const rectsOf = async (
+  page: Parameters<typeof operation>[0],
+  range: TextRange,
+) =>
+  (
+    (await operation(page, 'textRangesRects', {
+      ranges: [range],
+    })) as ReturnType<InkKitEditor['textRangesRects']>
+  )[0]!
 
 for (const mode of ['formatted', 'source', 'txt'] as const) {
   test(`UTF-16 ranges, replacement and shared undo (${mode}) @native-search`, async ({
@@ -67,7 +76,7 @@ test('ranges reject reload, mode round trips and another instance @native-search
   const secondBefore = await operation(page, 'textSnapshot', {
     instance: 'second',
   })
-  await operation(page, 'reload', { sameGeneration: true })
+  await operation(page, 'reload')
   await expect(
     operation(page, 'replaceTextRange', { range, text: 'NO' }),
   ).rejects.toThrow(/changed|stale/i)
@@ -75,9 +84,7 @@ test('ranges reject reload, mode round trips and another instance @native-search
   const current = rangeFor(afterReload, 'Formatted match')
   await operation(page, 'editingMode', { mode: 'source' })
   await operation(page, 'editingMode', { mode: 'formatted' })
-  await expect(
-    operation(page, 'textRangeRects', { range: current }),
-  ).rejects.toThrow(/changed|stale/i)
+  await expect(rectsOf(page, current)).rejects.toThrow(/changed|stale/i)
   expect(await operation(page, 'textSnapshot', { instance: 'second' })).toEqual(
     secondBefore,
   )
@@ -92,11 +99,9 @@ test('composition guards and protected structured content @native-search', async
   expect(text.text).not.toContain('hidden author comment')
   expect(text.text).toContain('Hidden body match')
   const folded = rangeFor(text, 'Hidden body match')
-  expect(await operation(page, 'textRangeRects', { range: folded })).toEqual([])
+  expect(await rectsOf(page, folded)).toEqual([])
   await operation(page, 'revealTextRange', { range: folded })
-  expect(
-    await operation(page, 'textRangeRects', { range: folded }),
-  ).not.toEqual([])
+  expect(await rectsOf(page, folded)).not.toEqual([])
   const image = rangeFor(text, 'Opaque image')
   await expect(
     operation(page, 'replaceTextRange', { range: image, text: 'NO' }),
@@ -133,9 +138,7 @@ test('composition guards and protected structured content @native-search', async
   await expect(
     operation(page, 'replaceTextRange', { range: sourceRange, text: 'NO' }),
   ).rejects.toThrow(/composition/i)
-  await expect(
-    operation(page, 'textRangeRects', { range: sourceRange }),
-  ).rejects.toThrow(/composition/i)
+  await expect(rectsOf(page, sourceRange)).rejects.toThrow(/composition/i)
   await sourceSurface.dispatchEvent('compositionend', { data: '' })
   await operation(page, 'editingMode', { mode: 'formatted' })
   await operation(page, 'editable', { editable: false })
@@ -178,9 +181,7 @@ for (const mode of ['formatted', 'source', 'txt'] as const) {
       range: target,
       options: { focus: true, reveal: true },
     })
-    const rects = (await operation(page, 'textRangeRects', {
-      range: target,
-    })) as ReturnType<InkKitEditor['textRangeRects']>
+    const rects = await rectsOf(page, target)
     const viewport = (await operation(page, 'viewport')) as ReturnType<
       InkKitEditor['viewport']
     >
@@ -199,9 +200,7 @@ for (const mode of ['formatted', 'source', 'txt'] as const) {
     ).toBe(true)
     await operation(page, 'find', { text: 'Paragraph 18' })
     const found = rangeFor(text, 'Paragraph 18')
-    const findRects = (await operation(page, 'textRangeRects', {
-      range: found,
-    })) as ReturnType<InkKitEditor['textRangeRects']>
+    const findRects = await rectsOf(page, found)
     const findViewport = (await operation(page, 'viewport')) as ReturnType<
       InkKitEditor['viewport']
     >
@@ -239,9 +238,7 @@ for (const mode of ['formatted', 'source', 'txt'] as const) {
       range: wrapped,
       options: { reveal: true },
     })
-    const wrappedRects = (await operation(page, 'textRangeRects', {
-      range: wrapped,
-    })) as ReturnType<InkKitEditor['textRangeRects']>
+    const wrappedRects = await rectsOf(page, wrapped)
     const wrappedViewport = (await operation(page, 'viewport')) as ReturnType<
       InkKitEditor['viewport']
     >
@@ -322,9 +319,7 @@ for (const mode of ['formatted', 'source', 'txt'] as const) {
       ranges,
     })) as ReturnType<InkKitEditor['textRangesRects']>
     expect(before).toEqual(
-      await Promise.all(
-        ranges.map((range) => operation(page, 'textRangeRects', { range })),
-      ),
+      await Promise.all(ranges.map((range) => rectsOf(page, range))),
     )
     expect(before.every((rects) => rects.length > 0)).toBe(true)
     await page.setViewportSize({ width: 730, height: 800 })
@@ -332,9 +327,7 @@ for (const mode of ['formatted', 'source', 'txt'] as const) {
       ranges,
     })) as ReturnType<InkKitEditor['textRangesRects']>
     expect(after).toEqual(
-      await Promise.all(
-        ranges.map((range) => operation(page, 'textRangeRects', { range })),
-      ),
+      await Promise.all(ranges.map((range) => rectsOf(page, range))),
     )
     expect(after[1]![0]!.top).not.toBe(before[1]![0]!.top)
     const sourceBefore = (await observe(page)).snapshot

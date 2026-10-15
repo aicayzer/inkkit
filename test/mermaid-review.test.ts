@@ -54,7 +54,6 @@ async function run(
   document.body.append(root)
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
   })

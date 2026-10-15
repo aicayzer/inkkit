@@ -1,4 +1,5 @@
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
+import { editorLabels } from './labels'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { isHistoryTransaction } from '@milkdown/kit/prose/history'
 import {
@@ -383,7 +384,7 @@ export const remarkCommentsPlugin = $remark(
 function commentNode(inline: boolean) {
   const name = inline ? 'comment_inline' : 'comment_block'
   const mdastType = inline ? 'inkkitCommentInline' : 'inkkitCommentBlock'
-  return $node(name, () => ({
+  return $node(name, (ctx) => ({
     inline,
     group: inline ? 'inline' : 'block',
     content: 'text*',
@@ -399,7 +400,8 @@ function commentNode(inline: boolean) {
       {
         class: `inkkit-comment inkkit-comment-${inline ? 'inline' : 'block'}`,
         'data-inkkit-comment': node.attrs.syntax,
-        'aria-label': 'Author comment',
+        role: 'note',
+        'aria-label': editorLabels(ctx).comment,
       },
       0,
     ],

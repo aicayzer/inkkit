@@ -132,7 +132,7 @@ async function run(
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+    { changed() {}, copy() {}, openLink() {} },
     { images: adapter, files },
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
@@ -402,7 +402,7 @@ for (const mutation of [
   'edit',
   'edit then undo',
   'replacement',
-  'same identity reload',
+  'reload of the same document',
   'composition',
   'pending import',
   'destroy',
@@ -450,8 +450,12 @@ for (const mutation of [
             generation: 2,
             text: 'Replacement',
           })
-        else if (mutation === 'same identity reload')
-          editor.reloadDocument({ ...input, text: 'Replacement' })
+        else if (mutation === 'reload of the same document')
+          editor.reloadDocument({
+            ...input,
+            generation: 2,
+            text: 'Replacement',
+          })
         else if (mutation === 'composition')
           Object.defineProperty(view, 'composing', {
             value: true,
@@ -709,7 +713,11 @@ test('optional files retain legacy path image exports but never use them for nam
       ).toEqual(pngBytes)
       expect((await editor.printableSnapshot()).assets).toHaveLength(1)
       expect(exported).toHaveBeenCalledTimes(2)
-      editor.loadDocument({ ...input, text: '![[named|120]]\n' })
+      editor.loadDocument({
+        ...input,
+        generation: 2,
+        text: '![[named|120]]\n',
+      })
       expect((await editor.clipboardSnapshot()).images[0]?.error).toMatch(
         /portable export/i,
       )
@@ -748,7 +756,7 @@ test('reload promptly cancels a held image decoder and releases its object URL',
         code: 'stale-document',
       })
       await vi.waitFor(() => expect(decoding).toBe(true))
-      editor.reloadDocument(document)
+      editor.reloadDocument({ ...document, generation: 2 })
       await rejected
       expect(URL.revokeObjectURL).toHaveBeenCalled()
     },
@@ -767,19 +775,15 @@ test('print keeps mail and phone links and drops links with an unsafe address', 
       text: '[site](https://example.com/) [mail](mailto:ada@example.com) [call](tel:+441234567890) [run](javascript:run) [file](file:///etc/hosts) [rel](notes/today.md)\n',
     })
     const printed = await editor.printableSnapshot(1)
-    const links = [
-      ...new DOMParser()
-        .parseFromString(printed.html, 'text/html')
-        .querySelectorAll('a'),
-    ]
+    const page = new DOMParser().parseFromString(printed.html, 'text/html')
+    const links = [...page.querySelectorAll('a')]
     expect(
       links.map((link) => [link.textContent, link.getAttribute('href')]),
     ).toEqual([
       ['site', 'https://example.com/'],
       ['mail', 'mailto:ada@example.com'],
       ['call', 'tel:+441234567890'],
-      ['run', null],
-      ['file', null],
       ['rel', 'notes/today.md'],
     ])
+    expect(page.body.textContent).toContain('call run file rel')
   }))

@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { gunzipSync } from 'node:zlib'
-import { checkConsumer, sha256 } from './test-package.mjs'
+import { checkConsumer, runtimeChecks, sha256 } from './test-package.mjs'
 
 const [version, testedPath, ciPath] = process.argv.slice(2)
 if (!/^\d+\.\d+\.\d+$/.test(version ?? '') || !testedPath || !ciPath) {
@@ -94,6 +94,7 @@ try {
       'CSS export',
       'offline Vite bundle',
       'core entry without Mermaid',
+      ...runtimeChecks,
     ],
   }
   await writeFile(
