@@ -10,8 +10,14 @@ export interface DocumentInput {
   format: DocumentFormat
   text: string
 }
-export interface DocumentSnapshot extends DocumentInput {
+/** Which document an output describes: the load, named by its generation, and the revision of
+ *  its content within that load. */
+export interface DocumentVersion {
+  documentId: string
+  generation: number
   revision: number
+}
+export interface DocumentSnapshot extends DocumentInput, DocumentVersion {
   dirty: boolean
 }
 /** The closed list of failure codes; `docs/api.md` describes each one. */
@@ -126,7 +132,6 @@ export interface ClipboardInput {
   markdown?: string
   html?: string
   images?: CapturedImage[]
-  plainText?: boolean
 }
 export interface ClipboardImage {
   reference: string
@@ -134,12 +139,15 @@ export interface ClipboardImage {
   image?: PortableImage
   error?: string
 }
-export interface ClipboardOutput {
+/** What `clipboardSnapshot` copies: the whole document or the current selection. */
+export type ClipboardScope = 'document' | 'selection'
+/** Clipboard content, with the document version it was copied from. */
+export interface ClipboardOutput extends DocumentVersion {
   text: string
   html: string
   markdown: string
   images: ClipboardImage[]
-  diagrams?: ClipboardDiagram[]
+  diagrams: ClipboardDiagram[]
 }
 export interface ClipboardDiagram {
   source: string
@@ -150,10 +158,7 @@ export interface PrintableWarning {
   code: 'diagram-unavailable' | 'attachment-fallback' | 'attachment-unavailable'
   message: string
 }
-export interface PrintableDocument {
-  documentId: string
-  generation: number
-  revision: number
+export interface PrintableDocument extends DocumentVersion {
   format: DocumentFormat
   html: string
   styles: string
@@ -166,11 +171,8 @@ export interface TextRange {
   from: number
   to: number
 }
-export interface ReadableTextSnapshot {
+export interface ReadableTextSnapshot extends DocumentVersion {
   snapshotId: string
-  documentId: string
-  generation: number
-  revision: number
   format: DocumentFormat
   mode: 'source' | 'formatted'
   text: string
@@ -236,13 +238,10 @@ export interface EditorLabels {
   /** Name of a block of Markdown InkKit keeps as authored and does not render. */
   preservedMarkdown: string
 }
-export interface Heading {
+export interface Heading extends Readonly<DocumentVersion> {
   readonly id: string
   readonly level: number
   readonly text: string
-  readonly documentId: string
-  readonly generation: number
-  readonly revision: number
 }
 export type TableCommand =
   | 'insert'

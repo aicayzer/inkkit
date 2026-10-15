@@ -12,7 +12,6 @@ async function mounted() {
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
       error() {},

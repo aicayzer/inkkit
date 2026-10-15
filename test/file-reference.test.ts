@@ -121,7 +121,7 @@ test('FileReference gives the target without its fragment for every syntax form'
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+    { changed() {}, copy() {}, openLink() {} },
     { files: adapter, wikiLinks: { open() {} } },
   )
   // CRLF line endings, as a note written on Windows has them.

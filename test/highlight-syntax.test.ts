@@ -249,8 +249,8 @@ async function withFacade(
   const states: CaretState[] = []
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged(state) {
-      states.push(state)
+    commandStateChanged(state) {
+      states.push(state.caret)
     },
     copy() {},
     openLink() {},
@@ -275,7 +275,7 @@ test('facade highlight preserves surrounding source, copies the selection and un
     const saved = editor.snapshot().text
     expect(saved).toContain(' and &amp; after\r\n')
     expect(saved).toContain('==')
-    const copied = await editor.clipboardSnapshot(false)
+    const copied = await editor.clipboardSnapshot('selection')
     expect(copied.text).toBe('bold')
     const template = document.createElement('template')
     template.innerHTML = copied.html

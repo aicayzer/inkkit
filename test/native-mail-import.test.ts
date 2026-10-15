@@ -33,7 +33,6 @@ async function verifyImport(source: string, html: string, count: number) {
   document.body.append(root)
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
   })

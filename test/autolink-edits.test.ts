@@ -17,7 +17,6 @@ async function edit(
   const errors: Error[] = []
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
     error: (error) => errors.push(error),
@@ -200,7 +199,6 @@ test('text typed after a bare URL without its link joins the URL', async () => {
   document.body.append(root)
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
   })
@@ -232,7 +230,6 @@ test('undoing an edit inside a bare URL restores its source', async () => {
   document.body.append(root)
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
   })

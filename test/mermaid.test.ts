@@ -86,7 +86,6 @@ async function run(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
       ...events,
@@ -433,7 +432,7 @@ test('diagram-only selection preserves its complete authored Markdown fence', ()
         ),
       ),
     )
-    const clip = await editor.clipboardSnapshot(false)
+    const clip = await editor.clipboardSnapshot('selection')
     expect(clip.markdown.trimEnd()).toBe(authored.trimEnd())
     expect(clip.diagrams?.[0]?.source).toBe(diagram)
     expect(clip.html).not.toContain('Before')
@@ -615,7 +614,7 @@ test('partial diagram source copy remains readable source rather than a rendered
     view.dispatch(
       view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 12)),
     )
-    const clip = await editor.clipboardSnapshot(false)
+    const clip = await editor.clipboardSnapshot('selection')
     expect(clip.text).toBe(diagram.slice(0, 11))
     expect(clip.diagrams ?? []).toEqual([])
     expect(clip.html).not.toContain('<figure')

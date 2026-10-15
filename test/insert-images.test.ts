@@ -41,7 +41,7 @@ async function run(
   const changed = vi.fn()
   const editor = await InkKitEditor.mount(
     root,
-    { changed, stateChanged() {}, copy() {}, openLink() {} },
+    { changed, copy() {}, openLink() {} },
     { images },
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx

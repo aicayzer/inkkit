@@ -23,8 +23,7 @@ async function run(
   const editor = await InkKitEditor.mount(
     root,
     {
-      changed: (text) => changes.push(text),
-      stateChanged() {},
+      changed: ({ text }) => changes.push(text),
       copy() {},
       openLink() {},
       ...events,
@@ -410,7 +409,7 @@ test('exports in source mode show the typed text and leave the history and docum
     expect((await editor.clipboardSnapshot()).text).toContain('Paragraphab 0')
     expect((await editor.printableSnapshot()).html).toContain('Paragraphab 0')
     plain.setSelectionRange(0, 14)
-    const partial = await editor.clipboardSnapshot(false)
+    const partial = await editor.clipboardSnapshot('selection')
     expect(partial.markdown).toBe(plain.value.slice(0, 14))
     expect(view.state.doc).toBe(doc)
     expect(editor.undo()).toBe(true)

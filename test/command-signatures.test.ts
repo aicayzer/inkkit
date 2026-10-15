@@ -27,7 +27,8 @@ interface Session {
   root: HTMLElement
   /** How many times `changed` and `error` were called. */
   sent: string[]
-  load(text: string, generation?: number): void
+  /** Loads `text` under a greater generation, or under `generation`, and returns it. */
+  load(text: string, generation?: number): number
   /** Selects `word`, or puts the caret `caret` characters into it. */
   select(word: string, caret?: number): void
   /** Saves, reopens the saved bytes and checks that they read back as the document shown. */
@@ -41,10 +42,8 @@ async function open(
   const root = document.createElement('div')
   document.body.append(root)
   const sent: string[] = []
-  // A variable, not a literal, so these handlers satisfy any version of EditorEvents.
   const events = {
     changed: () => sent.push('changed'),
-    stateChanged() {},
     error: (error: { code: string }) => sent.push(`error ${error.code}`),
     copy() {},
     openLink() {},
@@ -68,6 +67,7 @@ async function open(
         text,
       })
       sent.length = 0
+      return generation
     },
     reopens() {
       const saved = editor.snapshot().text
@@ -446,15 +446,15 @@ test('keyDown takes each modifier from one object', () =>
       ['highlight', { key: 'F2', shiftKey: true }, 'Some ==words==\n'],
     ] as const
     for (const [name, input, saved] of presses) {
-      load('Some words\n', 1)
+      const generation = load('Some words\n')
       select('words')
-      expect(editor.keyDown(input, 1), name).toBe(true)
+      expect(editor.keyDown(input, generation), name).toBe(true)
       expect(editor.snapshot().text, name).toBe(saved)
     }
     // Omitted and null modifiers are not held, so no binding matches.
-    load('Some words\n', 1)
+    const generation = load('Some words\n')
     select('words')
-    expect(editor.keyDown({ key: 'F2' }, 1)).toBe(false)
+    expect(editor.keyDown({ key: 'F2' }, generation)).toBe(false)
     const omitted = null as never
     expect(
       editor.keyDown(
@@ -466,7 +466,7 @@ test('keyDown takes each modifier from one object', () =>
           altKey: omitted,
           shiftKey: omitted,
         },
-        1,
+        generation,
       ),
     ).toBe(false)
     expect(editor.snapshot().text).toBe('Some words\n')

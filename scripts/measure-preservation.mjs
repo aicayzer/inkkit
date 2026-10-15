@@ -99,7 +99,6 @@ for (const [name, root, port] of [
                 if (window.inputStart)
                   window.inputTimes.push(performance.now() - window.inputStart)
               },
-              stateChanged() {},
               openLink() {},
               copy() {},
             },
@@ -264,7 +263,7 @@ for (const [name, root, port] of [
             '<main id="probe" style="width:800px;height:600px;overflow:auto"></main>'
           const editor = await InkKitEditor.mount(
             document.querySelector('#probe'),
-            { changed() {}, stateChanged() {}, openLink() {}, copy() {} },
+            { changed() {}, openLink() {}, copy() {} },
             { rendering: { diagramPreview: false } },
           )
           window.measuredEditor = editor
@@ -334,7 +333,6 @@ for (const [name, root, port] of [
                     performance.now() - window.inputStart,
                   )
               },
-              stateChanged() {},
               openLink() {},
               copy() {},
             },
@@ -454,7 +452,7 @@ for (const [name, root, port] of [
             '<main id="probe" style="width:800px;height:600px;overflow:auto"></main>'
           const editor = await InkKitEditor.mount(
             document.querySelector('#probe'),
-            { changed() {}, stateChanged() {}, openLink() {}, copy() {} },
+            { changed() {}, openLink() {}, copy() {} },
             { rendering: { diagramPreview: false } },
           )
           window.measuredEditor = editor

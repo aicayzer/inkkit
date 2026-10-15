@@ -28,7 +28,7 @@ async function run(
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {}, ...events },
+    { changed() {}, copy() {}, openLink() {}, ...events },
     { images },
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
@@ -175,7 +175,7 @@ test('multiline literal paste retains visible lines and source characters', () =
     editor.pasteAsPlainText(text)
     expect((await editor.clipboardSnapshot()).text).toBe(text)
     const saved = editor.snapshot().text
-    editor.loadDocument({ ...input, text: saved })
+    editor.loadDocument({ ...input, generation: 2, text: saved })
     expect((await editor.clipboardSnapshot()).text).toBe(text)
   }))
 
@@ -217,7 +217,7 @@ const imageAdapter: ImageAdapter = {
   },
 }
 
-test('same identity reload cancels pending import and releases snapshots', () =>
+test('loading the same document again cancels a pending import and releases snapshots', () =>
   run(
     async (editor) => {
       editor.loadDocument({ ...input, text: 'old' })
@@ -233,7 +233,7 @@ test('same identity reload cancels pending import and releases snapshots', () =>
         text: 'paste',
         images: [{ bytes: new Uint8Array([1]), mimeType: 'image/png' }],
       })
-      editor.loadDocument({ ...input, text: 'new' })
+      editor.loadDocument({ ...input, generation: 2, text: 'new' })
       expect(editor.snapshot().text).toBe('new')
       finish({ reference: 'images/old.png' })
       await expect(paste).rejects.toThrow('document changed')
@@ -242,7 +242,7 @@ test('same identity reload cancels pending import and releases snapshots', () =>
     { ...imageAdapter },
   ))
 
-test('same identity reload rejects a pending clipboard export', () =>
+test('loading the same document again rejects a pending clipboard export', () =>
   run(
     async (editor) => {
       editor.loadDocument({ ...input, text: '![Photo](images/photo.png)' })
@@ -255,7 +255,7 @@ test('same identity reload rejects a pending clipboard export', () =>
           finish = resolve
         })
       const copy = editor.clipboardSnapshot()
-      editor.loadDocument({ ...input, text: 'replacement' })
+      editor.loadDocument({ ...input, generation: 2, text: 'replacement' })
       finish({ bytes: new Uint8Array([1]), mimeType: 'image/png' })
       await expect(copy).rejects.toThrow('Document changed')
     },
@@ -277,7 +277,7 @@ test('partial image copy has valid Markdown and portable image HTML', () =>
       view.dispatch(
         view.state.tr.setSelection(NodeSelection.create(view.state.doc, image)),
       )
-      const copy = await editor.clipboardSnapshot(false)
+      const copy = await editor.clipboardSnapshot('selection')
       expect(copy.markdown).toBe('![Photo](images/photo.png)\n')
       expect(copy.html).toContain('data:image/png;base64,')
       expect(copy.html).not.toContain('memo-image:')
@@ -364,7 +364,7 @@ test('image cut retains source on missing bytes; an ordinary copy describes the 
       view.dispatch(
         view.state.tr.setSelection(new AllSelection(view.state.doc)),
       )
-      const copy = await editor.clipboardSnapshot(false)
+      const copy = await editor.clipboardSnapshot('selection')
       expect(copy.text).toContain('image unavailable')
       expect(copy.images[0]?.error).toBe('Image offline')
       // Degraded output describes itself; it is not also an error.
@@ -454,7 +454,7 @@ test('a preservation failure rejects the edit without changing snapshot, revisio
     undefined,
     {
       error: (error) => errors.push(error),
-      changed: (text) => changes.push(text),
+      changed: ({ text }) => changes.push(text),
     },
   )
 })

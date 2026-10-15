@@ -8,8 +8,8 @@ import {
 } from '@milkdown/kit/core'
 import { createDialect, serialize, stringifyOptions } from '../src/dialect'
 import { imageView } from '../src/images'
-import { PasteController } from '../src/paste'
-import type { ClipboardInput, ImageAdapter } from '../src/types'
+import { PasteController, type PasteInput } from '../src/paste'
+import type { ImageAdapter } from '../src/types'
 
 const adapter: ImageAdapter = {
   presentation: (reference) => ({ url: `private://image/${reference}` }),
@@ -23,7 +23,7 @@ const pixel =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
 async function pasted(
-  input: Partial<ClipboardInput>,
+  input: Partial<PasteInput>,
   images: ImageAdapter = adapter,
   wikiLinks = false,
   files = false,

@@ -156,7 +156,6 @@ test('editing a reference definition through the API saves one definition', asyn
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
       error: (error) => errors.push(error.message),

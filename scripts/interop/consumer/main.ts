@@ -13,7 +13,6 @@ let receivedClipboard
 let pendingFileOutput
 const bytes = imageBytes()
 const importedImages = images.imported
-let currentCaretState
 let currentCommandState
 let pendingPaste
 let pendingPrintable
@@ -23,9 +22,6 @@ const mountEditor = (configuration = 'rich', linked = false) =>
     document.querySelector('#editor'),
     {
       changed() {},
-      stateChanged(state) {
-        currentCaretState = state
-      },
       commandStateChanged(state) {
         currentCommandState = state
       },
@@ -77,7 +73,7 @@ const capture = () => ({
   html: view()?.innerHTML ?? '',
   selection: selectedText(),
   editingMode: editor.editingMode,
-  caretState: currentCaretState ?? null,
+  caretState: currentCommandState?.caret ?? null,
   commandState: editor.commandState(),
   commandStateEvent: currentCommandState ?? null,
   editable: editor.editable,
@@ -111,7 +107,7 @@ const portableImage = (image) => {
   return { ...image, bytesBase64: btoa(binary), bytes: undefined }
 }
 const exportClipboard = async (all = true) => {
-  const data = await editor.clipboardSnapshot(all)
+  const data = await editor.clipboardSnapshot(all ? 'document' : 'selection')
   return {
     ...data,
     images: data.images.map((image) => ({
@@ -344,7 +340,9 @@ window.interop = {
             result = editor.revealTextRange(scopedRange(operation, results))
             break
           case 'textRangeRects':
-            result = editor.textRangeRects(scopedRange(operation, results))
+            result = editor.textRangesRects([
+              scopedRange(operation, results),
+            ])[0]
             break
           case 'textRangesRects':
             result = editor.textRangesRects(
@@ -353,7 +351,7 @@ window.interop = {
             break
           case 'rangeGeometry': {
             const range = scopedRange(operation, results)
-            const rects = editor.textRangeRects(range)
+            const [rects] = editor.textRangesRects([range])
             const viewport = editor.viewport()
             const visible = editor.visibleTextRanges(range.snapshotId)
             result = {
@@ -416,7 +414,6 @@ window.interop = {
             root.style.width = '300px'
             secondEditor = await InkKitEditor.mount(root, {
               changed() {},
-              stateChanged() {},
               copy() {},
               openLink() {},
             })
@@ -1180,7 +1177,7 @@ window.interop = {
           case 'reload':
             editor.reloadDocument({
               documentId,
-              generation: operation.sameGeneration ? generation : ++generation,
+              generation: ++generation,
               format: operation.format ?? documentFormat,
               text: operation.source,
             })

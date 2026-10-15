@@ -52,6 +52,11 @@ import {
   type ImageAdapter,
 } from './types'
 
+/** A paste the controller runs. `plainText` inserts the text literally, as a paste into code or
+ *  the source editor does; hosts reach that through `pasteAsPlainText`, not through this field. */
+export interface PasteInput extends ClipboardInput {
+  plainText?: boolean
+}
 export interface PasteControllerOptions {
   ctx: () => Ctx
   context: () => DocumentContext
@@ -179,7 +184,7 @@ export class PasteController {
         }),
     )
   }
-  paste(input: ClipboardInput): Promise<void> {
+  paste(input: PasteInput): Promise<void> {
     return this.run(input)
   }
   private anchor(operation: Anchor): Anchor {
@@ -233,7 +238,7 @@ export class PasteController {
   }
   /** Imports the input at the selection, or in place of `target`. */
   private async run(
-    input: ClipboardInput,
+    input: PasteInput,
     files: File[] = [],
     target?: Anchor,
   ): Promise<void> {

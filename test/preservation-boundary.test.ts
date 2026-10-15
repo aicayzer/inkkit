@@ -17,7 +17,6 @@ for (const spacing of [
     document.body.append(root)
     const editor = await InkKitEditor.mount(root, {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
     })
@@ -68,7 +67,6 @@ test('an authored space entity before a newly exposed trailing space is not dupl
   document.body.append(root)
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
   })

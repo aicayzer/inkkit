@@ -1,5 +1,6 @@
 import {
   InkKitEditor,
+  type ClipboardScope,
   type CommandState,
   type TableCommand,
   type FormatCommand,
@@ -386,7 +387,6 @@ async function reset(
         if (epoch === mountEpoch) statusError = false
         update()
       },
-      stateChanged: update,
       commandStateChanged: update,
       openLink: (href) => {
         lastResult = href
@@ -448,7 +448,7 @@ async function reset(
   if (settings.editors) {
     secondEditor = await InkKitEditor.mount(
       element('second-editor'),
-      { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+      { changed() {}, copy() {}, openLink() {} },
       { editable: false },
     )
     secondEditor.loadDocument({
@@ -490,11 +490,6 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
           String(args.text),
         )
         break
-      case 'textRangeRects':
-        result = target.textRangeRects(
-          args.range as Parameters<InkKitEditor['textRangeRects']>[0],
-        )
-        break
       case 'textRangesRects':
         result = target.textRangesRects(
           args.ranges as Parameters<InkKitEditor['textRangesRects']>[0],
@@ -515,13 +510,16 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         break
       case 'reload': {
         const snapshot = target.snapshot()
-        if (target === editor && args.sameGeneration !== true) generation += 1
-        target.reloadDocument({
-          documentId: snapshot.documentId,
-          generation: target === editor ? generation : snapshot.generation + 1,
-          format: snapshot.format,
-          text: args.text === undefined ? snapshot.text : String(args.text),
-        })
+        target.reloadDocument(
+          {
+            documentId: snapshot.documentId,
+            generation:
+              target === editor ? ++generation : snapshot.generation + 1,
+            format: snapshot.format,
+            text: args.text === undefined ? snapshot.text : String(args.text),
+          },
+          snapshot.generation,
+        )
         break
       }
       case 'format':
@@ -562,7 +560,10 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         )
         break
       case 'focus':
-        editor.focus()
+        editor.focus(generation)
+        break
+      case 'blur':
+        editor.blur(generation)
         break
       case 'commentsVisible':
         result = editor.setCommentsVisible(Boolean(args.visible))
@@ -587,8 +588,8 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         result = editor.redo(generation)
         break
       case 'find':
-        editor.find(String(args.text), generation)
-        editor.focus()
+        result = editor.find(String(args.text), generation)
+        editor.focus(generation)
         break
       case 'replace':
         result = editor.replace(
@@ -611,16 +612,22 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         result = editor.navigateHeading(args.heading as Heading)
         break
       case 'clipboard':
-        result = await editor.clipboardSnapshot(args.all !== false)
+        result = await editor.clipboardSnapshot(
+          args.scope as ClipboardScope | undefined,
+          generation,
+        )
         break
       case 'printable':
         result = await editor.printableSnapshot(generation)
         break
       case 'paste':
-        await editor.paste(args.input as Parameters<InkKitEditor['paste']>[0])
+        await editor.paste(
+          args.input as Parameters<InkKitEditor['paste']>[0],
+          generation,
+        )
         break
       case 'pastePlain':
-        editor.pasteAsPlainText(String(args.text))
+        result = editor.pasteAsPlainText(String(args.text), generation)
         break
       case 'commandState':
         result = editor.commandState(args.generation as number | undefined)
@@ -802,7 +809,7 @@ click('replace-range', () => {
 })
 click('range-rects', () => {
   if (!searchRange) throw Error('Capture a matching text range first')
-  return operation('textRangeRects', { range: searchRange })
+  return operation('textRangesRects', { ranges: [searchRange] })
 })
 click('viewport-insets', () =>
   operation('setViewport', {
