@@ -11,9 +11,9 @@ Pushing a `v*` tag starts `.github/workflows/release.yml`. It publishes only whe
 3. The whole CI workflow runs on the tagged commit, the same checks as a pull request: formatting, `pnpm check` with the packed-consumer pages in Chromium and WebKit, the built-playground check, and the whole browser suite in Chromium and WebKit.
 4. The publish job publishes the `package-candidate` archive that the CI `check` job packed and tested, through npm trusted publishing.
 
-These checks live in the tagged commit's own `release.yml`, so on their own they would not stop an older or edited workflow on a branch. Two settings outside the workflow close that gap:
+These checks live in the tagged commit's own `release.yml`, and two settings outside the workflow add to them:
 
-- The publish job runs in the GitHub environment `npm`, which allows deployments only from `v*` tags, and the npm trusted publisher accepts only the `npm` environment. A run from a branch cannot enter the environment, so it cannot get an npm token.
+- The publish job runs in the GitHub environment `npm`, which allows deployments only from `v*` tags.
 - A tag ruleset lets only repository administrators create, move or delete `v*` tags.
 
 ## Publication checklist
@@ -47,7 +47,7 @@ In the package's npm settings, add a GitHub Actions trusted publisher with:
 - Organization or user: `aicayzer`
 - Repository: `inkkit`
 - Workflow filename: `release.yml`
-- Environment name: `npm`
+- Environment name: leave blank
 - Publishing permissions: allow direct publishing through `npm publish`
 
 The workflow uses GitHub-hosted runners, Node.js 26 and npm's OIDC authentication. npm requires version 11.5.1 or later for trusted publishing. The publish job runs in the `npm` environment with `contents: read` and `id-token: write`; no npm token is stored. Create the environment under the repository's Settings > Environments, under **Deployment branches and tags** choose **Selected branches and tags**, and add a rule of type **Tag** with the pattern `v*`. The workflow filename must match the actual file in `.github/workflows/`. Check available configuration evidence before pushing each release tag. Successful OIDC releases establish the publishing path when the workflow and package configuration are unchanged. `npm trust list @aicayzer/inkkit --json` is an optional read with npm 11.15 or later and may require account authentication; that request alone does not require local npm login. Investigate actual configuration changes or publication failures. Follow [npm's trusted-publisher documentation](https://docs.npmjs.com/trusted-publishers/).
