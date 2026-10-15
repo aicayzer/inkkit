@@ -80,7 +80,7 @@ test('an authored inline break in a table cell is kept when another cell is edit
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+    { changed() {}, copy() {}, openLink() {} },
     {},
   )
   try {

@@ -15,7 +15,11 @@ import {
 } from '../src/files'
 import { defaultLabels } from '../src/labels'
 
-const reference: FileReference = { reference: 'opaque', kind: 'path' }
+const reference: FileReference = {
+  reference: 'opaque',
+  kind: 'path',
+  target: 'opaque',
+}
 const context = () => ({
   documentId: 'files',
   generation: 1,
@@ -83,13 +87,23 @@ test('resolution retries abort old requests and reject late reference/document r
   fixture.requests[0]!.resolve(image)
   await Promise.resolve()
   expect(resolver.state.status).toBe('loading')
-  resolver.update({ reference: 'other', kind: 'wiki', fragment: 'page=2' })
+  resolver.update({
+    reference: 'other#page=2',
+    kind: 'wiki',
+    target: 'other',
+    fragment: 'page=2',
+  })
   expect(fixture.requests[1]!.context.signal.aborted).toBe(true)
   fixture.requests[1]!.resolve(image)
   fixture.advance()
   fixture.requests[2]!.resolve(image)
   await vi.waitFor(() => expect(resolver.state.status).toBe('loading'))
-  resolver.update({ reference: 'other', kind: 'wiki', fragment: 'page=2' })
+  resolver.update({
+    reference: 'other#page=2',
+    kind: 'wiki',
+    target: 'other',
+    fragment: 'page=2',
+  })
   expect(fixture.requests).toHaveLength(4)
   fixture.requests[3]!.resolve({ kind: 'file', label: 'Current file' })
   await vi.waitFor(() =>
@@ -199,7 +213,6 @@ async function mounted(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
       error: options.error,
@@ -467,7 +480,7 @@ test('missing, failed and undecodable files provide retry without changing autho
   )
 })
 
-test('same-generation reload and source mode abort held requests; late results cannot populate the new view', async () => {
+test('reload and source mode abort held requests; late results cannot populate the new view', async () => {
   const requests: {
     context: FileContext
     complete(value: FilePresentation): void
@@ -479,7 +492,7 @@ test('same-generation reload and source mode abort held requests; late results c
     },
     async (editor, root) => {
       expect(requests).toHaveLength(1)
-      editor.reloadDocument(source)
+      editor.reloadDocument({ ...source, generation: 2 })
       expect(requests[0]!.context.signal.aborted).toBe(true)
       expect(requests).toHaveLength(2)
       requests[0]!.complete(image)

@@ -6,9 +6,9 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { tableBlockConfig } from '@milkdown/kit/component/table-block'
 import { InkKitEditor } from '../src/index'
 import { tableAvailability, tableContext, tableCommands } from '../src/tables'
-import type { EditorLabels } from '../src/labels'
+import type { EditorLabels } from '../src/types'
 
-const events = { changed() {}, stateChanged() {}, openLink() {}, copy() {} }
+const events = { changed() {}, openLink() {}, copy() {} }
 const input = { documentId: 'custom', generation: 1, format: 'md' as const }
 async function mount(labels: Partial<EditorLabels> = {}) {
   const root = document.createElement('div')

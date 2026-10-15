@@ -368,9 +368,11 @@ test('the readable range of a standalone image covers its card, not the whole ro
     text: string
   }
   const from = snapshot.text.indexOf('Fixture')
-  const rects = (await operation(page, 'textRangeRects', {
-    range: { snapshotId: snapshot.snapshotId, from, to: from + 7 },
-  })) as { left: number; width: number }[]
+  const rects = (
+    (await operation(page, 'textRangesRects', {
+      ranges: [{ snapshotId: snapshot.snapshotId, from, to: from + 7 }],
+    })) as { left: number; width: number }[][]
+  )[0]!
   const card = (await page
     .locator('.inkkit-image-block > .image')
     .boundingBox())!

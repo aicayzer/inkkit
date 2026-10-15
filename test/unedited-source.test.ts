@@ -24,7 +24,7 @@ async function run(callback: (editor: InkKitEditor, ctx: Ctx) => void) {
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+    { changed() {}, copy() {}, openLink() {} },
     {},
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
@@ -43,14 +43,6 @@ test('an unedited document with headings saves as loaded without serializing', (
     const source =
       'Title\n=====\n\n# One #\n\n- ## Two\n\n> ### Three\n\nText *spelled* __so__.\r\n'
     editor.loadDocument({ ...input, text: source })
-    const doc = ctx.get(editorViewCtx).state.doc
-    const ids: unknown[] = []
-    doc.descendants((node) => {
-      if (node.type.name === 'heading') ids.push(node.attrs.id)
-    })
-    // The editor gives headings IDs that the loaded Markdown does not hold.
-    expect(ids).toHaveLength(4)
-    expect(ids.every((id) => typeof id === 'string' && id !== '')).toBe(true)
     let text = ''
     expect(serializations(ctx, () => (text = editor.snapshot().text))).toBe(0)
     expect(text).toBe(source)

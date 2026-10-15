@@ -19,7 +19,7 @@ async function run(
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+    { changed() {}, copy() {}, openLink() {} },
     { images },
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
@@ -142,7 +142,7 @@ test('selection copy includes recursively needed definitions but excludes unused
         NodeSelection.create(view.state.doc, reference),
       ),
     )
-    const output = await editor.clipboardSnapshot(false)
+    const output = await editor.clipboardSnapshot('selection')
     expect(output.markdown).toContain('[^outer]:')
     expect(output.markdown).toContain('[^inner]:')
     expect(output.markdown).toContain('[REF]: /needed')
@@ -211,7 +211,7 @@ test('ordinary rich copy metadata survives source-free native paste with shared 
     })
     const view = ctx.get(editorViewCtx)
     view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
-    const output = await editor.clipboardSnapshot(false)
+    const output = await editor.clipboardSnapshot('selection')
     expect(output.text).not.toContain('[Ref]:')
     expect(output.html).toContain('data-inkkit-markdown=')
     expect(output.html).not.toContain('class="inkkit-reference-definition"')
@@ -462,7 +462,7 @@ test('a reference definition copied on its own copies as its text and pastes bac
         NodeSelection.create(doc, doc.content.size - doc.lastChild!.nodeSize),
       ),
     )
-    const output = await editor.clipboardSnapshot(false)
+    const output = await editor.clipboardSnapshot('selection')
     expect(output.text).toBe('[Ref]: /target "Title"')
     editor.loadDocument({ ...input, generation: 2, text: '' })
     await editor.paste({ text: output.text, html: output.html })

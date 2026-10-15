@@ -16,8 +16,8 @@ async function withInkKitEditor<T>(
   const states: CaretState[] = []
   const editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged(state) {
-      states.push(state)
+    commandStateChanged(state) {
+      states.push(state.caret)
     },
     openLink() {},
     copy() {},
@@ -389,10 +389,14 @@ test('formatting keys are the ones the app sets', async () => {
     )
     // The preset's own Mod-b is gone until the app binds something.
     expect(press('b', { metaKey: true })).toBeFalsy()
+    // A name that is not a shortcut is refused, and the bindings stay as they were.
+    expect(() =>
+      editor.setKeymap({ bold: ['Mod-b'], unknown: ['Mod-u'] }),
+    ).toThrow(expect.objectContaining({ code: 'invalid-argument' }))
+    expect(press('b', { metaKey: true })).toBeFalsy()
     editor.setKeymap({
       bold: ['Mod-b'],
       heading2: ['Mod-Alt-2'],
-      unknown: ['Mod-u'],
     })
     expect(press('b', { metaKey: true })).toBe(true)
     expect(serialize(ctxOf(editor))).toBe('**word**\n')
@@ -580,7 +584,7 @@ test('authored spacing between list groups survives switching documents and relo
         documentId: 'test',
         format: 'md',
         text: saved,
-        generation: 3,
+        generation: 4,
       })
       expect(view.state.doc.toJSON()).toEqual(authored)
     },

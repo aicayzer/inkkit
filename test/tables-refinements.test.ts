@@ -19,7 +19,6 @@ async function run(
     root,
     {
       changed() {},
-      stateChanged() {},
       copy() {},
       openLink() {},
     },
@@ -222,15 +221,13 @@ test('numeric ordering supports finite decimals and exponents, stable ties and b
   }))
 
 test.each(['NaN', 'Infinity', '1,000', '2kg', '0x10', '1e999'])(
-  'numeric sort rejects %s even beside blanks before modifying source',
+  'numeric sort leaves a column holding %s unsorted, even beside blanks',
   (invalid) =>
     run((editor, ctx) => {
       const text = `| N |\n| --- |\n| |\n| ${invalid} |\n`
       editor.loadDocument({ ...input, text })
       select(ctx, 1, 0)
-      expect(() => editor.table('sortRows', { comparison: 'number' })).toThrow(
-        RangeError,
-      )
+      expect(editor.table('sortRows', { comparison: 'number' })).toBe(false)
       expect(editor.snapshot()).toMatchObject({
         text,
         revision: 0,
@@ -245,13 +242,15 @@ test('sort validates options and no active table returns false', () =>
     expect(editor.table('sortRows')).toBe(false)
     editor.loadDocument({ ...input, generation: 2, text: source })
     select(ctx, 1, 0)
-    expect(() => editor.table('sortRows', { column: 99 })).toThrow(RangeError)
-    expect(() =>
-      editor.table('sortRows', { comparison: 'locale' as 'text' }),
-    ).toThrow(RangeError)
-    expect(() =>
-      editor.table('sortRows', { order: 'random' as 'ascending' }),
-    ).toThrow(RangeError)
+    for (const options of [
+      { column: 99 },
+      { column: -1 },
+      { comparison: 'locale' as 'text' },
+      { order: 'random' as 'ascending' },
+    ])
+      expect(() => editor.table('sortRows', options)).toThrow(
+        expect.objectContaining({ code: 'invalid-argument' }),
+      )
   }))
 
 test('spreadsheet TSV paste retains cells, quoted values and trailing empty cells while growing the table', () =>

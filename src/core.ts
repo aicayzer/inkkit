@@ -11,19 +11,23 @@ export type {
   FormatCommand,
   Keymap,
 } from './editor'
-export type { TableCommand, TableOptions } from './tables'
-export type { Heading } from './outline'
 export { InkKitError } from './types'
 export type {
   DocumentFormat,
+  EditorLabels,
+  Heading,
+  TableCommand,
+  TableOptions,
   DocumentContext,
   DocumentInput,
   DocumentSnapshot,
+  DocumentVersion,
   EditorErrorCode,
   ImageAdapter,
   WikiLinkReference,
   WikiLinkAdapter,
   FileReference,
+  ClientPoint,
   FileContext,
   FilePresentation,
   FileAdapter,
@@ -31,6 +35,7 @@ export type {
   PortableImage,
   ClipboardInput,
   ClipboardOutput,
+  ClipboardScope,
   ClipboardImage,
   ClipboardDiagram,
   PrintableDocument,
@@ -42,5 +47,3 @@ export type {
   ViewportOptions,
   ViewportSnapshot,
 } from './types'
-
-export type { EditorLabels } from './labels'

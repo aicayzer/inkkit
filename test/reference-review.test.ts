@@ -13,7 +13,7 @@ async function run(
   document.body.append(root)
   const editor = await InkKitEditor.mount(
     root,
-    { changed() {}, stateChanged() {}, copy() {}, openLink() {} },
+    { changed() {}, copy() {}, openLink() {} },
     { images },
   )
   const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
@@ -64,7 +64,7 @@ test('selection ending inside a required footnote retains its complete definitio
         ),
       ),
     )
-    const output = await editor.clipboardSnapshot(false)
+    const output = await editor.clipboardSnapshot('selection')
     expect(output.markdown).toContain('First paragraph.')
     expect(output.markdown).toContain('Second paragraph.')
   }))

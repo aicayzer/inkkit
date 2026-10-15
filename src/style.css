@@ -438,7 +438,7 @@
 }
 
 /* The selection plugin draws the selection over the text alone; the engine's own fills the margins too. */
-.inkkit-root .ProseMirror ::selection {
+.inkkit-root .ProseMirror.inkkit-painted-selection ::selection {
   background: transparent;
 }
 
@@ -502,7 +502,9 @@
   text-decoration: underline;
 }
 
-.meta .inkkit-root .ProseMirror a {
+/* Held Mod opens a link on click; an empty address opens nothing. */
+.inkkit-root.inkkit-link-modifier .ProseMirror a[href]:not([href='']),
+.inkkit-root.inkkit-link-modifier .inkkit-wiki-link {
   cursor: pointer;
 }
 

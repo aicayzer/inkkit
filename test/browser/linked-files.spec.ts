@@ -22,7 +22,7 @@ test('optional wiki/files preserve source, resolve offline kinds and route host 
   ).toHaveCount(1)
   expect((await observe(page)).snapshot!.text).toBe(linkedSource)
   const wiki = page.getByRole('link', { name: 'Travel plan', exact: true })
-  await wiki.click({ modifiers: ['Meta'] })
+  await wiki.click({ modifiers: ['ControlOrMeta'] })
   await wiki.focus()
   await page.keyboard.press('Enter')
   const photo = page
@@ -141,10 +141,7 @@ test('retry, cancelled and stale resolutions retain editable authored content @l
   await page.getByRole('button', { name: 'Retry', exact: true }).click()
   await expect(page.locator('.inkkit-file img')).toHaveCount(1)
   await operation(page, 'fileMode', { mode: 'hold' })
-  await operation(page, 'reload', {
-    sameGeneration: true,
-    text: '![[Late|120]]\n',
-  })
+  await operation(page, 'reload', { text: '![[Late|120]]\n' })
   await expect(page.locator('[data-inkkit-file-state="loading"]')).toHaveCount(
     1,
   )
@@ -270,7 +267,7 @@ test('every kind has safe copy/print output and stale exports cancel promptly @l
   expect(print.html).not.toMatch(/blob:|<audio|<video|<iframe|<object/)
   await operation(page, 'fileMode', { mode: 'hold' })
   await operation(page, 'startOutput', { kind: 'copy' })
-  await operation(page, 'reload', { sameGeneration: true })
+  await operation(page, 'reload')
   await expect(operation(page, 'finishOutput')).rejects.toThrow(
     /changed|stale/i,
   )

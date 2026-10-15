@@ -11,7 +11,6 @@ beforeEach(async () => {
   document.body.append(root)
   editor = await InkKitEditor.mount(root, {
     changed() {},
-    stateChanged() {},
     copy() {},
     openLink() {},
     error(error) {
