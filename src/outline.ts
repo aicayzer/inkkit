@@ -5,16 +5,8 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { clipboardText } from './clipboard'
 import { revealCalloutAncestors } from './callouts'
-import { InkKitError } from './types'
+import { InkKitError, type Heading } from './types'
 
-export interface Heading {
-  readonly id: string
-  readonly level: number
-  readonly text: string
-  readonly documentId: string
-  readonly generation: number
-  readonly revision: number
-}
 export interface OutlineContext {
   documentId: string
   generation: number

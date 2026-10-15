@@ -10,7 +10,7 @@ import type {
   WikiLinkReference,
 } from './types'
 import { coded } from './errors'
-import type { EditorLabels } from './labels'
+import type { EditorLabels } from './types'
 
 interface WikiRuntime {
   capture(): { context: DocumentContext; isCurrent(): boolean }

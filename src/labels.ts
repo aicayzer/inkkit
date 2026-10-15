@@ -1,42 +1,6 @@
 import type { Ctx } from '@milkdown/kit/ctx'
 import { $ctx } from '@milkdown/kit/utils'
-
-/** Built-in editor text. Hosts can override individual labels at mount time. */
-export interface EditorLabels {
-  formattedEditor: string
-  plainTextEditor: string
-  sourceEditor: string
-  placeholder: string
-  copyCode: string
-  expandCallout: string
-  collapseCallout: string
-  diagramRendering: string
-  /** Prefix shown before the renderer's diagnostic message. */
-  diagramUnavailable: string
-  /** Prefix followed by the authored footnote label. */
-  footnote: string
-  tableAddRow: string
-  tableAddColumn: string
-  tableDeleteRow: string
-  tableDeleteColumn: string
-  tableAlignLeft: string
-  tableAlignCenter: string
-  tableAlignRight: string
-  tableMoveColumn: string
-  tableMoveRow: string
-  fileLoading: string
-  fileMissing: string
-  fileError: string
-  fileRetry: string
-  fileOpen: string
-  filePreviewUnavailable: string
-  filePDFPreview: string
-  wikiMissing: string
-  /** Name of an author comment, which stays out of the readable text. */
-  comment: string
-  /** Name of a block of Markdown InkKit keeps as authored and does not render. */
-  preservedMarkdown: string
-}
+import type { EditorLabels } from './types'
 
 export const defaultLabels: Readonly<EditorLabels> = {
   formattedEditor: 'Formatted Markdown editor',

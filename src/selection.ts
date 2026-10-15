@@ -55,19 +55,29 @@ function refresh(): void {
 }
 
 // Paint only selected text, without WebKit filling the surrounding margins.
-export const selectionPlugin = $prose(
-  () =>
-    new Plugin({
-      key: new PluginKey('selection'),
-      view(view) {
-        paint(view)
-        return {
-          update: (view) => paint(view),
-          destroy: () => {
-            ranges.delete(view)
-            refresh()
-          },
-        }
-      },
-    }),
+// An engine without the Custom Highlight API, or one that cannot style its
+// highlights (Firefox before 149), keeps its own selection, so the editor
+// still mounts and the selection stays visible.
+const paintable = () =>
+  typeof Highlight === 'function' &&
+  'highlights' in CSS &&
+  CSS.supports(`selector(::highlight(${name}))`)
+
+export const selectionPlugin = $prose(() =>
+  paintable()
+    ? new Plugin({
+        key: new PluginKey('selection'),
+        props: { attributes: { class: 'inkkit-painted-selection' } },
+        view(view) {
+          paint(view)
+          return {
+            update: (view) => paint(view),
+            destroy: () => {
+              ranges.delete(view)
+              refresh()
+            },
+          }
+        },
+      })
+    : new Plugin({ key: new PluginKey('selection') }),
 )

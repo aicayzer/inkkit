@@ -200,3 +200,72 @@ export interface ViewportSnapshot {
   scrollTop: number
   scrollLeft: number
 }
+/** Built-in editor text. Hosts can override individual labels at mount time. */
+export interface EditorLabels {
+  formattedEditor: string
+  plainTextEditor: string
+  sourceEditor: string
+  placeholder: string
+  copyCode: string
+  expandCallout: string
+  collapseCallout: string
+  diagramRendering: string
+  /** Prefix shown before the renderer's diagnostic message. */
+  diagramUnavailable: string
+  /** Prefix followed by the authored footnote label. */
+  footnote: string
+  tableAddRow: string
+  tableAddColumn: string
+  tableDeleteRow: string
+  tableDeleteColumn: string
+  tableAlignLeft: string
+  tableAlignCenter: string
+  tableAlignRight: string
+  tableMoveColumn: string
+  tableMoveRow: string
+  fileLoading: string
+  fileMissing: string
+  fileError: string
+  fileRetry: string
+  fileOpen: string
+  filePreviewUnavailable: string
+  filePDFPreview: string
+  wikiMissing: string
+  /** Name of an author comment, which stays out of the readable text. */
+  comment: string
+  /** Name of a block of Markdown InkKit keeps as authored and does not render. */
+  preservedMarkdown: string
+}
+export interface Heading {
+  readonly id: string
+  readonly level: number
+  readonly text: string
+  readonly documentId: string
+  readonly generation: number
+  readonly revision: number
+}
+export type TableCommand =
+  | 'insert'
+  | 'addRowBefore'
+  | 'addRowAfter'
+  | 'addColumnBefore'
+  | 'addColumnAfter'
+  | 'deleteRow'
+  | 'deleteColumn'
+  | 'deleteTable'
+  | 'alignLeft'
+  | 'alignCenter'
+  | 'alignRight'
+  | 'moveRowUp'
+  | 'moveRowDown'
+  | 'moveColumnLeft'
+  | 'moveColumnRight'
+  | 'sortRows'
+  | 'exit'
+export interface TableOptions {
+  rows?: number
+  columns?: number
+  column?: number
+  order?: 'ascending' | 'descending'
+  comparison?: 'text' | 'number'
+}

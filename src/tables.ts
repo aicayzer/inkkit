@@ -1,4 +1,5 @@
-import { editorLabels, type EditorLabels } from './labels'
+import { editorLabels } from './labels'
+import type { EditorLabels, TableCommand, TableOptions } from './types'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
@@ -41,24 +42,6 @@ import {
   optionalRecord,
 } from './errors'
 
-export type TableCommand =
-  | 'insert'
-  | 'addRowBefore'
-  | 'addRowAfter'
-  | 'addColumnBefore'
-  | 'addColumnAfter'
-  | 'deleteRow'
-  | 'deleteColumn'
-  | 'deleteTable'
-  | 'alignLeft'
-  | 'alignCenter'
-  | 'alignRight'
-  | 'moveRowUp'
-  | 'moveRowDown'
-  | 'moveColumnLeft'
-  | 'moveColumnRight'
-  | 'sortRows'
-  | 'exit'
 export const tableCommands: readonly TableCommand[] = [
   'insert',
   'addRowBefore',
@@ -141,13 +124,6 @@ export function tableAvailability(ctx: Ctx): Record<TableCommand, boolean> {
   return available
 }
 
-export interface TableOptions {
-  rows?: number
-  columns?: number
-  column?: number
-  order?: 'ascending' | 'descending'
-  comparison?: 'text' | 'number'
-}
 const tableLabels: Record<string, keyof EditorLabels> = {
   add_row: 'tableAddRow',
   add_col: 'tableAddColumn',

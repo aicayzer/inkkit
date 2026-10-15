@@ -26,6 +26,7 @@ To place a new case: if two hosts would build it the same way and it needs no st
 Rules that follow from the boundary:
 
 - Keep the facade free of native storage, Marfa, app names and app UI. Hosts import only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. Internal classes and markup are not a styling API.
+- The package bundles every runtime dependency except Mermaid, so hosts run the tree InkKit tested; a dependency update is a lockfile change in a pull request ([development](docs/development.md#dependencies)).
 - Keep image and file references opaque. Never infer a storage path, fetch from the network or export a private display URL.
 - Everything runs offline from one bundled page. Prefer maintained libraries that bundle offline and do not rewrite source. Only `src/index.ts` registers Mermaid; the `core` entry must bundle without it.
 - A failed operation changes nothing and reports an `InkKitError` with a documented code. A failed snapshot is never an unchanged document.
