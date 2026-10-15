@@ -169,11 +169,13 @@ function wantedLinks(
     index = end
   }
   // Bare text: runs without whitespace and with the same formatting, where
-  // an address could be read or could end.
+  // an address could be read or could end. Inline code is written as it is,
+  // so it holds no addresses.
   const free = (index: number) => {
     const char = chars[index]
     return (
       char !== undefined &&
+      !char.marks.some((mark) => mark.type.spec.code) &&
       (released.has(index) ||
         (char.form !== 'angle' && !(char.link && !char.form)))
     )

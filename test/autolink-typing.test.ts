@@ -205,6 +205,37 @@ for (const typed of [
       expect(s.view.state.doc.textContent).toBe(typed)
     }))
 
+// Text in inline code is not read for addresses, whatever it holds.
+test('typing next to an untouched code span with a link in it leaves the span', () =>
+  session('Write `[text](https://example.com)`\n', async (s) => {
+    place(s.view, s.view.state.doc.content.size - 1)
+    type(s.view, '.')
+    await expectSaves(s, 'Write `[text](https://example.com)`.\n')
+  }))
+
+test('typing before and inside code spans that hold addresses leaves them as code', () =>
+  session('Go `https://example.com/a` and `www.example.com`\n', async (s) => {
+    place(s.view, at(s.view, 'Go ', false))
+    type(s.view, 'x')
+    place(s.view, at(s.view, 'example.com/'))
+    type(s.view, 's')
+    place(s.view, at(s.view, 'www.example'))
+    type(s.view, 'y')
+    await expectSaves(
+      s,
+      'xGo `https://example.com/sa` and `www.exampley.com`\n',
+    )
+    expect(s.view.dom.querySelector('a')).toBeNull()
+  }))
+
+test('typing an address into inline code does not link it', () =>
+  session('Run `x ` now\n', async (s) => {
+    place(s.view, at(s.view, 'x'))
+    type(s.view, ' https://example.com/a')
+    await expectSaves(s, 'Run `x https://example.com/a ` now\n')
+    expect(s.view.dom.querySelector('a')).toBeNull()
+  }))
+
 // 3. Line breaks keep their kind.
 test('undo next to a soft line break keeps it soft', () =>
   session('Go https://example.com\nline two\n', async (s) => {

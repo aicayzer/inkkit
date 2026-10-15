@@ -110,6 +110,22 @@ const typing: [string, string, string, boolean, string, string][] = [
     'Write here \\[a]\\(http://x.com\n',
   ],
   [
+    'next to a code span that holds a written link',
+    'Write `[text](https://example.com)`\n',
+    'https://example.com)',
+    true,
+    '.',
+    'Write `[text](https://example.com)`.\n',
+  ],
+  [
+    'a URL into inline code',
+    'Run `xy` now\n',
+    'x',
+    true,
+    'https://e.com/a',
+    'Run `xhttps://e.com/ay` now\n',
+  ],
+  [
     'an email address into plain text',
     'Write here\n',
     'here',
