@@ -297,9 +297,19 @@ test('highlight uses the host keymap and TXT remains literal', async () => {
   await withFacade((editor, ctx) => {
     editor.loadDocument({ ...input, text: 'Selected words\n' })
     editor.find('Selected words')
-    expect(editor.keyDown('h', 'KeyH', true, false, false, true, 1)).toBe(false)
+    expect(
+      editor.keyDown(
+        { key: 'h', code: 'KeyH', metaKey: true, shiftKey: true },
+        1,
+      ),
+    ).toBe(false)
     editor.setKeymap({ highlight: ['Mod-Shift-h'] })
-    expect(editor.keyDown('h', 'KeyH', true, false, false, true, 1)).toBe(true)
+    expect(
+      editor.keyDown(
+        { key: 'h', code: 'KeyH', metaKey: true, shiftKey: true },
+        1,
+      ),
+    ).toBe(true)
     expect(editor.snapshot().text).toBe('==Selected words==\n')
     editor.loadDocument({
       ...input,

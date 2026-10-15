@@ -58,6 +58,7 @@ import {
 import {
   NodeRange,
   Fragment,
+  Mark as ProseMark,
   Slice,
   type MarkType,
   type Node as ProseNode,
@@ -92,7 +93,8 @@ import {
 } from '@milkdown/kit/utils'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
 import { labelsCtx, defaultLabels } from './labels'
-import { createDialect, stringifyOptions } from './dialect'
+import { createDialect, serialize, stringifyOptions } from './dialect'
+import { isSafeLinkTarget } from './link-safety'
 import { Preservation } from './preserve'
 import {
   sourceAttribute,
@@ -131,6 +133,7 @@ import {
 } from './tables'
 import {
   InkKitError,
+  type ClientPoint,
   type DocumentInput,
   type DocumentSnapshot,
   type DocumentContext,
@@ -245,46 +248,13 @@ export interface CaretState {
   quoted: boolean
 }
 
-export type FormatCommand =
-  | 'heading'
-  | 'paragraph'
-  | 'bold'
-  | 'italic'
-  | 'strikethrough'
-  | 'highlight'
-  | 'code'
-  | 'codeBlock'
-  | 'quote'
-  | 'bulletList'
-  | 'orderedList'
-  | 'taskList'
-  | 'link'
-
-/** Host bindings by documented formatting, history or table shortcut name. */
-export type Keymap = Record<string, string[]>
-
-const shortcutCommands: Record<string, [FormatCommand, number?]> = {
-  heading1: ['heading', 1],
-  heading2: ['heading', 2],
-  heading3: ['heading', 3],
-  heading4: ['heading', 4],
-  heading5: ['heading', 5],
-  heading6: ['heading', 6],
-  paragraph: ['paragraph'],
-  bold: ['bold'],
-  italic: ['italic'],
-  strikethrough: ['strikethrough'],
-  highlight: ['highlight'],
-  code: ['code'],
-  codeBlock: ['codeBlock'],
-  quote: ['quote'],
-  bulletList: ['bulletList'],
-  orderedList: ['orderedList'],
-  taskList: ['taskList'],
-}
-
-const formatCommands: readonly FormatCommand[] = [
-  'heading',
+const formatCommands = [
+  'heading1',
+  'heading2',
+  'heading3',
+  'heading4',
+  'heading5',
+  'heading6',
   'paragraph',
   'bold',
   'italic',
@@ -297,32 +267,121 @@ const formatCommands: readonly FormatCommand[] = [
   'orderedList',
   'taskList',
   'link',
-]
+] as const
 
-/** Checks a format call: the heading level, a link's destination or a code block's language, and no
- *  argument for any other command. */
-function formatArgument(command: unknown, arg: unknown): void {
-  expectOneOf(command, formatCommands, 'command')
-  if (isOmitted(arg)) return
-  if (command === 'heading') expectInteger(arg, 'level', { min: 1, max: 6 })
-  else if (command === 'link') expectString(arg, 'destination')
-  else if (command === 'codeBlock') expectString(arg, 'language')
-  else throw invalidArgument(`format('${command}') takes no argument`)
+export type FormatCommand = (typeof formatCommands)[number]
+
+/** `destination` goes only with `link`, and `language` only with `codeBlock`. */
+export interface FormatOptions {
+  destination?: string
+  language?: string
 }
 
-const shortcutNames = [
-  ...Object.keys(shortcutCommands),
+/** Checks a format call's options against its command. */
+function formatOptions(
+  command: unknown,
+  options: unknown,
+): FormatOptions | undefined {
+  expectOneOf(command, formatCommands, 'command')
+  const allowed =
+    command === 'link'
+      ? ['destination']
+      : command === 'codeBlock'
+        ? ['language']
+        : []
+  const record = optionalRecord(options, 'options', allowed)
+  if (!record) return undefined
+  return {
+    destination: optionalString(record.destination, 'options.destination'),
+    language: optionalString(record.language, 'options.language'),
+  }
+}
+
+function headingLevel(command: FormatCommand): number | undefined {
+  const match = /^heading([1-6])$/.exec(command)
+  return match ? Number(match[1]) : undefined
+}
+
+/** A key press for `keyDown`. An omitted modifier is not held. */
+export interface KeyInput {
+  key: string
+  code?: string
+  metaKey?: boolean
+  ctrlKey?: boolean
+  altKey?: boolean
+  shiftKey?: boolean
+}
+
+const keyModifiers = ['metaKey', 'ctrlKey', 'altKey', 'shiftKey'] as const
+
+function keyInput(value: unknown): Required<KeyInput> {
+  const record = expectRecord(value, 'input', ['key', 'code', ...keyModifiers])
+  const input = {
+    key: expectString(record.key, 'input.key'),
+    code: optionalString(record.code, 'input.code') ?? '',
+  } as Required<KeyInput>
+  for (const name of keyModifiers)
+    input[name] = optionalBoolean(record[name], `input.${name}`) ?? false
+  return input
+}
+
+/** An image to insert by the reference its adapter already stored it under. */
+export interface ImageInsertion {
+  reference: string
+  alt: string
+  title?: string
+}
+
+function imageInsertions(value: unknown): ImageInsertion[] {
+  return expectArray(value, 'images').map((image, index) => {
+    const name = `images[${index}]`
+    const record = expectRecord(image, name, ['reference', 'alt', 'title'])
+    return {
+      reference: expectString(record.reference, `${name}.reference`),
+      alt: expectString(record.alt, `${name}.alt`),
+      title: optionalString(record.title, `${name}.title`),
+    }
+  })
+}
+
+function clientPoint(value: unknown, name: string): ClientPoint {
+  const point = expectRecord(value, name, ['clientX', 'clientY'])
+  return {
+    clientX: expectNumber(point.clientX, `${name}.clientX`),
+    clientY: expectNumber(point.clientY, `${name}.clientY`),
+  }
+}
+
+/** A name in `Keymap`: every format command except `link`, history, and every table command. */
+export type ShortcutName =
+  | Exclude<FormatCommand, 'link'>
+  | 'undo'
+  | 'redo'
+  | `table${Capitalize<TableCommand>}`
+
+/** Host bindings in ProseMirror key notation, by shortcut name. */
+export type Keymap = Partial<Record<ShortcutName, readonly string[]>>
+
+const formatShortcuts = formatCommands.filter(
+  (command): command is Exclude<FormatCommand, 'link'> => command !== 'link',
+)
+
+function tableShortcut(command: TableCommand): ShortcutName {
+  return `table${command[0]!.toUpperCase()}${command.slice(1)}` as ShortcutName
+}
+
+/** Every `ShortcutName`. */
+export const shortcutNames: readonly ShortcutName[] = [
+  ...formatShortcuts,
   'undo',
   'redo',
-  ...tableCommands.map(
-    (command) => 'table' + command[0]!.toUpperCase() + command.slice(1),
-  ),
+  ...tableCommands.map(tableShortcut),
 ]
 
 /** Checks a keymap and drops omitted entries, so a `null` binding keeps its default. */
 function keymapBindings(value: unknown, name: string): Keymap {
   const record = expectRecord(value, name, shortcutNames)
-  const keymap: Keymap = {}
+  const keymap: Record<string, readonly string[]> = {}
   for (const [shortcut, keys] of Object.entries(record)) {
     if (isOmitted(keys)) continue
     keymap[shortcut] = expectArray(keys, `${name}.${shortcut}`).map(
@@ -648,6 +707,32 @@ function textBounds(state: EditorState): {
   if (selection instanceof AllSelection)
     return TextSelection.between(doc.resolve(0), doc.resolve(doc.content.size))
   return selection
+}
+
+/** The extent of `mark` that covers `from` to `to` inside one textblock: the adjacent inline nodes
+ *  that carry it. Undefined when the range leaves it. */
+function markRun(
+  doc: ProseNode,
+  mark: ProseMark,
+  from: number,
+  to: number,
+): { from: number; to: number } | undefined {
+  const $from = doc.resolve(from)
+  if (!$from.parent.inlineContent || to > $from.end()) return undefined
+  const start = $from.start()
+  let run: { from: number; to: number } | undefined
+  let found: { from: number; to: number } | undefined
+  $from.parent.forEach((child, offset) => {
+    const childFrom = start + offset
+    if (!mark.isInSet(child.marks)) {
+      run = undefined
+      return
+    }
+    if (run) run.to = childFrom + child.nodeSize
+    else run = { from: childFrom, to: childFrom + child.nodeSize }
+    if (run.from <= from && to <= run.to) found = run
+  })
+  return found
 }
 
 function caretState(state: EditorState): CaretState {
@@ -1578,9 +1663,15 @@ export class InkKitEditor {
     const manager = this.editor.ctx.get(commandsCtx)
     const check = <T>(key: CmdKey<T>, payload?: T): boolean =>
       formatted && manager.get(key)(payload)(state)
+    const heading = (level: number) =>
+      check(wrapInHeadingCommand.key, level) || check(turnIntoTextCommand.key)
     const format: Record<FormatCommand, boolean> = {
-      heading:
-        check(wrapInHeadingCommand.key, 1) || check(turnIntoTextCommand.key),
+      heading1: heading(1),
+      heading2: heading(2),
+      heading3: heading(3),
+      heading4: heading(4),
+      heading5: heading(5),
+      heading6: heading(6),
       paragraph: check(turnIntoTextCommand.key),
       bold: check(toggleStrongCommand.key),
       italic: check(toggleEmphasisCommand.key),
@@ -1637,7 +1728,7 @@ export class InkKitEditor {
         paste: mutable,
         replace: mutable,
         replaceSource: mutable,
-        insertImages: formatted && !!this.options.images,
+        insertImages: formatted && this.canInsertImages,
         insertPaths: mutable,
         insertFootnote: formatted,
         editReferenceDefinition:
@@ -1646,6 +1737,11 @@ export class InkKitEditor {
         table: tables,
       },
     }
+  }
+
+  /** An image adapter shows and exports an inserted reference, and so does a file adapter. */
+  private get canInsertImages(): boolean {
+    return !!this.options.images || !!this.options.files
   }
 
   private canQuote(state: EditorState): boolean {
@@ -2368,10 +2464,14 @@ export class InkKitEditor {
     }
   }
 
-  table(command: TableCommand, options?: TableOptions): boolean {
+  table(
+    command: TableCommand,
+    options?: TableOptions,
+    expectedGeneration?: number,
+  ): boolean {
     this.assertAlive()
     options = tableOptions(command, options)
-    this.assertMutation()
+    this.assertMutation(expectedGeneration)
     if (this.literalSurface) return false
     return tableCommand(this.editor.ctx, command, options)
   }
@@ -3690,33 +3790,20 @@ export class InkKitEditor {
     return true
   }
 
-  /** Let existing keymaps handle buffered editing commands before native fallback. */
-  keyDown(
-    key: string,
-    code: string,
-    metaKey: boolean,
-    ctrlKey: boolean,
-    altKey: boolean,
-    shiftKey: boolean,
-    generation: number,
-  ): boolean {
+  /**
+   * A key the host's native input received, run through InkKit's key handling. Returns whether
+   * InkKit handled it; when it did, the host must not also handle it natively.
+   */
+  keyDown(input: KeyInput, expectedGeneration: number): boolean {
     this.assertAlive()
-    expectString(key, 'key')
-    expectString(code, 'code')
-    expectBoolean(metaKey, 'metaKey')
-    expectBoolean(ctrlKey, 'ctrlKey')
-    expectBoolean(altKey, 'altKey')
-    expectBoolean(shiftKey, 'shiftKey')
-    expectGeneration(generation)
-    if (
-      (this.literalSurface
-        ? this.plainComposing
-        : this.editor.ctx.get(editorViewCtx).composing) &&
-      generation === this.generation
+    const { key, code, metaKey, ctrlKey, altKey, shiftKey } = keyInput(input)
+    const generation = expectGeneration(
+      expectedGeneration,
+      'expectedGeneration',
     )
-      return false
+    if (this.composing && generation === this.generation) return false
     this.assertCurrent(generation)
-    const configuredEvent = new KeyboardEvent('keydown', {
+    const event = new KeyboardEvent('keydown', {
       key,
       code,
       metaKey,
@@ -3742,16 +3829,11 @@ export class InkKitEditor {
     if (!this.writable) {
       if (['Enter', 'Tab', 'Backspace', 'Delete'].includes(key))
         this.assertMutation(generation)
-      this.readOnlyKeys(this.editor.ctx.get(editorViewCtx), configuredEvent)
+      this.readOnlyKeys(this.editor.ctx.get(editorViewCtx), event)
     }
     if (this.literalSurface) {
-      if (this.literalKeys(this.editor.ctx.get(editorViewCtx), configuredEvent))
+      if (this.literalKeys(this.editor.ctx.get(editorViewCtx), event))
         return true
-      if (
-        !this.writable &&
-        ['Enter', 'Tab', 'Backspace', 'Delete'].includes(key)
-      )
-        throw new InkKitError('read-only', 'The editor is read-only')
       if (metaKey || ctrlKey || altKey) return false
       if (key === 'Enter' || key === 'Tab') {
         this.replaceLiteralSelection(key === 'Enter' ? '\n' : '\t', false)
@@ -3779,17 +3861,6 @@ export class InkKitEditor {
       return false
     }
     const view = this.editor.ctx.get(editorViewCtx)
-    if (view.composing) return false
-    const event = new KeyboardEvent('keydown', {
-      key,
-      code,
-      metaKey,
-      ctrlKey,
-      altKey,
-      shiftKey,
-      bubbles: true,
-      cancelable: true,
-    })
     return Boolean(
       view.someProp('handleKeyDown', (handler) => handler(view, event)),
     )
@@ -3808,8 +3879,9 @@ export class InkKitEditor {
     this.releaseFocus()
   }
 
-  /** Binds keys, in ProseMirror's names, to the formatting each shortcut runs. Walked in the table's
-   *  order, so a key given to two shortcuts lands the same way every time. */
+  /** Replaces every binding. Keys are in ProseMirror's notation. A key given to two shortcuts goes
+   *  to the later one, in the order history, formatting, tables, so it lands the same way every
+   *  time. */
   setKeymap(keymap: Keymap): void {
     this.assertAlive()
     keymap = keymapBindings(keymap, 'keymap')
@@ -3834,19 +3906,18 @@ export class InkKitEditor {
       }
     }
     Object.assign(bindings, historyBindings)
-    for (const [name, command] of Object.entries(shortcutCommands)) {
+    for (const name of formatShortcuts) {
       for (const key of keymap[name] ?? []) {
         bindings[key] = () => {
-          if (!this.ready || !this.commandState().commands.format[command[0]])
+          if (!this.ready || !this.commandState().commands.format[name])
             return true
-          this.forPerson(() => this.format(...command), undefined)
+          this.forPerson(() => this.format(name), false)
           return true
         }
       }
     }
     for (const command of tableCommands) {
-      const name = 'table' + command[0]!.toUpperCase() + command.slice(1)
-      for (const key of this.configuredKeys[name] ?? [])
+      for (const key of this.configuredKeys[tableShortcut(command)] ?? [])
         bindings[key] = () => {
           if (!this.ready || !this.commandState().commands.table[command])
             return false
@@ -3869,79 +3940,64 @@ export class InkKitEditor {
 
   /** Dropped files land as one paragraph per path at the drop point: in place of an empty block, after
    *  the top-level block otherwise, so a list or quote is not opened up by them. */
-  insertPaths(paths: string[], x: number, y: number): void {
+  insertPaths(
+    paths: string[],
+    at: ClientPoint,
+    expectedGeneration?: number,
+  ): boolean {
     this.assertAlive()
     expectArray(paths, 'paths').forEach((path, index) =>
       expectString(path, `paths[${index}]`),
     )
-    expectNumber(x, 'x')
-    expectNumber(y, 'y')
-    this.assertMutation()
-    if (paths.length === 0) return
+    const point = clientPoint(at, 'at')
+    this.assertMutation(expectedGeneration)
+    if (paths.length === 0) return false
     if (this.literalSurface) {
       this.pasteAsPlainText(paths.join('\n\n'))
-      return
+      return true
     }
     const { schema } = this.editor.ctx.get(editorViewCtx).state
     this.insertBlocks(
       paths.map((path) =>
         schema.nodes.paragraph!.create(null, schema.text(path)),
       ),
-      x,
-      y,
+      point,
     )
+    return true
   }
 
   insertImages(
-    images: { path: string; alt: string; title?: string }[],
-    x?: number,
-    y?: number,
-  ): void {
+    images: ImageInsertion[],
+    at?: ClientPoint,
+    expectedGeneration?: number,
+  ): boolean {
     this.assertAlive()
-    images = expectArray(images, 'images').map((image, index) => {
-      const name = `images[${index}]`
-      const record = expectRecord(image, name)
-      return {
-        path: expectString(record.path, `${name}.path`),
-        alt: expectString(record.alt, `${name}.alt`),
-        title: optionalString(record.title, `${name}.title`),
-      }
-    })
-    if (isOmitted(x) !== isOmitted(y))
-      throw invalidArgument('x and y must be given together')
-    if (!isOmitted(x)) {
-      expectNumber(x, 'x')
-      expectNumber(y, 'y')
-    }
-    this.assertMutation()
-    if (!images.length) return
-    if (!this.options.images || this.literalSurface)
-      throw new InkKitError(
-        'image-unavailable',
-        'This editor has no image adapter',
-      )
+    images = imageInsertions(images)
+    const point = isOmitted(at) ? undefined : clientPoint(at, 'at')
+    this.assertMutation(expectedGeneration)
+    if (!images.length || !this.canInsertImages || this.literalSurface)
+      return false
     const view = this.editor.ctx.get(editorViewCtx)
     const { schema } = view.state
-    const placement =
-      x != null && y != null ? undefined : imagePlacement(view.state)
+    const placement = point ? undefined : imagePlacement(view.state)
     if (placement?.kind === 'inline') {
       this.insertInline(images)
-      return
+      return true
     }
     // One paragraph per image: each is read back as a standalone image block where one fits.
     const blocks = images.map((image) =>
       schema.nodes.paragraph!.create(
         null,
         schema.nodes.image!.create({
-          src: image.path,
+          src: image.reference,
           alt: image.alt,
           title: image.title ?? '',
         }),
       ),
     )
-    if (x != null && y != null) {
-      this.insertBlocks(blocks, x, y)
-      return
+    if (point) {
+      this.insertBlocks(blocks, point)
+      return true
     }
     const tr =
       placement?.kind === 'after'
@@ -3958,19 +4014,18 @@ export class InkKitEditor {
     })
     if (after != null) tr.setSelection(TextSelection.create(tr.doc, after))
     view.dispatch(tr.scrollIntoView())
+    return true
   }
 
   // A table cell holds one line, so the images sit side by side where the selection was, with no
   // space between them: a space beside an image in a cell is saved as `&#x20;`.
-  private insertInline(
-    images: { path: string; alt: string; title?: string }[],
-  ): void {
+  private insertInline(images: ImageInsertion[]): void {
     const view = this.editor.ctx.get(editorViewCtx)
     const { state } = view
     const oneLine = (text: string) => text.replace(/\s*[\r\n]+\s*/g, ' ')
     const nodes = images.map((image) =>
       state.schema.nodes.image!.create({
-        src: image.path,
+        src: image.reference,
         alt: oneLine(image.alt),
         title: oneLine(image.title ?? ''),
       }),
@@ -3981,9 +4036,9 @@ export class InkKitEditor {
     view.dispatch(tr.scrollIntoView())
   }
 
-  private insertBlocks(blocks: ProseNode[], x: number, y: number): void {
+  private insertBlocks(blocks: ProseNode[], point: ClientPoint): void {
     const view = this.editor.ctx.get(editorViewCtx)
-    const { from: at, to } = blockDropRange(view, x, y)
+    const { from: at, to } = blockDropRange(view, point.clientX, point.clientY)
     const tr = view.state.tr.replaceWith(at, to, blocks)
     const end = at + blocks.reduce((size, node) => size + node.nodeSize, 0) - 1
     view.dispatch(
@@ -4118,22 +4173,30 @@ export class InkKitEditor {
     view.dispatch(view.state.tr.lift(range, target))
   }
 
-  format(command: FormatCommand, arg?: string | number): void {
+  /** Returns whether the document or the marks the next typed text takes changed. */
+  format(
+    command: FormatCommand,
+    options?: FormatOptions,
+    expectedGeneration?: number,
+  ): boolean {
     this.assertAlive()
-    formatArgument(command, arg)
-    this.assertMutation()
-    if (this.literalSurface) return
+    const checked = formatOptions(command, options)
+    if (checked?.destination !== undefined)
+      this.checkDestination(checked.destination, 'options.destination')
+    this.assertMutation(expectedGeneration)
+    if (this.literalSurface) return false
+    const view = this.editor.ctx.get(editorViewCtx)
+    const before = view.state
     const run = (cmd: Parameters<typeof callCommand>[0], payload?: unknown) =>
       this.editor.action(callCommand(cmd, payload))
-    const state = caretState(this.editor.ctx.get(editorViewCtx).state)
+    const state = caretState(before)
+    const level = headingLevel(command)
+    if (level != null) {
+      if (state.block.type === 'heading' && state.block.level === level)
+        run(turnIntoTextCommand.key)
+      else run(wrapInHeadingCommand.key, level)
+    }
     switch (command) {
-      case 'heading': {
-        const level = Number(arg ?? 1)
-        if (state.block.type === 'heading' && state.block.level === level)
-          run(turnIntoTextCommand.key)
-        else run(wrapInHeadingCommand.key, level)
-        break
-      }
       case 'paragraph':
         run(turnIntoTextCommand.key)
         break
@@ -4154,7 +4217,7 @@ export class InkKitEditor {
         break
       case 'codeBlock':
         if (state.block.type === 'codeBlock') run(turnIntoTextCommand.key)
-        else run(createCodeBlockCommand.key, typeof arg === 'string' ? arg : '')
+        else run(createCodeBlockCommand.key, checked?.language ?? '')
         break
       case 'quote':
         if (state.quoted) this.unquote()
@@ -4167,34 +4230,125 @@ export class InkKitEditor {
       case 'taskList':
         toggleTaskList(this.editor.ctx)
         break
-      case 'link': {
-        const view = this.editor.ctx.get(editorViewCtx)
-        const reference =
-          view.state.selection.$from
-            .marks()
-            .find(
-              (mark) => mark.type.name === 'link' && mark.attrs.identifier,
-            ) ??
-          view.state.doc
-            .nodeAt(view.state.selection.from)
-            ?.marks.find(
-              (mark) => mark.type.name === 'link' && mark.attrs.identifier,
-            )
-        if (reference && typeof arg === 'string') {
-          this.editReferenceDefinition(String(reference.attrs.identifier), arg)
-          break
-        }
-        const payload = typeof arg === 'string' ? { href: arg } : {}
-        const toggle = () => run(toggleLinkCommand.key, payload)
-        if (
-          !state.marks.includes('link') ||
-          !this.withMarkRunSelected(linkSchema.type(this.editor.ctx), toggle)
-        )
-          toggle()
+      case 'link':
+        this.link(checked?.destination)
         break
-      }
     }
     this.focus()
+    const after = view.state
+    const marks = (state: EditorState) =>
+      state.storedMarks ?? state.selection.$from.marks()
+    return (
+      !after.doc.eq(before.doc) ||
+      !ProseMark.sameSet(marks(after), marks(before))
+    )
+  }
+
+  /**
+   * Refuses a link destination that is empty, that opens anything but a web, mail or phone address,
+   * or that the Markdown writer cannot save so that it reads back the same.
+   */
+  private checkDestination(destination: string, name: string): void {
+    if (destination.trim() === '')
+      throw invalidArgument(`${name} must not be empty`)
+    if (!isSafeLinkTarget(destination))
+      throw invalidArgument(
+        `${name} must be relative, or an http, https, mailto or tel address, with no control characters`,
+      )
+    const { schema } = this.editor.ctx.get(editorViewCtx).state
+    const written = serialize(
+      this.editor.ctx,
+      schema.node('doc', null, [
+        schema.node('paragraph', null, [
+          schema.text('x', [schema.marks.link!.create({ href: destination })]),
+        ]),
+      ]),
+    )
+    let read: unknown
+    this.editor.ctx
+      .get(parserCtx)(written)
+      .descendants((node) => {
+        read ??= node.marks.find((mark) => mark.type.name === 'link')?.attrs
+          .href
+      })
+    if (read !== destination)
+      throw invalidArgument(`${name} cannot be written in Markdown as given`)
+  }
+
+  /**
+   * With a destination, sets the link: on the whole link that holds the caret or the selection,
+   * keeping its title, or else on the selection. A reference link's shared definition is edited
+   * instead. Without one, removes that whole link, or every link in the selection. Marks waiting
+   * for the next typed text stay waiting.
+   */
+  private link(destination: string | undefined): void {
+    const view = this.editor.ctx.get(editorViewCtx)
+    const { state } = view
+    const type = linkSchema.type(this.editor.ctx)
+    const { selection, storedMarks } = state
+    const { from, to, empty } = selection
+    const stored = empty ? type.isInSet(storedMarks ?? []) : undefined
+    // A stored link that the caret already sits in is that link, kept when another mark was toggled.
+    if (stored && !stored.isInSet(selection.$from.marks())) {
+      const tr = state.tr.removeStoredMark(type)
+      if (destination !== undefined)
+        tr.addStoredMark(type.create({ href: destination }))
+      view.dispatch(tr)
+      return
+    }
+    const mark = type.isInSet(
+      empty
+        ? [...selection.$from.marks(), ...(state.doc.nodeAt(from)?.marks ?? [])]
+        : (state.doc.nodeAt(from)?.marks ?? []),
+    )
+    const extent = mark && markRun(state.doc, mark, from, to)
+    // Steps clear the stored marks; the ones other than the old link are put back.
+    const keepStored = (tr: Transaction, link?: ProseMark) => {
+      if (!storedMarks) return tr
+      const kept = type.removeFromSet(storedMarks)
+      return tr.setStoredMarks(
+        link && type.isInSet(storedMarks) ? link.addToSet(kept) : kept,
+      )
+    }
+    if (destination === undefined) {
+      if (extent)
+        view.dispatch(
+          keepStored(state.tr.removeMark(extent.from, extent.to, type)),
+        )
+      else if (!empty && state.doc.rangeHasMark(from, to, type))
+        view.dispatch(state.tr.removeMark(from, to, type))
+      return
+    }
+    if (extent && mark!.attrs.identifier != null) {
+      const identifier = String(mark!.attrs.identifier)
+      const definition = referenceDefinitions(state.doc).get(
+        normaliseLabel(identifier),
+      )
+      if (definition?.node.attrs.url === destination) return
+      this.editReferenceDefinition(identifier, destination)
+      if (storedMarks) view.dispatch(view.state.tr.setStoredMarks(storedMarks))
+      return
+    }
+    if (extent) {
+      // An autolink rewritten with its own address would lose its form for nothing.
+      if (mark!.attrs.href === destination) return
+      const link = type.create({ href: destination, title: mark!.attrs.title })
+      view.dispatch(
+        keepStored(
+          state.tr
+            .removeMark(extent.from, extent.to, type)
+            .addMark(extent.from, extent.to, link),
+          link,
+        ),
+      )
+      return
+    }
+    const link = type.create({ href: destination })
+    view.dispatch(
+      empty
+        ? state.tr.addStoredMark(link)
+        : state.tr.removeMark(from, to, type).addMark(from, to, link),
+    )
   }
 
   editReferenceDefinition(
@@ -4205,7 +4359,10 @@ export class InkKitEditor {
   ): boolean {
     this.assertAlive()
     expectString(label, 'label')
-    expectString(destination, 'destination')
+    this.checkDestination(
+      expectString(destination, 'destination'),
+      'destination',
+    )
     optionalString(title, 'title')
     this.assertMutation(expectedGeneration)
     if (this.literalSurface) return false

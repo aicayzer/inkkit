@@ -169,7 +169,7 @@ for (const [name, source, expected] of [
       view.dispatch(
         view.state.tr.setSelection(TextSelection.create(view.state.doc, at)),
       )
-      editor.format('heading', 2)
+      editor.format('heading2')
       expect(errors).toEqual([])
       expect(reopens(editor, ctx)).toBe(expected)
     }))

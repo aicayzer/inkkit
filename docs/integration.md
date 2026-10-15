@@ -122,7 +122,7 @@ InkKit owns attachment preview sizing, footer wrapping, control line height and 
 
 Mount-time `labels` override the editor's built-in accessible names and visible text. Supply plain text from the host's localisation catalogue; supplied labels are not interpreted as markup. Host toolbar and native menu labels are outside this option.
 
-Pass `keymap` at mount or call `setKeymap()` with bindings in ProseMirror key notation such as `Mod-b`. Formatting bindings are supplied by the host. Undo/redo keep their default history bindings unless overridden; an explicit empty array disables that command's configurable defaults. Formatting and table commands apply only where their command state permits; history bindings apply across formatted, source and TXT surfaces.
+Pass `keymap` at mount or call `setKeymap()` with bindings in ProseMirror key notation such as `Mod-b`. The names are typed as `ShortcutName`, so a misspelt name fails to compile, and an unknown name throws `invalid-argument` at run time. Each call replaces the whole map. Formatting bindings are supplied by the host, by the same names as the `format` commands. Undo/redo keep their default history bindings unless overridden; an explicit empty array disables that command's configurable defaults. Formatting and table commands apply only where their command state permits; history bindings apply across formatted, source and TXT surfaces.
 
 ## Native boundaries and disposal
 

@@ -149,7 +149,7 @@ for (const [key, saved] of [
       const { snapshotId, text } = editor.textSnapshot()
       expect(text).toBe('a  b')
       editor.selectTextRange({ snapshotId, from: 2, to: 2 })
-      expect(editor.keyDown(key, key, false, false, false, false, 1)).toBe(true)
+      expect(editor.keyDown({ key, code: key }, 1)).toBe(true)
       expect(errors).toEqual([])
       expect(editor.snapshot().text).toBe(saved)
       const marks: string[][] = []

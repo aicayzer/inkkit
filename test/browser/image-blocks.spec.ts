@@ -189,8 +189,8 @@ test('inserting images leaves the caret below the last one, by API and at a drop
   await caretIn(page, 'Start', 'end')
   await operation(page, 'insertImages', {
     images: [
-      { path: 'images/one.png', alt: 'One' },
-      { path: 'images/two.png', alt: 'Two' },
+      { reference: 'images/one.png', alt: 'One' },
+      { reference: 'images/two.png', alt: 'Two' },
     ],
   })
   await page.keyboard.type('Typed')
@@ -200,9 +200,8 @@ test('inserting images leaves the caret below the last one, by API and at a drop
   await scrollSettled(page)
   const last = (await page.locator('.inkkit-image-block').last().boundingBox())!
   await operation(page, 'insertImages', {
-    images: [{ path: 'images/drop.png', alt: 'Drop' }],
-    x: last.x + 10,
-    y: last.y + last.height / 2,
+    images: [{ reference: 'images/drop.png', alt: 'Drop' }],
+    at: { clientX: last.x + 10, clientY: last.y + last.height / 2 },
   })
   await page.keyboard.type('End')
   expect(await text(page)).toBe(
@@ -218,8 +217,8 @@ test('inserting images with the caret in a table cell puts them inline in it', a
   await caretIn(page, 'two', 'end')
   await operation(page, 'insertImages', {
     images: [
-      { path: 'images/one.png', alt: 'One' },
-      { path: 'images/two.png', alt: 'Two' },
+      { reference: 'images/one.png', alt: 'One' },
+      { reference: 'images/two.png', alt: 'Two' },
     ],
   })
   await page.keyboard.type('!')
@@ -245,7 +244,7 @@ test('inserting images with the caret in a code block places them after it', asy
     .poll(async () => (await observe(page)).commandState!.caret.block.type)
     .toBe('codeBlock')
   await operation(page, 'insertImages', {
-    images: [{ path: 'images/one.png', alt: 'One' }],
+    images: [{ reference: 'images/one.png', alt: 'One' }],
   })
   expect(await text(page)).toBe(
     '```\ncode\n```\n\n![One](images/one.png)\n\n![Fixture](images/native.png)\n',
