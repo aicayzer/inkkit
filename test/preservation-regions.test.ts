@@ -164,8 +164,8 @@ test(
   240_000,
 )
 
-// These seeds type Markdown characters into a literal paragraph, in a note
-// that ends with an empty paragraph, and then split and join blocks after it.
+// These seeds type Markdown characters into a paragraph kept as literal
+// Markdown, which was refused, and keep editing the note after it (#260).
 test('every edit of seeds that type into a literal paragraph saves', () =>
   withEditor('x\n', (editor) => {
     const ctx = editor.ctx

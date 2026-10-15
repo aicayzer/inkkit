@@ -975,6 +975,90 @@ function rewrittenAddress(
 // Ordered lists already given their new start, which are not renumbered again.
 const numbered = new WeakSet<SourceNode>()
 
+// Canonical source nodes that read back as literal Markdown. The editor holds
+// a literal block's source as its text, so an edit to it is written as it is;
+// retaining it as Markdown would escape what was typed.
+const literals = new WeakSet<SourceNode>()
+
+// The canonical Markdown of each loaded block the editor holds as literal
+// Markdown, by its source node. It differs from the source where the editor
+// does not keep authored spelling, such as quote markers inside a comment.
+const literalForms = new WeakMap<SourceNode, string>()
+
+// The authored source of a literal block with the edit that turned its
+// canonical Markdown `before` into `after`. The canonical Markdown has a line
+// for each authored line, so a line the edit left alone keeps its authored
+// spelling, and so do the quote markers or indentation before an edited one.
+// Where the edit adds or removes lines, those it reached are written as
+// `after` has them.
+function retainLiteral(
+  raw: string,
+  before: string | undefined,
+  after: string,
+): string {
+  const authored = raw.split('\n')
+  const old = (before ?? lf(raw)).split('\n')
+  const now = after.split('\n')
+  if (authored.length !== old.length) return after
+  let start = 0
+  while (start < old.length && start < now.length && old[start] === now[start])
+    start++
+  let end = 0
+  while (
+    end < old.length - start &&
+    end < now.length - start &&
+    old[old.length - 1 - end] === now[now.length - 1 - end]
+  )
+    end++
+  const reached = now.slice(start, now.length - end)
+  const lines =
+    reached.length === old.length - start - end
+      ? reached.map((line, index) => {
+          const own = authored[start + index]!
+          const ending = own.endsWith('\r') ? '\r' : ''
+          const spelled = own.slice(0, own.length - ending.length)
+          const canonical = old[start + index]!
+          if (line === canonical) return own
+          return (
+            (spelled.endsWith(canonical)
+              ? spelled.slice(0, spelled.length - canonical.length)
+              : '') +
+            line +
+            ending
+          )
+        })
+      : reached
+  return [
+    ...authored.slice(0, start),
+    ...lines,
+    ...authored.slice(authored.length - end),
+  ].join('\n')
+}
+
+// Marks the nodes of `raw` that `transformed` keeps as literal blocks, and
+// those at the ranges of `blocks`, which the editor holds as literal blocks.
+function markLiterals(
+  raw: Root,
+  transformed: Root,
+  blocks: readonly SourceNode[] = [],
+): void {
+  const range = (node: SourceNode) =>
+    `${node.position?.start.offset}:${node.position?.end.offset}`
+  const ranges = new Set(blocks.map(range))
+  const find = (node: SourceNode) => {
+    if (node.type === 'inkkitLiteral') ranges.add(range(node))
+    else node.children?.forEach(find)
+  }
+  find(transformed as unknown as SourceNode)
+  if (!ranges.size) return
+  const mark = (node: SourceNode) => {
+    if (node.position?.start.offset != null && ranges.has(range(node)))
+      literals.add(node)
+    else node.children?.forEach(mark)
+  }
+  ;(raw.children as unknown as SourceNode[]).forEach(mark)
+}
+
 // Patch changed leaves so an adjacent edit retains authored delimiters and labels.
 function retainSource(
   before: SourceNode,
@@ -990,6 +1074,23 @@ function retainSource(
   // Children of originals an edit joined into this node.
   joined: readonly SourceNode[] = [],
 ): string {
+  if (literals.has(after))
+    return withEnding(
+      retainLiteral(
+        source.slice(
+          before.position!.start.offset!,
+          before.position!.end.offset!,
+        ),
+        literalForms.get(before),
+        lf(
+          canonical.slice(
+            after.position!.start.offset!,
+            after.position!.end.offset!,
+          ),
+        ),
+      ),
+      lineEnding,
+    )
   if (
     before.type === 'list' &&
     after.type === 'list' &&
@@ -1674,7 +1775,14 @@ function blockForm(ctx: Ctx, node: ProseNode): string {
   // An empty document is empty Markdown, but an empty block inside a document
   // is authored spacing and must remain a real block when read again.
   if (node.type.name === 'paragraph' && node.content.size === 0) return '<br />'
-  return form(write(ctx, node.type.schema.topNodeType.create(null, [node])))
+  const text = form(
+    write(ctx, node.type.schema.topNodeType.create(null, [node])),
+  )
+  // A literal block's text is its source, so a line ending at its end, which
+  // cannot be read back, is part of what it holds.
+  return node.type.name === 'literal_markdown'
+    ? text + lf(/(?:\r?\n)*$/.exec(node.textContent)![0])
+    : text
 }
 
 export function semanticSignature(doc: ProseNode): string {
@@ -2069,11 +2177,17 @@ export class Preservation {
         // The editor shows the baseline, so its blocks are these nodes until
         // an edit replaces them, and their forms need not be written again.
         if (own) this.forms.set(this.baseline.child(index), blockText)
+        const ast = positionalNode(rawTree, node as unknown as SourceNode)
+        if (
+          parsed.childCount === 1 &&
+          parsed.firstChild!.type.name === 'literal_markdown'
+        )
+          literalForms.set(ast, blockText)
         this.blocks.push({
           start,
           end: sourceEnd,
           form: blockText,
-          ast: positionalNode(rawTree, node as unknown as SourceNode),
+          ast,
         })
       }
       for (const block of this.blocks) {
@@ -2770,6 +2884,15 @@ export class Preservation {
   ): { gaps: string[]; pieces: string[]; kept: Kept[] } {
     const transformed = (index: number) =>
       tree!.transformed.children[index - from] as unknown as SourceNode
+    // The editor also holds a block that failed to parse as literal Markdown,
+    // which the transformed tree does not show.
+    if (tree) {
+      const failed: SourceNode[] = []
+      for (let index = from; index < to; index++)
+        if (doc.child(index).type.name === 'literal_markdown')
+          failed.push(transformed(index))
+      markLiterals(tree.raw, tree.transformed, failed)
+    }
     // An original between the blocks paired around these is one an edit
     // could have joined into them. Pairing keeps order, so only the blocks
     // paired from just before `from` to just after `to` can lie between.
