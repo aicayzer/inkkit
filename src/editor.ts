@@ -792,6 +792,36 @@ const liftItem: Command = (state, dispatch) => {
 
 const listItemShiftTab = $prose(() => keymap({ 'Shift-Tab': liftItem }))
 
+// Backspace in the empty line left by ending a list in the middle removes it and joins the two
+// lists again, as they were before.
+const rejoinLists = $prose(() =>
+  keymap({
+    Backspace: (state, dispatch) => {
+      const { $from, empty } = state.selection
+      if (
+        !empty ||
+        $from.parent.type.name !== 'paragraph' ||
+        $from.parent.content.size > 0
+      )
+        return false
+      const index = $from.index(-1)
+      const container = $from.node(-1)
+      const before = container.maybeChild(index - 1)
+      const after = container.maybeChild(index + 1)
+      if (!before || !after || !isList(before) || after.type !== before.type)
+        return false
+      if (dispatch) {
+        const at = $from.before()
+        const tr = state.tr.delete(at, $from.after())
+        joinLists(tr, $from.start(-1), index)
+        tr.setSelection(Selection.near(tr.doc.resolve(at), -1))
+        dispatch(tr.scrollIntoView())
+      }
+      return true
+    },
+  }),
+)
+
 // Enter in an empty item in the middle of a nested list split that list around a line left in the
 // item holding it, which Markdown cannot write, so the edit was refused. The item moves out a level
 // instead, as the last item of a nested list does, and the items after it become its own.
@@ -861,7 +891,9 @@ const movedListItems = $prose(
           const origin = back.deleted
             ? undefined
             : itemAt(oldState.doc, back.pos)
-          if (!origin?.index) return
+          // The original list itself, which lost the items before this one.
+          if (!origin?.index || mapping.map(origin.at, 1) === pos) return
+          const $list = doc.resolve(pos)
           let before = 0
           for (
             let index = 0, at = origin.at + 1;
@@ -870,10 +902,22 @@ const movedListItems = $prose(
           ) {
             const forward = mapping.mapResult(at + 1, 1)
             const now = forward.deleted ? undefined : itemAt(doc, forward.pos)
-            if (now && now.at !== pos) before++
+            if (
+              now &&
+              now.at < pos &&
+              doc.resolve(now.at).start() === $list.start()
+            )
+              before++
           }
-          const order = Number(origin.list.attrs.order) + before
-          if (before && list.attrs.order !== order)
+          // A part split at its own level continues the numbering. A list
+          // that comes to follow the first line of an item starts from 1,
+          // since Markdown reads a list after a line only when it does.
+          const order = before
+            ? Number(origin.list.attrs.order) + before
+            : $list.parent.type === itemType
+              ? 1
+              : undefined
+          if (order !== undefined && list.attrs.order !== order)
             tr.setNodeMarkup(pos, undefined, { ...list.attrs, order })
         }
         for (const [from, to] of ranges)
@@ -2491,6 +2535,7 @@ export class InkKitEditor {
       .use(listItemBackspace)
       .use(listItemShiftTab)
       .use(nestedItemEnter)
+      .use(rejoinLists)
       .use(movedListItems)
       .use(textInputPolicy)
       .use(events.copy ? codeCopyPlugin((text) => events.copy?.(text)) : [])
