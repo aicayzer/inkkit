@@ -66,10 +66,10 @@ test('a loaded document is not yet changed', async () =>
 
 test('sequential block formatting toggles remain snapshot-safe without a final newline', async () =>
   withInkKitEditor('Selected words', (editor) => {
-    for (const level of [1, 2, 3]) {
-      editor.format('heading', level)
+    for (const level of [1, 2, 3] as const) {
+      editor.format(`heading${level}`)
       expect(editor.snapshot().text).toBe(`${'#'.repeat(level)} Selected words`)
-      editor.format('heading', level)
+      editor.format(`heading${level}`)
       expect(editor.snapshot().text).toBe('Selected words')
     }
     for (const [command, prefix] of [
@@ -364,7 +364,10 @@ test('dropped paths become paragraphs after the block, or replace an empty one',
   await withInkKitEditor('- item\n\nText\n', (editor) => {
     placeCaret(editor, 3)
     // A point outside the (unlaid-out) page resolves to the caret.
-    editor.insertPaths(['/a/b.txt', '/c d/e_f.pdf'], -100, -100)
+    editor.insertPaths(['/a/b.txt', '/c d/e_f.pdf'], {
+      clientX: -100,
+      clientY: -100,
+    })
     expect(serialize(ctxOf(editor))).toBe(
       '- item\n\n/a/b.txt\n\n/c d/e_f.pdf\n\nText\n',
     )
@@ -372,7 +375,7 @@ test('dropped paths become paragraphs after the block, or replace an empty one',
     expect(view.state.selection.$from.parent.textContent).toBe('/c d/e_f.pdf')
   })
   await withInkKitEditor('', (editor) => {
-    editor.insertPaths(['/only'], -100, -100)
+    editor.insertPaths(['/only'], { clientX: -100, clientY: -100 })
     expect(serialize(ctxOf(editor))).toBe('/only\n')
   })
 })
@@ -391,7 +394,7 @@ test('formatting keys are the ones the app sets', async () => {
     expect(press('b', { metaKey: true })).toBeFalsy()
     // A name that is not a shortcut is refused, and the bindings stay as they were.
     expect(() =>
-      editor.setKeymap({ bold: ['Mod-b'], unknown: ['Mod-u'] }),
+      editor.setKeymap({ bold: ['Mod-b'], unknown: ['Mod-u'] } as never),
     ).toThrow(expect.objectContaining({ code: 'invalid-argument' }))
     expect(press('b', { metaKey: true })).toBeFalsy()
     editor.setKeymap({
@@ -542,9 +545,7 @@ test('buffered input leaves active native composition untouched', async () =>
     const view = ctxOf(editor).get(editorViewCtx)
     Object.defineProperty(view, 'composing', { get: () => true })
     expect(editor.insertText('uncommitted', 1)).toBe(false)
-    expect(editor.keyDown('Enter', '', false, false, false, false, 1)).toBe(
-      false,
-    )
+    expect(editor.keyDown({ key: 'Enter' }, 1)).toBe(false)
     expect(() => editor.snapshot()).toThrow('Text composition is in progress')
   }))
 

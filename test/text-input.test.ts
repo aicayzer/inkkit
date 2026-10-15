@@ -229,12 +229,12 @@ test('Backspace after a buffered input rule leaves its text as typed', () =>
   session('Plain words here\n', (s) => {
     caret(s.view, 'Plain ')
     s.editor.insertText('**x**', 1)
-    s.editor.keyDown('Backspace', 'Backspace', false, false, false, false, 1)
+    s.editor.keyDown({ key: 'Backspace', code: 'Backspace' }, 1)
     expectSaves(s, 'Plain \\*\\*x\\*\\*words here\n')
   }))
 
 const press = (s: Session, key: string) =>
-  s.editor.keyDown(key, key, false, false, false, false, 1)
+  s.editor.keyDown({ key, code: key }, 1)
 
 // A chunk over a selection replaces it, joining the blocks it spans, and the
 // input rule runs at the joined position.

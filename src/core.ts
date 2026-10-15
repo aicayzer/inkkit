@@ -9,6 +9,10 @@ export type {
   Mark,
   Block,
   FormatCommand,
+  FormatOptions,
+  KeyInput,
+  ImageInsertion,
+  ShortcutName,
   Keymap,
 } from './editor'
 export { InkKitError } from './types'

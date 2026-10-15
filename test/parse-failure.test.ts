@@ -182,8 +182,8 @@ describe('a block that cannot be built is kept as source', () => {
     })
   })
 
-  // Milkdown cannot build a callout whose last paragraph is a lone HTML break; #247 removes this
-  // case, after which the note simply loads formatted.
+  // Milkdown could not build a callout whose last paragraph is a lone HTML break; it now loads
+  // formatted, and must still save as written.
   test('for a callout that ends in a line break', async () => {
     await run((editor, ctx) => {
       const source = '> [!NOTE]\n> Body\n>\n> <br />\n\nAfter.\n'

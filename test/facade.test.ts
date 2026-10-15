@@ -347,8 +347,8 @@ test('destroyed methods fail before reading detached editor state', () =>
       () => editor.find('x'),
       () => editor.focus(),
       () => editor.insertText('x', 1),
-      () => editor.keyDown('Enter', '', false, false, false, false, 1),
-      () => editor.insertPaths(['path'], 0, 0),
+      () => editor.keyDown({ key: 'Enter' }, 1),
+      () => editor.insertPaths(['path'], { clientX: 0, clientY: 0 }),
     ])
       expect(operation).toThrow('destroyed')
   }))

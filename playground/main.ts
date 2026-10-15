@@ -525,13 +525,15 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
       case 'format':
         result = editor.format(
           args.command as FormatCommand,
-          args.arg as string | number | undefined,
+          args.options as Parameters<InkKitEditor['format']>[1],
+          generation,
         )
         break
       case 'table':
         result = editor.table(
           args.command as TableCommand,
           args.options as Parameters<InkKitEditor['table']>[1],
+          generation,
         )
         break
       case 'editingMode':
@@ -572,8 +574,8 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
       case 'insertImages':
         result = editor.insertImages(
           args.images as Parameters<InkKitEditor['insertImages']>[0],
-          args.x as number | undefined,
-          args.y as number | undefined,
+          args.at as Parameters<InkKitEditor['insertImages']>[1],
+          generation,
         )
         break
       case 'replaceSource':

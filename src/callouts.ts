@@ -2,6 +2,8 @@ import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { editorLabels } from './labels'
 import { singleLine } from './references'
 import { remarkCtx } from '@milkdown/kit/core'
+import type { MilkdownPlugin } from '@milkdown/kit/ctx'
+import { blockContainerTypes } from '@milkdown/kit/preset/commonmark'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Nodes, Parent, Root, RootContent } from 'mdast'
@@ -371,4 +373,11 @@ export const calloutView = $prose(
     }),
 )
 
-export const callouts = [calloutSchema, calloutView].flat()
+// The preset reads a standalone `<br />` as an empty paragraph only in the
+// block containers it knows. A callout is a quote to Markdown, so its spacer
+// lines read back as empty paragraphs too, as they do in a quote.
+const calloutContainer: MilkdownPlugin = (ctx) => () => {
+  ctx.update(blockContainerTypes.key, (types) => [...types, 'inkkitCallout'])
+}
+
+export const callouts = [calloutContainer, calloutSchema, calloutView].flat()

@@ -1,8 +1,8 @@
 import { test, expect, observe, operation } from './fixtures'
 
-// Milkdown cannot build a callout whose last paragraph is a lone HTML break, and used to load the
-// note without it, so the first keystroke saved over it. #247 makes this callout buildable; the
-// unit tests in test/parse-failure.test.ts force the failure for every kind of block.
+// Milkdown could not build a callout whose last paragraph is a lone HTML break, so the note loaded
+// without it and the first keystroke saved over it. The callout now loads formatted; the unit
+// tests in test/parse-failure.test.ts force the failure for every kind of block.
 const callout = '> [!NOTE]\n> Body\n>\n> <br />\n'
 
 for (const [name, source, at, saved] of [

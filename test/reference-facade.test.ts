@@ -344,7 +344,7 @@ test('link editing works for authored reference labels containing entity spellin
     view.dispatch(
       view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)),
     )
-    editor.format('link', '/new')
+    editor.format('link', { destination: '/new' })
     expect(editor.snapshot().text).toBe(source.replace('/old', '/new'))
   }))
 
@@ -545,7 +545,7 @@ test('an inline link destination that starts with an angle bracket saves and reo
     view.dispatch(
       view.state.tr.setSelection(TextSelection.create(view.state.doc, 5, 9)),
     )
-    editor.format('link', '<x>')
+    editor.format('link', { destination: '<x>' })
     const text = editor.snapshot().text
     expect(text).toBe('See [word](\\<x>).\n')
     editor.loadDocument({ ...input, generation: 2, text })
