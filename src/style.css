@@ -102,7 +102,8 @@
 .inkkit-root .ProseMirror th p {
   margin: 0;
 }
-.inkkit-root .ProseMirror .selectedCell::after {
+.inkkit-root .ProseMirror .selectedCell::after,
+.inkkit-root .ProseMirror .inkkit-table-line::after {
   position: absolute;
   inset: 0;
   z-index: 2;

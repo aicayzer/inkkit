@@ -4,10 +4,12 @@ import { moveColCommand, moveRowCommand } from '@milkdown/kit/preset/gfm'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, Selection } from '@milkdown/kit/prose/state'
 import { CellSelection, TableMap } from '@milkdown/kit/prose/tables'
-import type {
-  EditorView,
-  NodeView,
-  ViewMutationRecord,
+import {
+  Decoration,
+  DecorationSet,
+  type EditorView,
+  type NodeView,
+  type ViewMutationRecord,
 } from '@milkdown/kit/prose/view'
 import { $ctx, $prose, $view } from '@milkdown/kit/utils'
 import { tableNode } from './dialect'
@@ -32,6 +34,16 @@ interface Caret {
   cell: Cell
   offset?: number
 }
+
+/** The row or column a control acts on, drawn as highlighted cells. It is a
+ *  decoration, not a cell selection, so no undo step can bring back a
+ *  selected line for the next key to replace. */
+interface Line {
+  table: number
+  axis: Axis
+  index: number
+}
+const lineKey = new PluginKey<Line | null>('inkkitTableLine')
 
 /** Where line `index` is after line `from` moves to `to`. */
 function moved(index: number, from: number, to: number): number {
@@ -237,12 +249,8 @@ export class TableBlockView implements NodeView {
     this.controls.addEventListener('focusin', () => this.engage())
     this.controls.addEventListener('focusout', (event) => {
       if (this.controls.contains(event.relatedTarget as Node | null)) return
-      // Focus left for the text or the host: a line selected for a menu
-      // collapses to the caret, so nothing typed later replaces the line.
-      const line = this.open ?? this.lineSelected()
-      const caret = this.origin ?? (this.pinned && { cell: this.pinned })
-      if (line && caret) this.collapse(caret)
       this.close()
+      this.highlight(undefined)
       this.pinned = undefined
       this.origin = undefined
       this.refresh()
@@ -346,10 +354,7 @@ export class TableBlockView implements NodeView {
       this.pinned = undefined
       this.origin = undefined
     }
-    if (this.open && !this.selectsLine(this.open, this.pinned)) {
-      this.close()
-      if (!this.focused) this.pinned = undefined
-    }
+    if (this.open && !this.pinned) this.close()
     const active = this.active()
     const hidden = !this.editable || !active
     // Refreshed on every transaction, so only changes reach the DOM.
@@ -369,17 +374,6 @@ export class TableBlockView implements NodeView {
         if (element.disabled !== map.width < 2) element.disabled = map.width < 2
       }
     this.place()
-  }
-
-  /** Whether the selection is the whole line the menu was opened for. */
-  private selectsLine(axis: Axis, cell?: Cell): boolean {
-    const { selection } = this.view.state
-    if (!cell || !(selection instanceof CellSelection)) return false
-    const current = this.selected()
-    if (!current) return false
-    return axis === 'column'
-      ? selection.isColSelection() && current.column === cell.column
-      : selection.isRowSelection() && current.row === cell.row
   }
 
   private place(): void {
@@ -493,18 +487,6 @@ export class TableBlockView implements NodeView {
     return { cell, offset }
   }
 
-  /** The axis of a whole row or column selected in this table, if any. */
-  private lineSelected(): Axis | undefined {
-    const { selection } = this.view.state
-    if (!(selection instanceof CellSelection) || !this.selected())
-      return undefined
-    return selection.isColSelection()
-      ? 'column'
-      : selection.isRowSelection()
-        ? 'row'
-        : undefined
-  }
-
   /** Puts a collapsed caret in a cell, at its offset or the end of its text. */
   private collapse(caret: Caret): void {
     const start = this.tableStart
@@ -529,28 +511,42 @@ export class TableBlockView implements NodeView {
     this.close()
     this.pinned = undefined
     this.origin = undefined
-    const held = this.lineSelected() && this.selected()
-    caret ??= held ? { cell: held } : undefined
+    this.highlight(undefined)
     if (caret) this.collapse(caret)
     this.view.focus()
     this.refresh()
   }
 
-  /** Selects the active cell's column or row. */
-  private selectLine(axis: Axis, cell: Cell): boolean {
-    const start = this.tableStart
-    if (start === undefined) return false
-    const map = TableMap.get(this.node)
-    const at =
-      start + map.map[axis === 'column' ? cell.column : cell.row * map.width]!
-    const $cell = this.view.state.doc.resolve(at)
-    const selection =
-      axis === 'column'
-        ? CellSelection.colSelection($cell)
-        : CellSelection.rowSelection($cell)
-    if (!this.view.state.selection.eq(selection))
-      this.view.dispatch(this.view.state.tr.setSelection(selection))
-    return true
+  /** Highlights a row or column of this table, or none. */
+  private highlight(line: { axis: Axis; index: number } | undefined): void {
+    const table = this.getPos()
+    const next = line && table !== undefined ? { table, ...line } : null
+    const current = lineKey.getState(this.view.state) ?? null
+    if (
+      current === next ||
+      (current &&
+        next &&
+        current.table === next.table &&
+        current.axis === next.axis &&
+        current.index === next.index)
+    )
+      return
+    this.view.dispatch(
+      this.view.state.tr.setMeta(lineKey, next).setMeta('addToHistory', false),
+    )
+  }
+
+  /** Puts the caret in `cell` to run a command on its row or column; the
+   *  caret keeps its place when it is already in that cell. */
+  private from(cell: Cell): void {
+    const origin = this.origin
+    this.collapse(
+      origin &&
+        origin.cell.row === cell.row &&
+        origin.cell.column === cell.column
+        ? origin
+        : { cell },
+    )
   }
 
   private toggle(axis: Axis): void {
@@ -567,7 +563,10 @@ export class TableBlockView implements NodeView {
     const cell = this.engage()
     if (!cell) return
     this.open = axis
-    this.selectLine(axis, cell)
+    this.highlight({
+      axis,
+      index: axis === 'column' ? cell.column : cell.row,
+    })
     this.menus[axis].hidden = false
     this.grips[axis].setAttribute('aria-expanded', 'true')
     // A pointer press leaves focus in the text; the menu takes it, so Escape
@@ -587,8 +586,9 @@ export class TableBlockView implements NodeView {
     const cell = this.pinned ?? this.active()
     if (!this.editable || !cell) return
     const base = this.origin ?? { cell }
-    this.selectLine(axis, cell)
     this.close()
+    this.highlight(undefined)
+    this.from(cell)
     const done = this.run(() => tableCommand(this.ctx, action.command))
     this.returnToText(done ? this.after(action.command, cell, base) : base)
   }
@@ -637,22 +637,23 @@ export class TableBlockView implements NodeView {
     event.preventDefault()
     const cell = this.engage()
     if (!this.editable || !cell) return
-    this.selectLine(axis, cell)
+    this.from(cell)
     if (!this.run(() => tableCommand(this.ctx, command))) return
-    // The moved line stays selected, and the control and the caret to return
-    // to follow it.
-    this.pinned = this.selected()
-    if (this.origin && this.pinned) {
-      const index = axis === 'column' ? 'column' : 'row'
-      const [from, to] = [cell[index], this.pinned[index]]
-      this.origin = {
-        ...this.origin,
-        cell: {
-          ...this.origin.cell,
-          [index]: moved(this.origin.cell[index], from, to),
-        },
-      }
+    // The control, the highlight and the caret follow the moved line. The
+    // command selects the moved cells; the caret replaces that selection.
+    const index = axis === 'column' ? 'column' : 'row'
+    const to = cell[index] + (/Up|Left/.test(command) ? -1 : 1)
+    this.pinned = { ...cell, [index]: to }
+    const origin = this.origin ?? { cell }
+    this.origin = {
+      ...origin,
+      cell: {
+        ...origin.cell,
+        [index]: moved(origin.cell[index], cell[index], to),
+      },
     }
+    this.collapse(this.origin)
+    this.highlight({ axis, index: to })
     this.refresh()
   }
 
@@ -752,10 +753,12 @@ export class TableBlockView implements NodeView {
       return
     const cell =
       drag.axis === 'column'
-        ? { row: 0, column: drag.from }
-        : { row: drag.from, column: 0 }
+        ? { row: drag.origin?.cell.row ?? 0, column: drag.from }
+        : { row: drag.from, column: drag.origin?.cell.column ?? 0 }
     this.close()
-    this.selectLine(drag.axis, cell)
+    this.highlight(undefined)
+    this.origin = drag.origin
+    this.from(cell)
     const move = drag.axis === 'column' ? moveColCommand : moveRowCommand
     const done = this.run(() =>
       this.ctx
@@ -788,8 +791,43 @@ const tableBlockView = $view(
  *  editability changes too. */
 const tableControlsPlugin = $prose(
   () =>
-    new Plugin({
-      key: new PluginKey('inkkitTableControls'),
+    new Plugin<Line | null>({
+      key: lineKey,
+      state: {
+        init: () => null,
+        apply: (tr, line) => {
+          const next = tr.getMeta(lineKey) as Line | null | undefined
+          if (next !== undefined) return next
+          if (!line || !tr.docChanged) return line
+          const mapped = tr.mapping.mapResult(line.table, -1)
+          return mapped.deleted ? null : { ...line, table: mapped.pos }
+        },
+      },
+      props: {
+        decorations: (state) => {
+          const line = lineKey.getState(state)
+          const table = line && state.doc.nodeAt(line.table)
+          if (!line || table?.type.name !== 'table') return null
+          const map = TableMap.get(table)
+          const length = line.axis === 'column' ? map.height : map.width
+          if (line.index >= (line.axis === 'column' ? map.width : map.height))
+            return null
+          const cells = Array.from({ length }, (_, at) => {
+            const pos =
+              line.table +
+              1 +
+              map.map[
+                line.axis === 'column'
+                  ? at * map.width + line.index
+                  : line.index * map.width + at
+              ]!
+            return Decoration.node(pos, pos + state.doc.nodeAt(pos)!.nodeSize, {
+              class: 'inkkit-table-line',
+            })
+          })
+          return DecorationSet.create(state.doc, cells)
+        },
+      },
       view: (view) => ({
         update: () => {
           for (const table of views.get(view) ?? []) table.refresh()

@@ -461,3 +461,90 @@ test('typing after a keyboard move or a drag goes into the moved row', async ({
     '| A | B | C |\n| - | - | - |\n| d | e | f |\n| g | h | i |\n| ax | b | c |\n',
   )
 })
+
+// Undo and redo restore the selection each step recorded; the controls never
+// record a selected row or column, so a key typed after either lands in one
+// cell.
+const undoCases: [
+  string,
+  (page: Page) => Promise<void>,
+  string, // after the action, Mod-Z, then x
+  string, // after the action, Mod-Z, Shift-Mod-Z, then x
+][] = [
+  [
+    'Align right',
+    async (page) => {
+      await control(page, 'Move column').click()
+      await control(page, 'Align right').click()
+    },
+    grid.replace('| e |', '| ex |'),
+    '| A |  B | C |\n| - | -: | - |\n| a |  b | c |\n| d | ex | f |\n| g |  h | i |\n',
+  ],
+  [
+    'Add row',
+    async (page) => {
+      await control(page, 'Move row').click()
+      await control(page, 'Add row').click()
+    },
+    grid.replace('| e |', '| ex |'),
+    '| A | B | C |\n| - | - | - |\n| a | b | c |\n| d | e | f |\n|   | x |   |\n| g | h | i |\n',
+  ],
+  [
+    'Delete row',
+    async (page) => {
+      await control(page, 'Move row').click()
+      await control(page, 'Delete row').click()
+    },
+    grid.replace('| e |', '| ex |'),
+    '| A | B | C |\n| - | - | - |\n| a | b | c |\n| g | hx | i |\n',
+  ],
+  [
+    'Down Arrow on the row control',
+    async (page) => {
+      await control(page, 'Move row').focus()
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Escape')
+    },
+    grid.replace('| e |', '| ex |'),
+    '| A | B | C |\n| - | - | - |\n| a | b | c |\n| g | h | i |\n| d | ex | f |\n',
+  ],
+  [
+    'a row drag',
+    async (page) => {
+      const last = (await cell(page, 3, 0).boundingBox())!
+      await drag(page, control(page, 'Move row'), {
+        x: last.x + 4,
+        y: last.y + last.height - 2,
+      })
+    },
+    grid.replace('| e |', '| ex |'),
+    '| A | B | C |\n| - | - | - |\n| a | b | c |\n| g | h | i |\n| d | ex | f |\n',
+  ],
+]
+
+for (const [name, act, undone, redone] of undoCases) {
+  test(`typing after ${name} and Undo goes into one cell`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openGrid(page, openFixture)
+    await caretAtEnd(page, 2, 1)
+    await act(page)
+    await expect(editor(page)).toBeFocused()
+    await page.keyboard.press('ControlOrMeta+z')
+    expect(await typed(page)).toBe(undone)
+  })
+
+  test(`typing after ${name}, Undo and Redo goes into one cell`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openGrid(page, openFixture)
+    await caretAtEnd(page, 2, 1)
+    await act(page)
+    await expect(editor(page)).toBeFocused()
+    await page.keyboard.press('ControlOrMeta+z')
+    await page.keyboard.press('ControlOrMeta+Shift+z')
+    expect(await typed(page)).toBe(redone)
+  })
+}

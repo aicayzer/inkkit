@@ -393,7 +393,7 @@ test.each([
     }),
 )
 
-test('every control action and Escape leave a collapsed caret, never a selected line', () =>
+test('the controls highlight a line and never select one', () =>
   run((_editor, ctx, root) => {
     const view = ctx.get(editorViewCtx)
     const collapsed = () => {
@@ -401,27 +401,38 @@ test('every control action and Escape leave a collapsed caret, never a selected 
       expect(selection).toBeInstanceOf(TextSelection)
       expect(selection.empty).toBe(true)
     }
-    for (const [axis, label] of [
-      ['Move row', 'Add row'],
-      ['Move row', 'Delete row'],
-      ['Move column', 'Align right'],
-      ['Move column', 'Add column'],
-      ['Move column', 'Delete column'],
+    const highlighted = () =>
+      [...root.querySelectorAll('.inkkit-table-line')].map(
+        (cell) => cell.textContent,
+      )
+    for (const [axis, label, line] of [
+      ['Move row', 'Add row', ['c', '2', ' c ']],
+      ['Move row', 'Delete row', ['c', '2', ' c ']],
+      // The rows added and deleted above leave an empty cell in column 1.
+      ['Move column', 'Align right', ['Value', 'x|y', '', '3']],
+      ['Move column', 'Add column', ['Value', 'x|y', '', '3']],
+      ['Move column', 'Delete column', ['Value', 'x|y', '', '3']],
     ] as const) {
-      caret(ctx, 1, 1)
+      caret(ctx, 2, 1)
       control(root, axis).click()
-      expect(view.state.selection).toBeInstanceOf(CellSelection)
+      collapsed()
+      expect(highlighted()).toEqual(line)
       control(root, label).click()
       collapsed()
+      expect(highlighted()).toEqual([])
+      expect(view.state.selection).not.toBeInstanceOf(CellSelection)
     }
     caret(ctx, 1, 0)
     const grip = control(root, 'Move row')
     grip.click()
     press(grip, 'Escape')
     collapsed()
+    expect(highlighted()).toEqual([])
     grip.focus()
     press(grip, 'ArrowDown')
-    expect(view.state.selection).toBeInstanceOf(CellSelection)
+    collapsed()
+    expect(highlighted()[0]).toBe('a | b')
     grip.blur()
     collapsed()
+    expect(highlighted()).toEqual([])
   }))
