@@ -6,6 +6,8 @@ import {
   docSchema,
   hardbreakClearMarkPlugin,
   hardbreakSchema,
+  hardbreakKeymap,
+  headingSchema,
   imageSchema,
   paragraphSchema,
   remarkInlineLinkPlugin,
@@ -40,7 +42,8 @@ import {
   setAlignCommand,
   exitTable,
 } from '@milkdown/kit/preset/gfm'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
+import { closeHistory } from '@milkdown/kit/prose/history'
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { keymap } from '@milkdown/kit/prose/keymap'
 import { autolinkLiterals } from './autolink'
@@ -473,6 +476,7 @@ const commonmarkWithLiteralReferences = commonmark.filter(
   (plugin) =>
     !remarkInlineLinkPlugin.includes(plugin) &&
     plugin !== hardbreakClearMarkPlugin &&
+    !hardbreakKeymap.some((part) => part === plugin) &&
     plugin !== syncHeadingIdPlugin &&
     plugin !== createCodeBlockInputRule,
 )
@@ -545,6 +549,20 @@ const preserveSpacerParagraphs = paragraphSchema.extendSchema(
     }
   },
 )
+
+// The preset drops a terminal heading break, including an explicit HTML
+// break that can reopen. Keep the content and each break's own source form.
+const headingsWithBreaks = headingSchema.extendSchema((base) => (ctx) => ({
+  ...base(ctx),
+  toMarkdown: {
+    ...base(ctx).toMarkdown,
+    runner(state, node) {
+      state.openNode('heading', undefined, { depth: node.attrs.level })
+      state.next(node.content)
+      state.closeNode()
+    },
+  },
+}))
 
 // Soft Markdown breaks still serialize as a single newline. Display the actual
 // line boundary rather than a space, so changing editor mode never joins lines.
@@ -658,25 +676,34 @@ function cellToMarkdown(base: CellToMarkdown): CellToMarkdown {
   }
 }
 
-// A cell cannot hold a line ending, so Shift-Enter there inserts the `<br />`
-// a cell reads back. The preset's command would instead split the paragraph
-// when it already ends in a break, which reshapes the table.
-const cellBreakKeymap = $prose(() =>
+// Each break is its own undo step. Never replace an earlier break with a
+// paragraph, as the preset does on the second press (even away from its end).
+const breakKeymap = $prose(() =>
   keymap({
-    'Shift-Enter': (state, dispatch) => {
+    'Shift-Enter': (state, dispatch, view) => {
       const { $from } = state.selection
-      if (!/^table_(cell|header)$/.test($from.node(-1)?.type.name ?? ''))
-        return false
-      dispatch?.(
-        state.tr
-          // A break inside a mark or link would be inline HTML there, which
-          // a cell does not read back as a break.
-          .replaceSelectionWith(
-            state.schema.nodes.hardbreak!.create({ isHTML: true }),
-            false,
-          )
-          .scrollIntoView(),
+      if (
+        !(state.selection instanceof TextSelection) ||
+        $from.parent.type.spec.code
       )
+        return false
+      const isHTML =
+        $from.parent.type.name === 'heading' ||
+        ($from.depth > 1 &&
+          /^table_(cell|header)$/.test($from.node(-1).type.name))
+      if (dispatch) {
+        dispatch(
+          closeHistory(state.tr)
+            .replaceSelectionWith(
+              state.schema.nodes.hardbreak!.create({ isHTML }),
+              false,
+            )
+            .scrollIntoView(),
+        )
+        // Keep subsequent typing out of this break's history event too.
+        if (view)
+          dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
+      }
       return true
     },
   }),
@@ -791,7 +818,7 @@ export function createDialect(
   files = false,
 ): MilkdownPlugin[] {
   return [
-    cellBreakKeymap,
+    breakKeymap,
     remarkCodeFences,
     remarkReferencesPlugin,
     remarkLinkFormsPlugin,
@@ -820,6 +847,7 @@ export function createDialect(
     joinKeepingSourceKeymap,
     preserveSpacerParagraphs,
     visibleSoftbreaks,
+    headingsWithBreaks,
     normalizedImages,
     imageBlocks,
     autolinkLiterals,

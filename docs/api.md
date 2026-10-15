@@ -366,6 +366,8 @@ When the host's native layer receives typed text or a key before the web view do
 
 A formatted insertion checks that the document can still be saved before it dispatches. Multiline table-cell text that can't reopen under the supported table dialect throws `preservation` and leaves the source, revision, selection and history as they were.
 
+In formatted mode, Shift+Enter inserts a line break as a separate undo step. A trailing paragraph break remains in the live editor and history, but `snapshot()` omits it until content follows. Saving, autosaving or reopening that snapshot retains the completed text without the pending empty line. Breaks in table cells and headings save as `<br />`. See [line-break preservation](preservation.md) for the saved forms.
+
 `keyDown(input, expectedGeneration)` passes a key that the host's native input received to InkKit, as if it were pressed in the editor. It returns `true` when InkKit handled the key, and then the host must not also handle it natively; `false` means the host's native handling applies.
 
 | `KeyInput` field                           | Type      | Meaning                                                                      |
