@@ -32,6 +32,9 @@ jobs:
   publish:
     needs: [tag, checks]
     runs-on: ubuntu-latest
+    # The environment accepts only v* tags, and npm accepts only this
+    # environment, so a workflow edited on a branch cannot publish.
+    environment: npm
     permissions:
       contents: read
       id-token: write
