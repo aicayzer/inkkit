@@ -88,7 +88,8 @@ import {
 } from '@milkdown/kit/utils'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
 import { labelsCtx, defaultLabels, type EditorLabels } from './labels'
-import { createDialect, stringifyOptions } from './dialect'
+import { createDialect, serialize, stringifyOptions } from './dialect'
+import { isSafeLinkTarget } from './link-safety'
 import { Preservation } from './preserve'
 import {
   sourceAttribute,
@@ -3967,6 +3968,8 @@ export class InkKitEditor {
   ): boolean {
     this.assertAlive()
     const checked = formatOptions(command, options)
+    if (checked?.destination !== undefined)
+      this.checkDestination(checked.destination, 'options.destination')
     this.assertMutation(expectedGeneration)
     if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
@@ -4029,18 +4032,50 @@ export class InkKitEditor {
   }
 
   /**
+   * Refuses a link destination that is empty, that opens anything but a web, mail or phone address,
+   * or that the Markdown writer cannot save so that it reads back the same.
+   */
+  private checkDestination(destination: string, name: string): void {
+    if (destination === '') throw invalidArgument(`${name} must not be empty`)
+    if (!isSafeLinkTarget(destination))
+      throw invalidArgument(
+        `${name} must be relative, or an http, https, mailto or tel address, with no control characters`,
+      )
+    const { schema } = this.editor.ctx.get(editorViewCtx).state
+    const written = serialize(
+      this.editor.ctx,
+      schema.node('doc', null, [
+        schema.node('paragraph', null, [
+          schema.text('x', [schema.marks.link!.create({ href: destination })]),
+        ]),
+      ]),
+    )
+    let read: unknown
+    this.editor.ctx
+      .get(parserCtx)(written)
+      .descendants((node) => {
+        read ??= node.marks.find((mark) => mark.type.name === 'link')?.attrs
+          .href
+      })
+    if (read !== destination)
+      throw invalidArgument(`${name} cannot be written in Markdown as given`)
+  }
+
+  /**
    * With a destination, sets the link: on the whole link that holds the caret or the selection,
    * keeping its title, or else on the selection. A reference link's shared definition is edited
-   * instead. Without one, removes that whole link, or every link in the selection.
+   * instead. Without one, removes that whole link, or every link in the selection. Marks waiting
+   * for the next typed text stay waiting.
    */
   private link(destination: string | undefined): void {
     const view = this.editor.ctx.get(editorViewCtx)
     const { state } = view
     const type = linkSchema.type(this.editor.ctx)
-    const { selection } = state
+    const { selection, storedMarks } = state
     const { from, to, empty } = selection
-    const pending = empty ? type.isInSet(state.storedMarks ?? []) : undefined
-    if (pending) {
+    const stored = empty ? type.isInSet(storedMarks ?? []) : undefined
+    // A stored link that the caret already sits in is that link, kept when another mark was toggled.
+    if (stored && !stored.isInSet(selection.$from.marks())) {
       const tr = state.tr.removeStoredMark(type)
       if (destination !== undefined)
         tr.addStoredMark(type.create({ href: destination }))
@@ -4053,26 +4088,44 @@ export class InkKitEditor {
         : (state.doc.nodeAt(from)?.marks ?? []),
     )
     const extent = mark && markRun(state.doc, mark, from, to)
+    // Steps clear the stored marks; the ones other than the old link are put back.
+    const keepStored = (tr: Transaction, link?: ProseMark) => {
+      if (!storedMarks) return tr
+      const kept = type.removeFromSet(storedMarks)
+      return tr.setStoredMarks(
+        link && type.isInSet(storedMarks) ? link.addToSet(kept) : kept,
+      )
+    }
     if (destination === undefined) {
       if (extent)
-        view.dispatch(state.tr.removeMark(extent.from, extent.to, type))
+        view.dispatch(
+          keepStored(state.tr.removeMark(extent.from, extent.to, type)),
+        )
       else if (!empty && state.doc.rangeHasMark(from, to, type))
         view.dispatch(state.tr.removeMark(from, to, type))
       return
     }
     if (extent && mark!.attrs.identifier != null) {
-      this.editReferenceDefinition(String(mark!.attrs.identifier), destination)
+      const identifier = String(mark!.attrs.identifier)
+      const definition = referenceDefinitions(state.doc).get(
+        normaliseLabel(identifier),
+      )
+      if (definition?.node.attrs.url === destination) return
+      this.editReferenceDefinition(identifier, destination)
+      if (storedMarks) view.dispatch(view.state.tr.setStoredMarks(storedMarks))
       return
     }
     if (extent) {
+      // An autolink rewritten with its own address would lose its form for nothing.
+      if (mark!.attrs.href === destination) return
+      const link = type.create({ href: destination, title: mark!.attrs.title })
       view.dispatch(
-        state.tr
-          .removeMark(extent.from, extent.to, type)
-          .addMark(
-            extent.from,
-            extent.to,
-            type.create({ href: destination, title: mark!.attrs.title }),
-          ),
+        keepStored(
+          state.tr
+            .removeMark(extent.from, extent.to, type)
+            .addMark(extent.from, extent.to, link),
+          link,
+        ),
       )
       return
     }
@@ -4091,7 +4144,10 @@ export class InkKitEditor {
   ): boolean {
     this.assertAlive()
     expectString(label, 'label')
-    expectString(destination, 'destination')
+    this.checkDestination(
+      expectString(destination, 'destination'),
+      'destination',
+    )
     optionalString(title, 'title')
     this.assertMutation()
     if (this.literalSurface) return false

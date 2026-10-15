@@ -92,10 +92,14 @@ Source and TXT disable formatted commands. Read-only disables mutations while re
 
 `FormatOptions` has two optional fields: `destination`, only with `link`, and `language`, only with `codeBlock`. Any other option, or an option with another command, throws `invalid-argument`, as does an unknown command. `null` counts as omitted.
 
+A link destination, in `format('link', { destination })` and in `editReferenceDefinition`, must be one that the editor would open and can save. It throws `invalid-argument` when it's empty; when it isn't relative, a fragment, a query, or an `http`, `https`, `mailto` or `tel` address, the same list that [opening links](#opening-links) uses; when it contains a control character, such as a line break; or when Markdown can't write it so that it reads back the same, such as `<x>`. Spaces, parentheses and non-ASCII characters are written in a form that reads back as given.
+
 `link` works on the link that holds the caret, including a caret just before its first character, or that holds the whole selection:
 
-- **With a destination,** an inline link keeps its text and title and takes the new destination. An autolink given a new destination becomes an inline link with the same text. In a reference link, the shared definition is edited instead, as `editReferenceDefinition` does, so every link that uses that definition changes. A selection that isn't inside one link becomes a link to the destination, replacing the links in the selected text; at a caret outside a link, the text typed next is linked.
+- **With a destination,** an inline link keeps its text and title and takes the new destination. An autolink given a new destination becomes an inline link with the same text. In a reference link, the shared definition is edited instead, as `editReferenceDefinition` does, so every link that uses that definition changes. A selection that isn't inside one link becomes a link to the destination, replacing the links in the selected text; at a caret outside a link, the text typed next is linked. Giving a link the destination it already has returns `false` and changes nothing, so an autolink keeps its form.
 - **Without a destination,** the whole link is removed and its text stays. A selection that isn't inside one link removes the links from the selected text; the part of a link outside the selection stays a link. If there is no link to remove, `format` returns `false` and changes nothing.
+
+At a caret, marks toggled for the text typed next, such as `bold`, stay toggled after the link changes.
 
 `keyDown(input: KeyInput, expectedGeneration)` passes a key that the host's native input received to InkKit, as if it were pressed in the editor. `KeyInput` is `{ key, code?, metaKey?, ctrlKey?, altKey?, shiftKey? }`, with the `KeyboardEvent` meanings; an omitted or `null` modifier isn't held. It returns `true` when InkKit handled the key, and then the host mustn't also handle it natively; `false` means the host's native handling applies. The expected generation is required. During composition with the current generation, `keyDown` returns `false`. InkKit handles:
 
@@ -127,7 +131,7 @@ Loading releases focus from the editor's active text surface and does not reveal
 
 `navigateFootnote('definition' | 'reference')` moves between the current footnote reference and its definition, returning whether a destination was found. **Alt+Enter** visits the definition; **Alt+Shift+Enter** returns to its first reference.
 
-`editReferenceDefinition(label, destination, title?)` updates the shared link definition and returns whether it exists. Omitted title retains the current title. `format('link', { destination })` edits that shared definition when the caret or selection is in a reference link.
+`editReferenceDefinition(label, destination, title?)` updates the shared link definition and returns whether it exists. The destination follows the rules in [Formatting and keys](#formatting-and-keys). Omitted title retains the current title. `format('link', { destination })` edits that shared definition when the caret or selection is in a reference link.
 
 These operations retain the existing document, generation and composition checks. Footnote and definition editing are disabled in TXT and Markdown source modes. Hosts continue to import only the public facade.
 

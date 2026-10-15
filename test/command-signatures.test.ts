@@ -30,6 +30,8 @@ interface Session {
   load(text: string, generation?: number): void
   /** Selects `word`, or puts the caret `caret` characters into it. */
   select(word: string, caret?: number): void
+  /** Saves, reopens the saved bytes and checks that they read back as the document shown. */
+  reopens(): void
 }
 
 async function open(
@@ -66,6 +68,13 @@ async function open(
         text,
       })
       sent.length = 0
+    },
+    reopens() {
+      const saved = editor.snapshot().text
+      const shown = view.state.doc.toJSON()
+      session.load(saved)
+      expect(editor.snapshot().text).toBe(saved)
+      expect(view.state.doc.toJSON()).toEqual(shown)
     },
     select(word, caret) {
       let from = -1
@@ -176,7 +185,7 @@ test('format reports whether the document or the next typed marks changed', () =
   }))
 
 test('link without a destination removes the whole link that holds the caret or selection', () =>
-  open(({ editor, view, load, select }) => {
+  open(({ editor, view, load, select, reopens }) => {
     const text = 'See [the docs](https://example.com "Docs") now.\n'
     for (const [word, caret] of [
       ['docs', 2],
@@ -188,6 +197,7 @@ test('link without a destination removes the whole link that holds the caret or 
       select(word, caret)
       expect(editor.format('link'), word).toBe(true)
       expect(editor.snapshot().text, word).toBe('See the docs now.\n')
+      reopens()
     }
     // A selection that reaches past the link removes every link inside it.
     load('[One](a) and [two](b) end\n')
@@ -202,10 +212,11 @@ test('link without a destination removes the whole link that holds the caret or 
     )
     expect(editor.format('link')).toBe(true)
     expect(editor.snapshot().text).toBe('One and two end\n')
+    reopens()
   }))
 
 test('link with a destination edits the link that holds the caret, keeping its title', () =>
-  open(({ editor, load, select }) => {
+  open(({ editor, load, select, reopens, sent }) => {
     load('See [the docs](https://example.com "Docs") now.\n')
     select('docs', 1)
     expect(
@@ -218,6 +229,21 @@ test('link with a destination edits the link that holds the caret, keeping its t
     expect(
       editor.format('link', { destination: 'https://example.org/x' }),
     ).toBe(false)
+    reopens()
+    // An autolink given its own address keeps its form, rather than being refused.
+    for (const text of [
+      'See <https://example.com> now.\n',
+      'See https://example.com now.\n',
+    ]) {
+      load(text)
+      select('example', 1)
+      expect(
+        editor.format('link', { destination: 'https://example.com' }),
+        text,
+      ).toBe(false)
+      expect(editor.snapshot(), text).toMatchObject({ text, revision: 0 })
+      expect(sent, text).toEqual([])
+    }
     load('See <https://example.com> now.\n')
     select('example', 1)
     expect(editor.format('link', { destination: 'https://example.org' })).toBe(
@@ -226,6 +252,96 @@ test('link with a destination edits the link that holds the caret, keeping its t
     expect(editor.snapshot().text).toBe(
       'See [https://example.com](https://example.org) now.\n',
     )
+    reopens()
+  }))
+
+test('a link at the caret is removed or edited while another mark waits for typed text', () =>
+  open(({ editor, view, load, select, reopens }) => {
+    const inline = 'See [the docs](https://example.com) now.\n'
+    load(inline)
+    select('docs', 2)
+    expect(editor.format('bold')).toBe(true)
+    expect(editor.format('link')).toBe(true)
+    expect(editor.snapshot().text).toBe('See the docs now.\n')
+    view.dispatch(view.state.tr.insertText('X'))
+    expect(editor.snapshot().text).toBe('See the do**X**cs now.\n')
+    reopens()
+
+    load(inline)
+    select('docs', 2)
+    editor.format('bold')
+    expect(editor.format('link', { destination: 'https://example.org' })).toBe(
+      true,
+    )
+    expect(editor.snapshot().text).toBe(
+      'See [the docs](https://example.org) now.\n',
+    )
+    view.dispatch(view.state.tr.insertText('X'))
+    expect(editor.snapshot().text).toBe(
+      'See [the do**X**cs](https://example.org) now.\n',
+    )
+    reopens()
+
+    const reference = 'See [the docs][ref] now.\n\n[ref]: https://example.com\n'
+    load(reference)
+    select('docs', 2)
+    editor.format('bold')
+    expect(editor.format('link', { destination: 'https://example.org' })).toBe(
+      true,
+    )
+    expect(editor.snapshot().text).toBe(
+      'See [the docs][ref] now.\n\n[ref]: https://example.org\n',
+    )
+    reopens()
+    load(reference)
+    select('docs', 2)
+    editor.format('bold')
+    expect(editor.format('link')).toBe(true)
+    expect(editor.snapshot().text).toBe(
+      'See the docs now.\n\n[ref]: https://example.com\n',
+    )
+    reopens()
+  }))
+
+test('a link destination must be one the editor opens and can save', () =>
+  open(({ editor, view, load, select, reopens }) => {
+    load('See [the docs][ref] now.\n\n[ref]: https://example.com\n')
+    select('docs', 2)
+    const state = view.state
+    for (const destination of [
+      '',
+      'javascript:alert(1)',
+      'ftp://example.com',
+      'file:///etc/hosts',
+      'app-scheme:open',
+      'https://example.com/a\nb',
+      '<x>',
+    ]) {
+      expect(() => editor.format('link', { destination }), destination).toThrow(
+        code('invalid-argument'),
+      )
+      expect(
+        () => editor.editReferenceDefinition('ref', destination),
+        destination,
+      ).toThrow(code('invalid-argument'))
+      expect(view.state, destination).toBe(state)
+    }
+    // Addresses Markdown writes in another form still read back as given.
+    for (const destination of [
+      'notes/a b.md',
+      'a(b)',
+      'café',
+      '#intro',
+      '?q=1',
+      'mailto:a@example.com',
+    ]) {
+      load('Some words\n')
+      select('words')
+      expect(editor.format('link', { destination }), destination).toBe(true)
+      reopens()
+      select('words', 1)
+      expect(editor.format('link', { destination }), destination).toBe(false)
+    }
   }))
 
 test('link with a destination links the selection, or the text typed next at a caret', () =>
