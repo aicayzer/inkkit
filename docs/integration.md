@@ -35,7 +35,7 @@ The example's optional presentation switches require 0.0.11. Omit them to retain
 
 ## A richer document app
 
-Pass an adapter for image presentation, import and portable export. Observe command availability to enable native menus or toolbar buttons; keep the existing caret event for active formatting. The host owns localisation and controls outside the editor.
+Pass an adapter for image presentation, import and portable export. Observe `commandStateChanged` to enable native menus or toolbar buttons and to show active formatting from its `caret`. The host owns localisation and controls outside the editor.
 
 ```ts
 import {
@@ -84,7 +84,7 @@ After loading, `editor.commandState(1)` returns current availability without cha
 
 Keep the search field and match list in the host. Capture `editor.textSnapshot()` and search its readable `text`; carry its `snapshotId` with every UTF-16 match range. A selection-only search result can call `selectTextRange()` without taking focus away from the host field. Use explicit reveal/navigation when the user asks to visit a result. Capture fresh ranges after edits, mode changes, reloads or document replacement. Handle stale-range rejection rather than reusing old offsets.
 
-Supply your own scroll container and header/search-bar insets through `setViewport()`. Geometry and drop coordinates use client CSS pixels; translate them into native coordinates in the host. The editor owns no header rendering, toolbar layout or native search UI. `textRangeRects()` and `visibleTextRanges()` are demand-driven; they do not require a stream of per-character geometry across the bridge.
+Supply your own scroll container and header/search-bar insets through `setViewport()`. Geometry and drop coordinates use client CSS pixels; translate them into native coordinates in the host. The editor owns no header rendering, toolbar layout or native search UI. `textRangesRects()` and `visibleTextRanges()` are demand-driven; they do not require a stream of per-character geometry across the bridge.
 
 Loading a document does not grab focus or scroll a browsing host to a caret. External reload preserves valid selection, scrolling and focus. Explicit navigation reveals the target using the same inset-aware viewport on formatted and source/TXT surfaces. See the [API contract](api.md#native-readable-text-and-layout) for readable text, protected ranges and coordinate semantics.
 
@@ -102,9 +102,9 @@ Pass `keymap` at mount or call `setKeymap()` with bindings in ProseMirror key no
 
 Image references are opaque. The adapter owns bytes, access control, storage and private display URLs. Keep imported bytes available through pending operations and unsaved edits. Validate document identity, generation and operation ID in native callbacks. Portable exports carry bytes rather than private URLs.
 
-For native clipboard writes, await `clipboardSnapshot()` and validate the captured document before replacing the clipboard. Supply `events.clipboard` for image or diagram selections and resolve its promise only after the native write succeeds. Cut waits for that acknowledgement before deleting content. Encode byte arrays explicitly when crossing a JSON bridge.
+For native clipboard writes, await `clipboardSnapshot(scope, generation)` and check the `documentId`, `generation` and `revision` it carries before replacing the clipboard; output that `events.clipboard` receives carries them too. Supply `events.clipboard` for image or diagram selections and resolve its promise only after the native write succeeds. Cut waits for that acknowledgement before deleting content. Encode byte arrays explicitly when crossing a JSON bridge.
 
-`printableSnapshot()` returns a complete frozen printable document with portable assets; the app owns Print/PDF commands, dialogs and file generation. Before switching or closing a document, capture a fresh save snapshot. Increment generation when replacing it, and await `editor.destroy()` before removing the mounted root.
+`printableSnapshot()` returns a complete frozen printable document with portable assets; the app owns Print/PDF commands, dialogs and file generation. Before switching or closing a document, capture a fresh save snapshot. Pass a greater generation on every load and reload, pass the current one as the expected generation on every other call, and await `editor.destroy()` before removing the mounted root. Call `blur(generation)` to release focus from the editor, rather than finding its elements.
 
 ## Optional linked files
 

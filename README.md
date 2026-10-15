@@ -24,8 +24,8 @@ import { InkKitEditor } from '@aicayzer/inkkit'
 import '@aicayzer/inkkit/style.css'
 
 const editor = await InkKitEditor.mount(document.getElementById('editor')!, {
-  changed(markdown, generation) {},
-  stateChanged(state) {},
+  changed({ generation, revision, text }) {},
+  commandStateChanged({ caret }) {},
   openLink(href) {},
   copy(text) {},
 })
