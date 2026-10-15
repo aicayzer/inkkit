@@ -207,3 +207,23 @@ The measurement ran on an M4 Pro MacBook Pro with macOS 27.0.1 and Node.js 26.11
 | d3-shape 3.2.0 `README.md`              |     94,547 |    2.5 |   0.4 |
 
 Before, a document whose headings could each be checked on their own, such as the d3-shape README, already saved quickly; the others rebuilt the whole document. The prettier notices hold headings inside block quotes, which is why ignoring the IDs of top-level headings alone, as tried in #143, did not make them fast.
+
+## Finding unchanged blocks by identity, October 15, 2026
+
+Since a loaded document is shown as the document preservation parsed (#252), each block an edit doesn't reach is the same node object as the one loaded. Preservation now compares those blocks by identity before comparing content, and keeps the canonical form it computed for each block at load. Before, the first edit that added or removed a block wrote every block of the note once to find its form.
+
+The measurement ran on an M4 Pro MacBook Pro with macOS 27.0.1, Node.js 26.11.0 and Playwright 1.64.0, in headless Chromium 156 and WebKit 27.2, against the development playground with the `rich` configuration. Other work shared the machine, with load averages above 40, so compare the columns rather than the absolute times. The baseline is `main` at `b404419`. The note is `generateParagraphs(5000)` from `playground/generate.ts`; each value is the median of five fresh pages, timed from the key going down to the frame after it. Run it with:
+
+```sh
+INKKIT_MEASURE=_local/measure pnpm exec playwright test --project=chromium test/browser/measure-structural.spec.ts
+INKKIT_MEASURE=_local/measure pnpm exec playwright test --project=webkit test/browser/measure-structural.spec.ts
+```
+
+| 5,000 paragraphs, Chromium / WebKit (ms)             |      Baseline |     Candidate |
+| ---------------------------------------------------- | ------------: | ------------: |
+| Enter in the middle of a paragraph, first after load | 1,340 / 1,611 | 1,233 / 1,458 |
+| Typing a character after that Enter                  | 1,151 / 1,444 | 1,213 / 1,440 |
+
+The first structural edit used to cost about 170 ms more than the ones after it; now it costs about 20 ms more. Later edits did not change beyond run-to-run variation: each structural edit still takes the whole-document path, and so does each keystroke after one.
+
+The test suite now runs with a cross-check: every save that doesn't take the whole-document path is saved through it too, and a difference in bytes or in refusal fails the test. A test also counts the characters preservation parses and writes for a keystroke in a 5,000-paragraph note, so a silent return to the whole-document path fails without depending on timing.
