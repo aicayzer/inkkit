@@ -155,7 +155,7 @@ function replacementSlice(
           state.schema.nodes.hardbreak!.create(
             { isHTML },
             null,
-            isHTML && index === lines.length - 1 && line === '' ? [] : marks,
+            index === lines.length - 1 && line === '' ? [] : marks,
           ),
         )
       if (line) nodes.push(state.schema.text(line, marks))

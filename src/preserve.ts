@@ -1682,7 +1682,14 @@ function retainSource(
                 ),
               lineEnding,
             ) +
-            source.slice(to, last),
+            // An unchanged suffix can now follow a break. Keep its spelling,
+            // but escape whitespace that the new line would otherwise trim.
+            (inlineParents.has(before.type)
+              ? retainBoundaryWhitespace(
+                  source.slice(to, last),
+                  canonical.slice(newTo, newLast),
+                )
+              : source.slice(to, last)),
           canonical.slice(newFirst, newLast),
         ) +
         source.slice(last, end)

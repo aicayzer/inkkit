@@ -292,3 +292,66 @@ for (const ending of ['\n', '\r\n']) {
     }
   }
 }
+
+for (const marker of ['**', '__', '*', '_', '~~', '==']) {
+  for (const prefix of ['', '+ ', '> ']) {
+    for (const ending of ['\n', '\r\n']) {
+      test(`formatting edge ${JSON.stringify([marker, prefix, ending])} with real typing and undo`, async ({
+        page,
+        openFixture,
+      }) => {
+        await openFixture()
+        const continuation = prefix === '+ ' ? '  ' : prefix
+        const note = (body: string) =>
+          `Untouched __before__.\n\n${prefix}${body}\n\nUntouched _after_.\n`.replaceAll(
+            '\n',
+            ending,
+          )
+        const source = note(`x ${marker}Original${marker} y`)
+        for (const method of ['key', 'insertText', 'pasteAsPlainText']) {
+          await load(page, source)
+          await saved(page, source)
+          await caret(page, 'Original')
+          if (method === 'key') await page.keyboard.press('Shift+Enter')
+          else
+            await operation(
+              page,
+              method === 'pasteAsPlainText' ? 'pastePlain' : method,
+              {
+                text:
+                  (method === 'pasteAsPlainText' ? ending : '') + 'A' + ending,
+              },
+            )
+          const content =
+            method === 'key'
+              ? 'Original'
+              : method === 'pasteAsPlainText'
+                ? `Original\\\n${continuation}A`
+                : 'OriginalA'
+          const savedMarker =
+            method === 'key' ? marker : marker.replaceAll('_', '*')
+          const broken = note(
+            `x ${savedMarker}${content}${savedMarker}\\\n${continuation}&#x20;y`,
+          )
+          await saved(page, broken)
+          const brokenText = (await observe(page)).textSnapshot!.text
+          await page.keyboard.type('q')
+          const complete = note(
+            `x ${savedMarker}${content}${savedMarker}\\\n${continuation}q y`,
+          )
+          await saved(page, complete)
+          await page.keyboard.press('ControlOrMeta+z')
+          await saved(page, broken)
+          await page.keyboard.press('ControlOrMeta+z')
+          await saved(page, source)
+          await operation(page, 'redo')
+          await operation(page, 'redo')
+          await reopen(page, complete)
+          await load(page, broken)
+          await saved(page, broken)
+          expect((await observe(page)).textSnapshot!.text).toBe(brokenText)
+        }
+      })
+    }
+  }
+}

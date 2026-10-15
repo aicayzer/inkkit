@@ -2540,8 +2540,8 @@ export class InkKitEditor {
                   isHTML,
                 },
                 null,
-                // A terminal HTML spacer must remain outside emphasis to reopen as a break.
-                isHTML && finalBreak ? [] : marks,
+                // A terminal break must sit outside closing formatting delimiters.
+                finalBreak ? [] : marks,
               ),
             )
           if (line) children.push(schema.text(line, marks))

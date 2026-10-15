@@ -249,3 +249,80 @@ for (const marker of ['__', '_', '~~', '==']) {
     })
   })
 }
+
+for (const marker of ['**', '__', '*', '_', '~~', '==']) {
+  for (const prefix of ['', '+ ', '> ']) {
+    for (const ending of ['\n', '\r\n']) {
+      for (const method of [
+        'key',
+        'insertText',
+        'pasteAsPlainText',
+        'replace',
+      ] as const) {
+        test(`formatting edge ${JSON.stringify([marker, prefix, ending, method])} saves, reopens and undoes`, async () => {
+          const continuation = prefix === '+ ' ? '  ' : prefix
+          const note = (body: string) =>
+            `Untouched __before__.\n\n${prefix}${body}\n\nUntouched _after_.\n`.replaceAll(
+              '\n',
+              ending,
+            )
+          const source = note(`x ${marker}Original${marker} y`)
+          await session(source, (editor, save) => {
+            save(source)
+            select(editor, 'Original')
+            if (method === 'key')
+              editor.keyDown({ key: 'Enter', shiftKey: true }, 1)
+            else if (method === 'replace')
+              editor.replace('Original', 'OriginalA' + ending)
+            else
+              editor[method](
+                (method === 'pasteAsPlainText' ? ending : '') + 'A' + ending,
+                1,
+              )
+            const content =
+              method === 'key'
+                ? 'Original'
+                : method === 'pasteAsPlainText'
+                  ? `Original\\\n${continuation}A`
+                  : 'OriginalA'
+            const savedMarker =
+              method === 'key' ? marker : marker.replaceAll('_', '*')
+            const broken = note(
+              `x ${savedMarker}${content}${savedMarker}\\\n${continuation}&#x20;y`,
+            )
+            save(broken)
+            if (method === 'replace') select(editor, 'OriginalA\n')
+            editor.insertText('q', 1)
+            save(
+              note(
+                `x ${savedMarker}${content}${savedMarker}\\\n${continuation}q y`,
+              ),
+            )
+            editor.undo()
+            save(broken)
+            editor.undo()
+            save(source)
+          })
+        })
+      }
+    }
+  }
+}
+
+for (const [tail, escaped] of [
+  ['  y &amp; z\\*', '&#x20;&#x20;y &amp; z\\*'],
+  ['\ty', '&#x9;y'],
+  [' &#32;y', '&#x20;&#32;y'],
+]) {
+  test(`a break after nested formatting retains the suffix spelling: ${JSON.stringify(tail)}`, async () => {
+    const source = `> x **_Original_**${tail}\r\n`
+    await session(source, (editor, save) => {
+      save(source)
+      select(editor, 'Original')
+      editor.keyDown({ key: 'Enter', shiftKey: true }, 1)
+      save(`> x ***Original***\\\r\n> ${escaped}\r\n`)
+      editor.undo()
+      save(source)
+    })
+  })
+}
