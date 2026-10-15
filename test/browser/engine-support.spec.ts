@@ -57,6 +57,13 @@ for (const available of [true, false])
     await expect
       .poll(async () => (await pixels(page, 'words')).equals(unselected))
       .toBe(false)
+    // Where the engine can paint it, the highlight draws the selection, not
+    // the engine, which would also fill the margins beside the text.
+    expect(
+      await page.evaluate(
+        () => 'highlights' in CSS && CSS.highlights.has('inkkit-selection'),
+      ),
+    ).toBe(available)
     await page.keyboard.type('text')
     expect((await observe(page)).snapshot!.text).toBe('Plain text here\n')
     expect(errors).toEqual([])
