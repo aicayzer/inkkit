@@ -248,36 +248,38 @@ The `revision` that `changed` receives is the revision of the change it reports,
 | `autocorrect`    | `boolean`                                                             | `autocorrect`, as `on` or `off` |
 | `autocapitalize` | `'off'`, `'none'`, `'on'`, `'sentences'`, `'words'` or `'characters'` | `autocapitalize`                |
 
+Read-only permits selection, copying, find, navigation, folding, loading and reloading, and switching between formatted and source modes. Every method that changes the document throws `read-only`, and so does `undo` and `redo`, which keep their history for when editing returns. Typing, paste, drop, cut completion, task toggles, reference editing and resizing can't change content, and tables show no [table controls](#table-controls).
+
+Entering read-only cancels pending imports and invalidates deferred destructive operations, including an acknowledged Cut, so a late result can't change the editor after editing is enabled again. Active image resize previews are canceled. Imported asset retention and cleanup remain the host adapter's responsibility.
+
+`setEditable` and `setTextInputPreferences` throw `composition` during active text composition, with no partial change. A successful change keeps focus, selection, source, document identity, revision, dirty state and history, because these are presentation changes and not document edits.
+
 ### Smart punctuation
 
 `smartPunctuation: boolean` turns typed quotes and dashes into curly quotes and dashes. It is `false` by default. It is InkKit's own behavior, not an HTML attribute, so it doesn't depend on the browser's settings. It applies to typing in formatted mode. You can turn it on at mount or with `setTextInputPreferences`, and a change takes effect on the next key press, with no remount.
 
 The rules change only the character being typed:
 
-| You type                                   | You get                      | When                                                                                                                                               |
-| ------------------------------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"` or `'`                                 | `“` or `‘`, an opening quote | At the start of a block or after a line break, whitespace, an opening bracket (`(`, `[`, `{`, `<`), an en or em dash, or another opening quote.    |
-| `"` or `'`                                 | `”` or `’`, a closing quote  | Anywhere else. A `'` between letters is an apostrophe, which is the closing form. A `'` that starts a word, as in `'tis` or `'90s`, opens a quote. |
-| `--`                                       | `–`, an en dash              | After other text in the block. At the start of a block `--` stays as typed, so that a third hyphen makes a divider.                                |
-| `-` straight after an en dash it just made | `—`, an em dash              | So `---` gives an em dash. On an otherwise empty line `---` is still a divider, and never an em dash.                                              |
+| You type                                   | You get                      | When                                                                                                                                                                                                                                                       |
+| ------------------------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"` or `'`                                 | `“` or `‘`, an opening quote | At the start of a block or after a line break, whitespace, an opening bracket (`(`, `[`, `{`, `<`), an en or em dash, or another opening quote.                                                                                                            |
+| `"` or `'`                                 | `”` or `’`, a closing quote  | Anywhere else. A `'` between letters is an apostrophe, which is the closing form. A `'` that starts a word, as in `'tis` or `'90s`, opens a quote.                                                                                                         |
+| `--`                                       | `–`, an en dash              | After other text in the block, when the first hyphen was typed just before the second. A hyphen already in the note, or typed before the caret moved, stays a hyphen. At the start of a block `--` stays as typed, so that a third hyphen makes a divider. |
+| `-` straight after an en dash it just made | `—`, an em dash              | So `---` gives an em dash. On an otherwise empty line `---` is still a divider, and never an em dash.                                                                                                                                                      |
 
 Smart punctuation never rewrites text that is already in the note: straight quotes and hyphens that a note holds stay as they are, on open and on save. The curly character is saved as typed, as UTF-8 text, and reopening the note shows it unchanged.
 
-One Undo straight after a rule, or Backspace, puts back what was typed: `"` or `'` for a quote, `--` for an en dash, and the en dash and a hyphen, `–-`, for an em dash. A second Undo removes the typing as it does without the option. Undo after the caret has moved is the ordinary Undo.
+One Undo straight after a rule, or Backspace, puts back what was typed: `"` or `'` for a quote, `--` for an en dash, and the en dash and a hyphen, `–-`, for an em dash. A second Undo removes the typing as it does without the option. Undo after the caret has moved is the ordinary Undo. Edit > Undo and the touch gestures, which the browser sends as `historyUndo` and `historyRedo` input events, take the same path as the Undo key and `undo()`.
 
 The rules don't apply:
 
-- In inline code, including a code span you are still typing (an unmatched backtick earlier in the block), in code blocks, in front matter, in comments and in any block that InkKit holds as literal Markdown.
+- In inline code, including a code span you are still typing (an unmatched backtick outside code earlier in the block), in code blocks, in front matter, in comments and in any block that InkKit holds as literal Markdown.
 - In Markdown syntax that you are typing out: a link destination and title after `](`, a web address (`https://`, `www.` or `mailto:`), a wiki link or footnote label that isn't closed yet, an HTML tag or comment that isn't closed yet, a reference definition (`[label]: …`), and `--` in a line that starts with `|`, as a typed table row does.
 - In source view and TXT notes, where the text is typed as is. The same goes for `insertText` in those modes.
 
+On a keyboard layout that makes a quote with a dead key, such as US International, the quote reaches the editor as a composition. It follows the rules when the composition commits exactly that one `"` or `'` at the caret, and any other composition is left alone. A dash always comes from the hyphen key and is unaffected. The dead-key quote is tested in Chromium only; other engines and input methods may differ.
+
 Text typed inside the text of a link, a table cell, a heading, a list item, a quote or a callout follows the rules. Typing that arrives in one piece, such as dictation or a text replacement, follows them for its last character, like any other input rule.
-
-Read-only permits selection, copying, find, navigation, folding, loading and reloading, and switching between formatted and source modes. Every method that changes the document throws `read-only`, and so does `undo` and `redo`, which keep their history for when editing returns. Typing, paste, drop, cut completion, task toggles, reference editing and resizing can't change content, and tables show no [table controls](#table-controls).
-
-Entering read-only cancels pending imports and invalidates deferred destructive operations, including an acknowledged Cut, so a late result can't change the editor after editing is enabled again. Active image resize previews are canceled. Imported asset retention and cleanup remain the host adapter's responsibility.
-
-`setEditable` and `setTextInputPreferences` throw `composition` during active text composition, with no partial change. A successful change keeps focus, selection, source, document identity, revision, dirty state and history, because these are presentation changes and not document edits.
 
 ## Command availability
 

@@ -1816,6 +1816,35 @@ export class InkKitEditor {
     return !!findWrapping(range, type)
   }
 
+  // Edit > Undo and the touch gestures arrive as `beforeinput` events that
+  // ProseMirror's history would handle on its own. This plugin comes before the
+  // history plugin, so every Undo takes the one path through `undo` and `redo`,
+  // with smart punctuation's step and the source-step bookkeeping.
+  private historyInputPlugin = $prose(
+    () =>
+      new Plugin({
+        key: new PluginKey('inkkitHistoryInput'),
+        props: {
+          handleDOMEvents: {
+            beforeinput: (_view, event) => {
+              if (!this.writable) return false
+              const name =
+                event.inputType === 'historyUndo'
+                  ? 'undo'
+                  : event.inputType === 'historyRedo'
+                    ? 'redo'
+                    : undefined
+              if (!name) return false
+              event.preventDefault()
+              if (this.ready && this.commandState().commands[name])
+                this.forPerson(() => this[name](), true)
+              return true
+            },
+          },
+        },
+      }),
+  )
+
   private policyPlugin = $prose(
     () =>
       new Plugin({
@@ -2787,6 +2816,7 @@ export class InkKitEditor {
       .use(tablePlugins)
       .use(tableBlock)
       .use(instance.changePlugin)
+      .use(instance.historyInputPlugin)
       .use(history)
       .use(clipboard)
       .use(cursor)

@@ -627,3 +627,67 @@ describe('changing the option', () => {
     })
   })
 })
+
+describe('only the hyphen just received counts', () => {
+  test('a hyphen already in the note, with one typed after it, stays two hyphens', () =>
+    smart('a -', (s) => {
+      s.caret()
+      s.type('-')
+      expect(s.save()).toBe('a --')
+    }))
+
+  test('a hyphen typed earlier, with the caret moved away and back, stays two hyphens', () =>
+    smart('a b', (s) => {
+      s.caret('a')
+      s.type('-')
+      s.caret('b')
+      s.caret('a-')
+      s.type('-')
+      expect(s.save()).toBe('a-- b')
+    }))
+
+  test('a hyphen typed earlier, then other text and a hyphen, is not a dash', () =>
+    smart('a', (s) => {
+      s.caret()
+      s.type(' -')
+      s.editor.undo(1)
+      s.type('-')
+      expect(s.save()).toBe('a-')
+    }))
+
+  test('two hyphens typed one after the other still give an en dash', () =>
+    smart('a b', (s) => {
+      s.caret('a')
+      s.type(' --')
+      expect(s.save()).toBe('a – b')
+    }))
+
+  test('a chunk of hyphens and text keeps its hyphens unless it ends in two', () =>
+    smart('a', (s) => {
+      s.caret()
+      expect(s.editor.insertText('-', 1)).toBe(true)
+      expect(s.editor.insertText('x-', 1)).toBe(true)
+      expect(s.save()).toBe('a-x-')
+    }))
+})
+
+describe('code and tags inside the block', () => {
+  test('a backtick inside a closed code span is not an open one', () =>
+    smart('Use ``a`b`` here', (s) => {
+      s.caret('here')
+      s.type(` "x" it's`)
+      expect(s.save()).toBe('Use ``a`b`` here “x” it’s')
+    }))
+
+  test('a < inside a word is not an open tag', () =>
+    smart('', (s) => {
+      s.type(`a<b and "c"`)
+      expect(s.view.state.doc.textContent).toBe('a<b and “c”')
+    }))
+
+  test('a < that opens a tag still is', () =>
+    smart('', (s) => {
+      s.type(`x <b class="c"`)
+      expect(s.view.state.doc.textContent).toBe('x <b class="c"')
+    }))
+})

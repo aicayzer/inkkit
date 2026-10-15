@@ -1,10 +1,13 @@
 import { InputRule, undoInputRule } from '@milkdown/kit/prose/inputrules'
-import type {
-  Command,
-  EditorState,
-  Transaction,
+import {
+  Plugin,
+  PluginKey,
+  type Command,
+  type EditorState,
+  type Transaction,
 } from '@milkdown/kit/prose/state'
-import { $ctx, $inputRule } from '@milkdown/kit/utils'
+import { ReplaceStep } from '@milkdown/kit/prose/transform'
+import { $ctx, $inputRule, $prose } from '@milkdown/kit/utils'
 
 /**
  * Smart punctuation: the quote or dash being typed becomes a curly quote or a dash.
@@ -13,7 +16,10 @@ import { $ctx, $inputRule } from '@milkdown/kit/utils'
  *   dash or another opening quote, and close everywhere else. A `'` between letters is an
  *   apostrophe, which is the closing form.
  * - `--` gives an en dash and `---` an em dash: the third hyphen turns the en dash that the second
- *   one made into an em dash.
+ *   one made into an em dash. Only a hyphen that text input has just inserted counts as the first
+ *   of the two, so a hyphen already in the note, or typed before the caret moved, stays one.
+ * - A quote that a dead key made arrives as a composition. When the composition commits exactly
+ *   that quote at the caret, it follows the same rules.
  *
  * These are input rules, so only the character being typed changes, Backspace and Undo straight
  * after restore what was typed, and nothing in a note is rewritten. The editor answers
@@ -49,13 +55,107 @@ const typingSyntax = [
   // The word being typed is a web address.
   (before: string) =>
     /(?:^|[^\w])(?:[a-z][a-z0-9+.-]*:\/\/|www\.|mailto:)\S*$/i.test(before),
-  (before: string) => /<[A-Za-z!/?][^>]*$/.test(before),
+  // A tag opens a word; `a<b` is not one.
+  (before: string) => /(?:^|[^\w])<[A-Za-z!/?][^>]*$/.test(before),
   (before: string) => /^\s*\[[^\]]+\]:/.test(before),
 ]
 
+/**
+ * The text of the block before `pos`, with each code span and each non-text node as one
+ * placeholder, so that a backtick or `<` inside code is not syntax being typed.
+ */
 function textBefore(state: EditorState, pos: number): string {
   const $pos = state.doc.resolve(pos)
-  return $pos.parent.textBetween(0, $pos.parentOffset, undefined, '\ufffc')
+  let text = ''
+  $pos.parent.forEach((child, offset) => {
+    if (offset >= $pos.parentOffset) return
+    text +=
+      child.isText && !child.marks.some((mark) => mark.type.spec.code)
+        ? child.text!.slice(0, $pos.parentOffset - offset)
+        : '\ufffc'
+  })
+  return text
+}
+
+/**
+ * What the editor has seen of the input that leads to the next rule. It is changed as
+ * transactions and events arrive, and any transaction other than the one input makes clears it.
+ */
+interface Input {
+  /** Where a `-` that text input is about to insert will go. */
+  pending: number | null
+  /** The position after a hyphen that text input has just inserted. */
+  hyphen: number | null
+  /** The caret when a composition started, and the document's size then. */
+  composition: { pos: number; size: number } | null
+  /** The position after a lone quote that a composition has just committed. */
+  composedQuote: number | null
+}
+
+const input = new PluginKey<Input>('inkkitSmartPunctuationInput')
+
+/** The text a transaction inserted, when it is one step that inserts text at `at` and nothing else. */
+function insertedAt(tr: Transaction, at: number): string | undefined {
+  const [step] = tr.steps
+  if (tr.steps.length !== 1 || !(step instanceof ReplaceStep)) return undefined
+  if (step.from !== at || step.slice.openStart || step.slice.openEnd)
+    return undefined
+  return step.slice.content.textBetween(0, step.slice.content.size)
+}
+
+const inputTracking = $prose(
+  () =>
+    new Plugin<Input>({
+      key: input,
+      state: {
+        init: () => ({
+          pending: null,
+          hyphen: null,
+          composition: null,
+          composedQuote: null,
+        }),
+        apply(tr, value) {
+          const { pending, composition } = value
+          value.pending = value.hyphen = value.composedQuote = null
+          if (!tr.docChanged) return value
+          if (pending !== null && insertedAt(tr, pending) === '-')
+            value.hyphen = pending + 1
+          if (composition) {
+            value.composition = null
+            const text = insertedAt(tr, composition.pos)
+            if (
+              (text === '"' || text === "'") &&
+              tr.doc.content.size === composition.size + 1
+            )
+              value.composedQuote = composition.pos + 1
+          }
+          return value
+        },
+      },
+      props: {
+        handleTextInput(view, from, _to, text) {
+          input.getState(view.state)!.pending = text === '-' ? from : null
+          return false
+        },
+        handleDOMEvents: {
+          compositionstart(view) {
+            const { from, empty } = view.state.selection
+            input.getState(view.state)!.composition = empty
+              ? { pos: from, size: view.state.doc.content.size }
+              : null
+            return false
+          },
+        },
+      },
+    }),
+)
+
+/** States of text that arrived in one piece, whose last hyphen follows one that came with it. */
+const hyphenInChunk = new WeakSet<EditorState>()
+
+/** Tells the rules that the hyphen before the caret came in the same piece as the one being typed. */
+export function receivedHyphenWithNext(state: EditorState): void {
+  hyphenInChunk.add(state)
 }
 
 /**
@@ -70,7 +170,15 @@ function applies(
   match: RegExpMatchArray,
   pos: number,
 ): boolean {
-  if (!on() || pos + match[0].length - 1 !== state.selection.from) return false
+  if (!on()) return false
+  const typed = pos + match[0].length - 1 === state.selection.from
+  // A composition that committed a lone quote is in the document by the time its rule runs.
+  const composed =
+    !typed &&
+    match[0].length === 1 &&
+    input.getState(state)?.composedQuote === state.selection.from &&
+    pos === state.selection.from - 1
+  if (!typed && !composed) return false
   const $pos = state.doc.resolve(pos)
   if ($pos.parent.type.spec.code || !$pos.parent.inlineContent) return false
   // The marks the typed character takes: stored ones, such as code switched on at a caret, or
@@ -113,6 +221,7 @@ const quotes: Record<string, [opening: string, closing: string]> = {
 
 export const smartPunctuation = [
   smartPunctuationCtx,
+  inputTracking,
   $inputRule(
     (ctx) =>
       new InputRule(
@@ -134,6 +243,12 @@ export const smartPunctuation = [
         /--$/,
         (state, match, start, end) => {
           if (!applies(ctx.get(smartPunctuationCtx.key), state, match, start))
+            return null
+          // The hyphen before the caret must be the one text input just inserted.
+          if (
+            input.getState(state)?.hyphen !== state.selection.from &&
+            !hyphenInChunk.has(state)
+          )
             return null
           const before = textBefore(state, start)
           // At the start of a block `--` may become the divider `---`, and a hyphen run is not a
