@@ -1158,7 +1158,7 @@ function retainSource(
     before.title === after.title
   ) {
     const parts = (text: string) =>
-      /^(\[[\s\S]*?\]:[ \t]*(?:\r?\n[ \t]*)?)(<(?:\\[\s\S]|[^\\<>\n])*>|[^ \t\r\n]+)([\s\S]*)$/.exec(
+      /^(\[[\s\S]*?\]:[ \t]*)(<(?:\\[\s\S]|[^\\<>\n])*>|[^ \t\r\n]+)([\s\S]*)$/.exec(
         text,
       )
     const authored = parts(raw)

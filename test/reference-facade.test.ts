@@ -480,6 +480,11 @@ const definitionEdits: Array<[string, string, string]> = [
   ['[r]: /old\n', 'a&amp;b', '[r]: a\\&amp;b\n'],
   ['[r]: /old\r\n', 'My Notes/file.md', '[r]: <My Notes/file.md>\r\n'],
   ['[r]: /old\n', 'a b', '[r]: <a b>\n'],
+  // A destination on the next line is written on the definition's line, where
+  // one that opens a block still reads as a destination.
+  ['[r]:\n/old\n', '#', '[r]: #\n'],
+  ['[r]:\n</old>\n', 'p', '[r]: p\n'],
+  ['[r]:\n/old\n', '<p>', '[r]: \\<p>\n'],
   ['[r]: /old\n', '写真\u3000一.png', '[r]: 写真\u3000一.png\n'],
   ['[r]: /old\n', 'a\u00a0b', '[r]: a\u00a0b\n'],
   ['[r]: /a\u3000b\n', '/new', '[r]: /new\n'],
