@@ -11,7 +11,7 @@ Pushing a `v*` tag starts `.github/workflows/release.yml`. It publishes only whe
 3. The whole CI workflow runs on the tagged commit, the same checks as a pull request: formatting, `pnpm check` with the packed-consumer pages in Chromium and WebKit, the built-playground check, and the whole browser suite in Chromium and WebKit.
 4. The publish job publishes the `package-candidate` archive that the CI `check` job packed and tested, through npm trusted publishing.
 
-These checks live in the tagged commit's own `release.yml`, so on their own they would not stop an older or edited workflow on a branch. Two settings outside the workflow close that gap:
+These checks live in the tagged commit's own `release.yml`, and two settings outside the workflow add to them:
 
 - The publish job runs in the GitHub environment `npm`, which allows deployments only from `v*` tags.
 - A tag ruleset lets only repository administrators create, move or delete `v*` tags.
