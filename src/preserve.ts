@@ -616,9 +616,9 @@ function locateChildren(node: SourceNode, text: string): void {
   }
 }
 
-// The text a run of text, breaks and links written bare or in angle brackets reads
-// as, with the offset in `text` of each character and the range of each
-// link, or undefined for any other run.
+// The text a run of text, breaks and links written bare or in angle
+// brackets reads as, with the offset in `text` of each character and the
+// range of each link, or undefined for any other run.
 function runOffsets(
   nodes: readonly SourceNode[],
   text: string,
@@ -678,8 +678,8 @@ function runOffsets(
 
 // A run of text, breaks and addresses keeps its source outside the edit.
 // The edit, widened to the addresses it touches before or after, is written
-// as the canonical writer writes it, since
-// escapes kept beside a new address could stop it reading as one.
+// as the canonical writer writes it, since escapes kept beside a new address
+// could stop it reading as one.
 function retainRun(
   before: readonly SourceNode[],
   after: readonly SourceNode[],
