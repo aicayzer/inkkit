@@ -1,4 +1,4 @@
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { literalCommentSpans } from './comments'
 
 export const sourceAttribute = 'inkkitSource'
@@ -9,7 +9,42 @@ export interface SourceProvenance {
   readonly to: number
 }
 
+// Keep transient trailing Markdown breaks in the editing document and history,
+// but do not ask preservation to save a boundary CommonMark cannot reopen.
+// Unchanged subtrees retain their identity and are visited only once.
+const completedLines = new WeakMap<ProseNode, ProseNode>()
+function completedSource(node: ProseNode): ProseNode {
+  const cached = completedLines.get(node)
+  if (cached) return cached
+  let result = node
+  if (
+    node.type.name === 'paragraph' ||
+    (node.type.name === 'heading' && node.attrs.form === 'setext')
+  ) {
+    let end = node.content.size
+    for (let index = node.childCount - 1; index >= 0; index--) {
+      const child = node.child(index)
+      if (
+        child.type.name !== 'hardbreak' ||
+        child.attrs.isInline ||
+        child.attrs.isHTML
+      )
+        break
+      end -= child.nodeSize
+    }
+    if (end !== node.content.size) result = node.copy(node.content.cut(0, end))
+  } else if (!node.isLeaf && !node.isTextblock) {
+    const children: ProseNode[] = []
+    node.forEach((child) => children.push(completedSource(child)))
+    if (children.some((child, index) => child !== node.child(index)))
+      result = node.copy(Fragment.fromArray(children))
+  }
+  completedLines.set(node, result)
+  return result
+}
+
 export function cleanSourceDoc(doc: ProseNode): ProseNode {
+  doc = completedSource(doc)
   return doc.attrs[sourceAttribute] == null
     ? doc
     : doc.type.create({ ...doc.attrs, [sourceAttribute]: null }, doc.content)

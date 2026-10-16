@@ -32,10 +32,11 @@ export function lineBreakHTML(value: string): boolean {
 }
 
 function restoreInlineBreaks(node: Nodes): void {
-  // A cell cannot hold a line ending, so even a lone break there is content.
+  // Cells and ATX headings cannot hold source line endings, so even a lone
+  // break there is content. A lone paragraph break remains a spacer.
   if (
-    ((node.type === 'paragraph' || node.type === 'heading') &&
-      node.children.length > 1) ||
+    (node.type === 'paragraph' && node.children.length > 1) ||
+    node.type === 'heading' ||
     node.type === 'tableCell'
   ) {
     node.children = node.children.map((child) =>

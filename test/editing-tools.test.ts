@@ -268,18 +268,22 @@ test('formatted replacement retains a wholly matched mark and rejects matches cr
     ).toBe('strong')
   }))
 
-test('unrepresentable table replacement rejects every match before document or selection mutation', () =>
-  run('outside needle\n\n| H |\n| - |\n| needle |\n', (editor, _root, ctx) => {
-    const view = ctx.get(editorViewCtx)
-    const before = editor.snapshot()
-    const selection = view.state.selection
-    expect(() => editor.replaceAll('needle', 'a\nb')).toThrow(InkKitError)
-    expect(editor.snapshot()).toEqual(before)
-    expect(view.state.selection.eq(selection)).toBe(true)
-    expect(editor.undo(4)).toBe(false)
-    expect(editor.replaceAll('needle', 'safe')).toBe(2)
+test('replacement uses Markdown breaks in prose and HTML breaks in table cells', () =>
+  run('outside needle\n\n| H |\n| - |\n| needle |\n', (editor) => {
+    const before = editor.snapshot().text
+    expect(editor.replaceAll('needle', 'a\nb')).toBe(2)
+    const saved = 'outside a\\\nb\n\n| H |\n| - |\n| a<br />b |\n'
+    expect(editor.snapshot().text).toBe(saved)
     expect(editor.undo(4)).toBe(true)
-    expect(editor.snapshot().text).toBe(before.text)
+    expect(editor.snapshot().text).toBe(before)
+    editor.loadDocument({
+      documentId: 'reopened',
+      generation: 5,
+      format: 'md',
+      text: saved,
+    })
+    expect(editor.snapshot().text).toBe(saved)
+    expect(editor.textSnapshot().text).toContain('a\nb')
   }))
 
 test.each(['source', 'txt'] as const)(
