@@ -104,3 +104,17 @@ for (const [literal, written] of [
       editor.pasteAsPlainText(literal!)
       await reopens(editor, before.replace('Start', `Start${written}`))
     }))
+
+for (const text of ['<https://x.com>', '<https://x.com/a*b>'])
+  test(`the formatting fallback does not reinterpret ${text} as an address`, () =>
+    session(async (editor) => {
+      load(editor, 'x\n')
+      caret(editor, 'x')
+      const before = editor.snapshot()
+      expect(() => editor.pasteAsPlainText(text)).toThrowError(
+        expect.objectContaining({ code: 'preservation' }),
+      )
+      expect(editor.snapshot()).toEqual(before)
+      expect(editor.undo()).toBe(false)
+      expect(editor.redo()).toBe(false)
+    }))

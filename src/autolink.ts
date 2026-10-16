@@ -94,7 +94,10 @@ function read(
 // The escaped probe can itself become Markdown formatting, or an address can
 // swallow its backslash escapes. In that case read literal characters with
 // GFM's own address grammar, without interpreting inline Markdown syntax.
-function literalLinks(text: string): Found | undefined {
+function literalFormattingLinks(text: string): Found | undefined {
+  // Angle delimiters have their own completion and literal-paste rules. This
+  // fallback only resolves ambiguity from literal formatting delimiters.
+  if (!/[*_~`]/.test(text) || /[<>]/.test(text)) return undefined
   const tree = fromMarkdown(`x ${text}`, {
     extensions: [
       gfmAutolinkLiteral(),
@@ -152,7 +155,7 @@ function literals(ctx: Ctx, texts: string[]): Array<Found | undefined> {
     candidates,
   )
   return texts.map((text, index) =>
-    possible[index] ? (found.shift() ?? literalLinks(text)) : [],
+    possible[index] ? (found.shift() ?? literalFormattingLinks(text)) : [],
   )
 }
 
