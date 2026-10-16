@@ -168,7 +168,6 @@ test('Enter, Backspace, Delete and paste cost what they touch in a long note @pr
   test.setTimeout(240_000)
   await openFixture()
   const fastest = (values: number[]) => Math.min(...values)
-  const pastes: Record<number, number> = {}
   for (const size of [500, 5000]) {
     await load(page, generateParagraphs(size))
     const times: Record<string, number[]> = {
@@ -198,18 +197,9 @@ test('Enter, Backspace, Delete and paste cost what they touch in a long note @pr
         fastest(values),
       ]),
     )
-    pastes[size] = Infinity
-    for (let run = 0; run < 5; run++) {
-      await load(page, generateParagraphs(size))
-      await caret(page, `Paragraph ${Math.floor(size / 2) + 2}:`, 'end')
-      pastes[size] = Math.min(
-        pastes[size]!,
-        await timedPaste(page, pasted(500)),
-      )
-    }
     testInfo.annotations.push({
       type: `${size} paragraphs, fastest ms`,
-      description: JSON.stringify({ ...result, paste500: pastes[size] }),
+      description: JSON.stringify(result),
     })
     // A structural edit costs about what typing a character does in the same
     // note; validating the whole note would cost many times more.
@@ -218,8 +208,43 @@ test('Enter, Backspace, Delete and paste cost what they touch in a long note @pr
         3 * result.type! + 15,
       )
   }
-  // Hosted WebKit recorded 227 -> 434 ms and 240 -> 369 ms. Allow twice the
-  // short-note cost plus 50 ms of runner noise, still rejecting the many-fold
-  // increase from validating the whole note for the same pasted text.
-  expect(pastes[5000]).toBeLessThan(2 * pastes[500]! + 50)
+  // A paste into the long note may cost more than one into the short note only
+  // by what the frame costs, not by reading the long note again. Validating the
+  // whole note costs about as much as loading it (0.9 to 1.0 times locally, in
+  // Chromium and WebKit), against 0.03 times or less for a paste that reads
+  // only what it pastes. The ratio of the two pastes is too unsteady to tell
+  // them apart: hosted WebKit recorded 227 -> 434 ms, 240 -> 369 ms and
+  // 247 -> 586 ms for the same code. So each run times the three things
+  // together: a paste into the short note, a load of the long note and a
+  // paste into it. A runner that slows down meanwhile slows all three, and
+  // the extra cost of the long paste is set against 0.4 times that load, plus
+  // 100 ms for the frame. The best run decides.
+  const scores: number[] = []
+  const timings: Array<Record<string, number>> = []
+  for (let run = 0; run < 5; run++) {
+    await load(page, generateParagraphs(500))
+    await caret(page, 'Paragraph 252:', 'end')
+    const short = await timedPaste(page, pasted(500))
+    const loadStart = Date.now()
+    await load(page, generateParagraphs(5000))
+    const loadTime = Date.now() - loadStart
+    await caret(page, 'Paragraph 2502:', 'end')
+    const long = await timedPaste(page, pasted(500))
+    timings.push({ short, load: loadTime, long })
+    scores.push(long - short - 0.4 * loadTime)
+  }
+  testInfo.annotations.push({
+    type: 'paste pairs, ms',
+    description: JSON.stringify(timings.map((t) => mapValues(t, Math.round))),
+  })
+  expect(Math.min(...scores)).toBeLessThan(100)
 })
+
+function mapValues(
+  values: Record<string, number>,
+  map: (value: number) => number,
+) {
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [key, map(value)]),
+  )
+}

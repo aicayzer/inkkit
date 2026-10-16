@@ -1,13 +1,15 @@
+import { pathToFileURL } from 'node:url'
 import { expect, test } from 'vitest'
-import { parserCtx } from '@milkdown/kit/core'
+import { parserCtx, remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
   Fragment,
   Slice,
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
-import { Transform } from '@milkdown/kit/prose/transform'
-import { Preservation, PreservationError } from '../src/preserve'
+import { Transform, type Step } from '@milkdown/kit/prose/transform'
+import type { Root } from 'mdast'
+import { Preservation, PreservationError, crossCheck } from '../src/preserve'
 import { withEditor } from './harness'
 import { blocks, definitions, snippets } from './preservation-documents'
 
@@ -193,7 +195,8 @@ test(
       ])
         expect(kinds.get(kind), kind).toBeGreaterThan(10)
     }),
-  120_000,
+  // Longer runs with more seeds.
+  Math.max(120_000, Number(process.env.SEEDS ?? 600) * 100),
 )
 
 // Applies `edit` to the loaded document and saves it both ways.
@@ -478,3 +481,254 @@ test('an edit in a CRLF list keeps the continuation lines of other items', () =>
     })
     expect(whole).toBe(source.replace('one', 'one!').replace('End', 'End!'))
   }))
+
+// The blocks a move reorders among themselves.
+const movable = new Set([
+  'doc',
+  'bullet_list',
+  'ordered_list',
+  'blockquote',
+  'inkkit_callout',
+  'footnote_definition',
+])
+
+// Swaps two neighbors in the note, a list, a quote, a callout or a footnote,
+// as a block move does, and returns the blocks it carried.
+function swap(
+  doc: ProseNode,
+  tr: Transform,
+  random: () => number,
+): ProseNode[] | undefined {
+  const containers: Array<{ node: ProseNode; start: number }> = []
+  if (doc.childCount > 1) containers.push({ node: doc, start: 0 })
+  doc.descendants((node, pos) => {
+    if (movable.has(node.type.name) && node.childCount > 1)
+      containers.push({ node, start: pos + 1 })
+    return node.type.name !== 'table'
+  })
+  if (!containers.length) return undefined
+  const { node, start } = containers[Math.floor(random() * containers.length)]!
+  const index = Math.floor(random() * (node.childCount - 1))
+  let from = start
+  for (let at = 0; at < index; at++) from += node.child(at).nodeSize
+  const carried = [node.child(index + 1), node.child(index)]
+  tr.replaceWith(
+    from,
+    from + carried[0]!.nodeSize + carried[1]!.nodeSize,
+    Fragment.from(carried),
+  )
+  return carried
+}
+
+// Each top-level block's source in `text`, when it reads as `count` blocks,
+// and the text after the last.
+function blockSources(
+  ctx: Ctx,
+  text: string,
+  count: number,
+): { blocks: string[]; tail: string } | undefined {
+  const body = text.replace(/^\uFEFF/, '')
+  const tree = ctx.get(remarkCtx).parse(body) as Root
+  if (tree.children.length !== count || !count) return undefined
+  return {
+    blocks: tree.children.map((node) =>
+      body.slice(node.position!.start.offset, node.position!.end.offset),
+    ),
+    tail: body.slice(tree.children.at(-1)!.position!.end.offset),
+  }
+}
+
+// The serializer moves are compared with: by default this one without the
+// record of moved blocks, which is every other edit's path. Set
+// INKKIT_PRESERVE_REFERENCE to a copy of another version's `preserve.ts`,
+// such as `main`'s, to compare with that.
+const reference = process.env.INKKIT_PRESERVE_REFERENCE
+  ? (
+      (await import(
+        pathToFileURL(process.env.INKKIT_PRESERVE_REFERENCE).href
+      )) as {
+        Preservation: typeof Preservation
+      }
+    ).Preservation
+  : Preservation
+
+// Each seed saves its note a dozen times, with and without the record of
+// moves, so this test runs fewer seeds than the one above unless SEEDS is set.
+const seeds = Number(process.env.SEEDS ?? 300)
+
+test(
+  'block moves save wherever saving without them does, and leave other blocks as it does',
+  () =>
+    withEditor('x\n', (editor) => {
+      const ctx = editor.ctx
+      let compared = 0
+      let checked = 0
+      let carriedBlocks = 0
+      let keptSource = 0
+      for (let seed = 1; seed <= seeds; seed++) {
+        let state = seed
+        const random = () =>
+          (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32
+        const pick = <T>(list: T[]) => list[Math.floor(random() * list.length)]!
+        const ending = random() < 0.3 ? '\r\n' : '\n'
+        const parts = Array.from(
+          { length: 3 + Math.floor(random() * 10) },
+          (_, i) => pick(blocks)(i),
+        )
+        // Copies of a block, in another spelling or the same.
+        if (random() < 0.3)
+          parts.push(
+            pick(['__same__', '**same**', '   same', '- same', '* same']),
+            pick(['__same__', '**same**', '   same', '- same', '* same']),
+          )
+        if (random() < 0.5) parts.splice(1, 0, pick(definitions))
+        if (random() < 0.1) parts.unshift('---\ntitle: front\n---')
+        const source =
+          parts.join('\n\n').replaceAll('\n', ending) +
+          (random() < 0.8 ? ending : '')
+        const own = new Preservation(ctx, source)
+        const other = new reference(ctx, source)
+        const carried = new WeakSet<ProseNode>()
+        const original = new Map<ProseNode, number>()
+        own.baseline.forEach((node, _, index) => original.set(node, index))
+        const authored = blockSources(ctx, source, own.baseline.childCount)
+        let doc = own.baseline
+        // The last move, which Undo can take back while nothing has changed
+        // since. Undo restores the nodes the move took out of place.
+        let undo: { after: ProseNode; steps: Step[] } | undefined
+        for (let step = 0; step < 6; step++) {
+          const tr = new Transform(doc)
+          const schema = doc.type.schema
+          const action = random()
+          let moved = false
+          try {
+            if (action < 0.12 && undo?.after === doc) {
+              for (const inverse of undo.steps) tr.step(inverse)
+            } else if (action < 0.55) {
+              const nodes = swap(doc, tr, random)
+              if (!nodes) continue
+              moved = true
+              for (const node of nodes) carried.add(node)
+              // Sometimes another block goes in the same step.
+              if (random() < 0.3 && tr.doc.childCount > 2) {
+                const removed = Math.floor(random() * tr.doc.childCount)
+                let at = 0
+                for (let child = 0; child < removed; child++)
+                  at += tr.doc.child(child).nodeSize
+                tr.delete(at, at + tr.doc.child(removed).nodeSize)
+              }
+            } else if (action < 0.7 && doc.childCount > 1) {
+              // A whole block deleted, or replaced by a new paragraph.
+              const removed = Math.floor(random() * doc.childCount)
+              let at = 0
+              for (let child = 0; child < removed; child++)
+                at += doc.child(child).nodeSize
+              const end = at + doc.child(removed).nodeSize
+              if (random() < 0.5) tr.delete(at, end)
+              else
+                tr.replaceWith(
+                  at,
+                  end,
+                  schema.nodes.paragraph!.create(
+                    null,
+                    schema.text(pick(['New words.', 'Project beta.'])),
+                  ),
+                )
+            } else {
+              const textblocks: Array<{ node: ProseNode; pos: number }> = []
+              doc.descendants((node, pos) => {
+                if (node.isTextblock) textblocks.push({ node, pos })
+                return true
+              })
+              if (!textblocks.length) continue
+              const target = pick(textblocks)
+              const from =
+                target.pos +
+                1 +
+                Math.floor(random() * (target.node.content.size + 1))
+              if (random() < 0.7)
+                tr.insert(
+                  from,
+                  schema.text(pick(snippets), doc.resolve(from).marks()),
+                )
+              else
+                tr.delete(
+                  from,
+                  Math.min(
+                    target.pos + 1 + target.node.content.size,
+                    from + 1 + Math.floor(random() * 4),
+                  ),
+                )
+            }
+          } catch {
+            continue
+          }
+          undo = moved
+            ? {
+                after: tr.doc,
+                steps: tr.steps
+                  .map((step, at) => step.invert(tr.docs[at]!))
+                  .reverse(),
+              }
+            : undefined
+          doc = tr.doc
+          let saved: string | Error
+          try {
+            saved = own.serialize(doc, carried)
+          } catch (error) {
+            saved = error as Error
+          }
+          let expected: string | Error
+          // The reference's own paths are compared by the test above.
+          const crossChecking = crossCheck.enabled
+          crossCheck.enabled = false
+          try {
+            expected = other.serialize(doc)
+          } catch (error) {
+            expected = error as Error
+          } finally {
+            crossCheck.enabled = crossChecking
+          }
+          const label = `seed ${seed} step ${step}: ${JSON.stringify(source)}`
+          if (typeof expected !== 'string') continue
+          compared++
+          expect(saved, label).toBeTypeOf('string')
+          // A block of the loaded note that no move carried and no edit
+          // reached keeps its own source, or is written as saving without
+          // moves writes it, such as a list given another marker so that it
+          // doesn't join its neighbor.
+          const mine = blockSources(ctx, saved as string, doc.childCount)
+          const theirs = blockSources(ctx, expected, doc.childCount)
+          if (!mine || !theirs || !authored) continue
+          checked++
+          doc.forEach((node, _, index) => {
+            const from = original.get(node)
+            if (from === undefined) return
+            if (carried.has(node)) {
+              // A carried block keeps its source unless that would read
+              // differently where it stands.
+              carriedBlocks++
+              if (mine.blocks[index] === authored.blocks[from]) keptSource++
+              return
+            }
+            if (mine.blocks[index] !== authored.blocks[from])
+              expect(mine.blocks[index], `${label}, block ${index}`).toBe(
+                theirs.blocks[index],
+              )
+          })
+          // The text after the note's last block stays as it was while that
+          // block ends the note, including after Undo puts it back.
+          if (
+            doc.lastChild === own.baseline.lastChild &&
+            mine.tail !== authored.tail
+          )
+            expect(mine.tail, `${label}, end`).toBe(theirs.tail)
+        }
+      }
+      // About five saves compared and four checked block by block per seed.
+      expect(compared).toBeGreaterThan(seeds * 3)
+      expect(checked).toBeGreaterThan(seeds * 2.5)
+      expect(keptSource / carriedBlocks).toBeGreaterThan(0.9)
+    }),
+  Math.max(120_000, Number(process.env.SEEDS ?? 600) * 100),
+)

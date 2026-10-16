@@ -6,6 +6,8 @@ import {
   docSchema,
   hardbreakClearMarkPlugin,
   hardbreakSchema,
+  hardbreakKeymap,
+  headingSchema,
   imageSchema,
   paragraphSchema,
   remarkInlineLinkPlugin,
@@ -40,7 +42,8 @@ import {
   setAlignCommand,
   exitTable,
 } from '@milkdown/kit/preset/gfm'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
+import { closeHistory } from '@milkdown/kit/prose/history'
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { keymap } from '@milkdown/kit/prose/keymap'
 import { autolinkLiterals } from './autolink'
@@ -48,6 +51,7 @@ import { storedInlineCode } from './inline-code'
 import { followsText, remarkLinkForms, type LinkForm } from './link-form'
 import { isScriptAddress } from './link-safety'
 import { sourceAttribute } from './source'
+import { htmlBreakAt } from './hard-break'
 import { ownStarts } from './source-tree'
 import {
   linkedSyntax,
@@ -473,12 +477,12 @@ const commonmarkWithLiteralReferences = commonmark.filter(
   (plugin) =>
     !remarkInlineLinkPlugin.includes(plugin) &&
     plugin !== hardbreakClearMarkPlugin &&
+    !hardbreakKeymap.some((part) => part === plugin) &&
     plugin !== syncHeadingIdPlugin &&
     plugin !== createCodeBlockInputRule,
 )
 
-// A line break inserted inside formatting does not take its marks, and no
-// line break takes inline code, which cannot hold one. This replaces the
+// No line break takes inline code, which cannot hold one. This replaces the
 // preset's plugin, which also cleared the marks of breaks inside newly
 // formatted text and, doing so, reset their attributes, turning a soft break
 // into a hard one, at positions read from the first step against the final
@@ -489,7 +493,6 @@ const breaksWithoutMarks = $prose(
       key: new PluginKey('inkkitBreaksWithoutMarks'),
       appendTransaction(transactions, oldState, newState) {
         if (!transactions.some((tr) => tr.docChanged)) return null
-        const inserted = transactions.some((tr) => tr.getMeta('hardbreak'))
         const start = oldState.doc.content.findDiffStart(newState.doc.content)
         if (start == null) return null
         const end = oldState.doc.content.findDiffEnd(newState.doc.content)!.b
@@ -498,8 +501,7 @@ const breaksWithoutMarks = $prose(
         newState.doc.nodesBetween(start, Math.max(start, end), (node, pos) => {
           if (node.type !== type) return
           for (const mark of node.marks)
-            if (inserted || mark.type.spec.code)
-              tr.removeMark(pos, pos + 1, mark.type)
+            if (mark.type.spec.code) tr.removeMark(pos, pos + 1, mark.type)
         })
         return tr.steps.length ? tr : null
       },
@@ -545,6 +547,42 @@ const preserveSpacerParagraphs = paragraphSchema.extendSchema(
     }
   },
 )
+
+// The preset drops a terminal heading break, including an explicit HTML
+// break that can reopen. Keep the content and each break's own source form.
+const headingsWithBreaks = headingSchema.extendSchema((base) => (ctx) => {
+  const schema = base(ctx)
+  return {
+    ...schema,
+    attrs: { ...schema.attrs, form: { default: 'atx' } },
+    parseMarkdown: {
+      ...schema.parseMarkdown,
+      runner(state, node, type) {
+        // ATX headings occupy one source line; setext headings include an underline.
+        const position = node.position
+        state.openNode(type, {
+          level: node.depth,
+          form:
+            position && position.end.line > position.start.line
+              ? 'setext'
+              : 'atx',
+        })
+        state.next(node.children)
+        state.closeNode()
+      },
+    },
+    toMarkdown: {
+      ...schema.toMarkdown,
+      runner(state, node) {
+        state.openNode('heading', undefined, {
+          depth: node.attrs.level,
+        })
+        state.next(node.content)
+        state.closeNode()
+      },
+    },
+  }
+})
 
 // Soft Markdown breaks still serialize as a single newline. Display the actual
 // line boundary rather than a space, so changing editor mode never joins lines.
@@ -658,25 +696,31 @@ function cellToMarkdown(base: CellToMarkdown): CellToMarkdown {
   }
 }
 
-// A cell cannot hold a line ending, so Shift-Enter there inserts the `<br />`
-// a cell reads back. The preset's command would instead split the paragraph
-// when it already ends in a break, which reshapes the table.
-const cellBreakKeymap = $prose(() =>
+// Each break is its own undo step. Never replace an earlier break with a
+// paragraph, as the preset does on the second press (even away from its end).
+const breakKeymap = $prose(() =>
   keymap({
-    'Shift-Enter': (state, dispatch) => {
+    'Shift-Enter': (state, dispatch, view) => {
       const { $from } = state.selection
-      if (!/^table_(cell|header)$/.test($from.node(-1)?.type.name ?? ''))
-        return false
-      dispatch?.(
-        state.tr
-          // A break inside a mark or link would be inline HTML there, which
-          // a cell does not read back as a break.
-          .replaceSelectionWith(
-            state.schema.nodes.hardbreak!.create({ isHTML: true }),
-            false,
-          )
-          .scrollIntoView(),
+      if (
+        !(state.selection instanceof TextSelection) ||
+        $from.parent.type.spec.code
       )
+        return false
+      const isHTML = htmlBreakAt($from)
+      if (dispatch) {
+        dispatch(
+          closeHistory(state.tr)
+            .replaceSelectionWith(
+              state.schema.nodes.hardbreak!.create({ isHTML }),
+              false,
+            )
+            .scrollIntoView(),
+        )
+        // Keep subsequent typing out of this break's history event too.
+        if (view)
+          dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
+      }
       return true
     },
   }),
@@ -791,7 +835,7 @@ export function createDialect(
   files = false,
 ): MilkdownPlugin[] {
   return [
-    cellBreakKeymap,
+    breakKeymap,
     remarkCodeFences,
     remarkReferencesPlugin,
     remarkLinkFormsPlugin,
@@ -820,6 +864,7 @@ export function createDialect(
     joinKeepingSourceKeymap,
     preserveSpacerParagraphs,
     visibleSoftbreaks,
+    headingsWithBreaks,
     normalizedImages,
     imageBlocks,
     autolinkLiterals,

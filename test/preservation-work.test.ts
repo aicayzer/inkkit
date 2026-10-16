@@ -168,3 +168,23 @@ test('pasting into a long note reads only what it pastes', async () => {
   expect(saved).toContain('Paragraph 1000: typed')
   for (const characters of work) expect(characters).toBeLessThan(LIMIT)
 }, 120_000)
+
+// Plain-text paste relies on the check dispatch makes after every appended
+// plugin has normalized the edit, so it must read only what it pastes too.
+test('pasting plain text into a long note reads only what it pastes', async () => {
+  const source = generateParagraphs(5000)
+  const pasted = Array.from(
+    { length: 20 },
+    (_, i) => `Pasted line ${i + 1} with __some__ words.`,
+  ).join('\n')
+  const { work, saved } = await measure(source, [
+    (editor, view) => {
+      caretAfter(view, 'Paragraph 2500:', 'end')
+      expect(editor.pasteAsPlainText(pasted, 1)).toBe(true)
+    },
+    type('Paragraph 1000:', ' typed'),
+  ])
+  expect(saved).toContain('Pasted line 20 with \\_\\_some\\_\\_ words.')
+  expect(saved).toContain('Paragraph 1000: typed')
+  for (const characters of work) expect(characters).toBeLessThan(LIMIT)
+}, 120_000)

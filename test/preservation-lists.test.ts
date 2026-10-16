@@ -9,9 +9,10 @@ import { InkKitEditor } from '../src/index'
 import { Preservation, PreservationError } from '../src/preserve'
 import { withEditor } from './harness'
 
+// Heading form, IDs and delimiter markers are presentation; saved bytes are checked separately.
 const shape = (doc: ProseNode) =>
   JSON.stringify(doc.toJSON(), (key, value) =>
-    key === 'id' || key === 'marker' ? undefined : value,
+    key === 'id' || key === 'marker' || key === 'form' ? undefined : value,
   )
 
 function save(ctx: Ctx, before: string, after: string): string {
