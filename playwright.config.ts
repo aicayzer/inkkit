@@ -30,10 +30,12 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
-  webServer: {
-    command: `pnpm exec vite playground --host 127.0.0.1 --port ${port} --strictPort`,
-    url: `http://127.0.0.1:${port}`,
-    reuseExistingServer: false,
-    timeout: 30_000,
-  },
+  webServer: process.env.INKKIT_EXTERNAL_PLAYGROUND
+    ? undefined
+    : {
+        command: `pnpm exec vite playground --host 127.0.0.1 --port ${port} --strictPort`,
+        url: `http://127.0.0.1:${port}`,
+        reuseExistingServer: false,
+        timeout: 30_000,
+      },
 })
