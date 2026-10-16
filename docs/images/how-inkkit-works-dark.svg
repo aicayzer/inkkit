@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 698" width="800" height="698" role="img" aria-labelledby="title desc">
+  <title id="title">How InkKit keeps Markdown as written</title>
+  <desc id="desc">An ordinary formatted Markdown editor rebuilds the whole file from its own model when it saves, which changes list markers, spacing and escaping you never touched. InkKit loads a Markdown file and edits it formatted with Milkdown. A preservation layer between Milkdown and the file saves a note you opened and left byte for byte unchanged. After an edit, unchanged blocks keep their original bytes and only edited blocks are written by Milkdown. InkKit then reads the result back. If it reopens as the same document, the edit is kept and saved. If not, the edit is refused and the note stays as it was. Your app owns the files, storage, toolbar and appearance.</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .t { font-size: 16px; font-weight: 600; }
+    .s { font-size: 13.5px; }
+    .l { font-size: 13.5px; }
+    .h { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
+    .h2 { font-size: 15px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9198a1"/>
+    </marker>
+  </defs>
+  <rect x="0.75" y="0.75" width="798.5" height="696.5" rx="14" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+  <text x="32" y="38" text-anchor="start" class="h" fill="#9198a1">AN ORDINARY FORMATTED EDITOR</text>
+  <rect x="32" y="50" width="200" height="56" rx="10" fill="#161b22" stroke="#6e7681" stroke-width="1.5"/>
+  <text x="132" y="73" text-anchor="middle" class="t" fill="#e6edf3">Markdown file</text>
+  <text x="132" y="93" text-anchor="middle" class="s" fill="#e6edf3">Your note, as written</text>
+  <path d="M 232 78 H 290" fill="none" stroke="#9198a1" stroke-width="1.75" marker-end="url(#head)"/>
+  <rect x="292" y="50" width="216" height="56" rx="10" fill="#161b22" stroke="#6e7681" stroke-width="1.5"/>
+  <text x="400" y="73" text-anchor="middle" class="t" fill="#e6edf3">Rebuilds the whole file</text>
+  <text x="400" y="93" text-anchor="middle" class="s" fill="#e6edf3">from the editor's own model</text>
+  <path d="M 508 78 H 566" fill="none" stroke="#9198a1" stroke-width="1.75" marker-end="url(#head)"/>
+  <rect x="568" y="50" width="200" height="56" rx="10" fill="#3d1418" stroke="#f85149" stroke-width="1.5"/>
+  <text x="668" y="73" text-anchor="middle" class="t" fill="#ffdcd7">Saved file, changed</text>
+  <text x="668" y="93" text-anchor="middle" class="s" fill="#ffdcd7">markers, spacing, escaping</text>
+  <line x1="32" y1="130" x2="768" y2="130" stroke="#30363d" stroke-width="1"/>
+  <text x="32" y="158" text-anchor="start" class="h" fill="#79c0ff">WITH INKKIT</text>
+  <rect x="32" y="170" width="200" height="60" rx="10" fill="#161b22" stroke="#6e7681" stroke-width="1.5"/>
+  <text x="132" y="195" text-anchor="middle" class="t" fill="#e6edf3">Markdown file</text>
+  <text x="132" y="215" text-anchor="middle" class="s" fill="#e6edf3">Your note, as written</text>
+  <path d="M 232 200 H 290" fill="none" stroke="#9198a1" stroke-width="1.75" marker-end="url(#head)"/>
+  <rect x="292" y="170" width="216" height="60" rx="10" fill="#10243f" stroke="#4493f8" stroke-width="1.5"/>
+  <text x="400" y="195" text-anchor="middle" class="t" fill="#cae8ff">InkKit loads it</text>
+  <text x="400" y="215" text-anchor="middle" class="s" fill="#cae8ff">Keeps the original bytes</text>
+  <path d="M 508 200 H 566" fill="none" stroke="#9198a1" stroke-width="1.75" marker-end="url(#head)"/>
+  <rect x="568" y="170" width="200" height="60" rx="10" fill="#10243f" stroke="#4493f8" stroke-width="1.5"/>
+  <text x="668" y="195" text-anchor="middle" class="t" fill="#cae8ff">Milkdown editing</text>
+  <text x="668" y="215" text-anchor="middle" class="s" fill="#cae8ff">You edit formatted text</text>
+  <path d="M 668 230 V 276" fill="none" stroke="#9198a1" stroke-width="1.75" marker-end="url(#head)"/>
+  <text x="682" y="258" text-anchor="start" class="l" fill="#9198a1">On every edit</text>
+  <rect x="32" y="278" width="736" height="144" rx="14" fill="#0b1a2e" stroke="#4493f8" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="52" y="306" text-anchor="start" class="h2" fill="#cae8ff">Preservation layer</text>
+  <text x="748" y="306" text-anchor="end" class="l" fill="#9198a1">Nothing edited: saved byte for byte unchanged</text>
+  <rect x="52" y="324" width="340" height="80" rx="10" fill="#0f2d1a" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="222" y="359" text-anchor="middle" class="t" fill="#aff5b4">Unchanged blocks</text>
+  <text x="222" y="379" text-anchor="middle" class="s" fill="#aff5b4">Keep their original bytes</text>
+  <rect x="408" y="324" width="340" height="80" rx="10" fill="#161b22" stroke="#6e7681" stroke-width="1.5"/>
+  <text x="578" y="359" text-anchor="middle" class="t" fill="#e6edf3">Edited blocks</text>
+  <text x="578" y="379" text-anchor="middle" class="s" fill="#e6edf3">Written by Milkdown</text>
+  <path d="M 400 422 V 450" fill="none" stroke="#9198a1" stroke-width="1.75" marker-end="url(#head)"/>
+  <rect x="210" y="452" width="380" height="64" rx="10" fill="#10243f" stroke="#4493f8" stroke-width="1.5"/>
+  <text x="400" y="479" text-anchor="middle" class="t" fill="#cae8ff">Read-back check</text>
+  <text x="400" y="499" text-anchor="middle" class="s" fill="#cae8ff">Does the result reopen as the same document?</text>
+  <path d="M 300 516 V 548 H 217 V 568" fill="none" stroke="#9198a1" stroke-width="1.75" marker-end="url(#head)"/>
+  <path d="M 500 516 V 548 H 583 V 568" fill="none" stroke="#9198a1" stroke-width="1.75" marker-end="url(#head)"/>
+  <text x="258" y="540" text-anchor="middle" class="l" fill="#9198a1">Yes</text>
+  <text x="541" y="540" text-anchor="middle" class="l" fill="#9198a1">No</text>
+  <rect x="52" y="570" width="330" height="58" rx="10" fill="#0f2d1a" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="217" y="594" text-anchor="middle" class="t" fill="#aff5b4">Saved file</text>
+  <text x="217" y="614" text-anchor="middle" class="s" fill="#aff5b4">Your edits, and nothing else changed</text>
+  <rect x="418" y="570" width="330" height="58" rx="10" fill="#3a2a05" stroke="#d29922" stroke-width="1.5"/>
+  <text x="583" y="594" text-anchor="middle" class="t" fill="#f8e3a1">Edit refused</text>
+  <text x="583" y="614" text-anchor="middle" class="s" fill="#f8e3a1">The note stays as it was</text>
+  <line x1="32" y1="648" x2="768" y2="648" stroke="#30363d" stroke-width="1"/>
+  <text x="400" y="674" text-anchor="middle" class="l" fill="#9198a1">Your app owns the files, storage, toolbar and appearance.</text>
+</svg>
