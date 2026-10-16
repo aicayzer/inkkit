@@ -348,3 +348,35 @@ for (const mode of ['formatted', 'source', 'txt'] as const) {
     expect(refreshed[0]!.length).toBeGreaterThan(0)
   })
 }
+
+for (const [name, before, after] of [
+  ['list item', '- alpha beta\n- other\n', '- alpha gamma\n- other\n'],
+  [
+    'table cell',
+    '| a | b |\n| - | - |\n| alpha beta | other |\n',
+    '| a | b |\n| - | - |\n| alpha gamma | other |\n',
+  ],
+] as const)
+  test(`replaces a range inside a ${name} and Undo restores it @native-search`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture('native-search')
+    await page.evaluate(
+      (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+      before,
+    )
+    const range = rangeFor(await readText(page), 'beta')
+    expect(
+      await operation(page, 'replaceTextRange', { range, text: 'gamma' }),
+    ).toBe(true)
+    expect((await observe(page)).snapshot!.text).toBe(after)
+    await operation(page, 'undo')
+    expect((await observe(page)).snapshot!.text).toBe(before)
+    // The saved text opens again as the same document.
+    await page.evaluate(
+      (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+      after,
+    )
+    expect((await observe(page)).snapshot!.text).toBe(after)
+  })
