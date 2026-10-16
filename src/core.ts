@@ -52,3 +52,5 @@ export type {
   ViewportOptions,
   ViewportSnapshot,
 } from './types'
+
+export type { SlashMenuOptions, SlashCommandName, SlashCommand } from './types'

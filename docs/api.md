@@ -97,8 +97,9 @@ InkKitEditor.mount(
 | `labels`    | `Partial<EditorLabels>`                                    | The English defaults         | Replaces built-in text and accessible names. See [Labels](#labels).                                                                                              |
 | `keymap`    | `Keymap`                                                   | History, moves, table exit   | Shortcut bindings. Change them later with `setKeymap`. See [Shortcuts](#shortcuts).                                                                              |
 | `rendering` | `{ codeHighlighting?: boolean, diagramPreview?: boolean }` | Both `true`                  | Turns code highlighting or diagram previews off. See [Code highlighting and diagram previews](#code-highlighting-and-diagram-previews).                          |
+| `slashMenu` | `SlashMenuOptions`                                         | `{ enabled: false }`         | Offers block commands when `/` is typed on an empty line. See [Slash block menu](#slash-block-menu).                                                             |
 
-`images`, `files`, `wikiLinks`, `labels` and `rendering` are fixed at mount, and so is whether `events.copy` is set, because it decides whether code blocks draw a Copy button. The other options can change later through the methods named in the table.
+`images`, `files`, `wikiLinks`, `labels`, `rendering` and `slashMenu` are fixed at mount, and so is whether `events.copy` is set, because it decides whether code blocks draw a Copy button. The other options can change later through the methods named in the table.
 
 `destroy(): Promise<void>` cancels pending work, releases the editor, and removes `inkkit-root` from the root if InkKit added it. It resolves when the editor is gone and never rejects. After it, every member except `destroy` throws `destroyed`; calling `destroy` again does nothing. Await it before you remove the root from the page.
 
@@ -675,6 +676,61 @@ The output includes footnotes, resolved reference links, tables, images, Mermaid
 
 Printing captures a fresh snapshot and rechecks the document ID, generation and revision after asynchronous work, including an edit, undo or reload during export. Composition, pending imports, stale documents and destruction reject the operation. Missing, empty, mismatched or undecodable authored image bytes reject with `image-unavailable`. Invalid or unsupported Mermaid prints readable code with a `diagram-unavailable` warning; failing to rasterize a diagram that rendered rejects with `diagram-unavailable`. A failed operation never returns partial printable content. Local `blob:` image permission is required while portable assets are validated.
 
+## Slash block menu
+
+Set `slashMenu: { enabled: true }` at mount to offer block commands when the person types `/` at the start of an empty line. Empty headings, empty lines after Shift+Return, and empty paragraphs inside list items, quotes and callouts are supported. A command after Shift+Return starts a separate block and keeps the preceding text. A slash elsewhere stays ordinary text, including in dates, paths and URLs. The menu never opens in read-only documents, source or TXT mode, code blocks, table cells, front matter, preserved literal blocks or during composition.
+
+`SlashMenuOptions` has these optional fields:
+
+| Field            | Type                          | Default and meaning                                                                                                          |
+| ---------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`        | `boolean`                     | `false`. Enables the menu.                                                                                                   |
+| `commands`       | `readonly SlashCommandName[]` | All built-in commands. Selects which commands appear, in the fixed order below. An empty array hides every built-in command. |
+| `customCommands` | `readonly SlashCommand[]`     | None. Appends host commands in the supplied order.                                                                           |
+
+Each built-in command matches its displayed name and these additional words. Matching ignores case and compares the start of each name or word with the typed filter. Changing a name through `labels` changes its name match; the additional words stay the same.
+
+| `SlashCommandName` | Default name  | Additional words         |
+| ------------------ | ------------- | ------------------------ |
+| `heading1`         | Heading 1     | `h1`, `title`            |
+| `heading2`         | Heading 2     | `h2`, `subtitle`         |
+| `heading3`         | Heading 3     | `h3`                     |
+| `bulletList`       | Bulleted List | `bullet`, `ul`           |
+| `orderedList`      | Numbered List | `number`, `ol`           |
+| `taskList`         | Checklist     | `task`, `todo`           |
+| `quote`            | Quote         | `blockquote`             |
+| `codeBlock`        | Code Block    | `code`, `fence`          |
+| `table`            | Table         | `grid`                   |
+| `callout`          | Callout       | `note`, `tip`, `warning` |
+| `divider`          | Divider       | `line`, `rule`, `hr`     |
+| `diagram`          | Diagram       | `mermaid`, `chart`       |
+
+Callout opens a second list: Note, Tip, Important, Warning and Caution. Diagram appears only when a diagram renderer is available and `rendering.diagramPreview` is not `false`; it is absent from a bundle that imports only the core entry. Commands insert ordinary supported Markdown, through the editor's conversion, parsing and preservation checks.
+
+The menu opens below the caret, or above it when there is insufficient room below. At most eight rows are visible; the list scrolls. Each row shows a glyph and its name. The first match is selected. Up and Down change the selection; Return, Tab or a click chooses it. Escape, deleting the slash, clicking elsewhere or scrolling away closes the menu and keeps the text. With no match, the menu briefly shows the `suggestionsEmpty` label, then closes. An unrelated edit, selection or presentation change also closes it. The editing surface exposes combobox semantics while the listbox is open, and the selected option is announced as it changes.
+
+Choosing a command replaces the slash and filter in one edit. One Undo immediately afterward restores the line exactly as it was before the slash; Redo restores the inserted block. Dismissing the menu leaves the typed text and its normal history intact. A preservation refusal keeps the document, revision and history unchanged and reports `preservation` through `events.error`.
+
+### Host commands
+
+`SlashCommand` describes a host command:
+
+```ts
+interface SlashCommand {
+  name: string
+  keywords?: readonly string[]
+  action(
+    context: DocumentContext,
+  ): string | undefined | Promise<string | undefined>
+}
+```
+
+`name` is the nonempty displayed name. Optional `keywords` adds prefix matches using the same case-insensitive comparison as built-in commands. `action` receives the current document ID, generation and a new operation ID. The host owns any lookup, permissions or interface needed to choose the content. Return Markdown for InkKit to parse and insert atomically in place of the trigger line. Return `undefined` to cancel and keep the text as typed. Return `''` to remove the slash and filter and restore the line as it was before the slash, including an empty heading's level or a hard break. A host command has the same preservation checks and undo behavior as a built-in command; it does not need access to editor internals.
+
+The menu closes when the action starts. A promise does not block typing. If the document, revision, mode, editability, selection or editor presentation changes before the result arrives, InkKit refuses the stale result and reports `stale-document`. Destruction silently cancels pending actions: late results and errors are ignored. A refusal leaves the current document intact. An invalid return value reports `invalid-argument`; a thrown or rejected action error is reported as an `InkKitError` through `events.error`. A failed action, or one that returns `undefined`, keeps the trigger text.
+
+Unknown option fields or command names, a blank command name, non-string keywords or a missing action make `mount` reject with `invalid-argument`. Use [labels](#labels) for built-in names and the [menu tokens](#appearance-labels-and-shortcuts) for appearance.
+
 ## Appearance, labels and shortcuts
 
 The mounted root receives `.inkkit-root`. Package rules, including table styles, are scoped beneath it; they do not set the host's `:root` font size or color scheme. Set these public CSS custom properties on the root or an ancestor. InkKit reads no other custom property, so a host's own `--accent`, `--text` or `--reading-width` never changes the editor. Properties beginning `--_inkkit-` are internal.
@@ -684,6 +740,12 @@ The mounted root receives `.inkkit-root`. Package rules, including table styles,
 | `--inkkit-font-family`, `--inkkit-font-size`, `--inkkit-line-height`                                                                          | System sans-serif, `15px`; line height defaults to `normal` in formatted mode and `1.5` in source/TXT.                                                                                                                                                                                    |
 | `--inkkit-monospace-font`                                                                                                                     | System monospace stack for source, TXT and code.                                                                                                                                                                                                                                          |
 | `--inkkit-color-scheme`                                                                                                                       | `light dark`.                                                                                                                                                                                                                                                                             |
+| `--inkkit-menu-background`                                                                                                                    | `light-dark(#fff, #252529)`. Suggestion menu background.                                                                                                                                                                                                                                  |
+| `--inkkit-menu-text`                                                                                                                          | `CanvasText`. Suggestion menu text.                                                                                                                                                                                                                                                       |
+| `--inkkit-menu-highlight`                                                                                                                     | `light-dark(#e8e8ed, #414146)`. Selected suggestion background.                                                                                                                                                                                                                           |
+| `--inkkit-menu-radius`                                                                                                                        | `8px`. Suggestion menu corner radius.                                                                                                                                                                                                                                                     |
+| `--inkkit-menu-shadow`                                                                                                                        | `0 4px 18px #0003`. Suggestion menu shadow.                                                                                                                                                                                                                                               |
+| `--inkkit-menu-width`                                                                                                                         | `240px`. Suggestion menu width, limited to the viewport width minus 8 pixels.                                                                                                                                                                                                             |
 | `--inkkit-min-height`, `--inkkit-reading-width`                                                                                               | `100%`, `100%`.                                                                                                                                                                                                                                                                           |
 | `--inkkit-column-inset`                                                                                                                       | The inline padding of the writing column on the formatted surface and on source and TXT. Defaults to the formula below.                                                                                                                                                                   |
 | `--inkkit-padding-top`, `--inkkit-padding-inline`, `--inkkit-padding-bottom`                                                                  | `10px`, `16px`, `48px`.                                                                                                                                                                                                                                                                   |
@@ -777,6 +839,25 @@ InkKit then uses that value on its surfaces, so the host overrides no InkKit sel
 | `wikiMissing`            | `Link unavailable`          | The tooltip of a wiki link that `WikiLinkAdapter.resolve` reports missing.                                        |
 | `comment`                | `Author comment`            | The name of an author comment, which stays out of the readable text.                                              |
 | `preservedMarkdown`      | `Preserved Markdown`        | The name of a block of Markdown that InkKit keeps as authored and doesn't render.                                 |
+| `suggestions`            | `Suggestions`               | The accessible name of the suggestion list.                                                                       |
+| `suggestionsEmpty`       | `No matches`                | The temporary message when no suggestion matches.                                                                 |
+| `slashHeading1`          | `Heading 1`                 | The level-one heading command.                                                                                    |
+| `slashHeading2`          | `Heading 2`                 | The level-two heading command.                                                                                    |
+| `slashHeading3`          | `Heading 3`                 | The level-three heading command.                                                                                  |
+| `slashBulletList`        | `Bulleted List`             | The bulleted list command.                                                                                        |
+| `slashOrderedList`       | `Numbered List`             | The numbered list command.                                                                                        |
+| `slashTaskList`          | `Checklist`                 | The task list command.                                                                                            |
+| `slashQuote`             | `Quote`                     | The quote command.                                                                                                |
+| `slashCodeBlock`         | `Code Block`                | The code block command.                                                                                           |
+| `slashTable`             | `Table`                     | The table command.                                                                                                |
+| `slashCallout`           | `Callout`                   | The command that opens the callout choices.                                                                       |
+| `slashDivider`           | `Divider`                   | The divider command.                                                                                              |
+| `slashDiagram`           | `Diagram`                   | The diagram command, when previews are available.                                                                 |
+| `slashNote`              | `Note`                      | The Note callout choice.                                                                                          |
+| `slashTip`               | `Tip`                       | The Tip callout choice.                                                                                           |
+| `slashImportant`         | `Important`                 | The Important callout choice.                                                                                     |
+| `slashWarning`           | `Warning`                   | The Warning callout choice.                                                                                       |
+| `slashCaution`           | `Caution`                   | The Caution callout choice.                                                                                       |
 
 Your app owns its localization catalog and its toolbar and menu labels.
 
@@ -883,6 +964,7 @@ This table maps every exported name to the section that describes it. `InkKitEdi
 | [Printing](#printing)                                                                 | `PrintableDocument`, `PrintableWarning`                                                                   |
 | [Labels](#labels)                                                                     | `EditorLabels`                                                                                            |
 | [Shortcuts](#shortcuts)                                                               | `ShortcutName`, `Keymap`                                                                                  |
+| [Slash block menu](#slash-block-menu)                                                 | `SlashMenuOptions`, `SlashCommandName`, `SlashCommand`                                                    |
 | [Optional wiki links and files](#optional-wiki-links-and-files)                       | `WikiLinkAdapter`, `WikiLinkReference`, `FileAdapter`, `FileReference`, `FileContext`, `FilePresentation` |
 
 ## Release history

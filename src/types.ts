@@ -259,6 +259,26 @@ export interface ViewportSnapshot {
 }
 /** Built-in editor text. Hosts can override individual labels at mount time. */
 export interface EditorLabels {
+  suggestions: string
+  suggestionsEmpty: string
+  slashHeading1: string
+  slashHeading2: string
+  slashHeading3: string
+  slashBulletList: string
+  slashOrderedList: string
+  slashTaskList: string
+  slashQuote: string
+  slashCodeBlock: string
+  slashTable: string
+  slashCallout: string
+  slashDivider: string
+  slashDiagram: string
+  slashNote: string
+  slashTip: string
+  slashImportant: string
+  slashWarning: string
+  slashCaution: string
+
   formattedEditor: string
   plainTextEditor: string
   sourceEditor: string
@@ -334,4 +354,31 @@ export interface TableOptions {
   order?: 'ascending' | 'descending'
   /** `sortRows`. Defaults to `text`. */
   comparison?: 'text' | 'number'
+}
+
+export type SlashCommandName =
+  | 'heading1'
+  | 'heading2'
+  | 'heading3'
+  | 'bulletList'
+  | 'orderedList'
+  | 'taskList'
+  | 'quote'
+  | 'codeBlock'
+  | 'table'
+  | 'callout'
+  | 'divider'
+  | 'diagram'
+export interface SlashCommand {
+  name: string
+  keywords?: readonly string[]
+  /** Returns Markdown to insert in place of the trigger. Undefined cancels the action. */
+  action(
+    context: DocumentContext,
+  ): string | undefined | Promise<string | undefined>
+}
+export interface SlashMenuOptions {
+  enabled?: boolean
+  commands?: readonly SlashCommandName[]
+  customCommands?: readonly SlashCommand[]
 }
