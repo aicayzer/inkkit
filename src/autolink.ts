@@ -123,8 +123,8 @@ function angleHref(text: string): string | undefined {
 }
 
 // Completing an angle autolink consumes its delimiters, as other Markdown
-// input does. Only the newly inserted closing character triggers this: pasted
-// literal text and untouched escapes must not become Markdown syntax.
+// input does. Only a single newly inserted `>` triggers this, so pasted text
+// and a `>` already in the note stay literal.
 function completedAngle(
   tr: Transaction,
   chars: Array<Character | undefined>,
