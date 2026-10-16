@@ -789,16 +789,49 @@ function retainBoundaryWhitespace(raw: string, canonical: string): string {
       .join('')
   const encode = (value: string): string =>
     value.replace(/[ \t]/g, (value) => (value === '\t' ? '&#x9;' : '&#x20;'))
-  const start = /^[ \t]+/.exec(raw)?.[0]
+  // A callout header and its first body line share a Markdown text node.
+  // Check each line after its quote markers, so a newly exposed body space
+  // gets the same encoding as a space at the start of a paragraph.
+  if (raw.includes('\n')) {
+    const lines = raw.split(/(\r?\n)/)
+    const written = canonical.split(/\r?\n/)
+    if (lines.length === written.length * 2 - 1)
+      return lines
+        .map((line, index) => {
+          if (index % 2) return line
+          const canonicalLine = written[index / 2]!
+          const gutter = (value: string) =>
+            /^(?:[ \t]*>)*/.exec(value)?.[0] ?? ''
+          const prefix = gutter(line)
+          const canonicalPrefix = gutter(canonicalLine)
+          if (
+            prefix.replace(/[ \t]/g, '') !==
+            canonicalPrefix.replace(/[ \t]/g, '')
+          )
+            return line
+          const canonicalBody = canonicalLine.slice(canonicalPrefix.length)
+          return (
+            prefix +
+            retainBoundaryWhitespace(line.slice(prefix.length), canonicalBody)
+          )
+        })
+        .join('')
+  }
   const rawStart = new RegExp(`^${token}+`).exec(raw)?.[0]
   const encodedStart = new RegExp(`^${token}+`).exec(canonical)?.[0]
-  if (
-    start &&
-    rawStart &&
-    encodedStart?.includes('&') &&
-    decoded(rawStart) === decoded(encodedStart)
-  )
-    raw = encode(start) + raw.slice(start.length)
+  if (rawStart && encodedStart?.includes('&')) {
+    // Only the tail from the first reference is content. The whitespace
+    // before it can be container indentation, whose width differs in the
+    // authored and canonical forms. Keep that prefix and entity spelling.
+    const content = decoded(encodedStart.slice(encodedStart.indexOf('&')))
+    const parts = rawStart.match(new RegExp(token, 'g'))!
+    const from = parts.length - content.length
+    if (from >= 0 && decoded(parts.slice(from).join('')) === content)
+      raw =
+        parts
+          .map((part, index) => (index < from ? part : encode(part)))
+          .join('') + raw.slice(rawStart.length)
+  }
   const end = /[ \t]+$/.exec(raw)?.[0]
   const rawEnd = new RegExp(`${token}+$`).exec(raw)?.[0]
   const encodedEnd = new RegExp(`${token}+$`).exec(canonical)?.[0]
