@@ -2,9 +2,11 @@ import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
+import { undoDepth, redoDepth } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor } from '../src/index'
 import { semanticSignature } from '../src/preserve'
+import { angleAutolinkCases } from './angle-autolink-cases'
 
 const input = { documentId: 'typing', format: 'md' as const }
 
@@ -713,3 +715,112 @@ for (const [alphabet, characters] of Object.entries(alphabets))
           }
         }),
     )
+
+for (const [name, source, typed, expected] of angleAutolinkCases)
+  test(`typing angle brackets around ${name} preserves the authored source`, () =>
+    session(source, async (s) => {
+      await expectSaves(s, source)
+      const start = at(s.view, 'x', false)
+      s.view.dispatch(
+        s.view.state.tr.setSelection(
+          TextSelection.create(s.view.state.doc, start, start + 1),
+        ),
+      )
+      for (const character of typed) {
+        type(s.view, character)
+        await expectSaves(s)
+      }
+      const result = await s.save()
+      expect(result.saved).toBe(expected)
+    }))
+
+for (const typed of ['<https://x.com>', '<a@b.co>', '<ftp://x.com/a>'])
+  test(`typing ${typed} into code keeps every character and adds no link`, () =>
+    session('Code `xy` now\n', async (s) => {
+      place(s.view, at(s.view, 'x'))
+      type(s.view, typed)
+      await expectSaves(s, `Code \`x${typed}y\` now\n`)
+      expect(s.view.dom.querySelector('a')).toBeNull()
+    }))
+
+for (const source of [
+  '<https://x.com>\n',
+  '<a@b.co>\n',
+  '\\<https://x.com>\n',
+  'Keep ` <https://x.com> `\n',
+])
+  test(`loading ${JSON.stringify(source)} and editing another block keep its bytes`, () =>
+    session(`${source}\nOther\n`, async (s) => {
+      await expectSaves(s, `${source}\nOther\n`)
+      place(s.view, at(s.view, 'Other'))
+      type(s.view, '>')
+      await expectSaves(s, `${source}\nOther\\>\n`)
+    }))
+
+test('an angle address typed into an explicit link label keeps its destination', () =>
+  session('[x](docs)\n', async (s) => {
+    place(s.view, at(s.view, 'x'))
+    type(s.view, '<https://x.com>')
+    await expectSaves(s)
+    expect(s.view.state.doc.textContent).toBe('x<https://x.com>')
+    expect(s.view.dom.querySelector('a')?.getAttribute('href')).toBe('docs')
+  }))
+
+test('completion leaves the caret after the autolink and undo restores the note', () =>
+  session('x\n', async (s) => {
+    place(s.view, at(s.view, 'x'))
+    type(s.view, '<https://x.com> and <a@b.co> end')
+    await expectSaves(s, 'x<https://x.com> and <a@b.co> end\n')
+    s.editor.undo()
+    await expectSaves(s, 'x\n')
+    s.editor.redo()
+    await expectSaves(s, 'x<https://x.com> and <a@b.co> end\n')
+  }))
+
+test('an unrepresentable literal paste is refused without changing the document or history', () =>
+  session('x\n', async (s) => {
+    place(s.view, at(s.view, 'x'))
+    const state = s.view.state
+    const snapshot = s.editor.snapshot()
+    const undo = undoDepth(state)
+    const redo = redoDepth(state)
+    expect(() => s.editor.pasteAsPlainText('<https://x.com>')).toThrowError(
+      expect.objectContaining({ code: 'preservation' }),
+    )
+    expect(s.view.state).toBe(state)
+    expect(s.editor.snapshot()).toEqual(snapshot)
+    expect(undoDepth(s.view.state)).toBe(undo)
+    expect(redoDepth(s.view.state)).toBe(redo)
+    await expectSaves(s, 'x\n')
+  }))
+
+test('a preservation refusal during angle completion keeps the document, revision and history', () =>
+  session('x\n', async (s) => {
+    place(s.view, at(s.view, 'x'))
+    type(s.view, '<https://x.com')
+    const state = s.view.state
+    const snapshot = s.editor.snapshot()
+    const undo = undoDepth(state)
+    const redo = redoDepth(state)
+    const internal = s.editor as unknown as {
+      assertPreserved: (...args: unknown[]) => void
+    }
+    const original = internal.assertPreserved
+    // Refuse the final normalized document, as an unrepresentable edit is refused.
+    internal.assertPreserved = () => {
+      throw new Error('Refused for the test')
+    }
+    try {
+      type(s.view, '>')
+      expect(s.errors).toMatchObject([{ code: 'preservation' }])
+      expect(s.view.state).toBe(state)
+      expect(s.editor.snapshot()).toEqual(snapshot)
+      expect(undoDepth(s.view.state)).toBe(undo)
+      expect(redoDepth(s.view.state)).toBe(redo)
+    } finally {
+      internal.assertPreserved = original
+    }
+    s.errors.length = 0
+    type(s.view, '>')
+    await expectSaves(s, 'x<https://x.com>\n')
+  }))

@@ -385,7 +385,8 @@ describe('where it never applies', () => {
   test('in an autolink in angle brackets', () =>
     smart('', (s) => {
       s.type(`<https://example.com/a--b'c>`)
-      expect(s.view.state.doc.textContent).toBe(`<https://example.com/a--b'c>`)
+      expect(s.view.state.doc.textContent).toBe(`https://example.com/a--b'c`)
+      expect(s.save()).toBe(`<https://example.com/a--b'c>\n`)
     }))
 
   test('in a wiki link and a footnote label', () =>

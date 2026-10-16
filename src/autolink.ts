@@ -121,6 +121,56 @@ function angleHref(text: string): string | undefined {
   return undefined
 }
 
+// Completing an angle autolink consumes its delimiters, as other Markdown
+// input does. Only the newly inserted closing character triggers this: pasted
+// literal text and untouched escapes must not become Markdown syntax.
+function completedAngle(
+  tr: Transaction,
+  chars: Array<Character | undefined>,
+  from: number,
+  to: number,
+): Transaction | undefined {
+  if (to !== from + 1) return undefined
+  const end = chars.findIndex((char) => char?.pos === from)
+  const closing = chars[end]
+  if (
+    closing?.text !== '>' ||
+    closing.marks.some((mark) => mark.type.spec.code) ||
+    (closing.link && closing.form !== 'literal')
+  )
+    return undefined
+  let start = end - 1
+  for (; start >= 0; start--) {
+    const char = chars[start]
+    if (
+      !char ||
+      char.marks.some((mark) => mark.type.spec.code) ||
+      (char.link && char.form !== 'literal') ||
+      !sameMarks(char.marks, closing.marks) ||
+      /[\s>]/.test(char.text)
+    )
+      return undefined
+    if (char.text === '<') break
+  }
+  if (start < 0) return undefined
+  const href = angleHref(
+    chars
+      .slice(start + 1, end)
+      .map((char) => char!.text)
+      .join(''),
+  )
+  if (!href) return undefined
+  const opening = chars[start]!.pos
+  return tr
+    .delete(from, to)
+    .delete(opening, opening + 1)
+    .addMark(
+      opening,
+      from - 1,
+      tr.doc.type.schema.marks.link!.create({ href, form: 'angle' }),
+    )
+}
+
 interface Wanted {
   href: string
   form: LinkForm
@@ -391,12 +441,14 @@ export const autolinkLiterals = $prose(
       key: new PluginKey('autolinkLiterals'),
       appendTransaction(transactions, oldState, newState) {
         if (!transactions.some((tr) => tr.docChanged)) return null
+        const edited = editedBlocks(oldState.doc, newState.doc)
         const blocks: Block[] = []
-        for (const { pos, block, from, to } of editedBlocks(
-          oldState.doc,
-          newState.doc,
-        )) {
+        for (const { pos, block, from, to } of edited) {
           const chars = characters(block, pos + 1)
+          if (edited.length === 1) {
+            const completed = completedAngle(newState.tr, chars, from, to)
+            if (completed && readsBack(ctx, completed, pos)) return completed
+          }
           const index = (at: number) => {
             const found = chars.findIndex(
               (char) => char !== undefined && char.pos >= at,
