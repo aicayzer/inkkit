@@ -1,6 +1,6 @@
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import type { EditorState } from '@milkdown/kit/prose/state'
+import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import {
   InkKitError,
@@ -52,7 +52,7 @@ export function wikiSuggestionTransaction(
   view: EditorView,
   session: SuggestionSession,
   name: string,
-) {
+): Transaction {
   const { state } = view
   return closeHistory(
     state.tr.replaceWith(
