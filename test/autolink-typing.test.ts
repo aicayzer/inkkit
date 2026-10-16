@@ -7,6 +7,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor } from '../src/index'
 import { semanticSignature } from '../src/preserve'
 import { angleAutolinkCases } from './angle-autolink-cases'
+import { codeSpanAutolinkCases } from './code-span-autolink-cases'
 
 const input = { documentId: 'typing', format: 'md' as const }
 
@@ -100,6 +101,26 @@ function type(view: EditorView, text: string) {
       tr.setSelection(TextSelection.create(tr.doc, from + character.length)),
     )
   }
+}
+
+// Types as keystrokes do: a character goes through the input rules first,
+// as `handleTextInput` gives them the chance, and is inserted otherwise.
+function typeKeys(view: EditorView, text: string) {
+  for (const character of text) {
+    const { from, to } = view.state.selection
+    const handled = view.someProp('handleTextInput', (handler) =>
+      handler(view, from, to, character, () =>
+        view.state.tr.insertText(character, from, to),
+      ),
+    )
+    if (!handled) type(view, character)
+  }
+}
+
+function select(view: EditorView, from: number, to: number) {
+  view.dispatch(
+    view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)),
+  )
 }
 
 function place(view: EditorView, pos: number) {
@@ -856,3 +877,102 @@ test('completion recomputes the bare suffix beyond the closing bracket', () =>
     type(s.view, '>')
     await expectSaves(s, '<https://x.com>foo\n')
   }))
+
+// Code is written as it is. An address is linked while it is typed, before the
+// closing backtick wraps it, and the link must not outlive that.
+const links = (view: EditorView) => {
+  let found = 0
+  view.state.doc.descendants((node) => {
+    if (node.marks.some((mark) => mark.type.name === 'link')) found++
+  })
+  return found
+}
+
+for (const [name, source, typed, expected] of codeSpanAutolinkCases)
+  test(`typing backticks around ${name} saves a code span and no link`, () =>
+    session(source, async (s) => {
+      await expectSaves(s, source)
+      const start = at(s.view, 'x', false)
+      select(s.view, start, start + 1)
+      for (const character of typed) {
+        typeKeys(s.view, character)
+        await expectSaves(s)
+      }
+      await expectSaves(s, expected)
+      expect(links(s.view)).toBe(0)
+      expect(s.view.dom.querySelector('code')).not.toBeNull()
+    }))
+
+test('typing the opening backtick last leaves literal backticks, not a code span', () =>
+  session('x\n', async (s) => {
+    const start = at(s.view, 'x', false)
+    select(s.view, start, start + 1)
+    typeKeys(s.view, 'http://x.com`')
+    place(s.view, 1)
+    typeKeys(s.view, '`')
+    await expectSaves(s)
+    expect(s.view.state.doc.textContent).toBe('`http://x.com`')
+    expect(s.view.dom.querySelector('code')).toBeNull()
+  }))
+
+test('undo and redo right after the closing backtick keep the code span unlinked', () =>
+  session('x\n', async (s) => {
+    const start = at(s.view, 'x', false)
+    select(s.view, start, start + 1)
+    typeKeys(s.view, '`http://x.com`')
+    await expectSaves(s, '`http://x.com`\n')
+    // The rule replaced the closing backtick, so undo restores the text
+    // typed before it, with the address linked again as it was typed.
+    s.editor.undo()
+    await expectSaves(s, '\\`http://x.com\n')
+    s.editor.redo()
+    await expectSaves(s, '`http://x.com`\n')
+    expect(links(s.view)).toBe(0)
+    expect(s.errors).toEqual([])
+  }))
+
+test('formatting a typed address as code drops its link', () =>
+  session('x\n', async (s) => {
+    const start = at(s.view, 'x', false)
+    select(s.view, start, start + 1)
+    typeKeys(s.view, 'http://x.com')
+    expect(s.view.dom.querySelector('a')).not.toBeNull()
+    select(s.view, 1, s.view.state.doc.content.size - 1)
+    s.editor.format('code')
+    await expectSaves(s, '`http://x.com`\n')
+    expect(links(s.view)).toBe(0)
+  }))
+
+for (const [name, source, typed, expected] of [
+  [
+    'linked code in another block',
+    '[`http://x.com`](http://x.com)\n\nOther\n',
+    '!',
+    '[`http://x.com`](http://x.com)\n\nOther!\n',
+  ],
+  [
+    'linked code in the same block',
+    '[`http://x.com`](http://x.com) tail\n',
+    '!',
+    '[`http://x.com`](http://x.com) tail!\n',
+  ],
+  [
+    'a code span in the same block',
+    'Keep `http://x.com` tail\n',
+    '!',
+    'Keep `http://x.com` tail!\n',
+  ],
+  [
+    'linked code with another address typed beside it',
+    '[`http://x.com`](http://x.com) tail\n',
+    ' www.y.com',
+    '[`http://x.com`](http://x.com) tail www.y.com\n',
+  ],
+] as const)
+  test(`editing next to ${name} keeps its bytes`, () =>
+    session(source, async (s) => {
+      await expectSaves(s, source)
+      place(s.view, s.view.state.doc.content.size - 1)
+      typeKeys(s.view, typed)
+      await expectSaves(s, expected)
+    }))
