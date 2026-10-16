@@ -731,6 +731,46 @@ function retainBoundaryWhitespace(raw: string, canonical: string): string {
       .join('')
   const encode = (value: string): string =>
     value.replace(/[ \t]/g, (value) => (value === '\t' ? '&#x9;' : '&#x20;'))
+  // A callout header and its first body line share a Markdown text node.
+  // Check each line after its quote markers, so a newly exposed body space
+  // gets the same encoding as a space at the start of a paragraph.
+  if (raw.includes('\n')) {
+    const lines = raw.split(/(\r?\n)/)
+    const written = canonical.split(/\r?\n/)
+    if (lines.length === written.length * 2 - 1)
+      return lines
+        .map((line, index) => {
+          if (index % 2) return line
+          const canonicalLine = written[index / 2]!
+          const gutter = (value: string) =>
+            /^(?:[ \t]*>[ \t]?)+/.exec(value)?.[0] ?? ''
+          let prefix = gutter(line)
+          const canonicalPrefix = gutter(canonicalLine)
+          if (
+            prefix.replace(/[ \t]/g, '') !==
+            canonicalPrefix.replace(/[ \t]/g, '')
+          )
+            return line
+          const boundary = (value: string) =>
+            new RegExp(`^${token}+`).exec(value)?.[0] ?? ''
+          const canonicalBody = canonicalLine.slice(canonicalPrefix.length)
+          const leading = boundary(canonicalBody)
+          // With an authored `>text` line, deletion can expose a content
+          // space where the optional separator after `>` would normally go.
+          if (
+            leading.includes('&') &&
+            /[ \t]$/.test(prefix) &&
+            decoded(boundary(line.slice(prefix.length - 1))) ===
+              decoded(leading)
+          )
+            prefix = prefix.slice(0, -1)
+          return (
+            prefix +
+            retainBoundaryWhitespace(line.slice(prefix.length), canonicalBody)
+          )
+        })
+        .join('')
+  }
   const start = /^[ \t]+/.exec(raw)?.[0]
   const rawStart = new RegExp(`^${token}+`).exec(raw)?.[0]
   const encodedStart = new RegExp(`^${token}+`).exec(canonical)?.[0]
