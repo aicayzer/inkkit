@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 698" width="800" height="698" role="img" aria-labelledby="title desc">
   <title id="title">How InkKit keeps Markdown as written</title>
-  <desc id="desc">An ordinary formatted Markdown editor rebuilds the whole file from its own model when it saves, which changes list markers, spacing and escaping you never touched. InkKit loads a Markdown file and edits it formatted with Milkdown. On save, a preservation layer returns a note you opened and left byte for byte unchanged. When you edit, unchanged blocks keep their original bytes and only edited blocks are written by Milkdown. InkKit then reads the result back. If it reopens as the same document, the file is saved. If not, the edit is refused and the note stays as it was. Your app owns the files, storage, toolbar and appearance.</desc>
+  <desc id="desc">An ordinary formatted Markdown editor rebuilds the whole file from its own model when it saves, which changes list markers, spacing and escaping you never touched. InkKit loads a Markdown file and edits it formatted with Milkdown. A preservation layer between Milkdown and the file saves a note you opened and left byte for byte unchanged. After an edit, unchanged blocks keep their original bytes and only edited blocks are written by Milkdown. InkKit then reads the result back. If it reopens as the same document, the edit is kept and saved. If not, the edit is refused and the note stays as it was. Your app owns the files, storage, toolbar and appearance.</desc>
   <style>
     text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
     .t { font-size: 16px; font-weight: 600; }
@@ -41,7 +41,7 @@
   <text x="668" y="195" text-anchor="middle" class="t" fill="#0a3069">Milkdown editing</text>
   <text x="668" y="215" text-anchor="middle" class="s" fill="#0a3069">You edit formatted text</text>
   <path d="M 668 230 V 276" fill="none" stroke="#59636e" stroke-width="1.75" marker-end="url(#head)"/>
-  <text x="682" y="258" text-anchor="start" class="l" fill="#59636e">On save</text>
+  <text x="682" y="258" text-anchor="start" class="l" fill="#59636e">On every edit</text>
   <rect x="32" y="278" width="736" height="144" rx="14" fill="#eef6ff" stroke="#0969da" stroke-width="1.5" stroke-dasharray="6 5"/>
   <text x="52" y="306" text-anchor="start" class="h2" fill="#0a3069">Preservation layer</text>
   <text x="748" y="306" text-anchor="end" class="l" fill="#59636e">Nothing edited: saved byte for byte unchanged</text>
