@@ -1,3 +1,4 @@
+import { wikiSession, wikiSuggestionTransaction } from './wiki-suggestions'
 import type { SlashMenuOptions, SlashCommandName, SlashCommand } from './types'
 import { Suggestions, type SuggestionSession } from './suggestions'
 import { slashMenuOptions, slashSession, slashTransaction } from './slash-menu'
@@ -507,6 +508,9 @@ function editorOptions(value: unknown): EditorOptions {
     ]) ?? {}
   for (const name of adapterNames)
     optionalRecord(options[name], `options.${name}`)
+  const wiki = options.wikiLinks as WikiLinkAdapter | undefined
+  if (wiki?.suggest != null && typeof wiki.suggest !== 'function')
+    throw invalidArgument('wikiLinks.suggest must be a function')
   optionalBoolean(options.editable, 'options.editable')
   if (!isOmitted(options.textInput))
     textInputPreferences(options.textInput, 'options.textInput')
@@ -2771,6 +2775,15 @@ export class InkKitEditor {
             options.rendering?.diagramPreview !== false && diagramsAvailable(),
           choose: (session, command, kind) =>
             instance.chooseSlash(session, command, kind),
+        }) ??
+        wikiSession(view, from, to, text, {
+          adapter: options.wikiLinks,
+          context: () => instance.context(),
+          choose: (session, name) => instance.chooseWiki(session, name),
+          error: (error) => {
+            instance.suggestions?.close()
+            instance.report(error)
+          },
         }),
     })
     instance.editor = await Editor.make()
@@ -4547,6 +4560,28 @@ export class InkKitEditor {
     } catch {
       return none
     }
+  }
+
+  private chooseWiki(session: SuggestionSession, name: string): void {
+    this.suggestions?.close()
+    this.forPerson(
+      () =>
+        this.facadeCall(() => {
+          this.assertMutation()
+          const view = this.editor.ctx.get(editorViewCtx)
+          if (this.literalSurface || !session.valid?.(view))
+            throw new InkKitError(
+              'stale-document',
+              'The suggestion belongs to an earlier edit',
+            )
+          view.dispatch(wikiSuggestionTransaction(view, session, name))
+          view.dispatch(
+            closeHistory(view.state.tr).setMeta('addToHistory', false),
+          )
+          return true
+        }),
+      false,
+    )
   }
 
   private chooseSlash(

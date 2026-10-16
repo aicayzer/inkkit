@@ -177,3 +177,22 @@ Add `wikiLinks` and/or `files` to the mount options when the host can resolve th
 Keep private URLs out of source and host clipboard writers. Use `clipboardSnapshot`/`events.clipboard` output for portable rich copy, and `printableSnapshot` for printing. Media/file descriptions are supported print representations, with `attachment-fallback` warnings; unresolved files produce `attachment-unavailable`. Handle `image-unavailable` as an asset failure rather than printing a broken image. Honour `FileContext.signal`; InkKit also ignores stale results and cancels pending output if the captured document or mode changes. No app adoption is implied by enabling these package adapters.
 
 See the [public adapter contract](api.md#optional-wiki-links-and-files) and [representation table](supported-syntax.md#linked-syntax) before wiring native actions.
+
+## Note suggestions
+
+A wiki-link host can supply an asynchronous matcher without enabling the slash menu:
+
+```ts
+const editor = await InkKitEditor.mount(root, events, {
+  wikiLinks: {
+    open(reference, context) {
+      openNote(reference.target, context.documentId)
+    },
+    async suggest(query, context) {
+      return findNoteNames(query, context.signal)
+    },
+  },
+})
+```
+
+The host owns the note index, matching and access policy. Return only note names the person may select. InkKit owns the shared suggestion list, bracket insertion, escaping, history and preservation checks. Requests carry document identity and an abort signal; do not apply their results directly to the editor. See [note suggestions](api.md#note-suggestions) for cancellation and error behavior.

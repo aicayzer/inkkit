@@ -17,6 +17,7 @@ export interface SuggestionSession {
   base: EditorState
   query: string
   valid?(view: EditorView): boolean
+  cancel?(): void
   update(query: string, show: (rows: SuggestionRow[]) => void): void
 }
 export interface SuggestionHost {
@@ -59,6 +60,7 @@ export class Suggestions {
   close = (): void => {
     this.request++
     clearTimeout(this.emptyTimer)
+    this.session?.cancel?.()
     this.session = undefined
     this.popup.remove()
     this.status.remove()
@@ -136,6 +138,7 @@ export class Suggestions {
   show = (rows: SuggestionRow[]) => {
     if (!this.session) return
     clearTimeout(this.emptyTimer)
+    this.popup.removeAttribute('aria-busy')
     this.rows = rows
     this.selected = 0
     this.popup.replaceChildren()
@@ -228,6 +231,13 @@ export class Suggestions {
     session.query = query
     if (!this.popup.isConnected) this.activate()
     const request = ++this.request
+    clearTimeout(this.emptyTimer)
+    this.rows = []
+    this.popup.textContent = this.host.labels.suggestionsLoading
+    this.popup.setAttribute('aria-busy', 'true')
+    this.view!.dom.removeAttribute('aria-activedescendant')
+    this.status.textContent = ''
+    this.position()
     session.update(query, (rows) => {
       if (
         request === this.request &&

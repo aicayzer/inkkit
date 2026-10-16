@@ -5,6 +5,7 @@ import type { EditorLabels } from './types'
 export const defaultLabels: Readonly<EditorLabels> = {
   suggestions: 'Suggestions',
   suggestionsEmpty: 'No matches',
+  suggestionsLoading: 'Loading…',
   slashHeading1: 'Heading 1',
   slashHeading2: 'Heading 2',
   slashHeading3: 'Heading 3',
