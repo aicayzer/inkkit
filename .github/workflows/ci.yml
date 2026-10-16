@@ -55,7 +55,8 @@ jobs:
       - run: npm install --global pnpm@11.0.9
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
-      - run: pnpm exec playwright test --project=${{ matrix.engine }}
+      - run: node --test scripts/test-browser.test.mjs
+      - run: node scripts/test-browser.mjs --project=${{ matrix.engine }}
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:

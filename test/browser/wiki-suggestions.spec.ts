@@ -248,11 +248,15 @@ for (const close of ['Escape', 'brackets', 'outside', 'delete'] as const) {
     }
     await expect(menu(page)).toHaveCount(0)
     expect(await readable(page)).toBe(
-      close === 'brackets' ? '[[Al]]' : close === 'delete' ? '[' : '[[Al',
+      close === 'brackets' ? 'Al' : close === 'delete' ? '[' : '[[Al',
     )
     if (close === 'Escape' || close === 'outside')
       await expectSaved(page, typed)
     if (close === 'brackets') {
+      // The closing brackets make the typed text the link it reads as, and the
+      // note keeps the characters typed.
+      await expectSaved(page, '[[Al]]\n')
+      await expect(root(page).getByRole('link', { name: 'Al' })).toHaveCount(1)
       const dismissed = await saved(page)
       await mount(page, { suggest: false })
       await page.keyboard.type('[[Al]]')

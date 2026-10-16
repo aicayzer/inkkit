@@ -55,6 +55,8 @@ import { htmlBreakAt } from './hard-break'
 import { ownStarts } from './source-tree'
 import {
   linkedSyntax,
+  wikiLinkComposition,
+  wikiLinkInputRule,
   wikiLinkSchema,
   namedFileMarkdown,
   fileReference,
@@ -866,7 +868,7 @@ export function createDialect(
       },
     })),
     references,
-    wikiLinks ? wikiLinkSchema : [],
+    wikiLinks ? [wikiLinkSchema, wikiLinkComposition, wikiLinkInputRule] : [],
     callouts,
     comments,
     hiddenCommentEditing,
