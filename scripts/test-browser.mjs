@@ -26,6 +26,7 @@ export async function runBrowserTests({
   writeFileSync(logFile, '')
   const children = []
   const closed = []
+  const stopped = new Set()
   let failure
   let testsFinished = false
   const log = (message) => {
@@ -40,6 +41,8 @@ export async function runBrowserTests({
   }
   const stop = () => {
     for (const child of children) {
+      if (stopped.has(child)) continue
+      stopped.add(child)
       try {
         process.kill(-child.pid, 'SIGKILL')
       } catch (error) {

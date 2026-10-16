@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test } from 'node:test'
+import { mock, test } from 'node:test'
 import { runBrowserTests } from './test-browser.mjs'
 
 for (const exit of [
@@ -119,3 +119,15 @@ test(
     }
   },
 )
+
+test('signals each process group only once during crash cleanup', async () => {
+  const kill = mock.method(process, 'kill')
+  try {
+    await scenario({ exit: 'process.exit(23)', expected: 1 })
+    const groups = kill.mock.calls.map(({ arguments: [pid] }) => pid)
+    assert.equal(groups.length, 2)
+    assert.equal(new Set(groups).size, groups.length)
+  } finally {
+    kill.mock.restore()
+  }
+})
