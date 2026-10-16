@@ -157,8 +157,37 @@ function literals(ctx: Ctx, texts: string[]): Array<Found | undefined> {
     candidates,
   )
   return texts.map((text, index) =>
-    possible[index] ? (found.shift() ?? literalFormattingLinks(text)) : [],
+    possible[index]
+      ? endAtBackticks(ctx, found.shift() ?? literalFormattingLinks(text), text)
+      : [],
   )
+}
+
+// GFM takes a backtick into an address. A backtick is a code delimiter in
+// what is typed or pasted, so an address ends at the first one, and the text
+// between backticks is read again for addresses of its own. Otherwise the
+// link would open a different URL than the one written.
+function endAtBackticks(
+  ctx: Ctx,
+  found: Found | undefined,
+  text: string,
+): Found | undefined {
+  if (!found) return found
+  const result: Found = []
+  for (const [start, end, href] of found) {
+    const parts = text.slice(start, end).split('`')
+    if (parts.length === 1) {
+      result.push([start, end, href])
+      continue
+    }
+    let at = start
+    literals(ctx, parts).forEach((links, index) => {
+      for (const [from, to, target] of links ?? [])
+        result.push([at + from, at + to, target])
+      at += parts[index]!.length + 1
+    })
+  }
+  return result
 }
 
 // CommonMark reads an address in angle brackets as a link to it, or to
@@ -328,9 +357,29 @@ function wantedLinks(
     }
     index = end
   }
+  // Inline code is written as it is, so it holds no addresses. An address is
+  // linked as it is typed, before a closing backtick wraps it in code, and
+  // the code mark keeps that link. A link written with brackets around code
+  // has no `literal` form and stays.
+  const codeAddress = (index: number) => {
+    const char = chars[index]
+    return (
+      char?.form === 'literal' && char.marks.some((mark) => mark.type.spec.code)
+    )
+  }
+  for (let index = 0; index < chars.length;) {
+    if (!codeAddress(index)) {
+      index++
+      continue
+    }
+    let end = index + 1
+    while (end < chars.length && codeAddress(end)) end++
+    if (end >= from && index <= to)
+      for (let at = index; at < end; at++) wanted.set(at, null)
+    index = end
+  }
   // Bare text: runs without whitespace and with the same formatting, where
-  // an address could be read or could end. Inline code is written as it is,
-  // so it holds no addresses.
+  // an address could be read or could end.
   const free = (index: number) => {
     const char = chars[index]
     return (
@@ -588,7 +637,16 @@ export const autolinkLiterals = $prose(
         const stored = base.storedMarks ?? newState.storedMarks
         const finish = (tr: Transaction) => {
           if (stored) tr.setStoredMarks(stored)
-          return tr.steps.length ? tr : null
+          if (!tr.steps.length) return null
+          // A document change clears the state that lets Backspace undo an
+          // input rule. Only marks changed here, so the rule stays undoable.
+          for (const plugin of newState.plugins)
+            if ((plugin.spec as { isInputRules?: boolean }).isInputRules)
+              for (const transaction of transactions) {
+                const meta: unknown = transaction.getMeta(plugin)
+                if (meta !== undefined) tr.setMeta(plugin, meta)
+              }
+          return tr
         }
         // Rebuild each attempt from the normalized base, without retaining
         // mark steps from a failed representability check.
