@@ -372,9 +372,9 @@ export const wikiLinkComposition = $prose(
           const { composition } = value
           value.closing = null
           if (!tr.docChanged || !composition) return value
-          value.composition = null
-          if (
-            tr.getMeta('composition') !== undefined &&
+          // An input method can replace its candidate before committing it.
+          if (tr.getMeta('composition') === undefined) value.composition = null
+          else if (
             insertedAt(tr, composition.pos) === ']' &&
             tr.doc.content.size === composition.size + 1
           )

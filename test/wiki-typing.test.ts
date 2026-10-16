@@ -281,6 +281,25 @@ test('a composition that commits the closing bracket makes the link', async () =
   expect(editor.snapshot().text).toBe('[[Note]]\n')
 })
 
+test('a composition can change its candidate before committing the closing bracket', async () => {
+  const { editor, root } = await mount('')
+  type(editor, '[[Note]')
+  const view = viewOf(editor)
+  const { from } = view.state.selection
+  view.dom.dispatchEvent(new Event('compositionstart'))
+  view.dispatch(view.state.tr.insertText('」', from).setMeta('composition', 1))
+  view.dispatch(
+    view.state.tr.insertText(']', from, from + 1).setMeta('composition', 1),
+  )
+  view.dom.dispatchEvent(new Event('compositionend'))
+  await afterCompositionRules()
+  expect(links(root)).toEqual(['Note'])
+  expect(editor.snapshot().text).toBe('[[Note]]\n')
+  const reader = await mount(editor.snapshot().text)
+  expect(reader.editor.snapshot().text).toBe('[[Note]]\n')
+  expect(links(reader.root)).toEqual(['Note'])
+})
+
 test('a composition that commits the closing bracket makes no link when no composition committed it', async () => {
   const { editor, root } = await mount('')
   type(editor, '[[Note]')

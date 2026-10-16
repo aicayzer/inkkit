@@ -245,3 +245,31 @@ test('an input method that commits the closing bracket makes the link', async ({
   await expectSaved(page, '[[Note]]\n')
   expect(await links(page)).toEqual(['Note'])
 })
+
+test('an input method can change its candidate before committing the closing bracket', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium',
+    'Only Chromium lets a test drive an input method',
+  )
+  await mount(page)
+  await page.keyboard.type('[[Note]')
+  const session = await page.context().newCDPSession(page)
+  for (const text of ['」', ']']) {
+    await session.send('Input.imeSetComposition', {
+      text,
+      selectionStart: 1,
+      selectionEnd: 1,
+    })
+    await page.waitForTimeout(50)
+  }
+  expect(await links(page)).toEqual([])
+  await session.send('Input.insertText', { text: ']' })
+  await expectSaved(page, '[[Note]]\n')
+  expect(await links(page)).toEqual(['Note'])
+  await mount(page, { text: await saved(page) })
+  await expectSaved(page, '[[Note]]\n')
+  expect(await links(page)).toEqual(['Note'])
+})
