@@ -104,20 +104,17 @@ for (const action of ['typing', 'paste'] as const)
       await saves(editor, 'Code `her http://x.come` end\n')
     }))
 
-test('a refused plain-text paste leaves the document, selection, revision and history unchanged', () =>
+test('plain-text table paste saves line breaks and addresses and undoes together', () =>
   session('| Head |\n| --- |\n| Original |\n', async (editor) => {
     caret(editor, 'Original')
-    const before = editor.snapshot()
-    const selection = editor.textSnapshot().selection
-    const commands = editor.commandState()
-    expect(() => editor.pasteAsPlainText('one\r\nhttp://x.com')).toThrow(
-      expect.objectContaining({ code: 'preservation' }),
-    )
-    expect(editor.snapshot()).toEqual(before)
-    expect(editor.textSnapshot().selection).toEqual(selection)
-    expect(editor.commandState()).toEqual(commands)
-    expect(editor.undo()).toBe(false)
-    await saves(editor, before.text)
+    const before = editor.snapshot().text
+    editor.pasteAsPlainText('one\r\nhttp://x.com')
+    const expected = '| Head |\n| --- |\n| Originalone<br /><http://x.com> |\n'
+    expect(editor.snapshot().text).toBe(expected)
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe(before)
+    editor.redo()
+    await saves(editor, expected)
   }))
 
 for (const method of ['replaceTextRange', 'replaceAll'] as const)

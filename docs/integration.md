@@ -22,6 +22,7 @@ The versions come from these APIs. Each one shipped in at least one engine after
 | CSS [`light-dark()`](https://developer.mozilla.org/docs/Web/CSS/color_value/light-dark)                       | 17.5   | 123      | 120     | Code text takes the editor text color until the host sets the `--inkkit-code-*` tokens.              |
 | CSS [`color-mix()`](https://developer.mozilla.org/docs/Web/CSS/color_value/color-mix)                         | 16.2   | 111      | 113     | Muted text, rules, code backgrounds and the selection lose their default colors.                     |
 | CSS [`:has()`](https://developer.mozilla.org/docs/Web/CSS/:has)                                               | 15.4   | 105      | 121     | A small image preview is not widened to its minimum size.                                            |
+| CSS [`lh` unit](https://developer.mozilla.org/docs/Web/CSS/length#lh)                                         | 16.4   | 109      | 120     | Task checkboxes are not centered on the first line of their item.                                    |
 | [CSS Custom Highlight API](https://developer.mozilla.org/docs/Web/API/CSS_Custom_Highlight_API)               | 17.2   | 105      | 149     | Optional. The engine draws its own selection, which also fills the margins beside the selected text. |
 
 Versions are from MDN browser compatibility data 8.1.5. `CSS.highlights` arrived in Firefox 140, but the `::highlight()` styling InkKit needs arrived in 149, so InkKit checks for both.

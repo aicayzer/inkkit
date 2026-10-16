@@ -55,22 +55,25 @@ test('minimal previews stay disabled with editable and preserved source @consoli
   await expect(page.locator('.inkkit-mermaid-preview')).toHaveCount(0)
 })
 
-test('unsupported multiline table input rejects before mutation @consolidation', async ({
+test('multiline table input saves, reopens and undoes @consolidation', async ({
   page,
   openFixture,
 }) => {
   await openFixture()
-  await operation(page, 'replaceSource', {
-    text: '| Head |\n| --- |\n| Original |\n',
-  })
+  const source = '| Head |\r\n| --- |\r\n| Original |\r\n'
+  await operation(page, 'replaceSource', { text: source })
   await operation(page, 'find', { text: 'Original' })
-  const before = (await observe(page)).snapshot
-  await expect(
-    operation(page, 'insertText', { text: 'one\r\ntwo\n' }),
-  ).rejects.toThrow('The edited Markdown cannot be reopened')
-  const failed = await observe(page)
-  expect(failed.snapshot).toEqual(before)
-  expect(failed.diagnostics).toContainEqual(
-    expect.objectContaining({ code: 'preservation' }),
+  await operation(page, 'insertText', { text: 'one\r\ntwo\n' })
+  const saved = '| Head |\r\n| --- |\r\n| one<br />two<br /> |\r\n'
+  expect((await observe(page)).snapshot!.text).toBe(saved)
+  expect((await observe(page)).diagnostics).toEqual([])
+  const visible = (await observe(page)).textSnapshot!.text
+  await page.keyboard.press('ControlOrMeta+z')
+  expect((await observe(page)).snapshot!.text).toBe(source)
+  await page.evaluate(
+    (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+    saved,
   )
+  expect((await observe(page)).snapshot!.text).toBe(saved)
+  expect((await observe(page)).textSnapshot!.text).toBe(visible)
 })

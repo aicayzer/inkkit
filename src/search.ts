@@ -1,3 +1,4 @@
+import { htmlBreakAt } from './hard-break'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Fragment, Slice } from '@milkdown/kit/prose/model'
 import { closeHistory } from '@milkdown/kit/prose/history'
@@ -146,14 +147,15 @@ function replacementSlice(
   if (start.parent.type.spec.code) {
     if (value) nodes.push(state.schema.text(value, marks))
   } else {
+    const isHTML = htmlBreakAt(start)
     const lines = value.split('\n')
     lines.forEach((line, index) => {
       if (index)
         nodes.push(
           state.schema.nodes.hardbreak!.create(
-            { isHTML: index === lines.length - 1 && line === '' },
+            { isHTML },
             null,
-            marks,
+            index === lines.length - 1 && line === '' ? [] : marks,
           ),
         )
       if (line) nodes.push(state.schema.text(line, marks))
@@ -231,9 +233,12 @@ export function replaceFormattedRange(
   const start = view.state.doc.resolve(from)
   const end = view.state.doc.resolve(to)
   let textOnly = start.parent === end.parent && start.parent.inlineContent
-  view.state.doc.nodesBetween(from, to, (node) => {
-    if (!node.isText && !node.isTextblock) textOnly = false
-  })
+  // Visit only the block's own content. Walking the document would also
+  // visit the list, quote or table around the block and refuse the range.
+  if (textOnly)
+    start.parent.nodesBetween(start.parentOffset, end.parentOffset, (node) => {
+      if (!node.isText) textOnly = false
+    })
   if (!textOnly)
     throw new InkKitError(
       'invalid-range',
