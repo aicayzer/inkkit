@@ -37,6 +37,8 @@ A bare URL, `www.` address or email address links to its own text. Editing that 
 
 Punctuation between the address and that space doesn't stop it: the URL is saved as `<https://example.com>.&#x20;`, and a `www.` address as `[www.example.com](http://www.example.com).&#x20;`. Once text follows the space, the address is saved bare again. An address in inline code isn't linked.
 
+Plain-text paste keeps Markdown formatting characters visible, including those around an address. InkKit uses a link form that reopens with the same text, rather than interpreting those characters as formatting. An edited URL containing a pipe in a table cell is written as an explicit link, with the pipe escaped in both the label and destination, so it does not split the cell or add a backslash to the address.
+
 Shift+Enter inserts a hard line break within a paragraph. In paragraphs and setext headings, a trailing break remains pending in the editor until content follows and is omitted from saved Markdown in the meantime. Tables and ATX headings save line breaks as `<br />`. A break directly before an inline HTML comment also uses `<br />`. Shift+Enter inside a literal Markdown block does nothing. See [preservation](preservation.md) for saving and Undo behavior.
 
 ## Mermaid

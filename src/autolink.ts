@@ -1,3 +1,6 @@
+import { fromMarkdown } from 'mdast-util-from-markdown'
+import { gfmAutolinkLiteral } from 'micromark-extension-gfm-autolink-literal'
+import { gfmAutolinkLiteralFromMarkdown } from 'mdast-util-gfm-autolink-literal'
 import { parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { Mark, type Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -88,6 +91,53 @@ function read(
   })
 }
 
+// The escaped probe can itself become Markdown formatting, or an address can
+// swallow its backslash escapes. In that case read literal characters with
+// GFM's own address grammar, without interpreting inline Markdown syntax.
+function literalFormattingLinks(text: string): Found | undefined {
+  // Angle delimiters have their own completion and literal-paste rules. This
+  // fallback only resolves ambiguity from literal formatting delimiters.
+  if (!/[*_~`]/.test(text) || /[<>]/.test(text)) return undefined
+  const tree = fromMarkdown(`x ${text}`, {
+    extensions: [
+      gfmAutolinkLiteral(),
+      {
+        disable: {
+          null: [
+            'attention',
+            'codeText',
+            'htmlText',
+            'labelStartLink',
+            'labelStartImage',
+            'characterEscape',
+            'characterReference',
+            'autolink',
+          ],
+        },
+      },
+    ],
+    mdastExtensions: [gfmAutolinkLiteralFromMarkdown()],
+  })
+  const paragraph = tree.children[0]
+  if (tree.children.length !== 1 || paragraph?.type !== 'paragraph')
+    return undefined
+  const found: Found = []
+  let readable = ''
+  for (const child of paragraph.children) {
+    if (child.type === 'text') readable += child.value
+    else if (
+      child.type === 'link' &&
+      child.children.every((node) => node.type === 'text')
+    ) {
+      const start = readable.length - 2
+      for (const node of child.children)
+        if (node.type === 'text') readable += node.value
+      found.push([start, readable.length - 2, child.url])
+    } else return undefined
+  }
+  return readable === `x ${text}` ? found : undefined
+}
+
 // The links each text reads as once saved. Typed text is written with its
 // brackets and backslashes escaped, which decides whether GFM reads an address
 // while parsing or afterwards, so it is read as written, not as authored: text
@@ -104,7 +154,9 @@ function literals(ctx: Ctx, texts: string[]): Array<Found | undefined> {
     candidates.map((text) => text.replace(/[\\`[\]<>]/g, '\\$&')),
     candidates,
   )
-  return texts.map((_, index) => (possible[index] ? found.shift() : []))
+  return texts.map((text, index) =>
+    possible[index] ? (found.shift() ?? literalFormattingLinks(text)) : [],
+  )
 }
 
 // CommonMark reads an address in angle brackets as a link to it, or to
