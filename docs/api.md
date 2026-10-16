@@ -95,7 +95,7 @@ InkKitEditor.mount(
 | `editable`  | `boolean`                                                  | `true`                       | Whether the person can edit. Change it later with `setEditable`.                                                                                                 |
 | `textInput` | `TextInputPreferences`                                     | `{}`, the browser's behavior | Spell check, autocorrect and autocapitalization hints, and smart punctuation. Change them later with `setTextInputPreferences`.                                  |
 | `labels`    | `Partial<EditorLabels>`                                    | The English defaults         | Replaces built-in text and accessible names. See [Labels](#labels).                                                                                              |
-| `keymap`    | `Keymap`                                                   | Undo, redo and table exit    | Shortcut bindings. Change them later with `setKeymap`. See [Shortcuts](#shortcuts).                                                                              |
+| `keymap`    | `Keymap`                                                   | History, moves, table exit   | Shortcut bindings. Change them later with `setKeymap`. See [Shortcuts](#shortcuts).                                                                              |
 | `rendering` | `{ codeHighlighting?: boolean, diagramPreview?: boolean }` | Both `true`                  | Turns code highlighting or diagram previews off. See [Code highlighting and diagram previews](#code-highlighting-and-diagram-previews).                          |
 
 `images`, `files`, `wikiLinks`, `labels` and `rendering` are fixed at mount, and so is whether `events.copy` is set, because it decides whether code blocks draw a Copy button. The other options can change later through the methods named in the table.
@@ -132,6 +132,7 @@ The following table lists every member by what it checks. Each member first thro
 | `navigateHeading`                                                                                                                                                                    | None. The heading entry names a version.               | `not-ready`, `stale-document` for another generation, `composition`, `operation-pending`, then `stale-document` for an older revision or mode.                  |
 | `selectTextRange`, `revealTextRange`, `textRangesRects`, `visibleTextRanges`                                                                                                         | None. The range's `snapshotId` names a version.        | `not-ready`, `composition`, `operation-pending`, then `stale-document` for a `snapshotId` that is no longer current.                                            |
 | `paste`, `pasteAsPlainText`, `replaceSource`, `undo`, `redo`, `replace`, `replaceAll`, `format`, `table`, `insertPaths`, `insertImages`, `insertFootnote`, `editReferenceDefinition` | Optional, the last parameter.                          | `not-ready`, `stale-document`, `composition`, `operation-pending`, `read-only`.                                                                                 |
+| `moveBlock`                                                                                                                                                                          | Optional, the last parameter.                          | `not-ready`, `stale-document`, `composition`, `operation-pending`, `read-only`.                                                                                 |
 | `replaceTextRange`                                                                                                                                                                   | None. The range's `snapshotId` names a version.        | `not-ready`, `composition`, `operation-pending`, `stale-document`, `read-only`.                                                                                 |
 | `insertText`, `keyDown`                                                                                                                                                              | Required, for buffered native input.                   | `not-ready`, `stale-document`, `composition`, `operation-pending`, `read-only` for `insertText`; see [Formatting and keys](#formatting-and-keys) for `keyDown`. |
 
@@ -322,6 +323,7 @@ Availability describes the moment you ask. It doesn't promise that a later call 
 | `editReferenceDefinition`                                        | The editor can change, the mode is formatted, and the document has at least one reference definition.                                                                                          |
 | `format`                                                         | An object with one entry for each `FormatCommand`, by the names `format` takes. An entry is `true` when the command applies to the current selection. All are `false` in source and TXT modes. |
 | `table`                                                          | An object with one entry for each `TableCommand`. An entry is `true` when the command applies to the current selection. All are `false` in source and TXT modes.                               |
+| `moveBlockUp`, `moveBlockDown`                                   | `moveBlock('up')` or `moveBlock('down')` would move the blocks at the selection. Both are `false` in source and TXT modes and in a table.                                                      |
 
 ## Formatting and keys
 
@@ -329,6 +331,7 @@ Availability describes the moment you ask. It doesn't promise that a later call 
 | ------------------------------------------------ | --------- | ------------------------------------------------------------ |
 | `format(command, options?, expectedGeneration?)` | `boolean` | Applies a formatting command to the selection.               |
 | `insertText(text, expectedGeneration)`           | `boolean` | Inserts text that the host's native input produced.          |
+| `moveBlock(direction, expectedGeneration?)`      | `boolean` | Moves the blocks at the selection up or down.                |
 | `keyDown(input: KeyInput, expectedGeneration)`   | `boolean` | Runs a key press that the host's native input received.      |
 | `focus(expectedGeneration?)`                     | `void`    | Puts focus in the editing surface for the current mode.      |
 | `blur(expectedGeneration?)`                      | `void`    | Takes focus off InkKit's text surfaces.                      |
@@ -358,6 +361,16 @@ A link destination, in `format('link', { destination })` and in `editReferenceDe
 
 At a caret, marks toggled for the text typed next, such as `bold`, stay toggled after the link changes.
 
+### Moving blocks
+
+`moveBlock(direction: BlockMoveDirection, expectedGeneration?): boolean` moves the blocks at the selection one place up (`'up'`) or down (`'down'`) within their container, as one undo step, and returns whether they moved. The `moveBlockUp` and `moveBlockDown` [shortcuts](#shortcuts) run it, on Option-Up and Option-Down by default.
+
+- **What moves:** the block that holds the caret, or every block that the selection touches. In a list, that's the list item, with any sublist it holds; in a sublist, it's the sublist's item. In a quote, callout or footnote, it's a block inside it. A callout's title line isn't a block, so blocks stay below it.
+- **Where it stops:** blocks move only among the blocks of their own list, quote, callout, footnote or note. At the first or last place, nothing happens and the call returns `false`. Front matter stays first. While comments are hidden, a move goes past a block comment and the block after it, so that the move shows.
+- **Selection:** the caret or selection keeps its place in the moved text.
+- **Source:** moved blocks, and the blocks they pass, keep their authored Markdown where it reads the same in their new place, including list markers, indentation, line endings and spaces at line ends. In an ordered list, each place keeps the number written there, so a moved item takes the number of its new place, and its lines indented to its content follow a number of a different width. Where a block's authored Markdown would read differently in its new place, such as indented code moved under a list or an item whose indentation would nest it in its new neighbor, the moved blocks are written as other edits write them, which can change their spelling and indentation. A list that comes to sit beside another list of its kind takes a marker that the other list doesn't use, as with any edit; see [preservation](preservation.md). A move that can't be saved and reopened as the same document throws `preservation` and changes nothing.
+- **Returns `false`,** and changes nothing, in source and TXT modes and in a table, where the [table commands](#tables) move rows. An unknown direction throws `invalid-argument`.
+
 ### Native input
 
 When the host's native layer receives typed text or a key before the web view does, it can pass them to InkKit with two methods. Both require the expected generation, so that input meant for a document that has since been replaced fails instead of landing in the new one.
@@ -378,11 +391,11 @@ In formatted mode, Shift+Enter inserts a line break as a separate undo step. A t
 
 During composition with the current generation, `keyDown` returns `false`. Otherwise InkKit handles:
 
-- The bindings from `setKeymap`, including history and table bindings, in every mode where they apply. A bound key is handled even when its command isn't available now, except a table binding, which passes the key on.
+- The bindings from `setKeymap`, including history, block move and table bindings, in every mode where they apply. A bound key is handled even when its command isn't available now, except a table binding, which passes the key on, and a block move binding in a table cell, which does too.
 - **Alt+Enter** and **Alt+Shift+Enter** in formatted mode, which move between a footnote reference and its definition, as `navigateFootnote` does. They work in a read-only editor.
 - In formatted mode, every other key reaches the editor's own key handling, such as Enter, Tab and Backspace in lists and tables.
 - In source and TXT modes, Enter, Tab, Backspace and Delete edit the text when no Command, Control or Alt key is held. Other keys return `false`.
-- When the editor is read-only, a bound key throws `read-only`, and so do Enter, Tab, Backspace and Delete. The exception is formatted mode, where Tab and Shift+Tab with no Command, Control or Alt key move between table cells, and return `false` outside a table.
+- When the editor is read-only, a bound key throws `read-only`, and so do Enter, Tab, Backspace and Delete. The exception is formatted mode, where Tab and Shift+Tab with no Command, Control or Alt key move between table cells, and return `false` outside a table. A key bound to a block move also returns `false`, even when a table name shares it, so the host's native caret movement applies.
 
 `focus(expectedGeneration?)` puts focus in the formatted editor or the source and TXT textarea, whichever is showing. `blur(expectedGeneration?)` moves focus off InkKit's text surfaces and leaves focus anywhere else, such as in a host control or a button InkKit draws, where it is; use it instead of finding InkKit's elements yourself. Neither checks composition, read-only or pending imports. Both throw `not-ready` before the first load.
 
@@ -773,13 +786,13 @@ Blocks that browsers would otherwise expose as unnamed, generic elements carry a
 
 `EditorOptions.keymap` and `setKeymap(bindings: Keymap): void` configure the shortcut bindings. `Keymap` maps each `ShortcutName` to an array of keys in [ProseMirror key notation](https://prosemirror.net/docs/ref/#keymap), such as `Mod-b`, `Shift-Mod-z` or `Alt-ArrowDown`. `Mod` is Command on Apple platforms and Control elsewhere. `setKeymap` replaces the whole map: a name it leaves out loses its binding, or returns to its default. An unknown name, or a value that isn't an array of strings, throws `invalid-argument`; a `null` entry keeps that name's default. A formatting name runs the `format` command of the same name. Formatting names are `heading1`, `heading2`, `heading3`, `heading4`, `heading5`, `heading6`, `paragraph`, `bold`, `italic`, `strikethrough`, `highlight`, `code`, `codeBlock`, `quote`, `bulletList`, `orderedList` and `taskList`. Formatting has no default bindings; the host supplies them. There is no name for `link`, because it needs a destination.
 
-History names are `undo` and `redo`. Table names are `tableInsert`, `tableAddRowBefore`, `tableAddRowAfter`, `tableAddColumnBefore`, `tableAddColumnAfter`, `tableDeleteRow`, `tableDeleteColumn`, `tableDeleteTable`, `tableAlignLeft`, `tableAlignCenter`, `tableAlignRight`, `tableMoveRowUp`, `tableMoveRowDown`, `tableMoveColumnLeft`, `tableMoveColumnRight`, `tableSortRows` and `tableExit`. A table name is `table` followed by the `TableCommand`, with its first letter capitalized.
+History names are `undo` and `redo`. Block move names are `moveBlockUp` and `moveBlockDown`; they run `moveBlock('up')` and `moveBlock('down')`. Table names are `tableInsert`, `tableAddRowBefore`, `tableAddRowAfter`, `tableAddColumnBefore`, `tableAddColumnAfter`, `tableDeleteRow`, `tableDeleteColumn`, `tableDeleteTable`, `tableAlignLeft`, `tableAlignCenter`, `tableAlignRight`, `tableMoveRowUp`, `tableMoveRowDown`, `tableMoveColumnLeft`, `tableMoveColumnRight`, `tableSortRows` and `tableExit`. A table name is `table` followed by the `TableCommand`, with its first letter capitalized.
 
-Omitted history bindings keep `Mod-z` for undo and `Mod-y` and `Shift-Mod-z` for redo; an explicit empty array disables the defaults for that name. Omitted `tableExit` bindings keep `Mod-Enter` and `Enter` in table context; an explicit empty array disables both. Unbound default history keys are consumed to prevent the browser's separate undo stack from changing source and TXT text.
+Omitted history bindings keep `Mod-z` for undo and `Mod-y` and `Shift-Mod-z` for redo; an explicit empty array disables the defaults for that name. Omitted block move bindings keep `Alt-ArrowUp` and `Alt-ArrowDown`, which are Option-Up and Option-Down on a Mac; an explicit empty array disables that name's default. In a macOS text view, Option-Up and Option-Down move the caret to the start or end of a paragraph. In the formatted editor, the block move bindings replace that behavior; in source and TXT modes, the keys keep it. Omitted `tableExit` bindings keep `Mod-Enter` and `Enter` in table context; an explicit empty array disables both. Unbound default history keys are consumed to prevent the browser's separate undo stack from changing source and TXT text.
 
-- **History bindings** apply on the formatted, source and TXT surfaces. Formatting and table bindings apply only on the formatted surface.
-- **When two names share a key,** the later group wins, in the order history, formatting, tables.
-- **A bound key is consumed** even when its history or formatting command isn't available now, so the key never reaches the web view. A table binding passes the key on when its command isn't available.
+- **History bindings** apply on the formatted, source and TXT surfaces. Formatting, block move and table bindings apply only on the formatted surface.
+- **When two names share a key,** the later group wins, in the order history, formatting, block moves, tables. A table binding that shares its key with a block move passes the key to the block move when the table command isn't available, so a host can give `tableMoveRowUp` and `moveBlockUp` the same key: rows move in a table, and blocks move elsewhere.
+- **A bound key is consumed** even when its history, formatting or block move command isn't available now, such as at the first or last place, so the key never reaches the web view. A table binding passes the key on when its command isn't available. A block move binding, and a table binding that shares its key, passes the key on in a read-only editor; a block move binding also passes it on in a table cell and where there's no block to move, so the table's bindings or the web view's own caret movement apply.
 - **A command that fails from a shortcut** reports its error through `events.error`.
 
 Query [command availability](#command-availability) to present the current state of shortcuts and menu items.
@@ -860,7 +873,7 @@ This table maps every exported name to the section that describes it. `InkKitEdi
 | [Events](#events)                                                                     | `EditorEvents`                                                                                            |
 | [Editability and text input](#editability-and-text-input)                             | `TextInputPreferences`                                                                                    |
 | [Command availability](#command-availability)                                         | `CommandState`, `CaretState`, `Mark`, `Block`                                                             |
-| [Formatting and keys](#formatting-and-keys)                                           | `FormatCommand`, `FormatOptions`, `KeyInput`                                                              |
+| [Formatting and keys](#formatting-and-keys)                                           | `FormatCommand`, `FormatOptions`, `KeyInput`, `BlockMoveDirection`                                        |
 | [Native readable text and layout](#native-readable-text-and-layout)                   | `ReadableTextSnapshot`, `TextRange`, `TextRect`, `ViewportOptions`, `ViewportInsets`, `ViewportSnapshot`  |
 | [Images](#images)                                                                     | `ImageAdapter`, `CapturedImage`, `PortableImage`, `DocumentContext`, `ImageInsertion`, `ClientPoint`      |
 | [Tables](#tables)                                                                     | `TableCommand`, `TableOptions`                                                                            |

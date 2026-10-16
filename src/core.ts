@@ -22,6 +22,7 @@ export type {
   Heading,
   TableCommand,
   TableOptions,
+  BlockMoveDirection,
   DocumentContext,
   DocumentInput,
   DocumentSnapshot,
