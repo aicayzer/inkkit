@@ -97,6 +97,8 @@ export interface WikiLinkReference {
 }
 /** Resolves and opens wiki links. The host owns lookup, permissions and navigation. */
 export interface WikiLinkAdapter {
+  /** Matches note names for a typed `[[` query. Late answers are ignored. */
+  suggest?(query: string, context: FileContext): Promise<readonly string[]>
   /** Whether the target is missing, for presentation only. */
   resolve?(
     reference: WikiLinkReference,
@@ -261,6 +263,7 @@ export interface ViewportSnapshot {
 export interface EditorLabels {
   suggestions: string
   suggestionsEmpty: string
+  suggestionsLoading: string
   slashHeading1: string
   slashHeading2: string
   slashHeading3: string
