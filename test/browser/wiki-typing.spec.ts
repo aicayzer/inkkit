@@ -176,3 +176,72 @@ test('without a WikiLinkAdapter typed brackets stay text', async ({ page }) => {
   await expectSaved(page, '\\[\\[Note]]\n')
   expect(await links(page)).toEqual([])
 })
+
+const snapshot = (page: Page) =>
+  page.evaluate(() => (window as unknown as WikiWindow).wikiEditor.snapshot())
+
+test('a composition that is cancelled leaves escaped brackets in the note alone', async ({
+  page,
+}) => {
+  await mount(page, { text: '\\[\\[Note]]\r\n' })
+  await page.keyboard.press('ControlOrMeta+End')
+  const before = await snapshot(page)
+  const surface = root(page).locator('[contenteditable=true]')
+  await surface.dispatchEvent('compositionstart', { data: '' })
+  await surface.dispatchEvent('compositionend', { data: '' })
+  await page.waitForTimeout(100)
+  expect(await snapshot(page)).toEqual(before)
+  expect(before.dirty).toBe(false)
+  expect(await links(page)).toEqual([])
+})
+
+test('an input method that starts and cancels leaves escaped brackets in the note alone', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium',
+    'Only Chromium lets a test drive an input method',
+  )
+  await mount(page, { text: '\\[\\[Note]]\n' })
+  await page.keyboard.press('ControlOrMeta+End')
+  const before = await snapshot(page)
+  const session = await page.context().newCDPSession(page)
+  await session.send('Input.imeSetComposition', {
+    text: 'に',
+    selectionStart: 1,
+    selectionEnd: 1,
+  })
+  await session.send('Input.imeSetComposition', {
+    text: '',
+    selectionStart: 0,
+    selectionEnd: 0,
+  })
+  await page.waitForTimeout(100)
+  expect((await snapshot(page)).text).toBe(before.text)
+  expect(await links(page)).toEqual([])
+})
+
+test('an input method that commits the closing bracket makes the link', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium',
+    'Only Chromium lets a test drive an input method',
+  )
+  await mount(page)
+  await page.keyboard.type('[[Note')
+  const session = await page.context().newCDPSession(page)
+  for (const text of [']', ']']) {
+    await session.send('Input.imeSetComposition', {
+      text,
+      selectionStart: 1,
+      selectionEnd: 1,
+    })
+    await session.send('Input.insertText', { text })
+    await page.waitForTimeout(100)
+  }
+  await expectSaved(page, '[[Note]]\n')
+  expect(await links(page)).toEqual(['Note'])
+})

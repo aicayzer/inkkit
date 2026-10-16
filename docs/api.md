@@ -900,6 +900,8 @@ When `wikiLinks` is set, typing the closing `]]` of a complete wiki link turns t
 
 The text becomes a link only when it is a complete wiki link of the [supported syntax](supported-syntax.md#linked-syntax), typed as one run of text in formatted mode: in a paragraph, heading, list item, quote, callout or table cell, in a writable document. In a table cell, the saved link spells its pipe `\|`. It stays text when the brackets follow `!`, `[` or `\`, when the text isn't a valid link (for example `[[ ]]` or `[[#^block]]`), when it crosses a link or a change in formatting, in inline or block code, and in source or TXT mode. Without `wikiLinks`, typed brackets stay text.
 
+Only the bracket just typed, or one that an input method committed, makes the link. Escaped brackets already in the note stay text, including when a composition starts and is cancelled, and such a composition changes no text, revision or dirty state.
+
 Backspace straight after the second `]` puts back the typed characters as plain text, which a note saves escaped. One Undo removes the typing. `pasteAsPlainText` inserts literal text, so it never makes a link; `paste` of text or Markdown does, as it does for a note that holds the link.
 
 ### Note suggestions

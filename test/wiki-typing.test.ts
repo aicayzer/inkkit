@@ -1,4 +1,8 @@
 import { afterEach, expect, test } from 'vitest'
+import { editorViewCtx } from '@milkdown/kit/core'
+import type { Ctx } from '@milkdown/kit/ctx'
+import { TextSelection } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import {
   InkKitEditor,
   type EditorOptions,
@@ -206,4 +210,85 @@ test('brackets typed across a link or a formatting change stay text', async () =
   type(mixed.editor, 'te]]')
   expect(links(mixed.root)).toEqual([])
   expect(mixed.editor.snapshot().text).toBe('\\[\\[No**te]]**\n')
+})
+
+// ProseMirror runs input rules from a timer with no delay after a composition
+// ends, over text that is all in the document. That is not typing.
+const afterCompositionRules = () =>
+  new Promise((resolve) => setTimeout(resolve))
+const viewOf = (editor: InkKitEditor): EditorView =>
+  (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(editorViewCtx)
+function caretAtEnd(view: EditorView) {
+  const end = view.state.doc.firstChild!.content.size
+  view.dispatch(
+    view.state.tr.setSelection(TextSelection.create(view.state.doc, 1 + end)),
+  )
+}
+// A composition that commits `text` at the caret, as the browser reports it.
+function compose(view: EditorView, text: string) {
+  view.dom.dispatchEvent(new Event('compositionstart'))
+  if (text) {
+    const { from } = view.state.selection
+    view.dispatch(
+      view.state.tr.insertText(text, from).setMeta('composition', 1),
+    )
+  }
+  view.dom.dispatchEvent(new Event('compositionend'))
+}
+
+for (const text of ['', 'x']) {
+  test(`${text ? 'a composition that commits other text' : 'a composition that is cancelled'} leaves escaped brackets already in the note as text`, async () => {
+    const source = '\\[\\[Note]]\r\n\r\nTail\r\n'
+    const { editor, root, errors } = await mount(source)
+    const view = viewOf(editor)
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, 1 + 8)),
+    )
+    const before = editor.snapshot()
+    expect(before.dirty).toBe(false)
+    compose(view, text)
+    await afterCompositionRules()
+    expect(links(root)).toEqual([])
+    const after = editor.snapshot()
+    if (!text) {
+      expect(after.text).toBe(source)
+      expect(after.dirty).toBe(false)
+      expect(after.revision).toBe(before.revision)
+    } else expect(after.text).toBe(source.replace(']]', ']]x'))
+    expect(errors).toEqual([])
+  })
+}
+
+test('retyping the last bracket of escaped text already in the note is a link only when it is typed text', async () => {
+  const { editor, root } = await mount('\\[\\[Note]\n')
+  caretAtEnd(viewOf(editor))
+  editor.insertText(']', 1)
+  expect(links(root)).toEqual(['Note'])
+  expect(editor.snapshot().text).toBe('[[Note]]\n')
+})
+
+test('a composition that commits the closing bracket makes the link', async () => {
+  const { editor, root } = await mount('')
+  type(editor, '[[Note]')
+  const view = viewOf(editor)
+  compose(view, ']')
+  await afterCompositionRules()
+  expect(links(root)).toEqual(['Note'])
+  expect(editor.snapshot().text).toBe('[[Note]]\n')
+  // Another composition, which changes nothing, doesn't change the link.
+  compose(view, '')
+  await afterCompositionRules()
+  expect(editor.snapshot().text).toBe('[[Note]]\n')
+})
+
+test('a composition that commits the closing bracket makes no link when no composition committed it', async () => {
+  const { editor, root } = await mount('')
+  type(editor, '[[Note]')
+  const view = viewOf(editor)
+  view.dom.dispatchEvent(new Event('compositionstart'))
+  const { from } = view.state.selection
+  view.dispatch(view.state.tr.insertText(']', from))
+  view.dom.dispatchEvent(new Event('compositionend'))
+  await afterCompositionRules()
+  expect(links(root)).toEqual([])
 })
