@@ -616,7 +616,7 @@ function locateChildren(node: SourceNode, text: string): void {
   }
 }
 
-// The text a run of text and links written bare or in angle brackets reads
+// The text a run of text, breaks and links written bare or in angle brackets reads
 // as, with the offset in `text` of each character and the range of each
 // link, or undefined for any other run.
 function runOffsets(
@@ -631,10 +631,17 @@ function runOffsets(
   const offsets = [from]
   const links: Array<[number, number]> = []
   let at = from
+  let afterBreak = false
   for (const node of nodes) {
     const start = node.position?.start.offset
     const end = node.position?.end.offset
-    if (start !== at || end == null) return undefined
+    if (start == null || end == null) return undefined
+    // Container indentation belongs to the break, before the following text.
+    if (afterBreak && start >= at && /^[ \t>]*$/.test(text.slice(at, start))) {
+      at = start
+      offsets[offsets.length - 1] = start
+    }
+    if (start !== at) return undefined
     const raw = text.slice(start, end)
     if (node.type === 'link') {
       const label = inlineText(node)
@@ -652,15 +659,19 @@ function runOffsets(
       if (!read || read.decoded !== lf(node.value ?? '')) return undefined
       decoded += read.decoded
       offsets.push(...read.offsets.slice(1).map((offset) => start + offset))
+    } else if (node.type === 'break') {
+      decoded += '\n'
+      offsets.push(end)
     } else return undefined
+    afterBreak = node.type === 'break'
     at = end
   }
   return at === to ? { decoded, offsets, links } : undefined
 }
 
-// A run of text and addresses, such as an address that an edit ended, keeps
-// its source outside the edit. The edit, widened to the addresses it touches
-// before or after, is written as the canonical writer writes it, since
+// A run of text, breaks and addresses keeps its source outside the edit.
+// The edit, widened to the addresses it touches before or after, is written
+// as the canonical writer writes it, since
 // escapes kept beside a new address could stop it reading as one.
 function retainRun(
   before: readonly SourceNode[],
@@ -778,7 +789,20 @@ function retainText(
   )
 }
 
-function retainBoundaryWhitespace(raw: string, canonical: string): string {
+function retainBoundaryText(
+  raw: string,
+  canonical: string,
+  afterBreak = false,
+): string {
+  // A new line can turn unchanged punctuation into a block opener. Take its
+  // opening escapes from the writer, retaining the authored text after them.
+  if (afterBreak) {
+    const opening = /^(?:\d+)?(?:\\.)+/.exec(canonical)?.[0]
+    const written = opening ? decodedOffsets(opening) : undefined
+    const original = written ? decodedOffsets(raw, true) : undefined
+    if (written && original?.decoded.startsWith(written.decoded))
+      raw = opening + raw.slice(original.offsets[written.decoded.length])
+  }
   // A middle-of-line space becomes indentation or trimmed text at a block edge.
   const token = '(?:[ \\t]|&#(?:[xX]0*(?:20|9)|0*(?:32|9));|&Tab;)'
   const decoded = (value: string): string =>
@@ -1458,7 +1482,7 @@ function retainSource(
       : retained
   }
   if (before.type === 'text' && after.type === 'text')
-    return retainBoundaryWhitespace(
+    return retainBoundaryText(
       withEnding(
         retainText(
           raw,
@@ -1763,7 +1787,7 @@ function retainSource(
       )
       return (
         source.slice(start, first) +
-        retainBoundaryWhitespace(
+        retainBoundaryText(
           source.slice(first, from) +
             withEnding(
               (inlineParents.has(before.type)
@@ -1799,11 +1823,12 @@ function retainSource(
               lineEnding,
             ) +
             // An unchanged suffix can now follow a break. Keep its spelling,
-            // but escape whitespace that the new line would otherwise trim.
+            // but retain the escapes required at the new line boundary.
             (inlineParents.has(before.type)
-              ? retainBoundaryWhitespace(
+              ? retainBoundaryText(
                   source.slice(to, last),
                   canonical.slice(newTo, newLast),
+                  changes.at(-1)?.type === 'break',
                 )
               : source.slice(to, last)),
           canonical.slice(newFirst, newLast),

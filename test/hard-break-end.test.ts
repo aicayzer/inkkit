@@ -326,3 +326,62 @@ for (const [tail, escaped] of [
     })
   })
 }
+
+for (const [tail, escaped] of [
+  ['- item', '\\- item'],
+  ['- café🙂 &amp; z\\*', '\\- café🙂 &amp; z\\*'],
+  ['# head', '\\# head'],
+  ['> q', '\\> q'],
+  ['1. x', '1\\. x'],
+  ['+ x', '\\+ x'],
+  ['---', '\\---'],
+  ['===', '\\=\\=\\='],
+  ['```', '\\`\\`\\`'],
+  ['~~~', '\\~\\~\\~'],
+  ['<!-- c -->', '<!-- c -->'],
+  ['=', '\\='],
+  ['-', '\\-'],
+]) {
+  for (const formatted of ['**A**', '`A`', '[A](https://example.com)']) {
+    // Adjacent backticks join the code delimiter, so use a tilde fence there.
+    if (formatted === '`A`' && tail === '```') continue
+    for (const prefix of ['', '+ ']) {
+      for (const ending of ['\n', '\r\n']) {
+        test(`break before block marker ${JSON.stringify([tail, formatted, prefix, ending])} saves, reopens and undoes`, async () => {
+          const continuation = prefix ? '  ' : ''
+          const note = (body: string) =>
+            `Untouched __before__.\n\n${prefix}${body}\n\nUntouched _after_.\n`.replaceAll(
+              '\n',
+              ending,
+            )
+          const source = note(formatted + tail)
+          await session(source, (editor, save) => {
+            save(source)
+            select(editor, 'A')
+            editor.keyDown({ key: 'Enter', shiftKey: true }, 1)
+            const comment = tail === '<!-- c -->'
+            const broken = note(
+              comment
+                ? `${formatted}<br />${tail}`
+                : `${formatted}\\\n${continuation}${escaped}`,
+            )
+            save(broken)
+            if (!comment) expect(editor.textSnapshot().text).toContain('A\n')
+            editor.insertText('z', 1)
+            save(
+              note(
+                comment
+                  ? `${formatted}<br />z${tail}`
+                  : `${formatted}\\\n${continuation}z${tail}`,
+              ),
+            )
+            editor.undo()
+            save(broken)
+            editor.undo()
+            save(source)
+          })
+        })
+      }
+    }
+  }
+}
