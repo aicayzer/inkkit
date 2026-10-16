@@ -11,6 +11,7 @@ import { $prose } from '@milkdown/kit/utils'
 import { serialize } from './dialect'
 import { semanticSignature } from './preserve'
 import type { LinkForm } from './link-form'
+import { isWrittenEdit } from './comments'
 
 interface Character {
   pos: number
@@ -445,7 +446,7 @@ export const autolinkLiterals = $prose(
         const blocks: Block[] = []
         for (const { pos, block, from, to } of edited) {
           const chars = characters(block, pos + 1)
-          if (edited.length === 1) {
+          if (edited.length === 1 && transactions.every(isWrittenEdit)) {
             const completed = completedAngle(newState.tr, chars, from, to)
             if (completed && readsBack(ctx, completed, pos)) return completed
           }

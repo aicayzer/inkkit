@@ -824,3 +824,17 @@ test('a preservation refusal during angle completion keeps the document, revisio
     type(s.view, '>')
     await expectSaves(s, 'x<https://x.com>\n')
   }))
+
+for (const source of ['\\<https://x.com\\>\n', '&lt;https://x.com&gt;\n'])
+  test(`undo restores literal delimiters in ${JSON.stringify(source)} without completing an autolink`, () =>
+    session(source, async (s) => {
+      await expectSaves(s, source)
+      const end = at(s.view, '>', false)
+      s.view.dispatch(s.view.state.tr.delete(end, end + 1))
+      await expectSaves(s)
+      const deleted = s.editor.snapshot().text
+      s.editor.undo()
+      await expectSaves(s, source)
+      s.editor.redo()
+      await expectSaves(s, deleted)
+    }))
