@@ -65,3 +65,34 @@ export const codeSpanAutolinkCases = [
     'Untouched &copy;\r\n\r\n`http://x.com`\r\n\r\n+ other\r\n',
   ],
 ] as const
+
+// Plain-text paste keeps the backticks as text. A link ends before the
+// backticks after it, so it opens the address that was written.
+export const codeSpanPasteCases = [
+  ['a URL', '`http://x.com`', '\\`<http://x.com>\\`\n', 'http://x.com'],
+  [
+    'a URL in double backticks',
+    '``http://x.com``',
+    '\\`\\`<http://x.com>\\`\\`\n',
+    'http://x.com',
+  ],
+  [
+    'a www address',
+    '`www.x.com`',
+    '\\`[www.x.com](http://www.x.com)\\`\n',
+    'http://www.x.com',
+  ],
+  ['an email address', '`a@b.co`', '\\`<a@b.co>\\`\n', 'mailto:a@b.co'],
+  [
+    'a path and query in a sentence',
+    'see `http://x.com/a?b=1` now',
+    'see \\`<http://x.com/a?b=1>\\` now\n',
+    'http://x.com/a?b=1',
+  ],
+  [
+    'an address ending in a slash',
+    '`http://x.com/`',
+    '\\`<http://x.com/>\\`\n',
+    'http://x.com/',
+  ],
+] as const

@@ -1,5 +1,8 @@
 import { test, expect, observe, operation } from './fixtures'
-import { codeSpanAutolinkCases } from '../code-span-autolink-cases'
+import {
+  codeSpanAutolinkCases,
+  codeSpanPasteCases,
+} from '../code-span-autolink-cases'
 import type { Page } from '@playwright/test'
 
 async function open(page: Page, text: string) {
@@ -44,7 +47,7 @@ async function reopensSame(page: Page) {
 }
 
 for (const [name, source, typed, expected] of codeSpanAutolinkCases)
-  test(`typing backticks around ${name} saves a code span and no link @preservation`, async ({
+  test(`typing backticks around an address, case "${name}", saves a code span and no link @preservation`, async ({
     page,
     openFixture,
   }) => {
@@ -77,8 +80,14 @@ test('typing the opening backtick last leaves literal backticks, not a code span
   await reopensSame(page)
 })
 
-for (const key of ['Backspace', 'ControlOrMeta+z'])
-  test(`${key} right after the closing backtick undoes the code span without a stray link @preservation`, async ({
+for (const [key, saved] of [
+  // Backspace undoes the input rule: the backticks are text again and the
+  // link ends before the one after it.
+  ['Backspace', '\\`<http://x.com>\\`\n'],
+  // Undo returns to the text typed before the closing backtick.
+  ['ControlOrMeta+z', '\\`http://x.com\n'],
+] as const)
+  test(`${key} right after the closing backtick restores the typed text with a link to the address @preservation`, async ({
     page,
     openFixture,
   }) => {
@@ -90,16 +99,51 @@ for (const key of ['Backspace', 'ControlOrMeta+z'])
     await page.keyboard.press(key)
     const observed = await observe(page)
     expect(observed.diagnostics).toEqual([])
+    expect(observed.snapshot!.text).toBe(saved)
+    await expect(page.locator('[contenteditable] code')).toHaveCount(0)
+    await expect(page.locator('[contenteditable] a')).toHaveAttribute(
+      'href',
+      'http://x.com',
+    )
+    await reopensSame(page)
+  })
+
+test('typing the closing backtick again after Undo wraps the address in code without a link @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await open(page, 'x\n')
+  await select(page, 'x')
+  await page.keyboard.type('`http://x.com`')
+  await page.keyboard.press('ControlOrMeta+z')
+  await page.keyboard.type('`')
+  const observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  expect(observed.snapshot!.text).toBe('`http://x.com`\n')
+  await expect(page.locator('[contenteditable] a')).toHaveCount(0)
+  await operation(page, 'redo')
+  expect((await observe(page)).diagnostics).toEqual([])
+})
+
+for (const [name, pasted, saved, href] of codeSpanPasteCases)
+  test(`pasting backticks around an address, case "${name}", as plain text ends the link before them @preservation`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture()
+    await open(page, 'x\n')
+    await select(page, 'x')
+    expect(await operation(page, 'pastePlain', { text: pasted })).toBe(true)
+    const observed = await observe(page)
+    expect(observed.diagnostics).toEqual([])
+    expect(observed.snapshot!.text).toBe(saved)
+    await expect(page.locator('[contenteditable] a')).toHaveAttribute(
+      'href',
+      href,
+    )
     await expect(page.locator('[contenteditable] code')).toHaveCount(0)
     await reopensSame(page)
-    // Typing the backtick again wraps it again, still without a link.
-    await page.keyboard.type('`')
-    if (key === 'ControlOrMeta+z') {
-      expect((await observe(page)).snapshot!.text).toBe('`http://x.com`\n')
-      await expect(page.locator('[contenteditable] a')).toHaveCount(0)
-    }
-    await operation(page, 'redo')
-    expect((await observe(page)).diagnostics).toEqual([])
   })
 
 for (const [name, source, typed, expected] of [

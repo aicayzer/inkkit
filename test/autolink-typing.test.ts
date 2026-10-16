@@ -3,11 +3,15 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { undoDepth, redoDepth } from '@milkdown/kit/prose/history'
+import { undoInputRule } from '@milkdown/kit/prose/inputrules'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor } from '../src/index'
 import { semanticSignature } from '../src/preserve'
 import { angleAutolinkCases } from './angle-autolink-cases'
-import { codeSpanAutolinkCases } from './code-span-autolink-cases'
+import {
+  codeSpanAutolinkCases,
+  codeSpanPasteCases,
+} from './code-span-autolink-cases'
 
 const input = { documentId: 'typing', format: 'md' as const }
 
@@ -889,7 +893,7 @@ const links = (view: EditorView) => {
 }
 
 for (const [name, source, typed, expected] of codeSpanAutolinkCases)
-  test(`typing backticks around ${name} saves a code span and no link`, () =>
+  test(`typing backticks around an address, case "${name}", saves a code span and no link`, () =>
     session(source, async (s) => {
       await expectSaves(s, source)
       const start = at(s.view, 'x', false)
@@ -976,3 +980,27 @@ for (const [name, source, typed, expected] of [
       typeKeys(s.view, typed)
       await expectSaves(s, expected)
     }))
+
+for (const [name, pasted, expected, href] of codeSpanPasteCases)
+  test(`pasting backticks around an address, case "${name}", as plain text ends the link before them`, () =>
+    session('x\n', async (s) => {
+      const start = at(s.view, 'x', false)
+      select(s.view, start, start + 1)
+      s.editor.pasteAsPlainText(pasted)
+      await expectSaves(s, expected)
+      expect(s.view.dom.querySelector('a')?.getAttribute('href')).toBe(href)
+      expect(s.view.dom.querySelector('code')).toBeNull()
+    }))
+
+test('Backspace after the closing backtick undoes the code span and keeps the address link', () =>
+  session('x\n', async (s) => {
+    const start = at(s.view, 'x', false)
+    select(s.view, start, start + 1)
+    typeKeys(s.view, '`http://x.com`')
+    expect(undoInputRule(s.view.state, s.view.dispatch)).toBe(true)
+    await expectSaves(s, '\\`<http://x.com>\\`\n')
+    expect(s.view.dom.querySelector('a')?.getAttribute('href')).toBe(
+      'http://x.com',
+    )
+    expect(s.view.dom.querySelector('code')).toBeNull()
+  }))
