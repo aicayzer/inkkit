@@ -73,9 +73,7 @@ const calloutHandler: Handle = (untyped, parent, state, info) => {
     info,
   )
   const title = node.titleSource ?? node.title
-  // A rule immediately under the marker would turn the marker into a setext heading.
-  const separator = node.children[0]?.type === 'thematicBreak' ? '>\n' : ''
-  return `> ${node.marker}${node.fold}${title ? ` ${title}` : ''}\n${separator}${body}`
+  return `> ${node.marker}${node.fold}${title ? ` ${title}` : ''}\n${body}`
 }
 
 function remarkCallouts(this: Processor) {

@@ -212,6 +212,11 @@ export function slashTransaction(
   kind = 'Note',
 ): Transaction {
   const { $from } = base.selection
+  // Empty output removes the trigger without converting its original block.
+  if (typeof command !== 'string' && command.markdown === '')
+    return closeHistory(
+      base.tr.replaceWith($from.before(), $from.after(), $from.parent),
+    )
   if ($from.parent.content.size) {
     // An empty line after Shift+Return becomes a separate block. Keep the
     // preceding text and retain the original break in the undo baseline.

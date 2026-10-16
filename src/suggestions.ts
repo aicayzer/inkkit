@@ -84,13 +84,31 @@ export class Suggestions {
   private outside = (event: Event) => {
     if (!this.popup.contains(event.target as Node)) this.close()
   }
+  private viewportBounds() {
+    const viewport = window.visualViewport
+    const left = viewport?.offsetLeft ?? 0
+    const top = viewport?.offsetTop ?? 0
+    return {
+      left,
+      top,
+      right: left + (viewport?.width ?? window.innerWidth),
+      bottom: top + (viewport?.height ?? window.innerHeight),
+    }
+  }
   private scroll = (event: Event) => {
-    if (!this.session || this.popup.contains(event.target as Node)) return
+    if (
+      !this.session ||
+      (event.target instanceof Node && this.popup.contains(event.target))
+    )
+      return
     const caret = this.view!.coordsAtPos(this.view!.state.selection.from)
     const root = this.host.root.getBoundingClientRect()
+    const viewport = this.viewportBounds()
     if (
-      caret.bottom < Math.max(0, root.top) ||
-      caret.top > Math.min(window.innerHeight, root.bottom)
+      caret.bottom < Math.max(viewport.top, root.top) ||
+      caret.top > Math.min(viewport.bottom, root.bottom) ||
+      caret.right < Math.max(viewport.left, root.left) ||
+      caret.left > Math.min(viewport.right, root.right)
     )
       this.close()
     else this.position()
@@ -167,14 +185,24 @@ export class Suggestions {
   private position() {
     const view = this.view!
     const caret = view.coordsAtPos(view.state.selection.from)
+    const viewport = this.viewportBounds()
+    const left = viewport.left + 4
+    const top = viewport.top + 4
+    const right = viewport.right - 4
+    const bottom = viewport.bottom - 4
+    this.popup.style.maxWidth = `${Math.max(0, right - left)}px`
+    // Measure the CSS row limit again when a keyboard or pinch zoom changes
+    // the visible viewport, so a previously shortened list can grow back.
+    this.popup.style.maxHeight = ''
+    const naturalHeight = this.popup.getBoundingClientRect().height
+    const below = Math.max(0, bottom - caret.bottom - 4)
+    const above = Math.max(0, caret.top - top - 4)
+    const opensAbove = below < naturalHeight && above > below
+    this.popup.style.maxHeight = `${Math.min(naturalHeight, opensAbove ? above : below)}px`
     const rect = this.popup.getBoundingClientRect()
-    const height = Math.min(rect.height, 264)
-    const top =
-      caret.bottom + 4 + height > window.innerHeight
-        ? caret.top - height - 4
-        : caret.bottom + 4
-    this.popup.style.left = `${Math.max(4, Math.min(caret.left, window.innerWidth - rect.width - 4))}px`
-    this.popup.style.top = `${Math.max(4, top)}px`
+    const popupTop = opensAbove ? caret.top - rect.height - 4 : caret.bottom + 4
+    this.popup.style.left = `${Math.max(left, Math.min(caret.left, right - rect.width))}px`
+    this.popup.style.top = `${Math.max(top, Math.min(popupTop, bottom - rect.height))}px`
   }
   refresh = () => {
     const session = this.session,
@@ -270,6 +298,9 @@ export class Suggestions {
         document.addEventListener('pointerdown', this.outside, true)
         document.addEventListener('scroll', this.scroll, true)
         window.addEventListener('resize', this.close)
+        const viewport = window.visualViewport
+        viewport?.addEventListener('resize', this.scroll)
+        viewport?.addEventListener('scroll', this.scroll)
         return {
           update: () => this.refresh(),
           destroy: () => {
@@ -277,6 +308,8 @@ export class Suggestions {
             document.removeEventListener('pointerdown', this.outside, true)
             document.removeEventListener('scroll', this.scroll, true)
             window.removeEventListener('resize', this.close)
+            viewport?.removeEventListener('resize', this.scroll)
+            viewport?.removeEventListener('scroll', this.scroll)
           },
         }
       },

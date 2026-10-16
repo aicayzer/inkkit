@@ -57,8 +57,7 @@ exports[`callout "\\n": Divider saves, reopens, undoes and redoes 1`] = `
 "Before  
 
 > [!TIP]
->
-> ---
+> ___
 >
 > <br />
 
@@ -186,8 +185,7 @@ exports[`callout "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
 "Before  
 
 > [!TIP]
->
-> ---
+> ___
 >
 > <br />
 
@@ -258,6 +256,744 @@ After _unchanged_.
 "
 `;
 
+exports[`calloutList "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - > [!NOTE]
+>   > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - \`\`\`
+>   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - \`\`\`mermaid
+>   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - ___
+>   <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - #
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - ##
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - ###
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - |   |   |
+>   | - | - |
+>   |   |   |
+>   |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - > [!NOTE]
+>   > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - \`\`\`
+>   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - \`\`\`mermaid
+>   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - ___
+>   <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - #
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - ##
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - ###
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`calloutList "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> [!TIP]
+> - |   |   |
+>   | - | - |
+>   |   |   |
+>   |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  > [!NOTE]
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  \`\`\`
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  \`\`\`mermaid
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  ___
+  <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  #
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  ##
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  ###
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  |   |   |
+  | - | - |
+  |   |   |
+  |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  > [!NOTE]
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  \`\`\`
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  \`\`\`mermaid
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  ___
+  <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  #
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  ##
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  ###
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hardBreakList "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  |   |   |
+  | - | - |
+  |   |   |
+  |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- > [!NOTE]
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- \`\`\`
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- \`\`\`mermaid
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- ___
+  <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- #
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- ##
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- ###
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- |   |   |
+  | - | - |
+  |   |   |
+  |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- > [!NOTE]
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- \`\`\`
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- \`\`\`mermaid
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- ___
+  <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- #
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- ##
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- ###
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`hyphen "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- |   |   |
+  | - | - |
+  |   |   |
+  |   |   |
+
+After _unchanged_.
+"
+`;
+
 exports[`list "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
 "Before  
 
@@ -309,7 +1045,7 @@ After _unchanged_.
 exports[`list "\\n": Divider saves, reopens, undoes and redoes 1`] = `
 "Before  
 
-* ---
+* ___
   <br />
 
 After _unchanged_.
@@ -424,7 +1160,7 @@ After _unchanged_.
 exports[`list "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
 "Before  
 
-* ---
+* ___
   <br />
 
 After _unchanged_.
@@ -483,6 +1219,490 @@ exports[`list "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
   | - | - |
   |   |   |
   |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - > [!NOTE]
+    > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - \`\`\`
+    \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - \`\`\`mermaid
+    \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - ___
+    <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - #
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - ##
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - ###
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - |   |   |
+    | - | - |
+    |   |   |
+    |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - > [!NOTE]
+    > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - \`\`\`
+    \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - \`\`\`mermaid
+    \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - ___
+    <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - #
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - ##
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - ###
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`nested "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- a
+  - |   |   |
+    | - | - |
+    |   |   |
+    |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. > [!NOTE]
+   > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. \`\`\`
+   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. \`\`\`mermaid
+   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. ___
+   <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. #
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. ##
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. ###
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. |   |   |
+   | - | - |
+   |   |   |
+   |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. > [!NOTE]
+   > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. \`\`\`
+   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. \`\`\`mermaid
+   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. ___
+   <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. #
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. ##
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. ###
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`ordered "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1. |   |   |
+   | - | - |
+   |   |   |
+   |   |   |
 
 After _unchanged_.
 "
@@ -720,6 +1940,466 @@ After _unchanged_.
 "
 `;
 
+exports[`parenthesized "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) > [!NOTE]
+   > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) \`\`\`
+   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) \`\`\`mermaid
+   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) ___
+   <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) #
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) ##
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) ###
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) |   |   |
+   | - | - |
+   |   |   |
+   |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) > [!NOTE]
+   > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) \`\`\`
+   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) \`\`\`mermaid
+   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) ___
+   <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) #
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) ##
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) ###
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`parenthesized "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+1) |   |   |
+   | - | - |
+   |   |   |
+   |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ > [!NOTE]
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ \`\`\`
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ \`\`\`mermaid
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ ___
+  <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ #
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ ##
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ ###
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ |   |   |
+  | - | - |
+  |   |   |
+  |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ > [!NOTE]
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ \`\`\`
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ \`\`\`mermaid
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ ___
+  <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ #
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ ##
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ ###
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`plus "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
++ |   |   |
+  | - | - |
+  |   |   |
+  |   |   |
+
+After _unchanged_.
+"
+`;
+
 exports[`quote "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
 "Before  
 
@@ -771,7 +2451,7 @@ After _unchanged_.
 exports[`quote "\\n": Divider saves, reopens, undoes and redoes 1`] = `
 "Before  
 
-> ---
+> ___
 >
 > <br />
 
@@ -887,7 +2567,7 @@ After _unchanged_.
 exports[`quote "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
 "Before  
 
-> ---
+> ___
 >
 > <br />
 
@@ -947,6 +2627,490 @@ exports[`quote "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
 > | - | - |
 > |   |   |
 > |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - > [!NOTE]
+>   > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - \`\`\`
+>   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - \`\`\`mermaid
+>   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - ___
+>   <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - #
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - ##
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - ###
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - |   |   |
+>   | - | - |
+>   |   |   |
+>   |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - > [!NOTE]
+>   > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - \`\`\`
+>   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - \`\`\`mermaid
+>   \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - ___
+>   <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - #
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - ##
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - ###
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - 1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`quotedList "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+> - |   |   |
+>   | - | - |
+>   |   |   |
+>   |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  > [!NOTE]
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  \`\`\`
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  \`\`\`mermaid
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  ___
+  <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  #
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  ##
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  ###
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  |   |   |
+  | - | - |
+  |   |   |
+  |   |   |
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Bulleted List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  - <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Callout saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  > [!NOTE]
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Checklist saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  - [ ] <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Code Block saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  \`\`\`
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Diagram saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  \`\`\`mermaid
+  \`\`\`
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  ___
+  <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Heading 1 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  #
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Heading 2 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  ##
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Heading 3 saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  ###
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Numbered List saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  1. <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Quote saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  > <br />
+
+After _unchanged_.
+"
+`;
+
+exports[`task "\\r\\n": Table saves, reopens, undoes and redoes 1`] = `
+"Before  
+
+- [ ] <br />
+  |   |   |
+  | - | - |
+  |   |   |
+  |   |   |
 
 After _unchanged_.
 "

@@ -5,7 +5,15 @@ import type { EditorOptions, InkKitEditor } from '../../src/core'
 type SuggestionWindow = Window & {
   suggestionEditor: InkKitEditor
   suggestionErrors: string[]
-  finishCommand?: (markdown: string) => void
+  finishCommand?: (markdown: string | undefined) => void
+  rejectCommand?: (reason: Error) => void
+  suggestionChanges: number
+  suggestionViewport?: EventTarget & {
+    offsetLeft: number
+    offsetTop: number
+    width: number
+    height: number
+  }
 }
 const moduleUrl = `/@fs${process.cwd()}/src/core.ts`
 const axePath = createRequire(import.meta.url).resolve('axe-core')
@@ -50,9 +58,11 @@ async function mount(
               action: () => {
                 if (hostCommand.mode === 'throw') throw new Error('Host failed')
                 if (hostCommand.mode === 'hold')
-                  return new Promise<string>((resolve) => {
+                  return new Promise<string | undefined>((resolve, reject) => {
                     ;(window as unknown as SuggestionWindow).finishCommand =
                       resolve
+                    ;(window as unknown as SuggestionWindow).rejectCommand =
+                      reject
                   })
                 return hostCommand.markdown
               },
@@ -60,10 +70,13 @@ async function mount(
           ],
         }
       ;(window as unknown as SuggestionWindow).suggestionErrors = []
+      ;(window as unknown as SuggestionWindow).suggestionChanges = 0
       const editor = await InkKitEditor.mount(
         root,
         {
-          changed() {},
+          changed() {
+            ;(window as unknown as SuggestionWindow).suggestionChanges++
+          },
           error(error) {
             ;(window as unknown as SuggestionWindow).suggestionErrors.push(
               error.code,
@@ -677,3 +690,245 @@ test('typing after choosing a divider leaves the next block alone', async ({
   await expectSaved(page, 'Before\n\n---\n\nNew\n\nAfter\n')
   await expect(root(page).locator('hr')).toHaveCount(1)
 })
+
+for (const result of ['resolve', 'cancel'] as const) {
+  test(`an asynchronous host picker can ${result} after blur and refocus`, async ({
+    page,
+  }) => {
+    await mount(page, '', {}, 'md', {
+      name: 'Host command',
+      keywords: ['host'],
+      markdown: '',
+      mode: 'hold',
+    })
+    await page.keyboard.type('/host')
+    const typed = await page.evaluate(() =>
+      (window as unknown as SuggestionWindow).suggestionEditor.snapshot(),
+    )
+    await page.keyboard.press('Enter')
+    await page.getByRole('button', { name: 'Outside the editor' }).click()
+    await expect(menu(page)).toHaveCount(0)
+    await page.evaluate(async (result) => {
+      ;(window as unknown as SuggestionWindow).finishCommand!(
+        result === 'resolve' ? '[Selected note](note:one)' : undefined,
+      )
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    }, result)
+    if (result === 'resolve')
+      await expectSaved(page, '[Selected note](note:one)\n')
+    else
+      expect(
+        await page.evaluate(() =>
+          (window as unknown as SuggestionWindow).suggestionEditor.snapshot(),
+        ),
+      ).toEqual(typed)
+    expect(
+      await page.evaluate(
+        () => (window as unknown as SuggestionWindow).suggestionErrors,
+      ),
+    ).toEqual([])
+    await page.evaluate(() =>
+      (window as unknown as SuggestionWindow).suggestionEditor.focus(),
+    )
+    await expect(
+      root(page).getByRole('textbox', {
+        name: 'Formatted Markdown editor',
+        exact: true,
+      }),
+    ).toBeFocused()
+    await page.keyboard.press('ControlOrMeta+z')
+    await expectSaved(page, '')
+    await page.keyboard.press('ControlOrMeta+Shift+z')
+    await expectSaved(
+      page,
+      result === 'resolve' ? '[Selected note](note:one)\n' : typed.text,
+    )
+  })
+}
+
+for (const completion of ['resolve', 'reject'] as const) {
+  test(`an asynchronous host action stays silent when it ${completion}s after destroy`, async ({
+    page,
+  }) => {
+    const pageErrors: string[] = []
+    page.on('pageerror', (error) => pageErrors.push(error.message))
+    await mount(page, '', {}, 'md', {
+      name: 'Host command',
+      keywords: ['host'],
+      markdown: '',
+      mode: 'hold',
+    })
+    await page.keyboard.type('/host')
+    await page.keyboard.press('Enter')
+    const before = await page.evaluate(async () => {
+      const host = window as unknown as SuggestionWindow
+      await host.suggestionEditor.destroy()
+      return {
+        changes: host.suggestionChanges,
+        errors: host.suggestionErrors,
+        html: document.getElementById('suggestion-editor')!.innerHTML,
+      }
+    })
+    const after = await page.evaluate(async (completion) => {
+      const host = window as unknown as SuggestionWindow
+      if (completion === 'resolve') host.finishCommand!('# Too late')
+      else host.rejectCommand!(new Error('Late host rejection'))
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      return {
+        changes: host.suggestionChanges,
+        errors: host.suggestionErrors,
+        html: document.getElementById('suggestion-editor')!.innerHTML,
+      }
+    }, completion)
+    expect(after).toEqual(before)
+    expect(pageErrors).toEqual([])
+  })
+}
+
+test('menu follows a shrinking and offset visual viewport', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const viewport = Object.assign(new EventTarget(), {
+      offsetLeft: 0,
+      offsetTop: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    })
+    ;(window as unknown as SuggestionWindow).suggestionViewport = viewport
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: viewport,
+    })
+  })
+  await mount(page)
+  await root(page).evaluate((element) => {
+    element.style.left = '450px'
+    element.style.top = '330px'
+    element.style.overflow = 'visible'
+  })
+  await page.evaluate(() => {
+    const viewport = (window as unknown as SuggestionWindow).suggestionViewport!
+    Object.assign(viewport, {
+      offsetLeft: 100,
+      offsetTop: 60,
+      width: 500,
+      height: 360,
+    })
+    viewport.dispatchEvent(new Event('resize'))
+  })
+  await page.keyboard.type('/')
+  const expectInsideViewport = async () => {
+    await expect(menu(page)).toBeVisible()
+    await expect
+      .poll(async () => {
+        const box = await menu(page).boundingBox()
+        const viewport = await page.evaluate(() => {
+          const { offsetLeft, offsetTop, width, height } = (
+            window as unknown as SuggestionWindow
+          ).suggestionViewport!
+          return { offsetLeft, offsetTop, width, height }
+        })
+        return Boolean(
+          box &&
+          box.x >= viewport.offsetLeft + 3 &&
+          box.y >= viewport.offsetTop + 3 &&
+          box.x + box.width <= viewport.offsetLeft + viewport.width - 3 &&
+          box.y + box.height <= viewport.offsetTop + viewport.height - 3,
+        )
+      })
+      .toBe(true)
+  }
+  await expectInsideViewport()
+  await page.evaluate(() => {
+    const viewport = (window as unknown as SuggestionWindow).suggestionViewport!
+    Object.assign(viewport, {
+      offsetLeft: 180,
+      offsetTop: 160,
+      width: 360,
+      height: 220,
+    })
+    viewport.dispatchEvent(new Event('resize'))
+  })
+  await expectInsideViewport()
+  await page.evaluate(() => {
+    const viewport = (window as unknown as SuggestionWindow).suggestionViewport!
+    Object.assign(viewport, {
+      offsetLeft: 320,
+      offsetTop: 200,
+      width: 180,
+      height: 200,
+    })
+    viewport.dispatchEvent(new Event('scroll'))
+  })
+  await expectInsideViewport()
+  await expect(menu(page).getByRole('option')).toHaveCount(12)
+})
+
+for (const ending of ['\n', '\r\n']) {
+  for (const [context, body] of [
+    ['hyphen list', '- TARGET'],
+    ['nested list', '- parent\n  - TARGET'],
+    ['list continuation after Shift-Enter', '- firstTARGET'],
+    ['task list', '- [ ] TARGET'],
+    ['list inside a quote', '> - TARGET'],
+    ['list inside a callout', '> [!TIP]\n> - TARGET'],
+  ] as const) {
+    test(`divider in ${context} with ${JSON.stringify(ending)} reopens and undoes with real keys`, async ({
+      page,
+    }) => {
+      const source = `Before  \n\n${body}\n\nAfter _unchanged_.\n`.replaceAll(
+        '\n',
+        ending,
+      )
+      await mount(page, source)
+      await page.evaluate(() => {
+        const editor = (window as unknown as SuggestionWindow).suggestionEditor
+        editor.find('TARGET')
+        editor.focus()
+      })
+      await page.keyboard.press('Backspace')
+      if (context === 'list continuation after Shift-Enter')
+        await page.keyboard.press('Shift+Enter')
+      const before = await saved(page)
+      await page.keyboard.type('/divider')
+      await expect(option(page, 'Divider')).toBeVisible()
+      await page.keyboard.press('Enter')
+      await expect(root(page).locator('li hr')).toHaveCount(1)
+      const inserted = await saved(page)
+      expect(inserted).not.toContain('/divider')
+      expect(inserted.startsWith(`Before  ${ending}${ending}`)).toBe(true)
+      expect(
+        inserted.endsWith(`${ending}${ending}After _unchanged_.${ending}`),
+      ).toBe(true)
+      expect(inserted.replaceAll('\r\n', '')).not.toContain(
+        ending === '\r\n' ? '\n' : '\r',
+      )
+      await page.keyboard.press('ControlOrMeta+z')
+      await expectSaved(page, before)
+      await page.keyboard.press('ControlOrMeta+Shift+z')
+      await expectSaved(page, inserted)
+      await page.keyboard.type('New text')
+      const edited = await saved(page)
+      expect(edited).toContain('New text')
+      expect(
+        edited.endsWith(`${ending}${ending}After _unchanged_.${ending}`),
+      ).toBe(true)
+      await page.evaluate((text) => {
+        ;(window as unknown as SuggestionWindow).suggestionEditor.loadDocument({
+          documentId: 'reopened',
+          generation: 2,
+          format: 'md',
+          text,
+        })
+      }, edited)
+      await expectSaved(page, edited)
+      await expect(root(page).locator('li hr')).toHaveCount(1)
+      expect(
+        await page.evaluate(
+          () => (window as unknown as SuggestionWindow).suggestionErrors,
+        ),
+      ).toEqual([])
+    })
+  }
+}

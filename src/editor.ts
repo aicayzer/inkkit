@@ -4598,6 +4598,7 @@ export class InkKitEditor {
     try {
       const result = command.action(this.context())
       const insert = (markdown: string | undefined) => {
+        if (this.destroyed) return
         if (markdown === undefined) return
         if (typeof markdown !== 'string') {
           this.report(
@@ -4608,7 +4609,10 @@ export class InkKitEditor {
         commit({ markdown })
       }
       if (result instanceof Promise)
-        result.then(insert).catch((error) => this.report(error))
+        result.then(insert).catch((error) => {
+          if (this.destroyed) return
+          this.report(error)
+        })
       else insert(result)
     } catch (error) {
       this.report(error)

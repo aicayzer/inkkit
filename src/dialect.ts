@@ -444,6 +444,9 @@ function remarkDialect(this: Processor) {
       },
       thematicBreak(node, parent, state) {
         const value = defaultHandlers.thematicBreak(node, parent, state)
+        // A list's bullet must differ from its rule; dashes can also attach
+        // to preceding task text or a callout marker as a setext underline.
+        if (parent && parent.type !== 'root') return value.replaceAll('-', '_')
         // A document opening with `---` reads back as front matter when
         // another `---` line follows.
         return parent?.type === 'root' &&

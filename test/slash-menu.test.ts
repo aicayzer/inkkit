@@ -45,6 +45,15 @@ for (const ending of ['\n', '\r\n']) {
   for (const [name, body] of Object.entries({
     paragraph: 'TARGET',
     list: '* TARGET',
+    hyphen: '- TARGET',
+    plus: '+ TARGET',
+    ordered: '1. TARGET',
+    parenthesized: '1) TARGET',
+    task: '- [ ] TARGET',
+    nested: '- a\n  - TARGET',
+    quotedList: '> - TARGET',
+    calloutList: '> [!TIP]\n> - TARGET',
+    hardBreakList: '- aTARGET',
     quote: '> TARGET',
     callout: '> [!TIP]\n> TARGET',
   })) {
@@ -57,6 +66,8 @@ for (const ending of ['\n', '\r\n']) {
         const { editor, root, errors } = await mount(source)
         editor.find('TARGET')
         editor.insertText('', 1)
+        if (name === 'hardBreakList')
+          editor.keyDown({ key: 'Enter', shiftKey: true }, 1)
         const before = editor.snapshot().text
         editor.insertText('/', 1)
         expect(root.querySelector('[role=listbox]')).not.toBeNull()
@@ -206,3 +217,55 @@ test('typing after a divider uses a new paragraph and leaves the following block
   editor.undo()
   expect(editor.snapshot().text).toBe(divided)
 })
+
+for (const outcome of ['resolve', 'reject'] as const) {
+  test(`a pending host action ${outcome}s silently after destruction`, async () => {
+    let resolve!: (value: string) => void
+    let reject!: (error: Error) => void
+    const pending = new Promise<string>((yes, no) => {
+      resolve = yes
+      reject = no
+    })
+    const { editor, errors } = await mount('', {
+      slashMenu: {
+        enabled: true,
+        commands: [],
+        customCommands: [{ name: 'Host', action: () => pending }],
+      },
+    })
+    editor.insertText('/', 1)
+    editor.keyDown({ key: 'Enter' }, 1)
+    await editor.destroy()
+    editors.splice(editors.indexOf(editor), 1)
+    if (outcome === 'resolve') resolve('Note')
+    else reject(new Error('Host closed'))
+    await new Promise((done) => setTimeout(done, 0))
+    expect(errors).toEqual([])
+  })
+}
+
+for (const source of ['', '## TARGET\r\n\r\nAfter _kept_.\r\n']) {
+  test(`an empty host result restores the original block: ${JSON.stringify(source)}`, async () => {
+    const { editor, root, errors } = await mount(source, {
+      slashMenu: {
+        enabled: true,
+        commands: [],
+        customCommands: [{ name: 'Clear', action: () => '' }],
+      },
+    })
+    if (source) {
+      editor.find('TARGET')
+      editor.insertText('', 1)
+    }
+    const before = editor.snapshot().text
+    editor.insertText('/', 1)
+    editor.keyDown({ key: 'Enter' }, 1)
+    expect(editor.snapshot().text).toBe(before)
+    if (source) expect(root.querySelector('h2')).not.toBeNull()
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe(before)
+    expect(editor.redo()).toBe(true)
+    expect(editor.snapshot().text).toBe(before)
+    expect(errors).toEqual([])
+  })
+}
