@@ -326,3 +326,147 @@ for (const [tail, escaped] of [
     })
   })
 }
+
+for (const [tail, escaped] of [
+  ['- item', '\\- item'],
+  ['- café🙂 &amp; z\\*', '\\- café🙂 &amp; z\\*'],
+  ['# head', '\\# head'],
+  ['> q', '\\> q'],
+  ['1. x', '1\\. x'],
+  ['+ x', '\\+ x'],
+  ['---', '\\---'],
+  ['===', '\\=\\=\\='],
+  ['```', '\\`\\`\\`'],
+  ['~~~', '\\~\\~\\~'],
+  ['<!-- c -->', '<!-- c -->'],
+  ['=', '\\='],
+  ['-', '\\-'],
+]) {
+  for (const formatted of ['**A**', '`A`', '[A](https://example.com)']) {
+    // Adjacent backticks join the code delimiter, so use a tilde fence there.
+    if (formatted === '`A`' && tail === '```') continue
+    for (const [prefix, continuation] of [
+      ['', ''],
+      ['+ ', '  '],
+      ['> ', '> '],
+      ['> [!note]\n> ', '> '],
+    ]) {
+      for (const ending of ['\n', '\r\n']) {
+        test(`break before block marker ${JSON.stringify([tail, formatted, prefix, ending])} saves, reopens and undoes`, async () => {
+          const note = (body: string) =>
+            `Untouched __before__.\n\n${prefix}${body}\n\nUntouched _after_.\n`.replaceAll(
+              '\n',
+              ending,
+            )
+          const source = note(formatted + tail)
+          await session(source, (editor, save) => {
+            save(source)
+            select(editor, 'A')
+            editor.keyDown({ key: 'Enter', shiftKey: true }, 1)
+            const comment = tail === '<!-- c -->'
+            const broken = note(
+              comment
+                ? `${formatted}<br />${tail}`
+                : `${formatted}\\\n${continuation}${escaped}`,
+            )
+            save(broken)
+            if (!comment) expect(editor.textSnapshot().text).toContain('A\n')
+            editor.insertText('z', 1)
+            save(note(`${formatted}\\\n${continuation}z${tail}`))
+            editor.undo()
+            save(broken)
+            editor.undo()
+            save(source)
+          })
+        })
+      }
+    }
+  }
+}
+
+test('replacing a soft break with a hard break preserves the new break kind', async () => {
+  await session('A\nB\n', (editor, save) => {
+    const snapshot = editor.textSnapshot()
+    editor.selectTextRange({ snapshotId: snapshot.snapshotId, from: 1, to: 2 })
+    editor.insertText('\n', 1)
+    save('A\\\nB\n')
+    editor.undo()
+    save('A\nB\n')
+  })
+})
+
+for (const ending of ['\n', '\r\n']) {
+  for (const prefix of ['', '+ ']) {
+    test(`a break inside text keeps boundary escapes ${JSON.stringify([prefix, ending])}`, async () => {
+      const continuation = prefix ? '  ' : ''
+      const note = (body: string) =>
+        `${prefix}${body}\n`.replaceAll('\n', ending)
+      await session(note('Run now'), (editor, save) => {
+        select(editor, 'Run')
+        editor.keyDown({ key: 'Enter', shiftKey: true }, 1)
+        const broken = note(`Run\\\n${continuation}&#x20;now`)
+        save(broken)
+        editor.insertText('z', 1)
+        save(note(`Run\\\n${continuation}z now`))
+        editor.undo()
+        save(broken)
+        editor.undo()
+        save(note('Run now'))
+      })
+    })
+  }
+}
+
+for (const [prefix, continuation] of [
+  ['', ''],
+  ['+ ', '  '],
+  ['> ', '> '],
+  ['> [!note]\n> ', '> '],
+]) {
+  for (const ending of ['\n', '\r\n']) {
+    const note = (body: string) =>
+      `Untouched __before__.\n\n${prefix}${body}\n\nUntouched _after_.\n`.replaceAll(
+        '\n',
+        ending,
+      )
+    for (const removed of ['zz', '**B**', '`B`']) {
+      test(`deleting before a block marker ${JSON.stringify([removed, prefix, ending])} saves, reopens and undoes`, async () => {
+        const source = note(`A\\\n${continuation}${removed}- item`)
+        await session(source, (editor, save) => {
+          save(source)
+          select(editor, removed === 'zz' ? 'zz' : 'B', true)
+          editor.keyDown({ key: 'Backspace' }, 1)
+          save(note(`A\\\n${continuation}\\- item`))
+          editor.undo()
+          save(source)
+          editor.redo()
+          save(note(`A\\\n${continuation}\\- item`))
+        })
+      })
+    }
+    for (const existingBreak of [false, true]) {
+      test(`deleting before an HTML comment ${JSON.stringify([existingBreak, prefix, ending])} saves, reopens and undoes`, async () => {
+        const source = note(
+          `**A**${existingBreak ? `\\\n${continuation}` : ''}z<!-- c -->`,
+        )
+        await session(source, (editor, save) => {
+          save(source)
+          if (!existingBreak) {
+            select(editor, 'A')
+            editor.keyDown({ key: 'Enter', shiftKey: true }, 1)
+            save(note(`**A**\\\n${continuation}z<!-- c -->`))
+          }
+          select(editor, 'z', true)
+          editor.keyDown({ key: 'Backspace' }, 1)
+          save(note('**A**<br /><!-- c -->'))
+          editor.undo()
+          save(note(`**A**\\\n${continuation}z<!-- c -->`))
+          if (!existingBreak) {
+            editor.undo()
+            save(source)
+          }
+        })
+      })
+    }
+  }
+}

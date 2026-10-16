@@ -616,25 +616,38 @@ function locateChildren(node: SourceNode, text: string): void {
   }
 }
 
-// The text a run of text and links written bare or in angle brackets reads
-// as, with the offset in `text` of each character and the range of each
-// link, or undefined for any other run.
+// The text a run of text, breaks and links written bare or in angle
+// brackets reads as, with the offset in `text` of each character and the
+// range of each link, or undefined for any other run.
 function runOffsets(
   nodes: readonly SourceNode[],
   text: string,
   from: number,
   to: number,
 ):
-  | { decoded: string; offsets: number[]; links: Array<[number, number]> }
+  | {
+      decoded: string
+      offsets: number[]
+      links: Array<[number, number]>
+      breaks: Set<number>
+    }
   | undefined {
   let decoded = ''
   const offsets = [from]
   const links: Array<[number, number]> = []
+  const breaks = new Set<number>()
   let at = from
+  let afterBreak = false
   for (const node of nodes) {
     const start = node.position?.start.offset
     const end = node.position?.end.offset
-    if (start !== at || end == null) return undefined
+    if (start == null || end == null) return undefined
+    // Container indentation belongs to the break, before the following text.
+    if (afterBreak && start >= at && /^[ \t>]*$/.test(text.slice(at, start))) {
+      at = start
+      offsets[offsets.length - 1] = start
+    }
+    if (start !== at) return undefined
     const raw = text.slice(start, end)
     if (node.type === 'link') {
       const label = inlineText(node)
@@ -652,16 +665,21 @@ function runOffsets(
       if (!read || read.decoded !== lf(node.value ?? '')) return undefined
       decoded += read.decoded
       offsets.push(...read.offsets.slice(1).map((offset) => start + offset))
+    } else if (node.type === 'break') {
+      breaks.add(decoded.length)
+      decoded += '\n'
+      offsets.push(end)
     } else return undefined
+    afterBreak = node.type === 'break'
     at = end
   }
-  return at === to ? { decoded, offsets, links } : undefined
+  return at === to ? { decoded, offsets, links, breaks } : undefined
 }
 
-// A run of text and addresses, such as an address that an edit ended, keeps
-// its source outside the edit. The edit, widened to the addresses it touches
-// before or after, is written as the canonical writer writes it, since
-// escapes kept beside a new address could stop it reading as one.
+// A run of text, breaks and addresses keeps its source outside the edit.
+// The edit, widened to the addresses it touches before or after, is written
+// as the canonical writer writes it, since escapes kept beside a new address
+// could stop it reading as one.
 function retainRun(
   before: readonly SourceNode[],
   after: readonly SourceNode[],
@@ -676,13 +694,20 @@ function retainRun(
   const a = old.decoded
   const b = now.decoded
   let prefix = 0
-  while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix])
+  while (
+    prefix < a.length &&
+    prefix < b.length &&
+    a[prefix] === b[prefix] &&
+    old.breaks.has(prefix) === now.breaks.has(prefix)
+  )
     prefix++
   let suffix = 0
   while (
     suffix < a.length - prefix &&
     suffix < b.length - prefix &&
-    a[a.length - 1 - suffix] === b[b.length - 1 - suffix]
+    a[a.length - 1 - suffix] === b[b.length - 1 - suffix] &&
+    old.breaks.has(a.length - 1 - suffix) ===
+      now.breaks.has(b.length - 1 - suffix)
   )
     suffix++
   for (let widened = true; widened;) {
@@ -706,7 +731,13 @@ function retainRun(
   return (
     source.slice(from, old.offsets[prefix]) +
     canonical.slice(now.offsets[prefix], now.offsets[b.length - suffix]) +
-    source.slice(old.offsets[a.length - suffix], to)
+    (now.breaks.has(b.length - suffix - 1)
+      ? retainBoundaryText(
+          source.slice(old.offsets[a.length - suffix], to),
+          canonical.slice(now.offsets[b.length - suffix], newTo),
+          true,
+        )
+      : source.slice(old.offsets[a.length - suffix], to))
   )
 }
 
@@ -778,7 +809,20 @@ function retainText(
   )
 }
 
-function retainBoundaryWhitespace(raw: string, canonical: string): string {
+function retainBoundaryText(
+  raw: string,
+  canonical: string,
+  afterBreak = false,
+): string {
+  // A new line can turn unchanged punctuation into a block opener. Take its
+  // opening escapes from the writer, retaining the authored text after them.
+  if (afterBreak) {
+    const opening = /^(?:\d+)?(?:\\.)+/.exec(canonical)?.[0]
+    const written = opening ? decodedOffsets(opening) : undefined
+    const original = written ? decodedOffsets(raw, true) : undefined
+    if (written && original?.decoded.startsWith(written.decoded))
+      raw = opening + raw.slice(original.offsets[written.decoded.length])
+  }
   // A middle-of-line space becomes indentation or trimmed text at a block edge.
   const token = '(?:[ \\t]|&#(?:[xX]0*(?:20|9)|0*(?:32|9));|&Tab;)'
   const decoded = (value: string): string =>
@@ -812,7 +856,7 @@ function retainBoundaryWhitespace(raw: string, canonical: string): string {
           const canonicalBody = canonicalLine.slice(canonicalPrefix.length)
           return (
             prefix +
-            retainBoundaryWhitespace(line.slice(prefix.length), canonicalBody)
+            retainBoundaryText(line.slice(prefix.length), canonicalBody)
           )
         })
         .join('')
@@ -1208,6 +1252,7 @@ function retainSource(
   // starts in `source`: the original index of each moved child, by its
   // index in `after`.
   reorder?: Reorder,
+  afterBreak = false,
 ): string {
   if (literals.has(after))
     return withEnding(
@@ -1458,7 +1503,7 @@ function retainSource(
       : retained
   }
   if (before.type === 'text' && after.type === 'text')
-    return retainBoundaryWhitespace(
+    return retainBoundaryText(
       withEnding(
         retainText(
           raw,
@@ -1471,6 +1516,7 @@ function retainSource(
         lineEnding,
       ),
       canonical.slice(newStart, newEnd),
+      afterBreak,
     )
   // A literal block's tree does not show all of its text, such as spaces
   // that open a line, so a block holding one is compared line by line.
@@ -1584,6 +1630,7 @@ function retainSource(
               ],
               [],
               reorder,
+              after.children![index - 1]?.type === 'break',
             )
       if (
         before.type === 'tableRow' &&
@@ -1763,7 +1810,7 @@ function retainSource(
       )
       return (
         source.slice(start, first) +
-        retainBoundaryWhitespace(
+        retainBoundaryText(
           source.slice(first, from) +
             withEnding(
               (inlineParents.has(before.type)
@@ -1799,11 +1846,13 @@ function retainSource(
               lineEnding,
             ) +
             // An unchanged suffix can now follow a break. Keep its spelling,
-            // but escape whitespace that the new line would otherwise trim.
+            // but retain the escapes required at the new line boundary.
             (inlineParents.has(before.type)
-              ? retainBoundaryWhitespace(
+              ? retainBoundaryText(
                   source.slice(to, last),
                   canonical.slice(newTo, newLast),
+                  after.children[after.children.length - suffix - 1]?.type ===
+                    'break',
                 )
               : source.slice(to, last)),
           canonical.slice(newFirst, newLast),
@@ -1977,7 +2026,17 @@ export function semanticSignature(doc: ProseNode): string {
     const content = value.content as Record<string, unknown>[] | undefined
     if (!content) return value
     const tokens: Record<string, unknown>[] = []
-    for (const child of content) {
+    for (const [index, child] of content.entries()) {
+      const attrs = child.attrs as Record<string, unknown> | undefined
+      const next = content[index + 1]
+      // A hard break before an inline HTML comment must use the HTML spelling.
+      if (
+        child.type === 'hardbreak' &&
+        attrs?.isInline === false &&
+        next?.type === 'comment_inline' &&
+        (next.attrs as Record<string, unknown> | undefined)?.syntax === 'html'
+      )
+        child.attrs = { ...attrs, isHTML: true }
       if (child.type !== 'text') {
         tokens.push(clean(child))
         continue

@@ -414,6 +414,13 @@ function remarkDialect(this: Processor) {
       },
     ],
     handlers: {
+      break(node, parent, state, info) {
+        const next = parent?.children[parent.children.indexOf(node) + 1]
+        // A newline would promote the following inline HTML comment to a block.
+        return next?.type === 'inkkitCommentInline' && next.syntax === 'html'
+          ? '<br />'
+          : defaultHandlers.break(node, parent, state, info)
+      },
       text(node, parent, state, info) {
         const value = defaultHandlers.text(node, parent, state, info)
         // GFM trims spaces and tabs at the edges of a cell on reopening, so
