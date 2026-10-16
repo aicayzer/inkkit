@@ -856,7 +856,7 @@ function retainBoundaryText(
           const canonicalBody = canonicalLine.slice(canonicalPrefix.length)
           return (
             prefix +
-            retainBoundaryWhitespace(line.slice(prefix.length), canonicalBody)
+            retainBoundaryText(line.slice(prefix.length), canonicalBody)
           )
         })
         .join('')
@@ -1252,6 +1252,7 @@ function retainSource(
   // starts in `source`: the original index of each moved child, by its
   // index in `after`.
   reorder?: Reorder,
+  afterBreak = false,
 ): string {
   if (literals.has(after))
     return withEnding(
@@ -1515,6 +1516,7 @@ function retainSource(
         lineEnding,
       ),
       canonical.slice(newStart, newEnd),
+      afterBreak,
     )
   // A literal block's tree does not show all of its text, such as spaces
   // that open a line, so a block holding one is compared line by line.
@@ -1628,6 +1630,7 @@ function retainSource(
               ],
               [],
               reorder,
+              after.children![index - 1]?.type === 'break',
             )
       if (
         before.type === 'tableRow' &&
@@ -1848,7 +1851,8 @@ function retainSource(
               ? retainBoundaryText(
                   source.slice(to, last),
                   canonical.slice(newTo, newLast),
-                  changes.at(-1)?.type === 'break',
+                  after.children[after.children.length - suffix - 1]?.type ===
+                    'break',
                 )
               : source.slice(to, last)),
           canonical.slice(newFirst, newLast),
@@ -2022,7 +2026,17 @@ export function semanticSignature(doc: ProseNode): string {
     const content = value.content as Record<string, unknown>[] | undefined
     if (!content) return value
     const tokens: Record<string, unknown>[] = []
-    for (const child of content) {
+    for (const [index, child] of content.entries()) {
+      const attrs = child.attrs as Record<string, unknown> | undefined
+      const next = content[index + 1]
+      // A hard break before an inline HTML comment must use the HTML spelling.
+      if (
+        child.type === 'hardbreak' &&
+        attrs?.isInline === false &&
+        next?.type === 'comment_inline' &&
+        (next.attrs as Record<string, unknown> | undefined)?.syntax === 'html'
+      )
+        child.attrs = { ...attrs, isHTML: true }
       if (child.type !== 'text') {
         tokens.push(clean(child))
         continue

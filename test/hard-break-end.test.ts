@@ -372,13 +372,7 @@ for (const [tail, escaped] of [
             save(broken)
             if (!comment) expect(editor.textSnapshot().text).toContain('A\n')
             editor.insertText('z', 1)
-            save(
-              note(
-                comment
-                  ? `${formatted}<br />z${tail}`
-                  : `${formatted}\\\n${continuation}z${tail}`,
-              ),
-            )
+            save(note(`${formatted}\\\n${continuation}z${tail}`))
             editor.undo()
             save(broken)
             editor.undo()
@@ -420,5 +414,59 @@ for (const ending of ['\n', '\r\n']) {
         save(note('Run now'))
       })
     })
+  }
+}
+
+for (const [prefix, continuation] of [
+  ['', ''],
+  ['+ ', '  '],
+  ['> ', '> '],
+  ['> [!note]\n> ', '> '],
+]) {
+  for (const ending of ['\n', '\r\n']) {
+    const note = (body: string) =>
+      `Untouched __before__.\n\n${prefix}${body}\n\nUntouched _after_.\n`.replaceAll(
+        '\n',
+        ending,
+      )
+    for (const removed of ['zz', '**B**', '`B`']) {
+      test(`deleting before a block marker ${JSON.stringify([removed, prefix, ending])} saves, reopens and undoes`, async () => {
+        const source = note(`A\\\n${continuation}${removed}- item`)
+        await session(source, (editor, save) => {
+          save(source)
+          select(editor, removed === 'zz' ? 'zz' : 'B', true)
+          editor.keyDown({ key: 'Backspace' }, 1)
+          save(note(`A\\\n${continuation}\\- item`))
+          editor.undo()
+          save(source)
+          editor.redo()
+          save(note(`A\\\n${continuation}\\- item`))
+        })
+      })
+    }
+    for (const existingBreak of [false, true]) {
+      test(`deleting before an HTML comment ${JSON.stringify([existingBreak, prefix, ending])} saves, reopens and undoes`, async () => {
+        const source = note(
+          `**A**${existingBreak ? `\\\n${continuation}` : ''}z<!-- c -->`,
+        )
+        await session(source, (editor, save) => {
+          save(source)
+          if (!existingBreak) {
+            select(editor, 'A')
+            editor.keyDown({ key: 'Enter', shiftKey: true }, 1)
+            save(note(`**A**\\\n${continuation}z<!-- c -->`))
+          }
+          select(editor, 'z', true)
+          editor.keyDown({ key: 'Backspace' }, 1)
+          save(note('**A**<br /><!-- c -->'))
+          editor.undo()
+          save(note(`**A**\\\n${continuation}z<!-- c -->`))
+          if (!existingBreak) {
+            editor.undo()
+            save(source)
+          }
+        })
+      })
+    }
   }
 }
