@@ -1,0 +1,87 @@
+// The marker places input without typing container syntax or changing other blocks.
+export const angleAutolinkCases = [
+  ['a URL', 'x\n', '<https://x.com>', '<https://x.com>\n'],
+  // A www address has no URI scheme, so CommonMark does not read it as an angle autolink.
+  ['a www address', 'x\n', '<www.x.com>', '<[www.x.com](http://www.x.com)>\n'],
+  ['an FTP URL', 'x\n', '<ftp://x.com/a>', '<ftp://x.com/a>\n'],
+  ['a mailto URI', 'x\n', '<mailto:a@b.co>', '<mailto:a@b.co>\n'],
+  [
+    'inside code',
+    'Code `xy` now\n',
+    '<https://x.com>',
+    'Code `<https://x.com>y` now\n',
+  ],
+  ['an email address', 'x\n', '<a@b.co>', '<a@b.co>\n'],
+  [
+    'a path and query',
+    'x\n',
+    '<https://x.com/a?q=1&b=2>',
+    '<https://x.com/a?q=1&b=2>\n',
+  ],
+  [
+    'after existing text',
+    'See x\n',
+    '<https://x.com>',
+    'See <https://x.com>\n',
+  ],
+  [
+    'before existing text',
+    'x later\n',
+    '<https://x.com>',
+    '<https://x.com> later\n',
+  ],
+  [
+    'inside existing text',
+    'Before x after\n',
+    '<https://x.com>',
+    'Before <https://x.com> after\n',
+  ],
+  [
+    'followed by punctuation',
+    'x\n',
+    '(<https://x.com>)',
+    '(<https://x.com>)\n',
+  ],
+  ['followed by letters', 'x\n', '<https://x.com>foo', '<https://x.com>foo\n'],
+  ['a CommonMark URI', 'x\n', '<xs:element>', '<xs:element>\n'],
+  ['an HTML tag', 'x\n', '<div>', '\\<div\\>\n'],
+  ['text with spaces', 'x\n', '<a b>', '\\<a b\\>\n'],
+  ['in a list', '- x\n', '<https://x.com>', '- <https://x.com>\n'],
+  ['in a quote', '> x\n', '<https://x.com>', '> <https://x.com>\n'],
+  [
+    'in a table cell',
+    '| Link |\n| --- |\n| x |\n',
+    '<https://x.com>',
+    '| Link |\n| --- |\n| <https://x.com> |\n',
+  ],
+  [
+    'in a CRLF note',
+    'Untouched &copy;\r\n\r\nx\r\n\r\n+ other\r\n',
+    '<https://x.com>',
+    'Untouched &copy;\r\n\r\n<https://x.com>\r\n\r\n+ other\r\n',
+  ],
+  [
+    'punctuation in a list',
+    '+ x\n',
+    '<https://x.com>)',
+    '+ <https://x.com>)\n',
+  ],
+  [
+    'punctuation in a quote',
+    '> x\n',
+    '<https://x.com>)',
+    '> <https://x.com>)\n',
+  ],
+  [
+    'punctuation in a table cell',
+    '| Link |\n| --- |\n| x |\n',
+    '<https://x.com>)',
+    '| Link |\n| --- |\n| <https://x.com>) |\n',
+  ],
+  [
+    'punctuation in a CRLF note',
+    'Untouched &copy;\r\n\r\nx\r\n\r\n+ other\r\n',
+    '<https://x.com>)',
+    'Untouched &copy;\r\n\r\n<https://x.com>)\r\n\r\n+ other\r\n',
+  ],
+] as const
