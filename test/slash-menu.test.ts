@@ -146,3 +146,63 @@ test('presentation changes close the menu without restoring old policy', async (
   expect(root.querySelector('[role=listbox]')).toBeNull()
   expect(editor.snapshot().text).toContain('%%hidden%%')
 })
+
+for (const context of ['heading', 'hard break']) {
+  test(`opens on an empty ${context} line and keeps preceding content through undo and redo`, async () => {
+    const { editor, root, errors } = await mount(
+      context === 'heading'
+        ? '## TARGET\r\n\r\nAfter _kept_.\r\n'
+        : 'Before lineTARGET\r\n\r\nAfter _kept_.\r\n',
+    )
+    editor.find('TARGET')
+    editor.insertText('', 1)
+    if (context === 'hard break')
+      editor.keyDown({ key: 'Enter', shiftKey: true }, 1)
+    const before = editor.snapshot().text
+    editor.insertText('/', 1)
+    editor.insertText('h1', 1)
+    expect(root.querySelector('[role=listbox]')).not.toBeNull()
+    editor.keyDown({ key: 'Enter' }, 1)
+    expect(root.querySelector('h1')).not.toBeNull()
+    const saved = editor.snapshot().text
+    if (context === 'hard break') expect(saved).toContain('Before line')
+    expect(saved).toContain('After _kept_.\r\n')
+    expect(errors).toEqual([])
+    editor.undo()
+    expect(editor.snapshot().text).toBe(before)
+    editor.redo()
+    expect(editor.snapshot().text).toBe(saved)
+  })
+}
+
+test('the combobox does not keep textbox-only attributes and an empty result has valid listbox structure', async () => {
+  const { editor, root } = await mount('')
+  editor.insertText('/', 1)
+  expect(
+    root.querySelector('[role=combobox]')?.hasAttribute('aria-multiline'),
+  ).toBe(false)
+  editor.insertText('no-such-command', 1)
+  expect(
+    root.querySelector('[role=listbox] [role=option][aria-disabled=true]')
+      ?.textContent,
+  ).toBe('No matches')
+  editor.keyDown({ key: 'Escape' }, 1)
+  expect(
+    root.querySelector('[role=textbox]')?.getAttribute('aria-multiline'),
+  ).toBe('true')
+})
+
+test('typing after a divider uses a new paragraph and leaves the following block alone', async () => {
+  const { editor, root } = await mount('Before\n\nTARGET\n\nAfter\n')
+  editor.find('TARGET')
+  editor.insertText('', 1)
+  editor.insertText('/', 1)
+  editor.insertText('divider', 1)
+  editor.keyDown({ key: 'Enter' }, 1)
+  const divided = editor.snapshot().text
+  editor.insertText('New', 1)
+  expect(editor.snapshot().text).toBe('Before\n\n---\n\nNew\n\nAfter\n')
+  expect(root.querySelector('hr')).not.toBeNull()
+  editor.undo()
+  expect(editor.snapshot().text).toBe(divided)
+})

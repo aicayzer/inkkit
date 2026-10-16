@@ -678,7 +678,7 @@ Printing captures a fresh snapshot and rechecks the document ID, generation and 
 
 ## Slash block menu
 
-Set `slashMenu: { enabled: true }` at mount to offer block commands when the person types `/` at the start of an empty line. Empty paragraphs inside list items, quotes and callouts are supported. A slash elsewhere stays ordinary text, including in dates, paths and URLs. The menu never opens in read-only documents, source or TXT mode, code blocks, table cells, front matter, preserved literal blocks or during composition.
+Set `slashMenu: { enabled: true }` at mount to offer block commands when the person types `/` at the start of an empty line. Empty headings, empty lines after Shift+Return, and empty paragraphs inside list items, quotes and callouts are supported. A command after Shift+Return starts a separate block and keeps the preceding text. A slash elsewhere stays ordinary text, including in dates, paths and URLs. The menu never opens in read-only documents, source or TXT mode, code blocks, table cells, front matter, preserved literal blocks or during composition.
 
 `SlashMenuOptions` has these optional fields:
 

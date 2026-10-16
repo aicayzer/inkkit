@@ -132,7 +132,12 @@ export function slashSession(
 ): SuggestionSession | undefined {
   if (!host.options?.enabled || text !== '/' || from !== to) return
   const { $from } = view.state.selection
-  if ($from.parent.type.name !== 'paragraph' || $from.parent.content.size)
+  if (
+    !['paragraph', 'heading'].includes($from.parent.type.name) ||
+    $from.parentOffset !== $from.parent.content.size ||
+    ($from.parent.content.size &&
+      $from.parent.lastChild?.type.name !== 'hardbreak')
+  )
     return
   for (let depth = 1; depth <= $from.depth; depth++)
     if (
@@ -206,8 +211,20 @@ export function slashTransaction(
   command: SlashCommandName | { markdown: string },
   kind = 'Note',
 ): Transaction {
-  const tr = closeHistory(base.tr)
   const { $from } = base.selection
+  if ($from.parent.content.size) {
+    // An empty line after Shift+Return becomes a separate block. Keep the
+    // preceding text and retain the original break in the undo baseline.
+    const split = base.tr.delete($from.pos - 1, $from.pos).split($from.pos - 1)
+    split.setSelection(Selection.near(split.doc.resolve($from.pos + 1)))
+    const commandEdit = slashTransaction(ctx, base.apply(split), command, kind)
+    for (const step of commandEdit.steps) split.step(step)
+    split.setSelection(
+      Selection.fromJSON(split.doc, commandEdit.selection.toJSON()),
+    )
+    return closeHistory(split)
+  }
+  const tr = closeHistory(base.tr)
   const pos = $from.before(),
     end = $from.after()
   const type = typeof command === 'string' ? command : 'custom'
@@ -255,6 +272,8 @@ export function slashTransaction(
       : ctx.get(parserCtx)(
           typeof command === 'string' ? source[type]! : command.markdown,
         ).content
+  if (type === 'divider')
+    nodes = nodes.append(Fragment.from(base.schema.nodes.paragraph!.create()))
   if (type === 'taskList') {
     const list = nodes.firstChild!,
       item = list.firstChild!,

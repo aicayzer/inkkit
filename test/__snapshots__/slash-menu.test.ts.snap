@@ -59,6 +59,8 @@ exports[`callout "\\n": Divider saves, reopens, undoes and redoes 1`] = `
 > [!TIP]
 >
 > ---
+>
+> <br />
 
 After _unchanged_.
 "
@@ -186,6 +188,8 @@ exports[`callout "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
 > [!TIP]
 >
 > ---
+>
+> <br />
 
 After _unchanged_.
 "
@@ -306,6 +310,7 @@ exports[`list "\\n": Divider saves, reopens, undoes and redoes 1`] = `
 "Before  
 
 * ---
+  <br />
 
 After _unchanged_.
 "
@@ -420,6 +425,7 @@ exports[`list "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
 "Before  
 
 * ---
+  <br />
 
 After _unchanged_.
 "
@@ -535,6 +541,8 @@ exports[`paragraph "\\n": Divider saves, reopens, undoes and redoes 1`] = `
 
 ---
 
+<br />
+
 After _unchanged_.
 "
 `;
@@ -649,6 +657,8 @@ exports[`paragraph "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
 
 ---
 
+<br />
+
 After _unchanged_.
 "
 `;
@@ -762,6 +772,8 @@ exports[`quote "\\n": Divider saves, reopens, undoes and redoes 1`] = `
 "Before  
 
 > ---
+>
+> <br />
 
 After _unchanged_.
 "
@@ -876,6 +888,8 @@ exports[`quote "\\r\\n": Divider saves, reopens, undoes and redoes 1`] = `
 "Before  
 
 > ---
+>
+> <br />
 
 After _unchanged_.
 "

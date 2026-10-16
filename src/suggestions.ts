@@ -108,6 +108,11 @@ export class Suggestions {
       this.attributes.set(key, surface.getAttribute(key))
       surface.setAttribute(key, value)
     }
+    this.attributes.set(
+      'aria-multiline',
+      surface.getAttribute('aria-multiline'),
+    )
+    surface.removeAttribute('aria-multiline')
     this.host.root.append(this.popup, this.status)
   }
   show = (rows: SuggestionRow[]) => {
@@ -117,7 +122,11 @@ export class Suggestions {
     this.selected = 0
     this.popup.replaceChildren()
     if (!rows.length) {
-      this.popup.textContent = this.host.labels.suggestionsEmpty
+      const empty = document.createElement('div')
+      empty.setAttribute('role', 'option')
+      empty.setAttribute('aria-disabled', 'true')
+      empty.textContent = this.host.labels.suggestionsEmpty
+      this.popup.append(empty)
       this.status.textContent = this.host.labels.suggestionsEmpty
       this.view!.dom.removeAttribute('aria-activedescendant')
       this.emptyTimer = setTimeout(this.close, 650)
@@ -141,7 +150,10 @@ export class Suggestions {
   }
   private highlight() {
     for (const [index, element] of [...this.popup.children].entries())
-      element.setAttribute('aria-selected', String(index === this.selected))
+      element.setAttribute(
+        'aria-selected',
+        String(this.rows.length > 0 && index === this.selected),
+      )
     if (!this.rows.length) return
     const element = this.popup.children[this.selected] as HTMLElement
     this.view!.dom.setAttribute('aria-activedescendant', element.id)

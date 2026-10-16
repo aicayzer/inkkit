@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import { test, expect, type Page } from '@playwright/test'
 import type { EditorOptions, InkKitEditor } from '../../src/core'
 
@@ -7,6 +8,7 @@ type SuggestionWindow = Window & {
   finishCommand?: (markdown: string) => void
 }
 const moduleUrl = `/@fs${process.cwd()}/src/core.ts`
+const axePath = createRequire(import.meta.url).resolve('axe-core')
 
 async function mount(
   page: Page,
@@ -568,4 +570,110 @@ test('a failed host command keeps document bytes, revision and undo history', as
   ).toContain('internal')
   await page.keyboard.press('ControlOrMeta+z')
   await expectSaved(page, '')
+})
+
+for (const context of [
+  'empty heading',
+  'empty line after Shift-Enter',
+] as const) {
+  test(`slash opens in an ${context} and keeps preceding text through undo`, async ({
+    page,
+  }) => {
+    await mount(page, context === 'empty heading' ? '# \n' : 'Before')
+    await caretAtEnd(page)
+    if (context === 'empty line after Shift-Enter')
+      await page.keyboard.press('Shift+Enter')
+    const before = await saved(page)
+    await page.keyboard.type('/h2')
+    await expect(option(page, 'Heading 2')).toBeVisible()
+    await page.keyboard.press('Enter')
+    await expect(menu(page)).toHaveCount(0)
+    await expect(root(page).locator('h2')).toBeVisible()
+    const after = await saved(page)
+    expect(after).not.toContain('/h2')
+    if (context === 'empty line after Shift-Enter')
+      expect(after).toContain('Before')
+    await page.keyboard.press('ControlOrMeta+z')
+    await expectSaved(page, before)
+    await page.keyboard.press('ControlOrMeta+Shift+z')
+    await expectSaved(page, after)
+  })
+}
+
+for (const query of ['/', '/zzzz'] as const) {
+  test(`suggestion popup has valid ARIA for ${query === '/' ? 'matches' : 'no matches'}`, async ({
+    page,
+  }) => {
+    await mount(page)
+    await page.addScriptTag({ path: axePath })
+    await page.keyboard.type(query)
+    await expect(menu(page)).toBeVisible()
+    const findings = await page.evaluate(async () => {
+      const { axe } = window as unknown as { axe: typeof import('axe-core') }
+      const editorRoot = document.getElementById('suggestion-editor')!
+      const combo = editorRoot.querySelector('[role=combobox]')!
+      const controlled = document.getElementById(
+        combo.getAttribute('aria-controls')!,
+      )
+      const controlsList = Boolean(
+        controlled &&
+        editorRoot.contains(controlled) &&
+        controlled.getAttribute('role') === 'listbox',
+      )
+      const result = await axe.run('#suggestion-editor', {
+        runOnly: [
+          'aria-allowed-attr',
+          'aria-required-children',
+          'aria-required-parent',
+          'aria-valid-attr-value',
+        ],
+      })
+      // A scoped axe run asks for manual review of popup targets. Verify that
+      // exact reference above and retain every other incomplete finding.
+      const incomplete = result.incomplete.filter(
+        (finding) =>
+          !(
+            controlsList &&
+            finding.id === 'aria-valid-attr-value' &&
+            finding.nodes.every((node) =>
+              [...node.any, ...node.all, ...node.none].every(
+                (check) => check.data?.messageKey === 'controlsWithinPopup',
+              ),
+            )
+          ),
+      )
+      return {
+        controlsList,
+        findings: [...result.violations, ...incomplete].map((finding) => ({
+          id: finding.id,
+          nodes: finding.nodes.map((node) => ({
+            html: node.html,
+            summary: node.failureSummary,
+          })),
+        })),
+      }
+    })
+    expect(findings).toEqual({ controlsList: true, findings: [] })
+    if (query !== '/')
+      await expect(
+        menu(page).getByRole('option', { name: 'No matches' }),
+      ).toHaveAttribute('aria-disabled', 'true')
+  })
+}
+
+test('typing after choosing a divider leaves the next block alone', async ({
+  page,
+}) => {
+  await mount(page, 'Before\n\nTARGET\n\nAfter\n')
+  await page.evaluate(() => {
+    const editor = (window as unknown as SuggestionWindow).suggestionEditor
+    editor.find('TARGET')
+    editor.insertText('', 1)
+    editor.focus()
+  })
+  await page.keyboard.type('/divider')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('New')
+  await expectSaved(page, 'Before\n\n---\n\nNew\n\nAfter\n')
+  await expect(root(page).locator('hr')).toHaveCount(1)
 })
