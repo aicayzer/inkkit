@@ -7,6 +7,7 @@ import {
   TextSelection,
   type Transaction,
 } from '@milkdown/kit/prose/state'
+import { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { serialize } from './dialect'
 import { semanticSignature } from './preserve'
@@ -170,6 +171,62 @@ function completedAngle(
       from - 1,
       tr.doc.type.schema.marks.link!.create({ href, form: 'angle' }),
     )
+    .removeStoredMark(tr.doc.type.schema.marks.link!)
+}
+
+// Angle delimiters close a link. ProseMirror's shared link mark is inclusive
+// for explicit links, so remove an inherited angle mark from boundary input.
+function closeAngleEnds(tr: Transaction, transactions: readonly Transaction[]) {
+  const steps = transactions.flatMap((transaction) =>
+    transaction.steps.map((step, index) => ({
+      doc: transaction.docs[index]!,
+      map: step.getMap(),
+    })),
+  )
+  steps.forEach(({ doc, map }, index) => {
+    const remaining = new Mapping(steps.slice(index + 1).map(({ map }) => map))
+    map.forEach((from, to, start, end) => {
+      if (from !== to || start === end) return
+      const at = doc.resolve(from)
+      const before = at.nodeBefore?.marks.find(
+        (mark) => mark.attrs.form === 'angle',
+      )
+      const after = at.nodeAfter?.marks.find(
+        (mark) => mark.attrs.form === 'angle',
+      )
+      if (before && after && before.eq(after)) return
+      for (const mark of [before, after])
+        if (mark)
+          tr.removeMark(remaining.map(start, 1), remaining.map(end, -1), mark)
+    })
+  })
+}
+
+// A code input rule can wrap a completed angle link. Restore its literal
+// delimiters before removing the link, so the code keeps the authored text.
+function codeAngles(tr: Transaction, edited: Edited[]) {
+  const spans: Array<{ from: number; to: number; marks: readonly Mark[] }> = []
+  for (const block of edited)
+    tr.doc.nodesBetween(
+      block.pos,
+      block.pos + block.block.nodeSize,
+      (node, pos) => {
+        if (!node.isText || !node.marks.some((mark) => mark.type.spec.code))
+          return
+        const link = node.marks.find((mark) => mark.attrs.form === 'angle')
+        if (link)
+          spans.push({
+            from: pos,
+            to: pos + node.nodeSize,
+            marks: node.marks.filter((mark) => mark !== link),
+          })
+      },
+    )
+  for (const { from, to, marks } of spans.reverse()) {
+    tr.removeMark(from, to, tr.doc.type.schema.marks.link!)
+    tr.insert(to, tr.doc.type.schema.text('>', marks))
+    tr.insert(from, tr.doc.type.schema.text('<', marks))
+  }
 }
 
 interface Wanted {
@@ -442,14 +499,28 @@ export const autolinkLiterals = $prose(
       key: new PluginKey('autolinkLiterals'),
       appendTransaction(transactions, oldState, newState) {
         if (!transactions.some((tr) => tr.docChanged)) return null
-        const edited = editedBlocks(oldState.doc, newState.doc)
+        const base = newState.tr
+        const written = transactions.every(isWrittenEdit)
+        if (written) {
+          closeAngleEnds(base, transactions)
+          codeAngles(base, editedBlocks(oldState.doc, base.doc))
+        }
+        let edited = editedBlocks(oldState.doc, base.doc)
+        if (written && edited.length === 1) {
+          const { pos, block, from, to } = edited[0]!
+          const start = base.steps.length
+          if (completedAngle(base, characters(block, pos + 1), from, to)) {
+            edited = editedBlocks(oldState.doc, base.doc)
+            // Consuming `>` can make the diff look like only `<` was deleted.
+            // The suffix at the completion caret still needs recomputing.
+            const mapping = base.mapping.slice(start)
+            edited[0]!.from = Math.min(edited[0]!.from, mapping.map(from, -1))
+            edited[0]!.to = Math.max(edited[0]!.to, mapping.map(to, 1))
+          }
+        }
         const blocks: Block[] = []
         for (const { pos, block, from, to } of edited) {
           const chars = characters(block, pos + 1)
-          if (edited.length === 1 && transactions.every(isWrittenEdit)) {
-            const completed = completedAngle(newState.tr, chars, from, to)
-            if (completed && readsBack(ctx, completed, pos)) return completed
-          }
           const index = (at: number) => {
             const found = chars.findIndex(
               (char) => char !== undefined && char.pos >= at,
@@ -459,19 +530,35 @@ export const autolinkLiterals = $prose(
           const wanted = wantedLinks(ctx, chars, index(from), index(to))
           if (differs(chars, wanted)) blocks.push({ pos, chars, wanted })
         }
-        if (!blocks.length) return null
-        let tr = linked(newState.tr, blocks)
-        const failed = blocks.filter((block) => !readsBack(ctx, tr, block.pos))
-        if (!failed.length) return tr
+        if (!base.steps.length && !blocks.length) return null
+        // Mark steps clear stored marks. Keep the input rule's explicit end
+        // to formatting, including an empty set after its closing delimiter.
+        const stored = base.storedMarks ?? newState.storedMarks
+        const finish = (tr: Transaction) => {
+          if (stored) tr.setStoredMarks(stored)
+          return tr.steps.length ? tr : null
+        }
+        // Rebuild each attempt from the normalized base, without retaining
+        // mark steps from a failed representability check.
+        const attempt = (wanted: Block[]) => {
+          const tr = newState.tr
+          for (const step of base.steps) tr.step(step)
+          tr.setSelection(base.selection.getBookmark().resolve(tr.doc))
+          return linked(tr, wanted)
+        }
+        let tr = attempt(blocks)
+        const failed = edited.filter((block) => !readsBack(ctx, tr, block.pos))
+        if (!failed.length) return finish(tr)
         // Where the address cannot be written to read back as a link, its
         // text stays plain.
-        for (const block of failed)
-          for (const [at, want] of block.wanted)
-            if (want?.form === 'literal') block.wanted.set(at, null)
-        tr = linked(newState.tr, blocks)
-        const kept = blocks.filter((block) => readsBack(ctx, tr, block.pos))
-        if (kept.length === blocks.length) return tr
-        return kept.length ? linked(newState.tr, kept) : null
+        for (const block of blocks)
+          if (failed.some(({ pos }) => pos === block.pos))
+            for (const [at, want] of block.wanted)
+              if (want?.form === 'literal') block.wanted.set(at, null)
+        tr = attempt(blocks)
+        if (edited.every((block) => readsBack(ctx, tr, block.pos)))
+          return finish(tr)
+        return null
       },
     }),
 )

@@ -299,8 +299,8 @@ for (const [name, source, anchor, saved] of [
   [
     'an address in angle brackets',
     'See <https://example.com> now.\n',
-    'example.com',
-    'See <https://example.comx> now.\n',
+    'example',
+    'See <https://examplex.com> now.\n',
   ],
   [
     'an email address in angle brackets',
@@ -838,3 +838,21 @@ for (const source of ['\\<https://x.com\\>\n', '&lt;https://x.com&gt;\n'])
       s.editor.redo()
       await expectSaves(s, deleted)
     }))
+
+for (const [name, source, expected] of [
+  ['a loaded angle link', '<https://x.com>\n', '<https://x.com>)\n'],
+  ['a loaded email link', '<a@b.co>\n', '<a@b.co>)\n'],
+] as const)
+  test(`text typed after ${name} stays outside its address`, () =>
+    session(source, async (s) => {
+      place(s.view, s.view.state.doc.content.size - 1)
+      type(s.view, ')')
+      await expectSaves(s, expected)
+    }))
+
+test('completion recomputes the bare suffix beyond the closing bracket', () =>
+  session('\\<https://x.comfoo\n', async (s) => {
+    place(s.view, at(s.view, 'https://x.com'))
+    type(s.view, '>')
+    await expectSaves(s, '<https://x.com>foo\n')
+  }))
