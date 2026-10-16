@@ -345,10 +345,14 @@ for (const [tail, escaped] of [
   for (const formatted of ['**A**', '`A`', '[A](https://example.com)']) {
     // Adjacent backticks join the code delimiter, so use a tilde fence there.
     if (formatted === '`A`' && tail === '```') continue
-    for (const prefix of ['', '+ ']) {
+    for (const [prefix, continuation] of [
+      ['', ''],
+      ['+ ', '  '],
+      ['> ', '> '],
+      ['> [!note]\n> ', '> '],
+    ]) {
       for (const ending of ['\n', '\r\n']) {
         test(`break before block marker ${JSON.stringify([tail, formatted, prefix, ending])} saves, reopens and undoes`, async () => {
-          const continuation = prefix ? '  ' : ''
           const note = (body: string) =>
             `Untouched __before__.\n\n${prefix}${body}\n\nUntouched _after_.\n`.replaceAll(
               '\n',
