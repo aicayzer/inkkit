@@ -625,11 +625,17 @@ function runOffsets(
   from: number,
   to: number,
 ):
-  | { decoded: string; offsets: number[]; links: Array<[number, number]> }
+  | {
+      decoded: string
+      offsets: number[]
+      links: Array<[number, number]>
+      breaks: Set<number>
+    }
   | undefined {
   let decoded = ''
   const offsets = [from]
   const links: Array<[number, number]> = []
+  const breaks = new Set<number>()
   let at = from
   let afterBreak = false
   for (const node of nodes) {
@@ -660,13 +666,14 @@ function runOffsets(
       decoded += read.decoded
       offsets.push(...read.offsets.slice(1).map((offset) => start + offset))
     } else if (node.type === 'break') {
+      breaks.add(decoded.length)
       decoded += '\n'
       offsets.push(end)
     } else return undefined
     afterBreak = node.type === 'break'
     at = end
   }
-  return at === to ? { decoded, offsets, links } : undefined
+  return at === to ? { decoded, offsets, links, breaks } : undefined
 }
 
 // A run of text, breaks and addresses keeps its source outside the edit.
@@ -687,13 +694,20 @@ function retainRun(
   const a = old.decoded
   const b = now.decoded
   let prefix = 0
-  while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix])
+  while (
+    prefix < a.length &&
+    prefix < b.length &&
+    a[prefix] === b[prefix] &&
+    old.breaks.has(prefix) === now.breaks.has(prefix)
+  )
     prefix++
   let suffix = 0
   while (
     suffix < a.length - prefix &&
     suffix < b.length - prefix &&
-    a[a.length - 1 - suffix] === b[b.length - 1 - suffix]
+    a[a.length - 1 - suffix] === b[b.length - 1 - suffix] &&
+    old.breaks.has(a.length - 1 - suffix) ===
+      now.breaks.has(b.length - 1 - suffix)
   )
     suffix++
   for (let widened = true; widened;) {

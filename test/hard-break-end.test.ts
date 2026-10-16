@@ -385,3 +385,14 @@ for (const [tail, escaped] of [
     }
   }
 }
+
+test('replacing a soft break with a hard break preserves the new break kind', async () => {
+  await session('A\nB\n', (editor, save) => {
+    const snapshot = editor.textSnapshot()
+    editor.selectTextRange({ snapshotId: snapshot.snapshotId, from: 1, to: 2 })
+    editor.insertText('\n', 1)
+    save('A\\\nB\n')
+    editor.undo()
+    save('A\nB\n')
+  })
+})
