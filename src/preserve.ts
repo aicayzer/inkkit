@@ -731,7 +731,13 @@ function retainRun(
   return (
     source.slice(from, old.offsets[prefix]) +
     canonical.slice(now.offsets[prefix], now.offsets[b.length - suffix]) +
-    source.slice(old.offsets[a.length - suffix], to)
+    (now.breaks.has(b.length - suffix - 1)
+      ? retainBoundaryText(
+          source.slice(old.offsets[a.length - suffix], to),
+          canonical.slice(now.offsets[b.length - suffix], newTo),
+          true,
+        )
+      : source.slice(old.offsets[a.length - suffix], to))
   )
 }
 

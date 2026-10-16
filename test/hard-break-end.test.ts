@@ -396,3 +396,25 @@ test('replacing a soft break with a hard break preserves the new break kind', as
     save('A\nB\n')
   })
 })
+
+for (const ending of ['\n', '\r\n']) {
+  for (const prefix of ['', '+ ']) {
+    test(`a break inside text keeps boundary escapes ${JSON.stringify([prefix, ending])}`, async () => {
+      const continuation = prefix ? '  ' : ''
+      const note = (body: string) =>
+        `${prefix}${body}\n`.replaceAll('\n', ending)
+      await session(note('Run now'), (editor, save) => {
+        select(editor, 'Run')
+        editor.keyDown({ key: 'Enter', shiftKey: true }, 1)
+        const broken = note(`Run\\\n${continuation}&#x20;now`)
+        save(broken)
+        editor.insertText('z', 1)
+        save(note(`Run\\\n${continuation}z now`))
+        editor.undo()
+        save(broken)
+        editor.undo()
+        save(note('Run now'))
+      })
+    })
+  }
+}
