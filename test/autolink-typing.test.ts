@@ -8,6 +8,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor } from '../src/index'
 import { semanticSignature } from '../src/preserve'
 import { angleAutolinkCases } from './angle-autolink-cases'
+import { wrapCases } from './angle-wrap-cases'
 import {
   codeSpanAutolinkCases,
   codeSpanPasteCases,
@@ -881,6 +882,100 @@ test('completion recomputes the bare suffix beyond the closing bracket', () =>
     place(s.view, at(s.view, 'https://x.com'))
     type(s.view, '>')
     await expectSaves(s, '<https://x.com>foo\n')
+  }))
+
+// An address already in the note is wrapped in angle brackets by typing `<`
+// before it and `>` after it. The wrapped link has the text and target it had.
+for (const { name, source, address, first, expected } of wrapCases)
+  test(`wrapping ${name} in angle brackets saves the angle link`, () =>
+    session(source, async (s) => {
+      await expectSaves(s, source)
+      if (first) {
+        place(s.view, at(s.view, first.after))
+        type(s.view, first.typed)
+        await expectSaves(s)
+      }
+      place(s.view, at(s.view, address, false))
+      type(s.view, '<')
+      await expectSaves(s)
+      place(s.view, at(s.view, address))
+      type(s.view, '>')
+      await expectSaves(s, expected)
+      expect(s.errors).toEqual([])
+    }))
+
+// A bare address before an asterisk is written in angle brackets by the editor,
+// but it keeps its authored form in a block the wrapping does not reach.
+test('wrapping an address keeps the authored form of a link in an edited block', () =>
+  session(
+    'Far https://example.com/a* end\n\nsee https://x.com now\n',
+    async (s) => {
+      place(s.view, at(s.view, 'end'))
+      type(s.view, '!')
+      await expectSaves(
+        s,
+        'Far https://example.com/a* end!\n\nsee https://x.com now\n',
+      )
+      place(s.view, at(s.view, 'https://x.com', false))
+      type(s.view, '<')
+      place(s.view, at(s.view, 'https://x.com'))
+      type(s.view, '>')
+      await expectSaves(
+        s,
+        'Far https://example.com/a* end!\n\nsee <https://x.com> now\n',
+      )
+    },
+  ))
+
+test('wrapping an address and undoing restores the loaded note', () =>
+  session('see https://x.com now\n', async (s) => {
+    place(s.view, at(s.view, 'https://x.com', false))
+    type(s.view, '<')
+    place(s.view, at(s.view, 'https://x.com'))
+    type(s.view, '>')
+    await expectSaves(s, 'see <https://x.com> now\n')
+    s.editor.undo()
+    await expectSaves(s)
+    s.editor.undo()
+    await expectSaves(s, 'see https://x.com now\n')
+    s.editor.redo()
+    s.editor.redo()
+    await expectSaves(s, 'see <https://x.com> now\n')
+  }))
+
+test('Backspace straight after wrapping an address keeps the angle link', () =>
+  session('see https://x.com now\n', async (s) => {
+    place(s.view, at(s.view, 'https://x.com', false))
+    type(s.view, '<')
+    place(s.view, at(s.view, 'https://x.com'))
+    type(s.view, '>')
+    const { from } = s.view.state.selection
+    s.view.dispatch(s.view.state.tr.delete(from - 1, from))
+    await expectSaves(s, 'see <https://x.co> now\n')
+  }))
+
+// Typing the same address over a loaded angle link, or removing its link,
+// leaves the same text and target written without the brackets.
+test('typing an address over a loaded angle link saves it bare', () =>
+  session('see <https://x.com> now\n', async (s) => {
+    const start = at(s.view, 'https://x.com', false)
+    s.view.dispatch(
+      s.view.state.tr.setSelection(
+        TextSelection.create(s.view.state.doc, start, start + 13),
+      ),
+    )
+    for (const character of 'https://x.com') {
+      type(s.view, character)
+      await expectSaves(s)
+    }
+    await expectSaves(s, 'see https://x.com now\n')
+  }))
+
+test('removing the link from a loaded angle link saves the address bare', () =>
+  session('see <https://x.com> now\n', async (s) => {
+    place(s.view, at(s.view, 'https://x.com', false) + 3)
+    expect(s.editor.format('link')).toBe(true)
+    await expectSaves(s, 'see https://x.com now\n')
   }))
 
 // Code is written as it is. An address is linked while it is typed, before the

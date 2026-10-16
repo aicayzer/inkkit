@@ -1,6 +1,6 @@
 import { parserCtx, remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import type { Mark, Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { serialize } from './dialect'
 import { linkForm } from './link-form'
@@ -23,12 +23,34 @@ interface SourceNode {
   [key: string]: unknown
 }
 
+// Whether `signature` tells how a link was written, `https://x.com` from
+// `<https://x.com>`. It does not by default: the canonical writer spells a bare
+// address in angle brackets beside text that could run into it, and a source
+// that reads the same keeps its own spelling. `retainingForms` turns it on for
+// a block whose links changed form.
+let linkFormsMatter = false
+
+function withLinkForms<T>(run: () => T): T {
+  const before = linkFormsMatter
+  linkFormsMatter = true
+  try {
+    return run()
+  } finally {
+    linkFormsMatter = before
+  }
+}
+
 // Line endings are the document's, not the node's: a CRLF source and its LF
 // canonical form describe the same text.
 function signature(node: SourceNode): string {
   return JSON.stringify(ordered(node), function (key, value) {
-    if (['position', 'data', 'marker'].includes(key)) return undefined
     const holder = this as SourceNode
+    if (key === 'data' && holder.type === 'link' && linkFormsMatter)
+      return {
+        inkkitLinkForm: (value as { inkkitLinkForm?: unknown } | undefined)
+          ?.inkkitLinkForm,
+      }
+    if (['position', 'data', 'marker'].includes(key)) return undefined
     // Every spelling of a line break reads back as the same break.
     if (key === 'value' && holder.type === 'html' && lineBreakHTML(value))
       return '<br />'
@@ -1959,9 +1981,23 @@ function parseDoc(ctx: Ctx, text: string): ProseNode {
   return ctx.get(parserCtx)(text)
 }
 
+// The tree of `text`, with each link's form in its data as the transformed
+// tree has it, so comparing two trees compares how their links were written.
 function parseTree(ctx: Ctx, text: string): Root {
   preservationWork.characters += text.length
-  return ctx.get(remarkCtx).parse(text) as Root
+  const tree = ctx.get(remarkCtx).parse(text) as Root
+  // Positions count from after a byte order mark.
+  const body = text.replace(/^\uFEFF/, '')
+  const visit = (node: SourceNode) => {
+    if (node.type === 'link')
+      node.data = {
+        ...(node.data as object | undefined),
+        inkkitLinkForm: linkForm(node, body),
+      }
+    node.children?.forEach(visit)
+  }
+  visit(tree as unknown as SourceNode)
+  return tree
 }
 
 function write(ctx: Ctx, doc: ProseNode): string {
@@ -2377,6 +2413,9 @@ export class Preservation {
   private readonly blocks: Block[] = []
   private readonly lineEnding: string
   private readonly originalForms = new Set<string>()
+  // Whether the save in progress writes the blocks whose links changed form
+  // from the edit.
+  private linkEdits = false
   // The form of each block, in order.
   private readonly blockForms: string[] = []
   private readonly forms = new WeakMap<ProseNode, string>()
@@ -3372,19 +3411,22 @@ export class Preservation {
         kind === 'unchanged' || kind === 'moved'
           ? this.source.slice(block!.start, block!.end)
           : kind === 'edited'
-            ? this.retainBlock(
-                block!,
-                node!,
-                canonical,
-                this.around(positions, index)
-                  .filter(
-                    (other) =>
-                      !paired.has(other) && other.ast.type === block!.ast.type,
-                  )
-                  .flatMap((other) => other.ast.children ?? []),
-                carried.children
-                  ? this.carriedChildren(doc.child(index), position!)
-                  : undefined,
+            ? this.retainingForms(block!, doc.child(index), () =>
+                this.retainBlock(
+                  block!,
+                  node!,
+                  canonical,
+                  this.around(positions, index)
+                    .filter(
+                      (other) =>
+                        !paired.has(other) &&
+                        other.ast.type === block!.ast.type,
+                    )
+                    .flatMap((other) => other.ast.children ?? []),
+                  carried.children
+                    ? this.carriedChildren(doc.child(index), position!)
+                    : undefined,
+                ),
               )
             : ((node &&
                 this.retainPart(positions, index, node, canonical, taken)) ??
@@ -3786,6 +3828,44 @@ export class Preservation {
     )
   }
 
+  // Runs `run` with the blocks whose links changed form written from the
+  // edit instead of kept from the source.
+  private withLinkEdits<T>(run: () => T): T {
+    this.linkEdits = true
+    try {
+      return run()
+    } finally {
+      this.linkEdits = false
+    }
+  }
+
+  // Runs `retain`, which keeps the source of `block` where it reads as `node`,
+  // so that its links count as changed when a link of `node` is written
+  // another way than the original, such as an address given angle brackets.
+  // Only such blocks do, so a link the canonical writer would spell another
+  // way, in a block the edit left its links alone in, keeps its source.
+  private retainingForms<T>(block: Block, node: ProseNode, retain: () => T): T {
+    if (!this.linkEdits) return retain()
+    const forms = (value: ProseNode): string => {
+      const found: unknown[] = []
+      let previous: Mark | undefined
+      value.descendants((child) => {
+        if (!child.isText) return true
+        const link = child.marks.find((mark) => mark.type.name === 'link')
+        if (link && !previous?.eq(link)) found.push(link.attrs.form ?? null)
+        previous = link
+        return false
+      })
+      return JSON.stringify(found)
+    }
+    const original = this.baseline.maybeChild(this.blocks.indexOf(block))
+    return !original ||
+      this.baseline.childCount !== this.blocks.length ||
+      forms(original) !== forms(node)
+      ? withLinkForms(retain)
+      : retain()
+  }
+
   private wholeDocument(doc: ProseNode): string {
     try {
       const canonical = write(this.ctx, doc)
@@ -3795,30 +3875,40 @@ export class Preservation {
       doc.forEach((node) => current.push(this.formOf(node)))
       const pairing = this.pairing(doc, current)
       const carries = pairing.carried.moved.size > 0 || pairing.carried.children
-      if (carries) {
-        // A moved block's source can read differently where it now stands,
-        // such as indented code under a list. The moved blocks are then
-        // written as an edit without the move's record writes them.
-        let output: string | undefined
-        try {
-          output = this.writeDocument(doc, current, pairing)
-        } catch {
-          output = undefined
+      // The document as the source and the edit leave it, or undefined when
+      // it does not read back as `doc`.
+      const attempt = (): string | undefined => {
+        if (carries) {
+          // A moved block's source can read differently where it now stands,
+          // such as indented code under a list. The moved blocks are then
+          // written as an edit without the move's record writes them.
+          let output: string | undefined
+          try {
+            output = this.writeDocument(doc, current, pairing)
+          } catch {
+            output = undefined
+          }
+          if (output !== undefined && this.reopens(doc, output, canonical))
+            return output
         }
-        if (output !== undefined && this.reopens(doc, output, canonical))
-          return output
+        const output = this.writeDocument(
+          doc,
+          current,
+          carries
+            ? {
+                positions: correspondence(this.blockForms, current),
+                carried: nothingCarried,
+              }
+            : pairing,
+        )
+        return this.reopens(doc, output, canonical) ? output : undefined
       }
-      const output = this.writeDocument(
-        doc,
-        current,
-        carries
-          ? {
-              positions: correspondence(this.blockForms, current),
-              carried: nothingCarried,
-            }
-          : pairing,
-      )
-      if (this.reopens(doc, output, canonical)) return output
+      // An address typed into angle brackets, or out of them, reads as the
+      // same link, so the first attempt keeps its source and is refused on
+      // reading back. The second attempt writes the links that edit changed
+      // as the edit left them.
+      const output = attempt() ?? this.withLinkEdits(attempt)
+      if (output !== undefined) return output
       throw new PreservationError(
         'The edited Markdown cannot be reopened without changing its content',
       )
