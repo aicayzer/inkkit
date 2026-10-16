@@ -1,6 +1,11 @@
 import { inlineCodeSchema } from '@milkdown/kit/preset/commonmark'
-import type { Mark } from '@milkdown/kit/prose/model'
-import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import type { Mark, MarkType } from '@milkdown/kit/prose/model'
+import {
+  Plugin,
+  PluginKey,
+  type EditorState,
+  type Transaction,
+} from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 
@@ -22,6 +27,26 @@ interface Held {
   from: number
 }
 const held = new PluginKey<Held | null>('storedInlineCode')
+
+// Puts the code on everything composed, up to the caret, and stores the marks
+// for what is typed next. Nothing, where the caret has moved on.
+function finish(
+  state: EditorState,
+  pending: Held,
+  code: MarkType,
+): Transaction | null {
+  const { selection } = state
+  if (
+    state.storedMarks ||
+    !selection.empty ||
+    !state.doc.resolve(pending.from).sameParent(selection.$from)
+  )
+    return null
+  const tr = state.tr
+  if (pending.from < selection.from)
+    tr.addMark(pending.from, selection.from, code.create())
+  return tr.setStoredMarks(pending.marks)
+}
 
 export const storedInlineCode = $prose((ctx) => {
   const type = () => inlineCodeSchema.type(ctx)
@@ -53,25 +78,10 @@ export const storedInlineCode = $prose((ctx) => {
           // After the editor has read what was composed.
           setTimeout(() => {
             if (view.isDestroyed || view.composing) return
-            const { state } = view
-            const pending = held.getState(state)
-            const { selection } = state
-            if (
-              !pending ||
-              state.storedMarks ||
-              !selection.empty ||
-              !state.doc.resolve(pending.from).sameParent(selection.$from)
-            )
-              return
-            const tr = state.tr
-            if (pending.from < selection.from)
-              tr.addMark(pending.from, selection.from, type().create())
+            const pending = held.getState(view.state)
+            const tr = pending && finish(view.state, pending, type())
             // Part of the composition's undo step, so one Undo removes both.
-            view.dispatch(
-              tr
-                .setStoredMarks(pending.marks)
-                .setMeta('appendedTransaction', tr),
-            )
+            if (tr) view.dispatch(tr.setMeta('appendedTransaction', tr))
           })
           return false
         },
@@ -79,6 +89,28 @@ export const storedInlineCode = $prose((ctx) => {
     },
     appendTransaction(transactions, oldState, newState) {
       const code = type()
+      // A key can arrive before the timer above runs; the first edit after the
+      // composition then finishes it, so the typed text takes the code too.
+      const pending = held.getState(oldState)
+      if (
+        pending &&
+        !composing?.composing &&
+        !transactions.some((tr) => tr.getMeta('composition')) &&
+        transactions.some((tr) => tr.docChanged)
+      ) {
+        const tr = finish(
+          newState,
+          {
+            ...pending,
+            from: transactions.reduce(
+              (pos, step) => step.mapping.map(pos, -1),
+              pending.from,
+            ),
+          },
+          code,
+        )
+        if (tr) return tr
+      }
       const stored = oldState.storedMarks
       if (
         !stored ||

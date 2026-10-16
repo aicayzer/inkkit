@@ -120,6 +120,45 @@ test('composed text under a pending code mark lands in the code once @preservati
   ).toHaveText('abにほcdんe')
 })
 
+// The editor puts the code on composed text a moment after the composition
+// ends. A key that arrives before then must not lose it, so this holds back
+// timers that name no delay, which is the one the editor uses.
+test('a key right after a composition ends keeps the pending code @preservation', async ({
+  page,
+  openFixture,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium',
+    'Only Chromium lets a test drive an input method',
+  )
+  await openFixture()
+  await operation(page, 'replaceSource', { text: 'Run now\n' })
+  await caretAfterMatch(page, 'Run')
+  await operation(page, 'format', { command: 'code' })
+  await page.keyboard.type('ab')
+  await page.evaluate(() => {
+    const set = window.setTimeout.bind(window)
+    window.setTimeout = ((handler: TimerHandler, delay?: number, ...rest: []) =>
+      set(handler, delay ?? 500, ...rest)) as typeof window.setTimeout
+  })
+  const session = await page.context().newCDPSession(page)
+  for (const composing of ['に', 'にほ']) {
+    await session.send('Input.imeSetComposition', {
+      text: composing,
+      selectionStart: composing.length,
+      selectionEnd: composing.length,
+    })
+  }
+  await session.send('Input.insertText', { text: 'にほ' })
+  await page.keyboard.press('Backspace')
+  await page.keyboard.type('e')
+  await expect
+    .poll(async () => (await observe(page)).snapshot?.text)
+    .toBe('Run`abにe` now\n')
+  expect((await observe(page)).diagnostics).toEqual([])
+})
+
 test('one Undo removes composed code text together with its mark @preservation', async ({
   page,
   openFixture,
