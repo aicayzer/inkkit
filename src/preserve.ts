@@ -1566,16 +1566,20 @@ function retainSource(
       )
     )
       suffix--
-    // A cell's range includes its pipe and padding, which would hide a space
-    // now at the edge of its content from the boundary check.
-    const cell =
-      before.type === 'tableCell' &&
+    // Keep both authored formatting delimiters when inserting/removing inline
+    // children. A cell's pipe and padding also sit outside its content.
+    const wrapped =
+      (before.type === 'tableCell' || formatting.has(before.type)) &&
       before.children.length > 0 &&
       after.children.length > 0
-    const first = cell ? before.children[0]!.position?.start.offset : start
-    const last = cell ? before.children.at(-1)!.position?.end.offset : end
-    const newFirst = cell ? after.children[0]!.position?.start.offset : newStart
-    const newLast = cell ? after.children.at(-1)!.position?.end.offset : newEnd
+    const first = wrapped ? before.children[0]!.position?.start.offset : start
+    const last = wrapped ? before.children.at(-1)!.position?.end.offset : end
+    const newFirst = wrapped
+      ? after.children[0]!.position?.start.offset
+      : newStart
+    const newLast = wrapped
+      ? after.children.at(-1)!.position?.end.offset
+      : newEnd
     // In a quote, a list's range takes in the `>` of the blank lines after
     // it, and so does the range of an item that ends with a sublist. They
     // separate the list from what follows, so the kept part ends where the
@@ -1678,7 +1682,14 @@ function retainSource(
                 ),
               lineEnding,
             ) +
-            source.slice(to, last),
+            // An unchanged suffix can now follow a break. Keep its spelling,
+            // but escape whitespace that the new line would otherwise trim.
+            (inlineParents.has(before.type)
+              ? retainBoundaryWhitespace(
+                  source.slice(to, last),
+                  canonical.slice(newTo, newLast),
+                )
+              : source.slice(to, last)),
           canonical.slice(newFirst, newLast),
         ) +
         source.slice(last, end)

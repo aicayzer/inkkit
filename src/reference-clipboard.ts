@@ -1,3 +1,4 @@
+import { cleanSourceDoc } from './source'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { Fragment, type Node } from '@milkdown/kit/prose/model'
 import { serialize } from './dialect'
@@ -71,7 +72,10 @@ export function selectionMarkdown(
   doc: Node,
   content: Fragment,
 ): string {
-  return serialize(ctx, doc.type.create(null, selectionContent(doc, content)))
+  return serialize(
+    ctx,
+    cleanSourceDoc(doc.type.create(null, selectionContent(doc, content))),
+  )
 }
 
 export function referenceMetadata(

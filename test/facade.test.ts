@@ -168,15 +168,18 @@ test('destroyed editor fails explicitly', () =>
     expect(() => editor.snapshot()).toThrow('destroyed')
   }))
 
-test('multiline literal paste retains visible lines and source characters', () =>
+test('multiline literal paste retains source characters and omits its pending final break on reopen', () =>
   run(async (editor) => {
     editor.loadDocument({ ...input, text: '' })
     const text = 'first\nsecond\n\n**literal** &#x20;\n'
     editor.pasteAsPlainText(text)
     expect((await editor.clipboardSnapshot()).text).toBe(text)
     const saved = editor.snapshot().text
+    editor.undo(1)
+    expect(editor.snapshot().text).toBe('')
     editor.loadDocument({ ...input, generation: 2, text: saved })
-    expect((await editor.clipboardSnapshot()).text).toBe(text)
+    expect(editor.snapshot().text).toBe(saved)
+    expect((await editor.clipboardSnapshot()).text).toBe(text.slice(0, -1))
   }))
 
 test('TXT find wraps literal matches and respects composition', () =>

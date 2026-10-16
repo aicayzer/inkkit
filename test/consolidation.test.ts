@@ -59,25 +59,25 @@ test('buffered code insertion normalises line endings and retains literal conten
   }))
 
 for (const insertion of ['one\ntwo\n', 'one\r\ntwo\rthree']) {
-  test(`multiline table insertion fails before mutation: ${JSON.stringify(insertion)}`, () =>
-    withEditor(async (editor) => {
-      editor.loadDocument({
-        ...input,
-        text: '| Head |\n| --- |\n| Original |\n',
-      })
-      const before = editor.snapshot()
-      const state = editor.commandState()
-      expect(() => editor.insertText(insertion, 1)).toThrow(
-        expect.objectContaining({ code: 'preservation' }),
-      )
-      expect(editor.snapshot()).toEqual(before)
-      expect(editor.commandState()).toEqual(state)
-      expect(editor.undo(1)).toBe(false)
-      expect(() => editor.pasteAsPlainText(insertion)).toThrow(
-        expect.objectContaining({ code: 'preservation' }),
-      )
-      expect(editor.snapshot()).toEqual(before)
-    }))
+  for (const method of ['insertText', 'pasteAsPlainText'] as const) {
+    test(`multiline table ${method} saves and undoes: ${JSON.stringify(insertion)}`, () =>
+      withEditor(async (editor) => {
+        const source = '| Head |\n| --- |\n| Original |\n'
+        editor.loadDocument({ ...input, text: source })
+        editor[method](insertion, 1)
+        const expected = source.replace(
+          'Original',
+          'Original' + insertion.replace(/\r\n?|\n/g, '<br />'),
+        )
+        expect(editor.snapshot().text).toBe(expected)
+        const visible = (await editor.clipboardSnapshot()).text
+        expect(editor.undo(1)).toBe(true)
+        expect(editor.snapshot().text).toBe(source)
+        editor.loadDocument({ ...input, generation: 2, text: expected })
+        expect(editor.snapshot().text).toBe(expected)
+        expect((await editor.clipboardSnapshot()).text).toBe(visible)
+      }))
+  }
 }
 
 test('minimal rendering preserves code and unsupported source across edit, output, undo and reload', () =>

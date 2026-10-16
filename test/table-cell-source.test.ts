@@ -3,6 +3,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { TextSelection } from '@milkdown/kit/prose/state'
+import { undoDepth } from '@milkdown/kit/prose/history'
 import { InkKitEditor, type ImageAdapter } from '../src/index'
 
 const images: ImageAdapter = {
@@ -58,7 +59,6 @@ async function edit(
           TextSelection.create(view.state.doc, position),
         ),
       )
-    let steps = 0
     body({
       editor,
       view,
@@ -90,13 +90,13 @@ async function edit(
       },
       type(input) {
         expect(editor.insertText(input, 1)).toBe(true)
-        steps++
       },
     })
     expect(errors).toEqual([])
     const saved = editor.snapshot().text
     expect(editor.snapshot().dirty).toBe(saved !== text)
-    for (let step = 0; step < Math.max(steps, 1) + 2; step++) editor.undo(1)
+    const steps = undoDepth(view.state)
+    for (let step = 0; step < steps; step++) expect(editor.undo(1)).toBe(true)
     expect(editor.snapshot().text).toBe(text)
     expect(editor.snapshot().dirty).toBe(false)
     editor.loadDocument({
@@ -411,7 +411,7 @@ for (const [name, at, saved] of [
 
 test('repeated Shift-Enter in a table cell adds one break each time', async () => {
   expect(
-    await edit('| a | b |\n| - | - |\n| xy | q |\n', ({ editor, at }) => {
+    await edit('| a | b |\n| - | - |\n| xy | q |\n', ({ editor, view, at }) => {
       at('xy', 0)
       shiftEnter(editor)
       shiftEnter(editor)
@@ -421,6 +421,7 @@ test('repeated Shift-Enter in a table cell adds one break each time', async () =
       at('q')
       shiftEnter(editor)
       shiftEnter(editor)
+      expect(undoDepth(view.state)).toBe(6)
     }),
   ).toBe(
     '| a | b |\n| - | - |\n| <br /><br />x<br /><br />y | q<br /><br /> |\n',
