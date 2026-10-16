@@ -233,7 +233,7 @@ test('Enter, Backspace, Delete and paste cost what they touch in a long note @pr
   // only what it pastes. The ratio of the two pastes is too unsteady to tell
   // them apart: hosted WebKit recorded 227 -> 434 ms, 240 -> 369 ms and
   // 247 -> 586 ms for the same code. A load of the long note in the same run
-  // slows down with the paste, so the extra cost is set against it, plus
-  // 100 ms for the frame.
+  // accounts for sustained CPU slowdown, with 100 ms for the frame. Separate
+  // load and paste minima can still reflect noise confined to one phase.
   expect(pastes[5000]! - pastes[500]!).toBeLessThan(0.4 * loads[5000]! + 100)
 })
