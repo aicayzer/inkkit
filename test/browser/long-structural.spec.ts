@@ -169,6 +169,7 @@ test('Enter, Backspace, Delete and paste cost what they touch in a long note @pr
   await openFixture()
   const fastest = (values: number[]) => Math.min(...values)
   const pastes: Record<number, number> = {}
+  const loads: Record<number, number> = {}
   for (const size of [500, 5000]) {
     await load(page, generateParagraphs(size))
     const times: Record<string, number[]> = {
@@ -199,8 +200,11 @@ test('Enter, Backspace, Delete and paste cost what they touch in a long note @pr
       ]),
     )
     pastes[size] = Infinity
+    loads[size] = Infinity
     for (let run = 0; run < 5; run++) {
+      const loadStart = Date.now()
       await load(page, generateParagraphs(size))
+      loads[size] = Math.min(loads[size]!, Date.now() - loadStart)
       await caret(page, `Paragraph ${Math.floor(size / 2) + 2}:`, 'end')
       pastes[size] = Math.min(
         pastes[size]!,
@@ -209,7 +213,11 @@ test('Enter, Backspace, Delete and paste cost what they touch in a long note @pr
     }
     testInfo.annotations.push({
       type: `${size} paragraphs, fastest ms`,
-      description: JSON.stringify({ ...result, paste500: pastes[size] }),
+      description: JSON.stringify({
+        ...result,
+        paste500: pastes[size],
+        load: loads[size],
+      }),
     })
     // A structural edit costs about what typing a character does in the same
     // note; validating the whole note would cost many times more.
@@ -218,8 +226,14 @@ test('Enter, Backspace, Delete and paste cost what they touch in a long note @pr
         3 * result.type! + 15,
       )
   }
-  // Hosted WebKit recorded 227 -> 434 ms and 240 -> 369 ms. Allow twice the
-  // short-note cost plus 50 ms of runner noise, still rejecting the many-fold
-  // increase from validating the whole note for the same pasted text.
-  expect(pastes[5000]).toBeLessThan(2 * pastes[500]! + 50)
+  // A paste into the long note may cost more than one into the short note only
+  // by what the frame costs, not by reading the long note again. Validating the
+  // whole note costs about as much as loading it (0.9 to 1.0 times locally, in
+  // Chromium and WebKit), against 0.03 times or less for a paste that reads
+  // only what it pastes. The ratio of the two pastes is too unsteady to tell
+  // them apart: hosted WebKit recorded 227 -> 434 ms, 240 -> 369 ms and
+  // 247 -> 586 ms for the same code. A load of the long note in the same run
+  // slows down with the paste, so the extra cost is set against it, plus
+  // 100 ms for the frame.
+  expect(pastes[5000]! - pastes[500]!).toBeLessThan(0.4 * loads[5000]! + 100)
 })
