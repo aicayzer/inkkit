@@ -101,6 +101,12 @@ async function withNote(
   }
 }
 
+// ProseMirror runs input rules from a timer with no delay after a composition
+// ends. A timer with no delay that is set after it runs after it, whatever the
+// load, which a wait of a fixed length does not promise.
+const afterCompositionRules = () =>
+  new Promise((resolve) => setTimeout(resolve))
+
 const smart = (
   source: string,
   run: (session: Session) => void | Promise<void>,
@@ -451,7 +457,7 @@ describe('untidy input', () => {
       s.type(' "--')
       s.editor.setTextInputPreferences({ smartPunctuation: true })
       s.view.dom.dispatchEvent(new Event('compositionend'))
-      await new Promise((resolve) => setTimeout(resolve, 20))
+      await afterCompositionRules()
       expect(s.save()).toBe('say "--')
     })
   })
@@ -712,7 +718,6 @@ describe('code and tags inside the block', () => {
 })
 
 describe('a quote that a composition commits', () => {
-  const wait = () => new Promise((resolve) => setTimeout(resolve, 20))
   // A composition that commits `text` at the caret, as the browser reports it.
   function compose(s: Session, text: string, composition: boolean) {
     s.view.dom.dispatchEvent(new Event('compositionstart'))
@@ -727,7 +732,7 @@ describe('a quote that a composition commits', () => {
       s.caret()
       s.type(' ')
       compose(s, '"', true)
-      await wait()
+      await afterCompositionRules()
       expect(s.view.state.doc.textContent).toBe('say “')
     })
   })
@@ -737,7 +742,7 @@ describe('a quote that a composition commits', () => {
       s.caret()
       s.type(' ')
       compose(s, '"', false)
-      await wait()
+      await afterCompositionRules()
       expect(s.view.state.doc.textContent).toBe('say "')
     })
   })
@@ -748,12 +753,12 @@ describe('a quote that a composition commits', () => {
       s.type(' ')
       s.editor.setTextInputPreferences({})
       compose(s, '"', true)
-      await wait()
+      await afterCompositionRules()
       expect(s.view.state.doc.textContent).toBe('say "')
       s.editor.setTextInputPreferences({ smartPunctuation: true })
       s.view.dom.dispatchEvent(new Event('compositionstart'))
       s.view.dom.dispatchEvent(new Event('compositionend'))
-      await wait()
+      await afterCompositionRules()
       expect(s.view.state.doc.textContent).toBe('say "')
     })
   })
