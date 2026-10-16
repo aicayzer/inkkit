@@ -121,10 +121,14 @@ test('composed text under a pending code mark lands in the code once @preservati
   ).toHaveText('abにほcdんe')
 })
 
-// The editor puts the code on composed text a moment after the composition
-// ends. A key that arrives before then must not lose it, so these hold back
-// timers that name no delay, which is the one the editor uses.
-async function composeWithTimerHeld(page: Page) {
+// The editor puts the code on composed text as the composition ends, without
+// waiting on a timer, so no key or paste can come first. These hold back
+// timers that name no delay to show that nothing depends on one.
+async function composeWithTimerHeld(
+  page: Page,
+  steps = ['に', 'にほ'],
+  committed = 'にほ',
+) {
   await operation(page, 'replaceSource', { text: 'Run now\n' })
   await caretAfterMatch(page, 'Run')
   await operation(page, 'format', { command: 'code' })
@@ -135,14 +139,14 @@ async function composeWithTimerHeld(page: Page) {
       set(handler, delay ?? 3000, ...rest)) as typeof window.setTimeout
   })
   const session = await page.context().newCDPSession(page)
-  for (const composing of ['に', 'にほ']) {
+  for (const composing of steps) {
     await session.send('Input.imeSetComposition', {
       text: composing,
       selectionStart: composing.length,
       selectionEnd: composing.length,
     })
   }
-  await session.send('Input.insertText', { text: 'にほ' })
+  await session.send('Input.insertText', { text: committed })
 }
 
 const text = async (page: Page) => (await observe(page)).snapshot?.text
@@ -167,8 +171,47 @@ for (const [name, keys, saved] of [
     expect((await observe(page)).diagnostics).toEqual([])
   })
 
-// Anything but typing or deleting at the caret ends the pending code without
-// marking what the edit brought.
+// Native input of more than a character, such as dictation, after a composition.
+test('a longer native input right after a composition ends stays in the code @preservation', async ({
+  page,
+  openFixture,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium',
+    'Only Chromium lets a test drive an input method',
+  )
+  await openFixture()
+  await composeWithTimerHeld(page)
+  await operation(page, 'insertText', { text: 'long' })
+  await page.keyboard.type('x')
+  await expect.poll(() => text(page)).toBe('Run`abにほlongx` now\n')
+  expect((await observe(page)).diagnostics).toEqual([])
+})
+
+// An address that the first key completes is in the code, so it is not a link.
+test('an address completed right after a composition is code, not a link @preservation', async ({
+  page,
+  openFixture,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium',
+    'Only Chromium lets a test drive an input method',
+  )
+  await openFixture()
+  await composeWithTimerHeld(page, ['に', 'に a@b.'], 'に a@b.')
+  await page.keyboard.type('c')
+  await expect.poll(() => text(page)).toBe('Run`abに a@b.c` now\n')
+  await expect(
+    page
+      .getByRole('textbox', { name: 'Formatted Markdown editor', exact: true })
+      .locator('a'),
+  ).toHaveCount(0)
+  expect((await observe(page)).diagnostics).toEqual([])
+})
+
+// The composition is finished before any other edit, so a paste brings no code.
 test('a paste right after a composition ends does not turn the pasted text into code @preservation', async ({
   page,
   openFixture,
@@ -185,8 +228,7 @@ test('a paste right after a composition ends does not turn the pasted text into 
       input: { html: '<b>BOLD</b>', text: 'BOLD' },
     }),
   )
-  await expect.poll(() => text(page)).toContain('**BOLD**')
-  expect(await text(page)).not.toMatch(/\*\*`|`\*\*/)
+  await expect.poll(() => text(page)).toBe('Run`abにほ`**BOLD** now\n')
   expect((await observe(page)).diagnostics).toEqual([])
 })
 
@@ -207,11 +249,11 @@ test('Undo right after a composition ends does not bring the pending code back @
   expect((await observe(page)).diagnostics).toEqual([])
 })
 
-for (const [name, keys, pattern] of [
-  ['Enter', ['Enter', 'x'], /\n\nx now\n$/],
-  ['a caret move', ['ArrowLeft', 'x'], /`xほ now\n$/],
+for (const [name, keys, saved] of [
+  ['Enter', ['Enter', 'x'], 'Run`abにほ`\n\nx now\n'],
+  ['a caret move', ['ArrowLeft', 'x'], 'Run`abにxほ` now\n'],
 ] as const)
-  test(`${name} right after a composition ends ends the pending code @preservation`, async ({
+  test(`${name} right after a composition ends acts on the finished code @preservation`, async ({
     page,
     openFixture,
     browserName,
@@ -223,7 +265,7 @@ for (const [name, keys, pattern] of [
     await openFixture()
     await composeWithTimerHeld(page)
     for (const key of keys) await page.keyboard.press(key)
-    await expect.poll(() => text(page)).toMatch(pattern)
+    await expect.poll(() => text(page)).toBe(saved)
     expect((await observe(page)).diagnostics).toEqual([])
   })
 
