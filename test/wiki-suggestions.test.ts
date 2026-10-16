@@ -240,6 +240,7 @@ test('closing brackets belong to wiki queries, not slash command filters', async
   expect(root.querySelector('[role=listbox]')).not.toBeNull()
   editor.insertText('Note]]', 2)
   expect(root.querySelector('[role=listbox]')).toBeNull()
-  expect(editor.textSnapshot().text.trim()).toBe('[[Note]]')
+  expect(editor.snapshot().text).toBe('[[Note]]\n')
+  expect(root.querySelector('.inkkit-wiki-link')?.textContent).toBe('Note')
   expect(errors).toEqual([])
 })

@@ -95,7 +95,7 @@ interface Input {
 const input = new PluginKey<Input>('inkkitSmartPunctuationInput')
 
 /** The text a transaction inserted, when it is one step that inserts text at `at` and nothing else. */
-function insertedAt(tr: Transaction, at: number): string | undefined {
+export function insertedAt(tr: Transaction, at: number): string | undefined {
   const [step] = tr.steps
   if (tr.steps.length !== 1 || !(step instanceof ReplaceStep)) return undefined
   if (step.from !== at || step.slice.openStart || step.slice.openEnd)

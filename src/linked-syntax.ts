@@ -1,5 +1,7 @@
-import { $node, $remark } from '@milkdown/kit/utils'
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { $inputRule, $node, $prose, $remark } from '@milkdown/kit/utils'
+import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
+import { InputRule } from '@milkdown/kit/prose/inputrules'
+import { Mark, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Literal } from 'mdast'
 import type { Extension as FromExtension } from 'mdast-util-from-markdown'
 import { defaultHandlers, type Handle } from 'mdast-util-to-markdown'
@@ -7,6 +9,7 @@ import type { Code, Extension, Tokenizer, State } from 'micromark-util-types'
 import type { Processor } from 'unified'
 import type { FileReference, WikiLinkReference } from './types'
 import { showsText } from './references'
+import { insertedAt } from './smart-punctuation'
 
 interface WikiLink extends Literal {
   type: 'inkkitWikiLink'
@@ -347,6 +350,143 @@ export const wikiLinkSchema = $node('inkkit_wiki_link', () => ({
     },
   },
 }))
+
+/** The position after a `]` that a composition has just committed. */
+interface Composed {
+  composition: { pos: number; size: number } | null
+  closing: number | null
+}
+const composed = new PluginKey<Composed>('inkkitWikiLinkComposition')
+
+/**
+ * Lets the rule below tell a `]` that a composition committed from text that was already in the
+ * note: ProseMirror runs every input rule when a composition ends, with nothing typed.
+ */
+export const wikiLinkComposition = $prose(
+  () =>
+    new Plugin<Composed>({
+      key: composed,
+      state: {
+        init: () => ({ composition: null, closing: null }),
+        apply(tr, value) {
+          const { composition } = value
+          value.closing = null
+          if (!tr.docChanged || !composition) return value
+          // An input method can replace its candidate before committing it.
+          if (tr.getMeta('composition') === undefined) value.composition = null
+          else if (
+            insertedAt(tr, composition.pos) === ']' &&
+            tr.doc.content.size === composition.size + 1
+          )
+            value.closing = composition.pos + 1
+          return value
+        },
+      },
+      props: {
+        handleDOMEvents: {
+          compositionstart(view) {
+            const { from, empty } = view.state.selection
+            const tracked = composed.getState(view.state)!
+            tracked.closing = null
+            tracked.composition = empty
+              ? { pos: from, size: view.state.doc.content.size }
+              : null
+            return false
+          },
+        },
+      },
+    }),
+)
+
+/**
+ * Turns `[[target]]`, as the person types its last bracket, into the wiki link
+ * it reads as when the note is opened, so the note keeps the characters that
+ * were typed. Left as text, the brackets save as `\[\[target]]`, which no
+ * other tool reads as a link. The last bracket has to be the one just typed,
+ * or committed by a composition: text already in the note, such as escaped
+ * brackets, is never changed, and that includes the run of every rule when a
+ * composition ends.
+ */
+export const wikiLinkInputRule = $inputRule(
+  () =>
+    new InputRule(
+      /\[\[(?:\\.|[^[\]\\\ufffc])*\]\]$/,
+      (state, match, start, end) => {
+        const { schema, doc } = state
+        const type = schema.nodes.inkkit_wiki_link
+        // The typed bracket is not in the document yet; a composition's is.
+        const caret = state.selection.from
+        if (
+          start + match[0].length - 1 !== caret &&
+          !(
+            start + match[0].length === caret &&
+            composed.getState(state)?.closing === caret
+          )
+        )
+          return null
+        const $start = doc.resolve(start)
+        const parent = $start.parent
+        if (
+          !type ||
+          !parent.inlineContent ||
+          !parent.canReplaceWith($start.index(), $start.index(), type) ||
+          // Escaped, embedded or nested brackets are not the start of a link.
+          /[!\\[]/.test(
+            doc.textBetween(Math.max($start.start(), start - 1), start),
+          )
+        )
+          return null
+        // Only text that was typed as one run, so that the link replaces the
+        // characters the person sees and nothing else.
+        let marks: readonly Mark[] | undefined
+        let plain = true
+        doc.nodesBetween(start, end, (node) => {
+          if (!node.isInline) return
+          if (!node.isText) plain = false
+          else if (marks && !Mark.sameSet(marks, node.marks)) plain = false
+          else marks ??= node.marks
+        })
+        if (
+          !plain ||
+          !marks ||
+          marks.some((mark) =>
+            ['inlineCode', 'link'].includes(mark.type.name),
+          ) ||
+          (state.storedMarks && !Mark.sameSet(state.storedMarks, marks))
+        )
+          return null
+        let inTable = false
+        for (let depth = $start.depth; depth > 0; depth--)
+          if (
+            ['table_cell', 'table_header'].includes(
+              $start.node(depth).type.name,
+            )
+          )
+            inTable = true
+        const parsed = parseLinkedSyntax(
+          inTable ? toTable(match[0]) : match[0],
+          inTable,
+        )
+        if (!parsed || parsed.embed) return null
+        return state.tr.replaceWith(
+          start,
+          end,
+          type.create(
+            {
+              raw: parsed.raw,
+              target: parsed.target,
+              fragment: parsed.fragment,
+              label: parsed.label,
+              inTable: parsed.inTable,
+            },
+            undefined,
+            marks,
+          ),
+        )
+      },
+      { inCodeMark: false },
+    ),
+)
 
 export function linkedSyntax(wikiLinks: boolean, files: boolean) {
   const syntax: Extension = { text: {} }

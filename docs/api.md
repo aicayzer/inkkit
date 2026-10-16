@@ -894,6 +894,16 @@ While Mod is held and the pointer is over the editor root, InkKit's stylesheet s
 
 `WikiLinkAdapter.open(reference, context)` receives a `WikiLinkReference` with decoded `target`, optional `fragment` and authored readable `label`. Optional synchronous `resolve(reference, context)` returns `{ missing?: boolean }` for presentation. It does not supply an editor URL. The host owns lookup, permissions and navigation; use source mode to edit the authored target or alias. A primary click with Mod (see [Opening links](#opening-links)) or Enter or Space on the focused link invokes `open`, including in read-only mode. No note index, backlink graph or transclusion is created.
 
+### Typing a wiki link
+
+When `wikiLinks` is set, typing the closing `]]` of a complete wiki link turns the typed text into that link, with or without `suggest`. The note saves the characters that were typed, such as `[[Note|alias]]`, and reopens with the same link. Without this, the typed brackets would be plain text, and a note would save them as `\[\[Note|alias]]`, which other tools don't read as a link.
+
+The text becomes a link only when it is a complete wiki link of the [supported syntax](supported-syntax.md#linked-syntax), typed as one run of text in formatted mode: in a paragraph, heading, list item, quote, callout or table cell, in a writable document. In a table cell, the saved link spells its pipe `\|`. It stays text when the brackets follow `!`, `[` or `\`, when the text isn't a valid link (for example `[[ ]]` or `[[#^block]]`), when it crosses a link or a change in formatting, in inline or block code, and in source or TXT mode. Without `wikiLinks`, typed brackets stay text.
+
+Only the bracket just typed, or one that an input method committed, makes the link. Escaped brackets already in the note stay text, including when a composition starts and is cancelled, and such a composition changes no text, revision or dirty state.
+
+Backspace straight after the second `]` puts back the typed characters as plain text, which a note saves escaped. One Undo removes the typing. `pasteAsPlainText` inserts literal text, so it never makes a link; `paste` of text or Markdown does, as it does for a note that holds the link.
+
 ### Note suggestions
 
 Add `WikiLinkAdapter.suggest` to offer note names after the person types `[[`. It is independent of `slashMenu.enabled` and uses the same suggestion list, labels and appearance tokens. Hosts without `suggest` keep their existing behavior.
@@ -909,9 +919,9 @@ interface WikiLinkAdapter {
 
 Suggestions open in formatted text, including headings, list items, quotes, callouts and table cells. They do not open in read-only documents, source or TXT mode, inline or block code, front matter, comments, preserved literal blocks or during composition. Escaped brackets and the file-embed prefix `![[` do not start note suggestions.
 
-Up and Down select a row; Return, Tab or a click inserts that note. Escape, typing `]]`, deleting the opening brackets, moving the caret, clicking elsewhere or scrolling away closes the menu and leaves the text as typed. No matches briefly shows `suggestionsEmpty`, then closes. Loads, mode and policy changes, destruction and unrelated edits invalidate the session.
+Up and Down select a row; Return, Tab or a click inserts that note. Escape, deleting the opening brackets, moving the caret, clicking elsewhere or scrolling away closes the menu and leaves the text as typed. Typing `]]` closes the menu too, and makes the text a link when it is a complete one. No matches briefly shows `suggestionsEmpty`, then closes. Loads, mode and policy changes, destruction and unrelated edits invalidate the session.
 
-Choosing a name inserts `[[Note name]]` through the same preservation checks as other edits. Reserved characters in a name (`\`, `[`, `]`, `|` and `#`) are escaped so they remain part of the target instead of becoming a delimiter, alias or fragment. Unicode and spaces are kept. The surrounding blocks retain their bytes, including CRLF line endings. One Undo restores the typed brackets and query; Redo restores the selected link. Typing closing brackets without choosing keeps the existing literal-typing behavior.
+Choosing a name inserts `[[Note name]]` through the same preservation checks as other edits. Reserved characters in a name (`\`, `[`, `]`, `|` and `#`) are escaped so they remain part of the target instead of becoming a delimiter, alias or fragment. Unicode and spaces are kept. The surrounding blocks retain their bytes, including CRLF line endings. One Undo restores the typed brackets and query; Redo restores the selected link. Typing the closing `]]` yourself makes the typed text a link, as described in [Typing a wiki link](#typing-a-wiki-link); the saved bytes are the same as when you choose the note.
 
 Names must be nonblank and valid targets in the [supported wiki-link syntax](supported-syntax.md#linked-syntax); control characters and block-reference names beginning with `^` are rejected. A rejected request, a non-array answer or any invalid name closes the list, reports `file-unavailable` through `events.error`, and leaves the document and history unchanged. A preservation refusal during insertion reports `preservation` and inserts nothing.
 
