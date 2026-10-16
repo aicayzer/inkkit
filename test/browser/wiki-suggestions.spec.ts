@@ -439,6 +439,22 @@ for (const context of [
   })
 }
 
+test('buffered brackets honour pending inline-code formatting without requesting suggestions', async ({
+  page,
+}) => {
+  await mount(page)
+  await page.evaluate(() => {
+    const editor = (window as unknown as WikiWindow).wikiEditor
+    editor.format('code')
+    editor.insertText('[[', 1)
+  })
+  await expect(menu(page)).toHaveCount(0)
+  expect(
+    await page.evaluate(() => (window as unknown as WikiWindow).wikiRequests),
+  ).toEqual([])
+  await expectSaved(page, '`[[`\n')
+})
+
 test('a new lookup clears old selectable rows while the host is still working', async ({
   page,
 }) => {

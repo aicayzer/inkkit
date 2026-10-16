@@ -78,7 +78,9 @@ export function wikiSession(
   const { $from } = view.state.selection
   if (
     !['paragraph', 'heading'].includes($from.parent.type.name) ||
-    $from.marks().some((mark) => mark.type.name === 'inlineCode')
+    (view.state.storedMarks ?? $from.marks()).some(
+      (mark) => mark.type.name === 'inlineCode',
+    )
   )
     return
   const before = $from.parent.textBetween(0, $from.parentOffset, '\n', '\ufffc')

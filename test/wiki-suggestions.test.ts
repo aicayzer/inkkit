@@ -98,6 +98,19 @@ test('without suggest the adapter behaves as before', async () => {
   editor.insertText('[[', 1)
   expect(root.querySelector('[role=listbox]')).toBeNull()
 })
+test('buffered brackets in pending inline code never request note suggestions', async () => {
+  const queries: string[] = []
+  const { editor, root } = await mount('', async (query) => {
+    queries.push(query)
+    return ['Alpha']
+  })
+  editor.format('code')
+  editor.insertText('[[', 1)
+  await settle()
+  expect(queries).toEqual([])
+  expect(root.querySelector('[role=listbox]')).toBeNull()
+  expect(editor.snapshot().text).toBe('`[[`\n')
+})
 test('a rejected or malformed answer reports a coded error and keeps the typed text', async () => {
   for (const suggest of [
     async () => {
