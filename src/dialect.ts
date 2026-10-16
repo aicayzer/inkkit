@@ -339,7 +339,10 @@ function formattedOutside(node: Link): PhrasingContent | undefined {
 
 type Written = 'bare' | 'angle' | 'brackets'
 
-function written(node: Link): Written {
+function written(node: Link, inTable = false): Written {
+  // A table pipe must be escaped. Bare and angle addresses read that escape
+  // as part of the URL; explicit link labels and destinations decode it.
+  if (inTable && node.url.includes('|')) return 'brackets'
   if (bracketLinks.has(node)) return 'brackets'
   const form = formOf(node)
   if (form === 'literal' && bareLinks.has(node)) return 'bare'
@@ -365,14 +368,14 @@ function withResourceLink<T>(
 }
 
 const link: (typeof defaultHandlers)['link'] = (node, parent, state, info) => {
-  const form = written(node)
+  const form = written(node, state.stack.includes('tableCell'))
   if (form === 'bare') return (node.children[0] as { value: string }).value
   return withResourceLink(state, form === 'brackets', () =>
     defaultHandlers.link(node, parent, state, info),
   )
 }
 link.peek = (node, parent, state) => {
-  const form = written(node)
+  const form = written(node, state.stack.includes('tableCell'))
   if (form === 'bare') return (node.children[0] as { value: string }).value[0]!
   return withResourceLink(state, form === 'brackets', () =>
     defaultHandlers.link.peek!(node, parent, state),
