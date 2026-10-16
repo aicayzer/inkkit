@@ -9,7 +9,7 @@ import {
 } from '@milkdown/kit/prose/model'
 import { Transform, type Step } from '@milkdown/kit/prose/transform'
 import type { Root } from 'mdast'
-import { Preservation, PreservationError } from '../src/preserve'
+import { Preservation, PreservationError, crossCheck } from '../src/preserve'
 import { withEditor } from './harness'
 import { blocks, definitions, snippets } from './preservation-documents'
 
@@ -552,6 +552,10 @@ const reference = process.env.INKKIT_PRESERVE_REFERENCE
     ).Preservation
   : Preservation
 
+// Each seed saves its note a dozen times, with and without the record of
+// moves, so this test runs fewer seeds than the one above unless SEEDS is set.
+const seeds = Number(process.env.SEEDS ?? 300)
+
 test(
   'block moves save wherever saving without them does, and leave other blocks as it does',
   () =>
@@ -561,7 +565,7 @@ test(
       let checked = 0
       let carriedBlocks = 0
       let keptSource = 0
-      for (let seed = 1; seed <= Number(process.env.SEEDS ?? 600); seed++) {
+      for (let seed = 1; seed <= seeds; seed++) {
         let state = seed
         const random = () =>
           (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32
@@ -675,10 +679,15 @@ test(
             saved = error as Error
           }
           let expected: string | Error
+          // The reference's own paths are compared by the test above.
+          const crossChecking = crossCheck.enabled
+          crossCheck.enabled = false
           try {
             expected = other.serialize(doc)
           } catch (error) {
             expected = error as Error
+          } finally {
+            crossCheck.enabled = crossChecking
           }
           const label = `seed ${seed} step ${step}: ${JSON.stringify(source)}`
           if (typeof expected !== 'string') continue
@@ -716,8 +725,9 @@ test(
             expect(mine.tail, `${label}, end`).toBe(theirs.tail)
         }
       }
-      expect(compared).toBeGreaterThan(1000)
-      expect(checked).toBeGreaterThan(800)
+      // About five saves compared and four checked block by block per seed.
+      expect(compared).toBeGreaterThan(seeds * 3)
+      expect(checked).toBeGreaterThan(seeds * 2.5)
       expect(keptSource / carriedBlocks).toBeGreaterThan(0.9)
     }),
   Math.max(120_000, Number(process.env.SEEDS ?? 600) * 100),
