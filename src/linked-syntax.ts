@@ -1,5 +1,6 @@
-import { $node, $remark } from '@milkdown/kit/utils'
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { $inputRule, $node, $remark } from '@milkdown/kit/utils'
+import { InputRule } from '@milkdown/kit/prose/inputrules'
+import { Mark, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Literal } from 'mdast'
 import type { Extension as FromExtension } from 'mdast-util-from-markdown'
 import { defaultHandlers, type Handle } from 'mdast-util-to-markdown'
@@ -347,6 +348,83 @@ export const wikiLinkSchema = $node('inkkit_wiki_link', () => ({
     },
   },
 }))
+
+/**
+ * Turns `[[target]]`, as the person types its last bracket, into the wiki link
+ * it reads as when the note is opened, so the note keeps the characters that
+ * were typed. Left as text, the brackets save as `\[\[target]]`, which no
+ * other tool reads as a link.
+ */
+export const wikiLinkInputRule = $inputRule(
+  () =>
+    new InputRule(
+      /\[\[(?:\\.|[^[\]\\\ufffc])*\]\]$/,
+      (state, match, start, end) => {
+        const { schema, doc } = state
+        const type = schema.nodes.inkkit_wiki_link
+        const $start = doc.resolve(start)
+        const parent = $start.parent
+        if (
+          !type ||
+          !parent.inlineContent ||
+          !parent.canReplaceWith($start.index(), $start.index(), type) ||
+          // Escaped, embedded or nested brackets are not the start of a link.
+          /[!\\[]/.test(
+            doc.textBetween(Math.max($start.start(), start - 1), start),
+          )
+        )
+          return null
+        // Only text that was typed as one run, so that the link replaces the
+        // characters the person sees and nothing else.
+        let marks: readonly Mark[] | undefined
+        let plain = true
+        doc.nodesBetween(start, end, (node) => {
+          if (!node.isInline) return
+          if (!node.isText) plain = false
+          else if (marks && !Mark.sameSet(marks, node.marks)) plain = false
+          else marks ??= node.marks
+        })
+        if (
+          !plain ||
+          !marks ||
+          marks.some((mark) =>
+            ['inlineCode', 'link'].includes(mark.type.name),
+          ) ||
+          (state.storedMarks && !Mark.sameSet(state.storedMarks, marks))
+        )
+          return null
+        let inTable = false
+        for (let depth = $start.depth; depth > 0; depth--)
+          if (
+            ['table_cell', 'table_header'].includes(
+              $start.node(depth).type.name,
+            )
+          )
+            inTable = true
+        const parsed = parseLinkedSyntax(
+          inTable ? toTable(match[0]) : match[0],
+          inTable,
+        )
+        if (!parsed || parsed.embed) return null
+        return state.tr.replaceWith(
+          start,
+          end,
+          type.create(
+            {
+              raw: parsed.raw,
+              target: parsed.target,
+              fragment: parsed.fragment,
+              label: parsed.label,
+              inTable: parsed.inTable,
+            },
+            undefined,
+            marks,
+          ),
+        )
+      },
+      { inCodeMark: false },
+    ),
+)
 
 export function linkedSyntax(wikiLinks: boolean, files: boolean) {
   const syntax: Extension = { text: {} }
