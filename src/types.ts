@@ -320,6 +320,8 @@ export type TableCommand =
   | 'moveColumnRight'
   | 'sortRows'
   | 'exit'
+/** Where `moveBlock` moves the blocks at the selection. */
+export type BlockMoveDirection = 'up' | 'down'
 /** Each option belongs to one command; any other combination is refused. */
 export interface TableOptions {
   /** `insert`: 1 to 100, counting the header row. Defaults to 3. */

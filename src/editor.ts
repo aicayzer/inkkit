@@ -159,6 +159,7 @@ import {
   type Heading,
   type TableCommand,
   type TableOptions,
+  type BlockMoveDirection,
 } from './types'
 import {
   readableProjection,
@@ -173,6 +174,12 @@ import {
   type TextProjection,
 } from './text-ranges'
 import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
+import {
+  blockMove,
+  canMoveBlock,
+  carriedBlocks,
+  moveBlockTransaction,
+} from './block-move'
 import {
   assertCommentsEndWhereWritten,
   commentSelectionContent,
@@ -361,11 +368,14 @@ function clientPoint(value: unknown, name: string): ClientPoint {
   }
 }
 
-/** A name in `Keymap`: every format command except `link`, history, and every table command. */
+/** A name in `Keymap`: every format command except `link`, history, block moves, and every table
+ *  command. */
 export type ShortcutName =
   | Exclude<FormatCommand, 'link'>
   | 'undo'
   | 'redo'
+  | 'moveBlockUp'
+  | 'moveBlockDown'
   | `table${Capitalize<TableCommand>}`
 
 /** Host bindings in ProseMirror key notation, by shortcut name. */
@@ -384,6 +394,8 @@ export const shortcutNames: readonly ShortcutName[] = [
   ...formatShortcuts,
   'undo',
   'redo',
+  'moveBlockUp',
+  'moveBlockDown',
   ...tableCommands.map(tableShortcut),
 ]
 
@@ -548,6 +560,8 @@ export interface CommandState extends DocumentVersion {
     editReferenceDefinition: boolean
     format: Record<FormatCommand, boolean>
     table: Record<TableCommand, boolean>
+    moveBlockUp: boolean
+    moveBlockDown: boolean
   }
 }
 
@@ -1255,6 +1269,9 @@ export class InkKitEditor {
   private ready = false
   private destroyed = false
   private preservation?: Preservation
+  // The blocks moves have carried since the document loaded, whose source goes
+  // with them.
+  private carried?: WeakSet<ProseNode>
   private pasteController!: PasteController
   private plain!: HTMLTextAreaElement
   private root!: HTMLElement
@@ -1290,7 +1307,8 @@ export class InkKitEditor {
         key: new PluginKey('documentChanges'),
         view: () => ({
           update: (view, previous) => {
-            if (this.loading || view.state.doc.eq(previous.doc)) return
+            if (this.loading || this.sameDocument(view.state.doc, previous.doc))
+              return
             // Settling typed source brings the document up to a revision and a
             // change event that were already reported.
             if (this.syncingSource) {
@@ -1786,6 +1804,8 @@ export class InkKitEditor {
           formatted && referenceDefinitions(state.doc).size > 0,
         format,
         table: tables,
+        moveBlockUp: formatted && canMoveBlock(state, 'up'),
+        moveBlockDown: formatted && canMoveBlock(state, 'down'),
       },
     }
   }
@@ -1918,7 +1938,7 @@ export class InkKitEditor {
           this.sourcePreservations.set(provenance, preservation)
         }
       }
-      text = preservation!.serialize(cleanSourceDoc(doc))
+      text = preservation!.serialize(cleanSourceDoc(doc), this.carried)
     } catch (error) {
       throw coded(error, 'preservation')
     }
@@ -2582,6 +2602,25 @@ export class InkKitEditor {
     return tableCommand(this.editor.ctx, command, options)
   }
 
+  /** Moves the blocks at the selection one place up or down in their list, quote, callout, footnote
+   *  or note, as one undo step. Returns whether they moved: false in source and TXT modes, in a
+   *  table, and when they are already first or last. */
+  moveBlock(
+    direction: BlockMoveDirection,
+    expectedGeneration?: number,
+  ): boolean {
+    this.assertAlive()
+    expectOneOf(direction, ['up', 'down'], 'direction')
+    this.assertMutation(expectedGeneration)
+    if (this.literalSurface) return false
+    const view = this.editor.ctx.get(editorViewCtx)
+    const tr = moveBlockTransaction(view.state, direction)
+    if (!tr) return false
+    view.dispatch(closeHistory(tr))
+    view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
+    return true
+  }
+
   /** Cancels pending work and releases the editor. It never rejects. Afterwards every other member
    *  throws `destroyed`. */
   async destroy(): Promise<void> {
@@ -2766,6 +2805,8 @@ export class InkKitEditor {
           dispatchTransaction: function (this: EditorView, tr) {
             // A call whose edit was refused changes nothing more; it throws when it returns.
             if (instance.call?.refusal && tr.docChanged) return
+            for (const node of tr.getMeta(carriedBlocks) ?? [])
+              (instance.carried ??= new WeakSet()).add(node)
             const applied = this.state.applyTransaction(tr)
             let next = applied.state
             if (!instance.loading) {
@@ -3477,6 +3518,19 @@ export class InkKitEditor {
     this.publishCommandState()
   }
 
+  /** Whether two documents are the same note. A move of blocks that read alike, such as a setext
+   *  heading and the same heading written with `#`, gives an equal document with other source. */
+  private sameDocument(after: ProseNode, before: ProseNode): boolean {
+    if (after === before) return true
+    if (!after.eq(before)) return false
+    if (!this.carried || !this.preservation) return true
+    try {
+      return this.currentText(after) === this.currentText(before)
+    } catch {
+      return false
+    }
+  }
+
   /** Throws when a document reached by an edit, after every appended normalisation, cannot be
    *  saved as preserved Markdown. Dispatch and the replacement commands share this check.
    *  `written` is false for history steps and source replacement, which restore or supply a
@@ -3486,7 +3540,7 @@ export class InkKitEditor {
     after: ProseNode,
     written = true,
   ): void {
-    if (this.literalSurface || after.eq(before)) return
+    if (this.literalSurface || this.sameDocument(after, before)) return
     if (written) assertCommentsEndWhereWritten(before, after)
     if (this.preservation) this.currentText(after)
   }
@@ -3759,6 +3813,7 @@ export class InkKitEditor {
       this.loading = false
     }
     this.preservation = preservation
+    this.carried = undefined
     this.lastMarkdown = markdown
     // A caret at the end, where writing carries on; at the start it would sit in a first-line heading and
     // show its marks. The last place text can go, so a document ending in a rule takes a caret above it
@@ -4061,14 +4116,17 @@ export class InkKitEditor {
   }
 
   /** Replaces every binding. Keys are in ProseMirror's notation. A key given to two shortcuts goes
-   *  to the later one, in the order history, formatting, tables, so it lands the same way every
-   *  time. */
+   *  to the later one, in the order history, formatting, block moves, tables, so it lands the same
+   *  way every time. A table binding passes a key it shares with a block move to the move outside
+   *  a table. */
   setKeymap(keymap: Keymap): void {
     this.assertAlive()
     keymap = keymapBindings(keymap, 'keymap')
     this.configuredKeys = {
       undo: ['Mod-z'],
       redo: ['Mod-y', 'Shift-Mod-z'],
+      moveBlockUp: ['Alt-ArrowUp'],
+      moveBlockDown: ['Alt-ArrowDown'],
       tableExit: ['Mod-Enter', 'Enter'],
       ...keymap,
     }
@@ -4097,22 +4155,47 @@ export class InkKitEditor {
         }
       }
     }
+    const moves: Record<string, Command> = {}
+    for (const [name, direction] of [
+      ['moveBlockUp', 'up'],
+      ['moveBlockDown', 'down'],
+    ] as const) {
+      for (const key of this.configuredKeys[name] ?? []) {
+        moves[key] = bindings[key] = (state) => {
+          // In a table, and when nothing can be edited, the key goes on to the
+          // table's own bindings and the web view, which moves the caret.
+          if (!this.ready || !this.writable || this.literalSurface) return false
+          const move = blockMove(state, direction)
+          if (!move) return false
+          if (
+            move === 'move' &&
+            !this.composing &&
+            !this.pasteController.pending
+          )
+            this.forPerson(() => this.moveBlock(direction), false)
+          return true
+        }
+      }
+    }
     for (const command of tableCommands) {
       for (const key of this.configuredKeys[tableShortcut(command)] ?? [])
-        bindings[key] = () => {
+        bindings[key] = (state, dispatch, view) => {
           if (!this.ready || !this.commandState().commands.table[command])
-            return false
+            return moves[key]?.(state, dispatch, view) ?? false
           return this.forPerson(() => this.table(command), true)
         }
     }
     this.readOnlyKeys = keydownHandler(
       Object.fromEntries(
-        Object.keys(bindings).map((key) => [
-          key,
-          () => {
-            throw new InkKitError('read-only', 'The editor is read-only')
-          },
-        ]),
+        Object.keys(bindings)
+          // A block move key is a caret key while nothing can be edited.
+          .filter((key) => !moves[key])
+          .map((key) => [
+            key,
+            () => {
+              throw new InkKitError('read-only', 'The editor is read-only')
+            },
+          ]),
       ),
     )
     this.keys = keydownHandler(bindings)
@@ -4766,6 +4849,7 @@ export class InkKitEditor {
       'replaceAll',
       'format',
       'table',
+      'moveBlock',
       'insertText',
       'keyDown',
       'insertPaths',
