@@ -11,6 +11,7 @@ import { angleAutolinkCases } from './angle-autolink-cases'
 import {
   codeSpanAutolinkCases,
   codeSpanPasteCases,
+  codeSpanPasteTwoAddresses,
 } from './code-span-autolink-cases'
 
 const input = { documentId: 'typing', format: 'md' as const }
@@ -999,6 +1000,29 @@ test('Backspace after the closing backtick undoes the code span and keeps the ad
     typeKeys(s.view, '`http://x.com`')
     expect(undoInputRule(s.view.state, s.view.dispatch)).toBe(true)
     await expectSaves(s, '\\`<http://x.com>\\`\n')
+    expect(s.view.dom.querySelector('a')?.getAttribute('href')).toBe(
+      'http://x.com',
+    )
+    expect(s.view.dom.querySelector('code')).toBeNull()
+  }))
+
+test('pasting two addresses between backticks links each of them', () =>
+  session('x\n', async (s) => {
+    const start = at(s.view, 'x', false)
+    select(s.view, start, start + 1)
+    s.editor.pasteAsPlainText(codeSpanPasteTwoAddresses.pasted)
+    await expectSaves(s, codeSpanPasteTwoAddresses.saved)
+    expect(
+      [...s.view.dom.querySelectorAll('a')].map((a) => a.getAttribute('href')),
+    ).toEqual(codeSpanPasteTwoAddresses.hrefs)
+  }))
+
+test('typing a backtick and text after an address ends the link at the backtick', () =>
+  session('x\n', async (s) => {
+    const start = at(s.view, 'x', false)
+    select(s.view, start, start + 1)
+    typeKeys(s.view, 'http://x.com`foo')
+    await expectSaves(s, '<http://x.com>\\`foo\n')
     expect(s.view.dom.querySelector('a')?.getAttribute('href')).toBe(
       'http://x.com',
     )

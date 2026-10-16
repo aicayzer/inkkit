@@ -2,6 +2,7 @@ import { test, expect, observe, operation } from './fixtures'
 import {
   codeSpanAutolinkCases,
   codeSpanPasteCases,
+  codeSpanPasteTwoAddresses,
 } from '../code-span-autolink-cases'
 import type { Page } from '@playwright/test'
 
@@ -179,3 +180,43 @@ for (const [name, source, typed, expected] of [
     expect(observed.diagnostics).toEqual([])
     expect(observed.snapshot!.text).toBe(expected)
   })
+
+test('pasting two addresses between backticks links each of them @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await open(page, 'x\n')
+  await select(page, 'x')
+  expect(
+    await operation(page, 'pastePlain', {
+      text: codeSpanPasteTwoAddresses.pasted,
+    }),
+  ).toBe(true)
+  const observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  expect(observed.snapshot!.text).toBe(codeSpanPasteTwoAddresses.saved)
+  const hrefs = await page
+    .locator('[contenteditable] a')
+    .evaluateAll((links) => links.map((a) => a.getAttribute('href')))
+  expect(hrefs).toEqual(codeSpanPasteTwoAddresses.hrefs)
+  await reopensSame(page)
+})
+
+test('typing a backtick and text after an address ends the link at the backtick @preservation', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await open(page, 'x\n')
+  await select(page, 'x')
+  await page.keyboard.type('http://x.com`foo')
+  const observed = await observe(page)
+  expect(observed.diagnostics).toEqual([])
+  await expect(page.locator('[contenteditable] a')).toHaveAttribute(
+    'href',
+    'http://x.com',
+  )
+  await expect(page.locator('[contenteditable] code')).toHaveCount(0)
+  await reopensSame(page)
+})

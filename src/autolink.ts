@@ -158,21 +158,36 @@ function literals(ctx: Ctx, texts: string[]): Array<Found | undefined> {
   )
   return texts.map((text, index) =>
     possible[index]
-      ? endBeforeBackticks(text, found.shift() ?? literalFormattingLinks(text))
+      ? endAtBackticks(ctx, found.shift() ?? literalFormattingLinks(text), text)
       : [],
   )
 }
 
-// GFM takes a backtick after an address into the address. A backtick is a
-// code delimiter in what is typed, so the address ends before a trailing run
-// of them and the link does not open the wrong URL.
-function endBeforeBackticks(text: string, found: Found | undefined) {
-  return found?.map(([start, end, href]): [number, number, string] => {
-    const ticks = /`*$/.exec(text.slice(start, end))![0].length
-    return ticks
-      ? [start, end - ticks, href.slice(0, href.length - ticks)]
-      : [start, end, href]
-  })
+// GFM takes a backtick into an address. A backtick is a code delimiter in
+// what is typed or pasted, so an address ends at the first one, and the text
+// between backticks is read again for addresses of its own. Otherwise the
+// link would open a different URL than the one written.
+function endAtBackticks(
+  ctx: Ctx,
+  found: Found | undefined,
+  text: string,
+): Found | undefined {
+  if (!found) return found
+  const result: Found = []
+  for (const [start, end, href] of found) {
+    const parts = text.slice(start, end).split('`')
+    if (parts.length === 1) {
+      result.push([start, end, href])
+      continue
+    }
+    let at = start
+    literals(ctx, parts).forEach((links, index) => {
+      for (const [from, to, target] of links ?? [])
+        result.push([at + from, at + to, target])
+      at += parts[index]!.length + 1
+    })
+  }
+  return result
 }
 
 // CommonMark reads an address in angle brackets as a link to it, or to

@@ -95,4 +95,23 @@ export const codeSpanPasteCases = [
     '\\`<http://x.com/>\\`\n',
     'http://x.com/',
   ],
+  [
+    'an address followed by a backtick and text',
+    '`http://x.com`foo`',
+    '\\`<http://x.com>\\`foo\\`\n',
+    'http://x.com',
+  ],
+  [
+    'an address followed by two backtick-separated words',
+    '`http://x.com/a`b`c`',
+    '\\`<http://x.com/a>\\`b\\`c\\`\n',
+    'http://x.com/a',
+  ],
 ] as const
+
+// Two addresses between backticks are two links, not one.
+export const codeSpanPasteTwoAddresses = {
+  pasted: '`http://a.com`,`http://b.com`',
+  saved: '\\`<http://a.com>\\`,\\`<http://b.com>\\`\n',
+  hrefs: ['http://a.com', 'http://b.com'],
+}
