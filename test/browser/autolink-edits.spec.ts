@@ -164,10 +164,10 @@ const typing: [string, string, string, boolean, string, string][] = [
   [
     'into a URL in angle brackets',
     'See <https://example.com/path> now.\n',
-    'path',
+    'pat',
     true,
     's',
-    'See <https://example.com/paths> now.\n',
+    'See <https://example.com/patsh> now.\n',
   ],
   [
     'after a space beside an address that ends in a character reference',
