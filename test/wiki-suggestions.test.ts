@@ -8,11 +8,15 @@ afterEach(async () => {
 async function mount(
   text: string,
   suggest?: (query: string, context: FileContext) => Promise<readonly string[]>,
+  slashMenu?: EditorOptions['slashMenu'],
 ) {
   const root = document.createElement('div')
   document.body.append(root)
   const errors: unknown[] = []
-  const options: EditorOptions = { wikiLinks: { open() {}, suggest } }
+  const options: EditorOptions = {
+    wikiLinks: { open() {}, suggest },
+    slashMenu,
+  }
   const editor = await InkKitEditor.mount(
     root,
     { changed() {}, error: (e) => errors.push(e) },
@@ -212,4 +216,30 @@ test('old matches cannot be chosen while the replacement query is pending', asyn
   resolve(['New'])
   await settle()
   expect(root.querySelector('[role=option]')?.textContent).toBe('New')
+})
+
+test('closing brackets belong to wiki queries, not slash command filters', async () => {
+  const { editor, root, errors } = await mount('', async () => ['Note'], {
+    enabled: true,
+    commands: [],
+    customCommands: [{ name: 'Bracket ]]', action: () => 'Chosen' }],
+  })
+  editor.insertText('/', 1)
+  editor.insertText('bracket ]]', 1)
+  expect(root.querySelector('[role=option]')?.textContent).toBe('Bracket ]]')
+  editor.keyDown({ key: 'Enter' }, 1)
+  expect(editor.snapshot().text).toBe('Chosen\n')
+  editor.loadDocument({
+    documentId: 'wiki',
+    generation: 2,
+    format: 'md',
+    text: '',
+  })
+  editor.insertText('[[', 2)
+  await settle()
+  expect(root.querySelector('[role=listbox]')).not.toBeNull()
+  editor.insertText('Note]]', 2)
+  expect(root.querySelector('[role=listbox]')).toBeNull()
+  expect(editor.textSnapshot().text.trim()).toBe('[[Note]]')
+  expect(errors).toEqual([])
 })

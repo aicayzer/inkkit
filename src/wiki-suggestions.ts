@@ -101,6 +101,9 @@ export function wikiSession(
     base: view.state,
     query: '',
     valid: (current) =>
+      !current.state.doc
+        .textBetween(start, current.state.selection.from, '\n', '\ufffc')
+        .includes(']]') &&
       current.state.tr
         .delete(start, current.state.selection.from)
         .doc.eq(baseline),
