@@ -3,6 +3,26 @@ import { $ctx } from '@milkdown/kit/utils'
 import type { EditorLabels } from './types'
 
 export const defaultLabels: Readonly<EditorLabels> = {
+  suggestions: 'Suggestions',
+  suggestionsEmpty: 'No matches',
+  slashHeading1: 'Heading 1',
+  slashHeading2: 'Heading 2',
+  slashHeading3: 'Heading 3',
+  slashBulletList: 'Bulleted List',
+  slashOrderedList: 'Numbered List',
+  slashTaskList: 'Checklist',
+  slashQuote: 'Quote',
+  slashCodeBlock: 'Code Block',
+  slashTable: 'Table',
+  slashCallout: 'Callout',
+  slashDivider: 'Divider',
+  slashDiagram: 'Diagram',
+  slashNote: 'Note',
+  slashTip: 'Tip',
+  slashImportant: 'Important',
+  slashWarning: 'Warning',
+  slashCaution: 'Caution',
+
   formattedEditor: 'Formatted Markdown editor',
   plainTextEditor: 'Plain text editor',
   sourceEditor: 'Markdown source editor',

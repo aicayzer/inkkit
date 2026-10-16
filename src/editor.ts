@@ -1,3 +1,6 @@
+import type { SlashMenuOptions, SlashCommandName, SlashCommand } from './types'
+import { Suggestions, type SuggestionSession } from './suggestions'
+import { slashMenuOptions, slashSession, slashTransaction } from './slash-menu'
 import { htmlBreakAt } from './hard-break'
 import {
   Editor,
@@ -467,6 +470,8 @@ function textInputPreferences(
 export interface EditorOptions {
   /** Shows, imports and exports images. Without it and `files`, image Markdown stays literal. */
   images?: ImageAdapter
+  /** Opt-in block suggestions on an empty line. Fixed at mount. */
+  slashMenu?: SlashMenuOptions
   /** Resolves path images and `![[name]]` embeds into images, audio, video, PDFs and file cards. */
   files?: FileAdapter
   /** Resolves and opens `[[wiki links]]`. Without it they stay literal. */
@@ -498,6 +503,7 @@ function editorOptions(value: unknown): EditorOptions {
       'labels',
       'keymap',
       'rendering',
+      'slashMenu',
     ]) ?? {}
   for (const name of adapterNames)
     optionalRecord(options[name], `options.${name}`)
@@ -522,6 +528,7 @@ function editorOptions(value: unknown): EditorOptions {
   )
   return {
     ...options,
+    slashMenu: slashMenuOptions(options.slashMenu),
     labels:
       labels &&
       Object.fromEntries(
@@ -1301,6 +1308,8 @@ export class InkKitEditor {
   private configuredKeys: Keymap = {}
   private readOnlyKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
+  private suggestions?: Suggestions
+  private suggestionBase?: EditorState
   private changePlugin = $prose(
     () =>
       new Plugin({
@@ -1707,6 +1716,7 @@ export class InkKitEditor {
   }
 
   private publishCommandState(): void {
+    this.suggestions?.refresh()
     if (
       !this.ready ||
       this.loading ||
@@ -2742,6 +2752,27 @@ export class InkKitEditor {
       editable: () => instance.writable && !instance.literalSurface,
       onPendingChanged: () => instance.publishCommandState(),
     })
+    instance.suggestions = new Suggestions({
+      root,
+      labels: { ...defaultLabels, ...options.labels },
+      active: () =>
+        instance.ready &&
+        !instance.destroyed &&
+        !instance.loading &&
+        !instance.literalSurface &&
+        instance.writable &&
+        !instance.composing &&
+        !instance.pasteController.pending,
+      start: (view, from, to, text) =>
+        slashSession(view, from, to, text, {
+          options: options.slashMenu,
+          labels: { ...defaultLabels, ...options.labels },
+          diagrams:
+            options.rendering?.diagramPreview !== false && diagramsAvailable(),
+          choose: (session, command, kind) =>
+            instance.chooseSlash(session, command, kind),
+        }),
+    })
     instance.editor = await Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, root)
@@ -2807,12 +2838,14 @@ export class InkKitEditor {
             if (instance.call?.refusal && tr.docChanged) return
             for (const node of tr.getMeta(carriedBlocks) ?? [])
               (instance.carried ??= new WeakSet()).add(node)
-            const applied = this.state.applyTransaction(tr)
+            instance.suggestions?.beforeTransaction(tr)
+            const base = instance.suggestionBase ?? this.state
+            const applied = base.applyTransaction(tr)
             let next = applied.state
             if (!instance.loading) {
               const check = (doc: ProseNode) => {
                 if (!instance.literalSurface)
-                  assertHiddenCommentsKept(this.state, tr, doc)
+                  assertHiddenCommentsKept(base, tr, doc)
                 instance.assertPreserved(this.state.doc, doc, isWrittenEdit(tr))
               }
               try {
@@ -2827,7 +2860,7 @@ export class InkKitEditor {
                     )
                   )
                     throw error
-                  next = this.state.apply(tr.setMeta(literalRereadKey, 'skip'))
+                  next = base.apply(tr.setMeta(literalRereadKey, 'skip'))
                   check(next.doc)
                 }
               } catch (error) {
@@ -2854,6 +2887,7 @@ export class InkKitEditor {
       .use(labelsCtx)
       .use(instance.pasteController.plugin)
       .use(visibleClipboard)
+      .use($prose(() => instance.suggestions!.plugin()))
       .use(instance.keymapPlugin)
       .use(
         createDialect(
@@ -4512,6 +4546,72 @@ export class InkKitEditor {
       return cursor === end ? found : none
     } catch {
       return none
+    }
+  }
+
+  private chooseSlash(
+    session: SuggestionSession,
+    command: SlashCommandName | SlashCommand,
+    kind?: string,
+  ): void {
+    const capture = this.session.capture()
+    const chosenState = this.editor.ctx.get(editorViewCtx).state
+    this.suggestions?.close()
+    const commit = (value: SlashCommandName | { markdown: string }) =>
+      this.forPerson(
+        () =>
+          this.facadeCall(() => {
+            if (
+              !capture.isCurrent({ editability: true }) ||
+              this.editor.ctx.get(editorViewCtx).state !== chosenState
+            )
+              throw new InkKitError(
+                'stale-document',
+                'The suggestion belongs to an earlier edit',
+              )
+            this.assertMutation(capture.generation)
+            if (this.literalSurface) return false
+            const view = this.editor.ctx.get(editorViewCtx)
+            const tr = slashTransaction(
+              this.editor.ctx,
+              session.base,
+              value,
+              kind,
+            )
+            this.suggestionBase = session.base
+            try {
+              view.dispatch(tr.scrollIntoView())
+            } finally {
+              this.suggestionBase = undefined
+            }
+            view.dispatch(
+              closeHistory(view.state.tr).setMeta('addToHistory', false),
+            )
+            return true
+          }),
+        false,
+      )
+    if (typeof command === 'string') {
+      commit(command)
+      return
+    }
+    try {
+      const result = command.action(this.context())
+      const insert = (markdown: string | undefined) => {
+        if (markdown === undefined) return
+        if (typeof markdown !== 'string') {
+          this.report(
+            invalidArgument('A slash command must return Markdown text'),
+          )
+          return
+        }
+        commit({ markdown })
+      }
+      if (result instanceof Promise)
+        result.then(insert).catch((error) => this.report(error))
+      else insert(result)
+    } catch (error) {
+      this.report(error)
     }
   }
 

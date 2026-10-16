@@ -953,3 +953,51 @@
     var(--inkkit-focus-offset, -2px)
   );
 }
+
+.inkkit-root .inkkit-suggestions {
+  position: fixed;
+  z-index: 100;
+  box-sizing: border-box;
+  width: var(--inkkit-menu-width, 240px);
+  max-width: calc(100vw - 8px);
+  max-height: 264px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border-radius: var(--inkkit-menu-radius, 8px);
+  background: var(--inkkit-menu-background, light-dark(#fff, #252529));
+  color: var(--inkkit-menu-text, CanvasText);
+  box-shadow: var(--inkkit-menu-shadow, 0 4px 18px #0003);
+  font: 14px / 24px var(--inkkit-font-family, system-ui, sans-serif);
+}
+.inkkit-root .inkkit-suggestions [role='option'] {
+  box-sizing: border-box;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.inkkit-root .inkkit-suggestions [aria-selected='true'] {
+  background: var(--inkkit-menu-highlight, light-dark(#e8e8ed, #414146));
+}
+.inkkit-root .inkkit-suggestion-glyph {
+  display: inline-block;
+  flex: 0 0 22px;
+  text-align: center;
+  font-size: 12px;
+}
+.inkkit-root .inkkit-suggestion-glyph::before {
+  content: attr(data-glyph);
+}
+.inkkit-root .inkkit-suggestions-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  overflow: hidden;
+}

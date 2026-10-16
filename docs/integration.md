@@ -105,6 +105,45 @@ After loading, `editor.commandState(1)` returns current availability without cha
 
 `editor.setTextInputPreferences({ spellcheck: false })` changes native HTML input attributes on both surfaces. It replaces the preference set; omitted fields remove earlier explicit attributes and leave behaviour to the browser. Editability and input-policy changes throw `composition` during composition, without partial changes; successful transitions preserve source, revision, dirty state, history, focus and selection. Browser and OS support determines whether an input preference takes effect. `smartPunctuation` is InkKit's own and doesn't depend on the browser; see [Smart punctuation](api.md#smart-punctuation).
 
+## Optional slash block menu
+
+Enable `slashMenu` at mount to let a person choose a block by typing `/` on an empty line. Existing hosts keep their current behavior unless they opt in. Select the built-in commands with `commands`, localize their names through `labels`, and append host actions with `customCommands`.
+
+```ts
+import {
+  InkKitEditor,
+  type DocumentContext,
+  type EditorEvents,
+} from '@aicayzer/inkkit'
+
+async function mountWithBlockMenu(
+  root: HTMLElement,
+  events: EditorEvents,
+  chooseNoteLink: (context: DocumentContext) => Promise<string | undefined>,
+) {
+  return InkKitEditor.mount(root, events, {
+    slashMenu: {
+      enabled: true,
+      commands: ['heading1', 'heading2', 'bulletList', 'taskList', 'quote'],
+      customCommands: [
+        {
+          name: 'Link to Note',
+          keywords: ['note', 'link'],
+          action: chooseNoteLink,
+        },
+      ],
+    },
+    labels: { slashTaskList: 'To-do List' },
+  })
+}
+```
+
+In this example, the host's `chooseNoteLink` searches its notes and returns the Markdown link to insert on the trigger line. The host owns lookup, permissions and navigation. Return `undefined` when the person cancels. InkKit parses returned Markdown, checks preservation and commits the replacement as one undo step. One Undo restores the line from before the slash. A slow action leaves typing responsive; changes to the document, selection, mode, editability or presentation invalidate its pending result. Handle failures through `events.error`; failed and canceled actions keep the typed text.
+
+Omit `commands` to offer every built-in command. The order is fixed, and Diagram is offered only when the loaded entry supplies diagram previews and `rendering.diagramPreview` is not `false`. The menu supports empty lines inside lists, quotes and callouts; source, TXT, read-only, code, table and front matter contexts do not open it. The [slash menu API](api.md#slash-block-menu) defines filtering, keys, dismissal and host action contracts.
+
+Set `--inkkit-menu-background`, `--inkkit-menu-text`, `--inkkit-menu-highlight`, `--inkkit-menu-radius`, `--inkkit-menu-shadow` and `--inkkit-menu-width` on the root to customize the popup. The default selection highlight is soft gray in light mode and follows the editor color scheme. Use the documented tokens and labels rather than targeting internal menu elements.
+
 ## Host search and overlapping chrome
 
 Keep the search field and match list in the host. Capture `editor.textSnapshot()` and search its readable `text`; carry its `snapshotId` with every UTF-16 match range. A selection-only search result can call `selectTextRange()` without taking focus away from the host field. Use explicit reveal/navigation when the user asks to visit a result. Capture fresh ranges after edits, mode changes, reloads or document replacement. Handle stale-range rejection rather than reusing old offsets.
