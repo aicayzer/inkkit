@@ -743,27 +743,15 @@ function retainBoundaryWhitespace(raw: string, canonical: string): string {
           if (index % 2) return line
           const canonicalLine = written[index / 2]!
           const gutter = (value: string) =>
-            /^(?:[ \t]*>[ \t]?)+/.exec(value)?.[0] ?? ''
-          let prefix = gutter(line)
+            /^(?:[ \t]*>)*/.exec(value)?.[0] ?? ''
+          const prefix = gutter(line)
           const canonicalPrefix = gutter(canonicalLine)
           if (
             prefix.replace(/[ \t]/g, '') !==
             canonicalPrefix.replace(/[ \t]/g, '')
           )
             return line
-          const boundary = (value: string) =>
-            new RegExp(`^${token}+`).exec(value)?.[0] ?? ''
           const canonicalBody = canonicalLine.slice(canonicalPrefix.length)
-          const leading = boundary(canonicalBody)
-          // With an authored `>text` line, deletion can expose a content
-          // space where the optional separator after `>` would normally go.
-          if (
-            leading.includes('&') &&
-            /[ \t]$/.test(prefix) &&
-            decoded(boundary(line.slice(prefix.length - 1))) ===
-              decoded(leading)
-          )
-            prefix = prefix.slice(0, -1)
           return (
             prefix +
             retainBoundaryWhitespace(line.slice(prefix.length), canonicalBody)
@@ -771,16 +759,21 @@ function retainBoundaryWhitespace(raw: string, canonical: string): string {
         })
         .join('')
   }
-  const start = /^[ \t]+/.exec(raw)?.[0]
   const rawStart = new RegExp(`^${token}+`).exec(raw)?.[0]
   const encodedStart = new RegExp(`^${token}+`).exec(canonical)?.[0]
-  if (
-    start &&
-    rawStart &&
-    encodedStart?.includes('&') &&
-    decoded(rawStart) === decoded(encodedStart)
-  )
-    raw = encode(start) + raw.slice(start.length)
+  if (rawStart && encodedStart?.includes('&')) {
+    // Only the tail from the first reference is content. The whitespace
+    // before it can be container indentation, whose width differs in the
+    // authored and canonical forms. Keep that prefix and entity spelling.
+    const content = decoded(encodedStart.slice(encodedStart.indexOf('&')))
+    const parts = rawStart.match(new RegExp(token, 'g'))!
+    const from = parts.length - content.length
+    if (from >= 0 && decoded(parts.slice(from).join('')) === content)
+      raw =
+        parts
+          .map((part, index) => (index < from ? part : encode(part)))
+          .join('') + raw.slice(rawStart.length)
+  }
   const end = /[ \t]+$/.exec(raw)?.[0]
   const rawEnd = new RegExp(`${token}+$`).exec(raw)?.[0]
   const encodedEnd = new RegExp(`${token}+$`).exec(canonical)?.[0]

@@ -4,6 +4,11 @@ const containers = [
   ['callout', '> [!NOTE]\n> alpha beta\n'],
   ['compact callout', '>[!NOTE]\n>alpha beta\n'],
   ['quote', '> alpha beta\n'],
+  ['indented callout', '> [!NOTE]\n>  alpha beta\n'],
+  ['indented quote', '>    alpha beta\n'],
+  ['bullet continuation', '+ first\n  alpha beta\n'],
+  ['ordered continuation', '1. first\n   alpha beta\n'],
+  ['task continuation', '- [x] first\n  alpha beta\n'],
   ['list', '+   alpha beta\n'],
 ] as const
 

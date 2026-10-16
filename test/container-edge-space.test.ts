@@ -99,3 +99,118 @@ for (const [container, body] of containers)
           root.remove()
         }
       })
+
+const indentedEdits = [
+  ['indented callout', '> [!NOTE]\n>  alpha beta\n', 'alpha', ''],
+  ['indented quote', '>    alpha beta\n', 'alpha', ''],
+  ['bullet continuation', '+ first\n  alpha beta\n', 'alpha', ''],
+  ['ordered continuation', '1. first\n   alpha beta\n', 'alpha', ''],
+  ['task continuation', '- [x] first\n  alpha beta\n', 'alpha', ''],
+  [
+    'continuation with authored space',
+    '+ first\n  alpha &#32;beta\n',
+    'alpha',
+    '',
+  ],
+  [
+    'continuation with authored tab',
+    '+ first\n  alpha &#x9;beta\n',
+    'alpha',
+    '',
+  ],
+  [
+    'indented callout with authored space',
+    '> [!NOTE]\n>  alpha &#32;beta\n',
+    'alpha',
+    '',
+  ],
+  [
+    'untouched bullet continuation space',
+    '+ alpha beta\n  &#x20;kept\n',
+    'beta',
+    'gamma',
+  ],
+  [
+    'untouched ordered continuation space',
+    '1. alpha beta\n   &#x20;kept\n',
+    'beta',
+    'gamma',
+  ],
+  [
+    'untouched ordered continuation tab',
+    '1. alpha beta\n   &#x9;kept\n',
+    'beta',
+    'gamma',
+  ],
+  [
+    'untouched task continuation space',
+    '- [x] alpha beta\n  &#x20;kept\n',
+    'beta',
+    'gamma',
+  ],
+] as const
+
+for (const ending of ['\n', '\r\n'])
+  for (const [name, body, target, replacement] of indentedEdits)
+    for (const method of ['replaceTextRange', 'replace'] as const)
+      test(`${method} preserves indentation in ${name} (${JSON.stringify(ending)})`, async () => {
+        const root = document.body.appendChild(document.createElement('div'))
+        const editor = await InkKitEditor.mount(root, {
+          changed() {},
+          copy() {},
+          openLink() {},
+        })
+        const source = `__Before__ &amp;\n\n${body}\nAfter&#33;\n`.replaceAll(
+          '\n',
+          ending,
+        )
+        const saved = replacement
+          ? source.replace(target, replacement)
+          : source.replace('alpha ', '&#x20;')
+        try {
+          editor.loadDocument({
+            documentId: 'indentation',
+            generation: 1,
+            format: 'md',
+            text: source,
+          })
+          expect(editor.snapshot()).toMatchObject({
+            text: source,
+            dirty: false,
+          })
+          if (method === 'replace')
+            expect(editor.replace(target, replacement, 1)).toBe(true)
+          else {
+            const snapshot = editor.textSnapshot()
+            const from = snapshot.text.indexOf(target)
+            expect(from).toBeGreaterThanOrEqual(0)
+            expect(
+              editor.replaceTextRange(
+                {
+                  snapshotId: snapshot.snapshotId,
+                  from,
+                  to: from + target.length,
+                },
+                replacement,
+              ),
+            ).toBe(true)
+          }
+          expect(editor.snapshot().text).toBe(saved)
+          const readable = editor.textSnapshot().text
+          const copied = await editor.clipboardSnapshot()
+          editor.loadDocument({
+            documentId: 'reopened',
+            generation: 2,
+            format: 'md',
+            text: saved,
+          })
+          expect(editor.snapshot()).toMatchObject({ text: saved, dirty: false })
+          expect(editor.textSnapshot().text).toBe(readable)
+          const reopened = await editor.clipboardSnapshot()
+          expect(reopened.text).toBe(copied.text)
+          expect(reopened.html).toBe(copied.html)
+        } finally {
+          await editor.destroy()
+          root.remove()
+        }
+      })
