@@ -217,11 +217,7 @@ export class Suggestions {
     )
       return this.close()
     const typed = view.state.doc.textBetween(session.from, from, '\n', '\ufffc')
-    if (
-      !typed.startsWith(session.prefix) ||
-      /[\n\r\ufffc]/.test(typed) ||
-      typed.includes(']]')
-    )
+    if (!typed.startsWith(session.prefix) || /[\n\r\ufffc]/.test(typed))
       return this.close()
     if (session.valid && !session.valid(view)) return this.close()
     const query = typed.slice(session.prefix.length)

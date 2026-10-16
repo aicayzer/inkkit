@@ -932,3 +932,19 @@ for (const ending of ['\n', '\r\n']) {
     })
   }
 }
+
+test('closing brackets remain ordinary text in a slash command filter', async ({
+  page,
+}) => {
+  await mount(page, '', {}, 'md', {
+    name: 'Bracket ]]',
+    keywords: [],
+    markdown: 'Chosen',
+  })
+  await page.keyboard.type('/bracket ]]')
+  await expect(option(page, 'Bracket ]]')).toBeVisible()
+  await page.keyboard.press('Enter')
+  await expectSaved(page, 'Chosen\n')
+  await page.keyboard.press('ControlOrMeta+z')
+  await expectSaved(page, '')
+})
