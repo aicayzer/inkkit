@@ -213,7 +213,18 @@ export function codeControlsPlugin(
                       const outside = (event: Event) => {
                         if (!wrapper.contains(event.target as Node)) close()
                       }
-                      const scroll = () => close()
+                      const scroll = (event: Event) => {
+                        if (popup?.contains(event.target as Node)) return
+                        // A scroll queued before opening can arrive afterwards.
+                        const current = button.getBoundingClientRect()
+                        if (
+                          current.top !== bounds.top ||
+                          current.left !== bounds.left ||
+                          current.bottom !== bounds.bottom ||
+                          current.right !== bounds.right
+                        )
+                          close()
+                      }
                       document.addEventListener('pointerdown', outside, true)
                       window.addEventListener('scroll', scroll, true)
                       restore = () => {
@@ -226,7 +237,7 @@ export function codeControlsPlugin(
                       }
                       button.setAttribute('aria-expanded', 'true')
                       render()
-                      search.focus()
+                      search.focus({ preventScroll: true })
                     })
                     ;(
                       wrapper as HTMLElement & { cleanup?: () => void }

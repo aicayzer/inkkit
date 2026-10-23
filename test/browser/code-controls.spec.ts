@@ -114,3 +114,37 @@ test('choosing the current Auto language restores the code caret for typing', as
   )
   expect((await observe(page)).diagnostics).toEqual([])
 })
+
+test('language menu survives queued scrolls and list scrolling but closes when its anchor moves', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await page.addStyleTag({ content: 'body { min-height: 2000px }' })
+  await operation(page, 'replaceSource', { text: '```js\nconst x = 1\n```\n' })
+  const language = page.getByRole('button', {
+    name: 'Code language',
+    exact: true,
+  })
+  await language.click()
+  const menu = page.getByRole('dialog', { name: 'Code language' })
+  await expect(menu).toBeVisible()
+  await page.evaluate(() => document.dispatchEvent(new Event('scroll')))
+  await expect(menu).toBeVisible()
+  const list = menu.locator('.inkkit-code-language-list')
+  const scrolled = await list.evaluate(
+    (element) =>
+      new Promise<number>((resolve) => {
+        element.addEventListener(
+          'scroll',
+          () => requestAnimationFrame(() => resolve(element.scrollTop)),
+          { once: true },
+        )
+        element.scrollTop = element.scrollHeight
+      }),
+  )
+  expect(scrolled).toBeGreaterThan(0)
+  await expect(menu).toBeVisible()
+  await page.evaluate(() => window.scrollBy(0, 50))
+  await expect(menu).toHaveCount(0)
+})
