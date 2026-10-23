@@ -47,8 +47,13 @@ async function open(
     (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
     text,
   )
-  // By tag, so the wait does not depend on the classes under test.
-  await expect(page.locator('.inkkit-root pre button')).toHaveCount(1)
+  // By role, so the wait does not depend on the classes under test.
+  await expect(
+    page.locator('.inkkit-root pre').getByRole('button', {
+      name: 'Copy',
+      exact: true,
+    }),
+  ).toHaveCount(1)
   await expect(page.locator('.inkkit-root img')).not.toHaveCount(0)
   await expect(page.locator('.inkkit-root td')).not.toHaveCount(0)
 }
