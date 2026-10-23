@@ -84,6 +84,9 @@ function containsUnsupported(
 }
 
 function containsUnresolved(node: Nodes, source: string): boolean {
+  // Brackets inside a parsed link are label or URL text, not unresolved
+  // reference syntax. In particular an angle URL may contain square brackets.
+  if (node.type === 'link') return false
   if (node.type === 'text') {
     const start = node.position?.start.offset
     const end = node.position?.end.offset

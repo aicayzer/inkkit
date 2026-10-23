@@ -1,5 +1,11 @@
 // The marker places input without typing container syntax or changing other blocks.
 export const angleAutolinkCases = [
+  [
+    'a bracketed path',
+    'x\n',
+    '<https://example.com/a[b]>',
+    '<https://example.com/a[b]>\n',
+  ],
   ['a URL', 'x\n', '<https://x.com>', '<https://x.com>\n'],
   // A www address has no URI scheme, so CommonMark does not read it as an angle autolink.
   ['a www address', 'x\n', '<www.x.com>', '<[www.x.com](http://www.x.com)>\n'],

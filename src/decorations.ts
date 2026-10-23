@@ -13,16 +13,17 @@ const doneIcon =
 function copyButton(
   onCopy: (text: string) => void,
   label: string,
+  text: () => string,
 ): HTMLElement {
   const button = document.createElement('button')
   button.type = 'button'
+  button.tabIndex = 0
   button.className = 'inkkit-copy'
   button.setAttribute('aria-label', label)
   button.innerHTML = copyIcon
   button.addEventListener('mousedown', (event) => event.preventDefault())
   button.addEventListener('click', () => {
-    const code = button.closest('pre')?.querySelector('code')
-    onCopy(code?.textContent ?? '')
+    onCopy(text())
     button.dataset.copied = ''
     button.innerHTML = doneIcon
     window.setTimeout(() => {
@@ -46,7 +47,13 @@ export function codeCopyPlugin(onCopy: (text: string) => void) {
               widgets.push(
                 Decoration.widget(
                   pos + 1,
-                  () => copyButton(onCopy, editorLabels(ctx).copyCode),
+                  (view, getPos) =>
+                    copyButton(onCopy, editorLabels(ctx).copyCode, () => {
+                      const at = getPos()
+                      return at == null
+                        ? ''
+                        : (view.state.doc.nodeAt(at - 1)?.textContent ?? '')
+                    }),
                   {
                     side: -1,
                     key: 'copy',

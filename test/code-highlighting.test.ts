@@ -13,7 +13,11 @@ import type { DecorationSet, EditorView } from '@milkdown/kit/prose/view'
 import { common } from 'lowlight'
 import type { RootContent } from 'hast'
 import { dialect, stringifyOptions } from '../src/dialect'
-import { highlightLimit, highlightPlugin } from '../src/highlight'
+import {
+  autoHighlightLimit,
+  highlightLimit,
+  highlightPlugin,
+} from '../src/highlight'
 
 const calls = vi.hoisted(() => ({ count: 0 }))
 
@@ -46,7 +50,8 @@ function expected(doc: ProseNode): Span[] {
   doc.descendants((node, pos) => {
     if (node.type.name !== 'code_block') return true
     const language = String(node.attrs.language ?? '').toLowerCase()
-    if (!language || !reference.registered(language)) return false
+    if (language && !reference.registered(language)) return false
+    if (!language && node.textContent.length > autoHighlightLimit) return false
     if (node.textContent.length > highlightLimit) return false
     let offset = pos + 1
     const walk = (children: RootContent[], classes: string[]) => {
@@ -65,7 +70,13 @@ function expected(doc: ProseNode): Span[] {
         }
       }
     }
-    walk(reference.highlight(language, node.textContent).children, [])
+    walk(
+      (language
+        ? reference.highlight(language, node.textContent)
+        : reference.highlightAuto(node.textContent)
+      ).children,
+      [],
+    )
     return false
   })
   return found

@@ -10,6 +10,26 @@ export interface WrapCase {
 
 export const wrapCases: WrapCase[] = [
   {
+    name: 'a URL beside duplicate casefolded reference definitions',
+    source:
+      'see https://x.com now [R]\n\n[r]: https://first.example\n[R]: https://second.example\n',
+    address: 'https://x.com',
+    expected:
+      'see <https://x.com> now [R]\n\n[r]: https://first.example\n[R]: https://second.example\n',
+  },
+  {
+    name: 'a URL beside a reference link',
+    source: 'see https://x.com now [r]\n\n[r]: https://r.example\n',
+    address: 'https://x.com',
+    expected: 'see <https://x.com> now [r]\n\n[r]: https://r.example\n',
+  },
+  {
+    name: 'an emphasised URL',
+    source: 'see *https://x.com* now\n',
+    address: 'https://x.com',
+    expected: 'see *<https://x.com>* now\n',
+  },
+  {
     name: 'a URL with text after it',
     source: 'see https://x.com now\n',
     address: 'https://x.com',
