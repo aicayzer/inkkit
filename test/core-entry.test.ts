@@ -53,7 +53,9 @@ test('diagram source stays editable and preserved without previews or errors', a
   await run(async (editor, root, ctx) => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(root.querySelector('.inkkit-mermaid-preview')).toBeNull()
-    expect(root.querySelector('pre code')?.textContent).toBe(diagram)
+    const code = root.querySelector('pre code')!.cloneNode(true) as HTMLElement
+    code.querySelector('.inkkit-code-controls')?.remove()
+    expect(code.textContent).toBe(diagram)
     expect(editor.snapshot().text).toBe(text)
     const view = ctx.get(editorViewCtx)
     let end = 0
@@ -89,8 +91,7 @@ test('copy keeps readable diagram source and reports why it is unavailable', asy
         .querySelector('code')?.textContent,
     ).toBe(diagram)
     expect(clip.images).toEqual([])
-    expect(clip.text).toContain('Before')
-    expect(clip.text).toContain('After')
+    expect(clip.text).toBe(`Before\n\n${diagram}\n\nAfter`)
     expect(loaded.count).toBe(0)
   }, errors)
   // The host left diagrams out, so a missing rendering is not an error.
