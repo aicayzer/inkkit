@@ -41,6 +41,10 @@ Plain-text paste keeps Markdown formatting characters visible, including those a
 
 Shift+Enter inserts a hard line break within a paragraph. In paragraphs and setext headings, a trailing break remains pending in the editor until content follows and is omitted from saved Markdown in the meantime. Tables and ATX headings save line breaks as `<br />`. A break directly before an inline HTML comment also uses `<br />`. Shift+Enter inside a literal Markdown block does nothing. See [preservation](preservation.md) for saving and Undo behavior.
 
+## Code language controls
+
+Code blocks offer a searchable language selector. `Auto` detects a language for highlighting short blocks without writing that choice to Markdown; `Plain text` disables highlighting. Selecting a language changes only the fence language word and preserves code, fence spelling, line endings and extra metadata. Unknown authored language names remain intact. See [code controls and highlighting limits](api.md#code-highlighting-and-diagram-previews).
+
 ## Mermaid
 
 Fences labelled `mermaid` retain editable source beside an offline preview. Supported types are `flowchart`/`graph`, `sequenceDiagram`, `classDiagram`, `stateDiagram`/`stateDiagram-v2`, `erDiagram` and `pie`, using Mermaid 12.1.0 and the default theme and system fonts. Other types remain editable source with a reported preview failure. Rendering is limited to 30,000 source characters and 500 edges; portable PNGs are bounded to 4096 pixels on either axis.

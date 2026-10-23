@@ -7,6 +7,10 @@ import { $prose } from '@milkdown/kit/utils'
 
 const lowlight = createLowlight(common)
 
+// Trying every grammar is more expensive than an explicit language. Detection
+// is limited to short blocks and remains presentation only.
+export const autoHighlightLimit = 500
+
 // highlight.js takes time that grows with the square of the text for some
 // input in several grammars: one long word in ini or TypeScript, or lines of
 // plain words in C, where the slow match runs on across lines. Neither a line
@@ -23,7 +27,7 @@ export const highlightLimit = 5_000
 export const highlightBudget = 200
 
 // Colors are decorations over the plain text, so the markdown is untouched;
-// a block without a known language stays plain.
+// unknown authored languages stay plain.
 function blockDecorations(
   node: ProseNode,
   pos: number,
@@ -31,7 +35,8 @@ function blockDecorations(
 ): Decoration[] {
   const language = String(node.attrs.language ?? '').toLowerCase()
   const found: Decoration[] = []
-  if (!language || !lowlight.registered(language)) return found
+  if (language && !lowlight.registered(language)) return found
+  if (!language && node.content.size > autoHighlightLimit) return found
   if (node.content.size > highlightLimit || performance.now() > deadline)
     return found
   let offset = pos + 1
@@ -54,7 +59,10 @@ function blockDecorations(
       }
     }
   }
-  walk(lowlight.highlight(language, node.textContent).children, [])
+  const highlighted = language
+    ? lowlight.highlight(language, node.textContent)
+    : lowlight.highlightAuto(node.textContent)
+  walk(highlighted.children, [])
   return found
 }
 

@@ -287,6 +287,10 @@ export interface EditorLabels {
   sourceEditor: string
   placeholder: string
   copyCode: string
+  codeLanguage: string
+  codeLanguageSearch: string
+  codeAuto: string
+  codePlainText: string
   expandCallout: string
   collapseCallout: string
   diagramRendering: string

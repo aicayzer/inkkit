@@ -225,3 +225,12 @@ export function finalCodeEnding(doc: ProseNode): string | undefined {
   }
   return undefined
 }
+
+/** Change only the language word, retaining fence spelling and extra metadata. */
+export function languageFence(value: unknown, language: string): Fence | null {
+  const fence = readFence(value)
+  if (!fence) return null
+  const match = /^(\s*)(\S+)?([\s\S]*)$/.exec(fence.info)!
+  // With no language, keep leading whitespace; metadata starts after its word.
+  return { ...fence, info: match[1]! + language + match[3]! }
+}

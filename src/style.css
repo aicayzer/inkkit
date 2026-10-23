@@ -554,20 +554,6 @@
   padding-top: max(calc(var(--inkkit-font-size, 15px) * 2), 30px);
 }
 
-.inkkit-root .ProseMirror pre[data-language]::before {
-  content: attr(data-language);
-  position: absolute;
-  top: calc(var(--inkkit-font-size, 15px) * 0.533);
-  left: calc(var(--inkkit-font-size, 15px) * 0.933);
-  font:
-    calc(var(--inkkit-font-size, 15px) * 0.733)/1 -apple-system,
-    system-ui,
-    sans-serif;
-  color: var(--_inkkit-muted);
-  text-transform: lowercase;
-  user-select: none;
-}
-
 .inkkit-root .ProseMirror pre .inkkit-copy {
   position: absolute;
   top: 6px;
@@ -582,7 +568,7 @@
   padding: 0;
   border: 0;
   border-radius: 6px;
-  background: color-mix(in srgb, CanvasText 10%, transparent);
+  background: transparent;
   color: var(--_inkkit-muted);
   cursor: pointer;
   opacity: 0;
@@ -591,11 +577,13 @@
 }
 
 .inkkit-root .ProseMirror pre:hover .inkkit-copy,
+.inkkit-root .ProseMirror pre:focus-within .inkkit-copy,
 .inkkit-root .ProseMirror pre .inkkit-copy[data-copied] {
   opacity: 1;
 }
 
 .inkkit-root .ProseMirror pre .inkkit-copy:hover {
+  background: color-mix(in srgb, CanvasText 10%, transparent);
   color: var(--_inkkit-text);
 }
 
@@ -896,7 +884,8 @@
   .inkkit-root .inkkit-comment,
   .inkkit-root [data-inkkit-callout-toggle],
   .inkkit-root .ProseMirror pre .inkkit-copy,
-  .inkkit-root .inkkit-table-controls {
+  .inkkit-root .inkkit-table-controls,
+  .inkkit-root .inkkit-code-controls {
     display: none !important;
   }
 
@@ -1000,4 +989,86 @@
   height: 1px;
   clip-path: inset(50%);
   overflow: hidden;
+}
+
+.inkkit-root .inkkit-code-controls {
+  position: absolute;
+  top: 6px;
+  right: 38px;
+  font:
+    11px/1.4 -apple-system,
+    system-ui,
+    sans-serif;
+  white-space: normal;
+  user-select: none;
+}
+.inkkit-root .inkkit-code-language {
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--_inkkit-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.inkkit-root .inkkit-code-language::after {
+  content: '⌄';
+  margin-left: 5px;
+}
+.inkkit-root .inkkit-code-language:hover {
+  background: color-mix(in srgb, CanvasText 7%, transparent);
+}
+.inkkit-root .inkkit-code-language:focus-visible,
+.inkkit-root .inkkit-copy:focus-visible {
+  outline: 2px solid var(--_inkkit-accent);
+  outline-offset: 1px;
+}
+.inkkit-root .inkkit-code-language-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  max-height: min(320px, 50vh);
+  padding: 5px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, CanvasText 15%, transparent);
+  border-radius: 8px;
+  background: Canvas;
+  color: CanvasText;
+  box-shadow: 0 6px 20px #0002;
+}
+.inkkit-root .inkkit-code-language-menu input {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  padding: 7px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.inkkit-root .inkkit-code-language-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-top: 4px;
+}
+.inkkit-root .inkkit-code-language-list button {
+  flex-shrink: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.inkkit-root .inkkit-code-language-list button:hover,
+.inkkit-root .inkkit-code-language-list button:focus-visible,
+.inkkit-root .inkkit-code-language-list button[aria-pressed='true'] {
+  background: color-mix(in srgb, CanvasText 8%, transparent);
 }

@@ -98,10 +98,12 @@ import {
 import { $prose, callCommand, type $UserKeymap } from '@milkdown/kit/utils'
 import { literalEnter, literalReread, literalRereadKey } from './literal-edits'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
+import { codeControlCtx, codeControlsPlugin } from './code-controls'
 import { labelsCtx, defaultLabels } from './labels'
 import { createDialect, serialize, stringifyOptions } from './dialect'
 import { isSafeLinkTarget } from './link-safety'
 import { Preservation } from './preserve'
+import { modeSelectionMap } from './mode-selection'
 import {
   sourceAttribute,
   cleanSourceDoc,
@@ -1967,18 +1969,53 @@ export class InkKitEditor {
     expectOneOf(mode, editingModes, 'mode')
     this.assertCurrent(expectedGeneration)
     if (this.formatType === 'txt' || this.mode === mode) return false
+    const wasSource = this.literalSurface
+    const view = this.editor.ctx.get(editorViewCtx)
+    const focused = wasSource
+      ? this.plain.ownerDocument.activeElement === this.plain
+      : view.hasFocus()
+    const container = this.viewportContainer ?? this.root
+    const previousSurface = wasSource ? this.plain : container
+    const fraction =
+      previousSurface.scrollTop /
+      Math.max(1, previousSurface.scrollHeight - previousSurface.clientHeight)
+    const left = previousSurface.scrollLeft
+    const sourceSelection = wasSource
+      ? {
+          anchor:
+            this.plain.selectionDirection === 'backward'
+              ? this.plain.selectionEnd
+              : this.plain.selectionStart,
+          head:
+            this.plain.selectionDirection === 'backward'
+              ? this.plain.selectionStart
+              : this.plain.selectionEnd,
+        }
+      : undefined
     this.settleSource()
     // Source steps that were undone cannot be redone from the other mode.
     this.undoneSteps = []
     this.formattedUndone = 0
-    const view = this.editor.ctx.get(editorViewCtx)
-    const focused = this.literalSurface
-      ? this.plain.ownerDocument.activeElement === this.plain
-      : view.hasFocus()
-    const container = this.viewportContainer ?? this.root
-    const top = container.scrollTop,
-      left = container.scrollLeft
     const text = this.snapshot().text
+    const mapping = modeSelectionMap(this.editor.ctx, text, view.state.doc)
+    const anchor = sourceSelection
+      ? mapping.formatted(rawOffset(text, sourceSelection.anchor))
+      : normalizedOffset(
+          text,
+          mapping.source(
+            view.state.selection.anchor,
+            view.state.selection.anchor < view.state.selection.head ? 1 : -1,
+          ),
+        )
+    const head = sourceSelection
+      ? mapping.formatted(rawOffset(text, sourceSelection.head))
+      : normalizedOffset(
+          text,
+          mapping.source(
+            view.state.selection.head,
+            view.state.selection.head < view.state.selection.anchor ? 1 : -1,
+          ),
+        )
     this.mode = mode
     this.session.modeChanged()
     this.cancelExports()
@@ -1987,8 +2024,24 @@ export class InkKitEditor {
     if (mode === 'source') {
       this.plain.value = text
       this.plain.setSelectionRange(
-        this.plain.value.length,
-        this.plain.value.length,
+        Math.min(anchor, head),
+        Math.max(anchor, head),
+        anchor > head ? 'backward' : 'forward',
+      )
+    } else {
+      view.dispatch(
+        view.state.tr
+          .setSelection(
+            TextSelection.between(
+              view.state.doc.resolve(
+                Math.min(anchor, view.state.doc.content.size),
+              ),
+              view.state.doc.resolve(
+                Math.min(head, view.state.doc.content.size),
+              ),
+            ),
+          )
+          .setMeta('addToHistory', false),
       )
     }
     const suppressed = this.reportingSuppressed
@@ -1998,12 +2051,15 @@ export class InkKitEditor {
     } finally {
       this.reportingSuppressed = suppressed
     }
+    const surface = this.literalSurface ? this.plain : container
+    surface.scrollTop =
+      fraction * Math.max(0, surface.scrollHeight - surface.clientHeight)
+    surface.scrollLeft = left
     if (focused) {
       if (this.literalSurface) this.plain.focus({ preventScroll: true })
-      else view.focus()
+      else view.dom.focus({ preventScroll: true })
+      this.revealCurrentSelection()
     }
-    container.scrollTop = top
-    container.scrollLeft = left
     this.publishCommandState()
     return true
   }
@@ -2800,6 +2856,16 @@ export class InkKitEditor {
           ...defaultLabels,
           ...options.labels,
         }))
+        ctx.set(codeControlCtx.key, (operation) =>
+          instance.forPerson(
+            () =>
+              instance.facadeCall(() => {
+                instance.assertMutation()
+                return !instance.literalSurface && operation()
+              }),
+            false,
+          ),
+        )
         ctx.set(tableControlCtx.key, (operation) =>
           instance.forPerson(
             () =>
@@ -2909,6 +2975,8 @@ export class InkKitEditor {
           Boolean(options.files),
         ),
       )
+      .use(codeControlCtx)
+      .use(codeControlsPlugin(() => instance.viewport().rect))
       .use(tablePlugins)
       .use(tableBlock)
       .use(instance.changePlugin)

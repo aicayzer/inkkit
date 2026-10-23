@@ -266,3 +266,16 @@ On an M4 Pro MacBook Pro under load from other work, in headless Chromium 156 an
 | `main` at `f96dbe6`     | 140 / 160 |  1.14 | 117 / 144 |  1.23 |
 
 A CPU profile of the paste in a 5,000-paragraph note shows the same validation work as in a 500-paragraph note: about 100 ms under `assertPreserved`, parsing and writing the 500 pasted paragraphs and the blocks beside them. Validating the whole note on each paste, tried on `main` by serializing the note again after each paste, costs 1,271 ms against 260 ms in WebKit and 1,138 ms against 302 ms in Chromium (fastest of five), which is about what loading the 5,000-paragraph note costs (1,100 and 900 ms). Each of five runs of the browser test now times a paste into the 500-paragraph note, a load of the 5,000-paragraph note and a paste into it, one after the other, and the best run must show an extra cost of the long paste below 0.4 times that load plus 100 ms. A runner that slows down part way slows all three together. With the whole-note serialization added, the best run's extra cost is 592 ms above 0.4 times its load in WebKit and 491 ms in Chromium, against the 100 ms allowed. With Chromium slowed eight times after the first long load, unchanged code is 2,988 ms below 0.4 times the load. A unit test counts the characters preservation reads for a plain-text paste into a 5,000-paragraph note, as it does for Markdown paste.
+
+### Automatic code language detection
+
+`node scripts/benchmark-code-auto.mjs` compares explicit JavaScript highlighting with automatic detection across the 37 bundled common grammars. On 23 October 2026, aic-atlas (Apple M4) produced these medians in milliseconds for 500-character inputs after five warm-up iterations and 20 measured iterations:
+
+| Input                            | Explicit JavaScript |  Auto |
+| -------------------------------- | ------------------: | ----: |
+| Repeated JavaScript with Unicode |               0.166 | 2.175 |
+| Ordinary plain words             |               0.018 | 4.199 |
+| One long word                    |               0.292 | 6.355 |
+| Repeated punctuation             |               0.030 | 1.726 |
+
+This measures lowlight in Node.js, not browser interaction latency. Automatic detection has a separate 500-character limit because trying every grammar costs more than an explicit language. It shares the existing 200 ms transaction budget; blocks beyond either limit stay plain. No detected language is written to the document.

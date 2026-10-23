@@ -16,6 +16,7 @@ import { serialize } from './dialect'
 import { semanticSignature } from './preserve'
 import type { LinkForm } from './link-form'
 import { isWrittenEdit } from './comments'
+import { normaliseLabel, referenceDefinitions } from './references'
 
 interface Character {
   pos: number
@@ -229,7 +230,8 @@ function completedAngle(
       !char ||
       char.marks.some((mark) => mark.type.spec.code) ||
       (char.link && char.form !== 'literal') ||
-      !sameMarks(char.marks, closing.marks) ||
+      // Wrapping an existing formatted URL can insert `<` outside its marks.
+      (char.text !== '<' && !sameMarks(char.marks, closing.marks)) ||
       /[\s>]/.test(char.text)
     )
       return undefined
@@ -518,8 +520,21 @@ function linked(tr: Transaction, blocks: Block[]): Transaction {
 // the preservation check compares it.
 function readsBack(ctx: Ctx, tr: Transaction, pos: number): boolean {
   const block = tr.doc.nodeAt(pos)!
+  // References elsewhere in the same block need their definitions to reopen.
+  const references = new Set<string>()
+  block.descendants((node) => {
+    for (const mark of node.marks)
+      if (mark.type.name === 'link' && mark.attrs.identifier)
+        references.add(normaliseLabel(String(mark.attrs.identifier)))
+  })
+  const definitions = references.size
+    ? [...referenceDefinitions(tr.doc)]
+        .filter(([identifier]) => references.has(identifier))
+        .map(([, definition]) => definition.node)
+    : []
   const doc = tr.doc.type.create(null, [
     tr.doc.type.schema.nodes.paragraph!.create(null, block.content),
+    ...definitions,
   ])
   const reopened = ctx.get(parserCtx)(serialize(ctx, doc))
   return semanticSignature(reopened) === semanticSignature(doc)
