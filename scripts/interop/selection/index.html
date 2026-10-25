@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>InkKit selection verifier</title>
+    <style>
+      body {
+        margin: 20px;
+        background: white;
+        color: black;
+      }
+      section {
+        height: 180px;
+        margin-bottom: 24px;
+        border: 1px solid #aaa;
+        padding: 16px;
+      }
+      .inkkit-root {
+        --inkkit-selection-background: rgb(255, 0, 0);
+        --inkkit-inactive-selection-background: rgb(0, 0, 255);
+        font: 24px sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <section id="one"></section>
+    <section id="two"></section>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
