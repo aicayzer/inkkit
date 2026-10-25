@@ -67,6 +67,15 @@ const toTable = (raw: string): string =>
     (_match, escapes: string) => `${'\\'.repeat(escapes.length * 2 + 1)}|`,
   )
 
+// GFM removes the table escape before CommonMark reads the image. Unlike
+// named syntax, an existing CommonMark pipe escape already works in both contexts.
+function pathTableForm(raw: string, inTable: boolean): string {
+  if (!inTable) return raw
+  return raw.replace(/(\\*)\|/g, (_match, escapes: string) =>
+    escapes.length % 2 ? escapes + '|' : escapes + '\\|',
+  )
+}
+
 export function parseLinkedSyntax(
   raw: string,
   inTable = false,
@@ -279,15 +288,24 @@ export function setImageWriter(
 function fileSource(node: ProseNode): string {
   if (node.attrs.inkkitFileRaw != null)
     return namedFileMarkdown(node, Boolean(node.attrs.inkkitFileInTable)) ?? ''
+  return (
+    authoredFileSource(node) ??
+    pathTableForm(
+      writers.get(node.type.schema)?.(node) ?? '',
+      Boolean(node.attrs.inkkitFileInTable),
+    )
+  )
+}
+
+/** Only reuse authored spelling while it still describes the image. */
+export function authoredFileSource(node: ProseNode): string | null {
   const authored = node.attrs.inkkitFileSource as AuthoredImage | null
-  if (
-    authored &&
+  return authored &&
     authored.src === node.attrs.src &&
     authored.alt === node.attrs.alt &&
     authored.title === node.attrs.title
-  )
-    return authored.text
-  return writers.get(node.type.schema)?.(node) ?? ''
+    ? authored.text
+    : null
 }
 
 /** Records each path image's Markdown as written, for `FileReference.raw`. */
@@ -295,14 +313,18 @@ export function remarkFileSources() {
   return (tree: Root, file: { value?: unknown }) => {
     // Positions count from after a byte order mark.
     const source = String(file.value ?? '').replace(/^\uFEFF/, '')
-    const visit = (node: Nodes) => {
+    const visit = (node: Nodes, inTable = false) => {
       if (node.type === 'image' && node.inkkitFileRaw == null) {
         const start = node.position?.start.offset
         const end = node.position?.end.offset
         if (start != null && end != null)
           node.inkkitFileSource = source.slice(start, end)
+        node.inkkitFileInTable = inTable
       }
-      if ('children' in node) node.children.forEach(visit)
+      if ('children' in node)
+        node.children.forEach((child) =>
+          visit(child, inTable || node.type === 'tableCell'),
+        )
     }
     visit(tree)
   }
@@ -449,7 +471,13 @@ export const wikiLinkComposition = $prose(
         const seen = new Set<number>()
         for (const [from, to] of ranges)
           state.doc.nodesBetween(from, to, (node, pos) => {
-            if (node.type.name !== 'inkkit_wiki_link' || seen.has(pos)) return
+            if (
+              !['inkkit_wiki_link', 'image', 'image_block'].includes(
+                node.type.name,
+              ) ||
+              seen.has(pos)
+            )
+              return
             seen.add(pos)
             const $pos = state.doc.resolve(pos)
             let inTable = false
@@ -460,12 +488,28 @@ export const wikiLinkComposition = $prose(
                 )
               )
                 inTable = true
-            if (inTable !== Boolean(node.attrs.inTable))
+            if (node.type.name === 'inkkit_wiki_link') {
+              if (inTable !== Boolean(node.attrs.inTable))
+                tr.setNodeMarkup(pos, undefined, {
+                  ...node.attrs,
+                  raw: wikiMarkdown(node, inTable),
+                  inTable,
+                })
+            } else if (inTable !== Boolean(node.attrs.inkkitFileInTable)) {
+              const authored = node.attrs
+                .inkkitFileSource as AuthoredImage | null
               tr.setNodeMarkup(pos, undefined, {
                 ...node.attrs,
-                raw: wikiMarkdown(node, inTable),
-                inTable,
+                inkkitFileRaw: namedFileMarkdown(node, inTable) ?? null,
+                inkkitFileSource: authored
+                  ? {
+                      ...authored,
+                      text: pathTableForm(authored.text, inTable),
+                    }
+                  : null,
+                inkkitFileInTable: inTable,
               })
+            }
           })
         return tr.steps.length ? tr : null
       },
@@ -665,9 +709,14 @@ export function linkedSyntax(wikiLinks: boolean, files: boolean) {
         Boolean(node.inkkitFileInTable),
         state.stack.includes('tableCell'),
       )
+    if (node.inkkitFileSource != null)
+      return pathTableForm(
+        node.inkkitFileSource,
+        state.stack.includes('tableCell'),
+      )
     return defaultHandlers.image(node, parent, state, info)
   }
-  // Standard image handling is installed by CommonMark; wrap it only for authored named tokens.
+  // CommonMark owns generated images; authored tokens retain their spelling.
   return $remark(
     'inkkitLinkedSyntax',
     () =>

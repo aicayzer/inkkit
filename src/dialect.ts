@@ -65,6 +65,7 @@ import {
   wikiLinkSchema,
   namedFileMarkdown,
   fileFields,
+  authoredFileSource,
   remarkFileSources,
   setImageWriter,
 } from './linked-syntax'
@@ -703,7 +704,16 @@ const normalizedImages = imageSchema.extendSchema((base) => (ctx) => {
           node,
           Boolean(node.attrs.inkkitFileInTable),
         )
-        if (raw == null) return schema.toMarkdown.runner(state, node)
+        if (raw == null) {
+          state.addNode('image', undefined, undefined, {
+            url: node.attrs.src,
+            alt: node.attrs.alt,
+            title: node.attrs.title || null,
+            inkkitFileSource: authoredFileSource(node),
+            inkkitFileInTable: node.attrs.inkkitFileInTable,
+          })
+          return
+        }
         state.addNode('image', undefined, undefined, {
           url: node.attrs.src,
           alt: node.attrs.alt,
@@ -895,7 +905,8 @@ export function createDialect(
       },
     })),
     references,
-    wikiLinks ? [wikiLinkSchema, wikiLinkComposition, wikiLinkInputRule] : [],
+    wikiLinks ? [wikiLinkSchema, wikiLinkInputRule] : [],
+    wikiLinks || files ? wikiLinkComposition : [],
     callouts,
     comments,
     hiddenCommentEditing,
