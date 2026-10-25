@@ -28,6 +28,7 @@ import { clipboard } from '@milkdown/kit/plugin/clipboard'
 import { history, historyKeymap } from '@milkdown/kit/plugin/history'
 import {
   closeHistory,
+  redoDepth,
   undo as undoHistory,
   redo as redoHistory,
 } from '@milkdown/kit/prose/history'
@@ -1288,6 +1289,10 @@ export class InkKitEditor {
   // Formatted-history undos taken while source steps were undone, which a
   // redo replays before it reaches those steps.
   private formattedUndone = 0
+  // A source edit invalidates the existing formatted redo tail without
+  // removing earlier undo steps. Only subsequent formatted undos can be redone.
+  private formattedRedoLimit?: number
+  private historyDirection?: 'undo' | 'redo'
   private lastSourceInput = 0
   private syncingSource = false
   private mode: EditingMode = 'formatted'
@@ -1678,6 +1683,8 @@ export class InkKitEditor {
       lastMarkdown: this.lastMarkdown,
       literalMatch: this.literalMatch,
       textScope: this.textScope,
+      formattedRedoLimit: this.formattedRedoLimit,
+      formattedUndone: this.formattedUndone,
     }
   }
 
@@ -1705,6 +1712,8 @@ export class InkKitEditor {
     this.lastMarkdown = before.lastMarkdown
     this.literalMatch = before.literalMatch
     this.textScope = before.textScope
+    this.formattedRedoLimit = before.formattedRedoLimit
+    this.formattedUndone = before.formattedUndone
   }
 
   /** Reports a refused edit to the facade call that made it, or else to `events.error`. */
@@ -1905,7 +1914,9 @@ export class InkKitEditor {
         redo:
           mutable &&
           (this.undoneSteps.length > 0 ||
-            (!this.pendingSource && redoHistory(state))),
+            (!this.pendingSource &&
+              this.formattedRedoLimit !== 0 &&
+              redoHistory(state))),
         insertText: mutable,
         paste: mutable,
         replace: mutable,
@@ -2225,6 +2236,7 @@ export class InkKitEditor {
       !closed &&
       now - this.lastSourceInput <= sourceGroupDelay
     if (previous && !continuing) this.rememberTypedStep(previous)
+    this.formattedRedoLimit = 0
     this.lastSourceInput = now
     this.undoneSteps = []
     this.formattedUndone = 0
@@ -2415,7 +2427,7 @@ export class InkKitEditor {
     const undone =
       (!this.literalSurface &&
         undoSmartPunctuation(view.state, view.dispatch)) ||
-      undoHistory(view.state, view.dispatch)
+      this.stepFormattedHistory('undo')
     if (undone) {
       // Source steps that were undone come back after the formatted ones.
       if (this.literalSurface && this.undoneSteps.length) this.formattedUndone++
@@ -2430,15 +2442,34 @@ export class InkKitEditor {
     const view = this.editor.ctx.get(editorViewCtx)
     if (this.literalSurface) {
       if (this.formattedUndone > 0) {
-        this.formattedUndone--
-        if (redoHistory(view.state, view.dispatch)) return true
+        if (this.formattedRedoLimit !== 0 && redoHistory(view.state)) {
+          const redone = this.stepFormattedHistory('redo')
+          if (redone) this.formattedUndone--
+          return redone
+        }
         this.formattedUndone = 0
       }
       if (this.stepTypedSource('redo')) return true
       // Typing after an undo ended the formatted history's redo steps.
       if (this.pendingSource) return false
     }
-    return redoHistory(view.state, view.dispatch)
+    return this.stepFormattedHistory('redo')
+  }
+
+  private stepFormattedHistory(direction: 'undo' | 'redo'): boolean {
+    if (direction === 'redo' && this.formattedRedoLimit === 0) return false
+    const view = this.editor.ctx.get(editorViewCtx)
+    const before = view.state
+    const previous = this.historyDirection
+    this.historyDirection = direction
+    try {
+      const command = direction === 'undo' ? undoHistory : redoHistory
+      command(before, view.dispatch)
+      // A history command can return true even if dispatch refused its edit.
+      return view.state !== before
+    } finally {
+      this.historyDirection = previous
+    }
   }
 
   private replaceLiteralSelection(
@@ -2809,6 +2840,7 @@ export class InkKitEditor {
     this.typedSteps = []
     this.undoneSteps = []
     this.formattedUndone = 0
+    this.formattedRedoLimit = undefined
     this.cancelExports()
     this.mediaPolicy()
     this.pasteController.destroy()
@@ -3068,6 +3100,22 @@ export class InkKitEditor {
                   ),
                 )
                 return
+              }
+            }
+            if (instance.formattedRedoLimit !== undefined) {
+              const depth = redoDepth(next)
+              if (depth === 0) instance.formattedRedoLimit = undefined
+              else if (next !== this.state) {
+                if (instance.historyDirection === 'undo')
+                  instance.formattedRedoLimit = Math.min(
+                    depth,
+                    instance.formattedRedoLimit + 1,
+                  )
+                else if (instance.historyDirection === 'redo')
+                  instance.formattedRedoLimit = Math.max(
+                    0,
+                    instance.formattedRedoLimit - 1,
+                  )
               }
             }
             this.updateState(next)
@@ -3423,6 +3471,7 @@ export class InkKitEditor {
     this.typedSteps = []
     this.undoneSteps = []
     this.formattedUndone = 0
+    this.formattedRedoLimit = undefined
     this.mode = 'formatted'
     this.plainComposing = false
     this.beforePlainInput = undefined
