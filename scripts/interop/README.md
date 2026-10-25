@@ -168,3 +168,17 @@ The named cases exercise formatted and source modes, selecting text containing h
 Assertions require comment-free external text and HTML, preserved comments after local movement, undo of the paste and removal, and exact save/reopen bytes. Evidence records archive, bundle and host hashes. These disposable fixture checks establish package WKWebView behaviour, not Memos or PadPad integration.
 
 The runner saves and restores all native pasteboard representations, verifies restoration independently and removes private backups only after a byte match. The host also restores its snapshot before exiting normally or reporting an error. Keep results in ignored scratch storage. A rejected native action or empty selection is a failure.
+
+## Native keyboard input
+
+Build the host and a fresh consumer as above, then run the terminal-block regression against that exact archive:
+
+```sh
+node scripts/interop/verify-terminal-blocks.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY
+```
+
+The bounded suite types after public `load` and `replaceSource` calls with terminal dividers, an image, a diagram, an ordinary paragraph, and CRLF/Unicode source. It checks exact snapshots, undo/redo and save/reopen. A separate case types, moves left and deletes forward. It does not touch the clipboard.
+
+The fixture's `nativeInput` operation accepts an explicit macOS `keyCode` (0–127), `characters`, and optional `metaKey`, `shiftKey`, `altKey` and `ctrlKey`. Supply a `keys` array (up to 32 keys) to queue a sequence without per-key waits; the completion wait follows the whole batch. The bridge uses public `NSEvent.keyEvent` and queues key-down/key-up events with `NSApplication.postEvent`, then yields to the AppKit event loop. It requires the key window and a WKWebView first responder. The consumer requires the actual DOM active editor, records trusted keyboard/input events and requires one trusted key-down per requested key. The runner also asserts the resulting document; posting an event alone is not a pass.
+
+These are constructed AppKit events with explicit US keyboard characters. They prove this disposable WKWebView path, not hardware keyboard delivery, IME composition or consumer-app behaviour.
