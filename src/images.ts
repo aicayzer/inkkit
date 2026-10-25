@@ -271,12 +271,12 @@ class ImageView implements NodeView {
         return
       }
       const presentation = state.presentation
-      if (presentation.kind === 'missing' || presentation.kind === 'error') {
+      if (presentation.kind === 'missing') {
+        this.card(label, this.runtime.labels.fileMissing, true)
+      } else if (presentation.kind === 'error') {
         this.card(
           label,
-          presentation.kind === 'missing'
-            ? this.runtime.labels.fileMissing
-            : this.runtime.labels.fileError,
+          presentation.message || this.runtime.labels.fileError,
           true,
         )
       } else if (presentation.kind === 'image') {

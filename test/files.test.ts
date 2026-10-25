@@ -480,6 +480,19 @@ test('missing, failed and undecodable files provide retry without changing autho
   )
 })
 
+test("an error presentation's card shows the adapter's message", async () => {
+  await mounted(
+    { resolve: async () => ({ kind: 'error', message: 'Server offline' }) },
+    async (_editor, root) => {
+      await vi.waitFor(() =>
+        expect(root.querySelector('[role="status"]')?.textContent).toBe(
+          'Server offline',
+        ),
+      )
+    },
+  )
+})
+
 test('reload and source mode abort held requests; late results cannot populate the new view', async () => {
   const requests: {
     context: FileContext

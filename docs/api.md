@@ -835,7 +835,7 @@ InkKit then uses that value on its surfaces, so the host overrides no InkKit sel
 | `tableMoveRow`           | `Move row`                  | The table controls: the handle that moves a row.                                                                  |
 | `fileLoading`            | `Loading file…`             | The status of a file card while its adapter is resolving it.                                                      |
 | `fileMissing`            | `File unavailable`          | A file card whose adapter reports it missing.                                                                     |
-| `fileError`              | `File could not be loaded`  | A file card whose adapter reports an error.                                                                       |
+| `fileError`              | `File could not be loaded`  | A file card whose adapter fails, or reports an error with an empty `message`.                                     |
 | `fileRetry`              | `Retry`                     | The button on a card that is loading, failed, missing or in error. It asks the adapter to resolve the file again. |
 | `fileOpen`               | `Open`                      | The name and tooltip of the Open button on file cards. The button appears only when `FileAdapter.open` is set.    |
 | `filePreviewUnavailable` | `Preview unavailable`       | The status of a card whose image, audio, video or PDF preview failed to load.                                     |
@@ -959,12 +959,12 @@ In a path, the fragment starts at the first `#`, so a `#` that belongs to a file
 
 `resolve` returns a `FilePresentation`, one of these shapes:
 
-| `kind`                           | Other fields                                         | The card shows                                                 |
-| -------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------- |
-| `image`, `audio`, `video`, `pdf` | `url: string`, `label?: string`, `mimeType?: string` | The resource at `url` with the file's name.                    |
-| `file`                           | `label?: string`                                     | A descriptive card with no preview.                            |
-| `missing`                        | `label?: string`                                     | A card that uses the `fileMissing` label.                      |
-| `error`                          | `message: string`, `label?: string`                  | A card that uses the `fileError` label. `message` is required. |
+| `kind`                           | Other fields                                         | The card shows                                                                                                           |
+| -------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `image`, `audio`, `video`, `pdf` | `url: string`, `label?: string`, `mimeType?: string` | The resource at `url` with the file's name.                                                                              |
+| `file`                           | `label?: string`                                     | A descriptive card with no preview.                                                                                      |
+| `missing`                        | `label?: string`                                     | A card that uses the `fileMissing` label.                                                                                |
+| `error`                          | `message: string`, `label?: string`                  | A card whose status is `message`, a short reason written for the person. An empty `message` shows the `fileError` label. |
 
 The `url` is private and must serve the declared kind in the host's offline web view. A `mimeType` must match the kind. An unknown kind, an executable URL scheme, a data URL whose type doesn't match the kind, or a missing `url` or `message` makes the presentation invalid, and InkKit reports `file-unavailable` through `events.error`. The adapter owns the URL's lifetime, byte validation, access checks and fragment mapping, including media `#t=` or PDF `#page=`. InkKit keeps the authored fragments without interpreting storage paths or creating a network fallback.
 
