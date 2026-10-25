@@ -546,6 +546,8 @@ const imageWriter: MilkdownPlugin = (ctx) => async () => {
   await ctx.wait(SerializerReady)
   const schema = ctx.get(schemaCtx)
   setImageWriter(schema, (node) => {
+    // Reference raw is the image token; enclosing marks belong to the document.
+    node = node.mark([])
     const block = node.isBlock
       ? node
       : schema.nodes.paragraph!.create(null, node)

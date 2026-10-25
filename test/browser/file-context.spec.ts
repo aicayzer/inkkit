@@ -134,3 +134,136 @@ test('file raw follows saved table spelling before and after reopen', async ({
     expect(r.errors).toEqual([])
   }
 })
+
+for (const wrapper of ['strong', 'link'])
+  test(`resizing a ${wrapper}-wrapped image keeps token raw stable`, async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await page.waitForFunction(() => Boolean(window.inkkitPlayground))
+    const result = await page.evaluate(
+      async ({ moduleUrl, wrapper }) => {
+        const { InkKitEditor } = await import(moduleUrl)
+        const token = '![alt](a.png)'
+        const resized = '![alt|101](a.png)'
+        const wrap = (s: string) =>
+          wrapper === 'strong' ? `**${s}**` : `[${s}](https://example.com)`
+        const source = `Before _kept_.\r\n\r\n${wrap(token)}\r\n\r\nAfter.\r\n`
+        const root = document.createElement('div')
+        document.body.append(root)
+        const calls: string[][] = []
+        const errors: string[] = []
+        const editor = await InkKitEditor.mount(
+          root,
+          {
+            changed() {},
+            error(e: any) {
+              errors.push(e.code)
+            },
+          },
+          {
+            files: {
+              async resolve(r: any) {
+                calls.push(['resolve', r.raw])
+                return {
+                  kind: 'image',
+                  url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+                }
+              },
+              open(r: any) {
+                calls.push(['open', r.raw])
+              },
+              contextMenu(r: any) {
+                calls.push(['context', r.raw])
+              },
+              async exportImage(r: any) {
+                calls.push(['export', r.raw])
+                return {
+                  bytes: new Uint8Array([71, 73, 70, 56, 57, 97]),
+                  mimeType: 'image/gif',
+                }
+              },
+            },
+          },
+        )
+        const settle = () => new Promise((r) => setTimeout(r, 30))
+        editor.loadDocument({
+          documentId: 'a',
+          generation: 1,
+          format: 'md',
+          text: source,
+        })
+        await settle()
+        calls.splice(0)
+        const handle = root.querySelector('.inkkit-image-handle')!
+        for (const [type, clientX] of [
+          ['pointerdown', 0],
+          ['pointermove', 100],
+          ['pointerup', 100],
+        ] as const)
+          handle.dispatchEvent(
+            new PointerEvent(type, { clientX, pointerId: 1, bubbles: true }),
+          )
+        await settle()
+        const saved = editor.snapshot().text
+        const actions = async () => {
+          root
+            .querySelector<HTMLButtonElement>('button[aria-label^=Open]')!
+            .click()
+          root
+            .querySelector('.inkkit-file')!
+            .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+          await editor.clipboardSnapshot('document')
+        }
+        await actions()
+        const before = calls.splice(0)
+        const undone = editor.undo()
+        const undoText = editor.snapshot().text
+        const redone = editor.redo()
+        const redoText = editor.snapshot().text
+        await settle()
+        calls.splice(0)
+        editor.loadDocument({
+          documentId: 'b',
+          generation: 2,
+          format: 'md',
+          text: saved,
+        })
+        await settle()
+        await actions()
+        const after = calls.splice(0)
+        await editor.destroy()
+        root.remove()
+        return {
+          source,
+          expected: source.replace(token, resized),
+          resized,
+          saved,
+          before,
+          after,
+          undone,
+          undoText,
+          redone,
+          redoText,
+          errors,
+        }
+      },
+      { moduleUrl, wrapper },
+    )
+    expect(result.saved).toBe(result.expected)
+    expect(result.undone).toBe(true)
+    expect(result.undoText).toBe(result.source)
+    expect(result.redone).toBe(true)
+    expect(result.redoText).toBe(result.saved)
+    for (const calls of [result.before, result.after]) {
+      expect(calls.map((c) => c[0])).toEqual([
+        'resolve',
+        'open',
+        'context',
+        'resolve',
+        'export',
+      ])
+      expect(calls.every((c) => c[1] === result.resized)).toBe(true)
+    }
+    expect(result.errors).toEqual([])
+  })
