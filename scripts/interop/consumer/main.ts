@@ -607,7 +607,15 @@ window.interop = {
           case 'nativeInput': {
             const bridge = window.webkit?.messageHandlers?.nativeInput
             if (!bridge) throw Error('Native input bridge is unavailable')
-            editor.focus()
+            let findStarted: number | null = null
+            if (operation.find !== undefined) {
+              findStarted = performance.now()
+              for (let count = 0; count < (operation.findCount ?? 1); count++)
+                if (!editor.find(operation.find))
+                  throw Error('Native input find failed')
+            }
+            if (operation.focus !== false || operation.find !== undefined)
+              editor.focus()
             const target = activeEditor()
             if (document.activeElement !== target)
               throw Error('Editor is not the DOM active element')
@@ -618,6 +626,11 @@ window.interop = {
                 key: event.key,
                 trusted: event.isTrusted,
                 inputType: event.inputType ?? null,
+                elapsedFromFind:
+                  findStarted === null ? null : performance.now() - findStarted,
+                selection: selectedText(),
+                collapsed: getSelection()?.isCollapsed ?? null,
+                anchorOffset: getSelection()?.anchorOffset ?? null,
               })
             for (const type of ['keydown', 'keyup', 'beforeinput', 'input'])
               target.addEventListener(type, observe)
