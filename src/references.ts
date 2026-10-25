@@ -226,6 +226,9 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
   const schema = base(ctx)
   return {
     ...schema,
+    // Authored links end at their boundary; bare addresses are extended by
+    // autolinkLiterals after reading the newly typed text.
+    inclusive: false,
     // Label formatting belongs inside a reference, where its source determines the identifier.
     priority: 40,
     attrs: {

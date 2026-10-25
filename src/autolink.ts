@@ -10,7 +10,6 @@ import {
   TextSelection,
   type Transaction,
 } from '@milkdown/kit/prose/state'
-import { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { serialize } from './dialect'
 import { semanticSignature } from './preserve'
@@ -255,34 +254,6 @@ function completedAngle(
       tr.doc.type.schema.marks.link!.create({ href, form: 'angle' }),
     )
     .removeStoredMark(tr.doc.type.schema.marks.link!)
-}
-
-// Angle delimiters close a link. ProseMirror's shared link mark is inclusive
-// for explicit links, so remove an inherited angle mark from boundary input.
-function closeAngleEnds(tr: Transaction, transactions: readonly Transaction[]) {
-  const steps = transactions.flatMap((transaction) =>
-    transaction.steps.map((step, index) => ({
-      doc: transaction.docs[index]!,
-      map: step.getMap(),
-    })),
-  )
-  steps.forEach(({ doc, map }, index) => {
-    const remaining = new Mapping(steps.slice(index + 1).map(({ map }) => map))
-    map.forEach((from, to, start, end) => {
-      if (from !== to || start === end) return
-      const at = doc.resolve(from)
-      const before = at.nodeBefore?.marks.find(
-        (mark) => mark.attrs.form === 'angle',
-      )
-      const after = at.nodeAfter?.marks.find(
-        (mark) => mark.attrs.form === 'angle',
-      )
-      if (before && after && before.eq(after)) return
-      for (const mark of [before, after])
-        if (mark)
-          tr.removeMark(remaining.map(start, 1), remaining.map(end, -1), mark)
-    })
-  })
 }
 
 // A code input rule can wrap a completed angle link. Restore its literal
@@ -617,8 +588,51 @@ export const autolinkLiterals = $prose(
         if (!transactions.some((tr) => tr.docChanged)) return null
         const base = newState.tr
         const written = transactions.every(isWrittenEdit)
+        // ProseMirror clears stored marks after inserting text. Keep a link
+        // explicitly chosen at a caret active across successive keystrokes;
+        // inherited links still stop at their boundary.
+        const explicit = oldState.storedMarks?.find(
+          (mark) => mark.type.name === 'link',
+        )
+        if (
+          written &&
+          explicit &&
+          oldState.selection.empty &&
+          newState.selection.empty &&
+          newState.selection.$from.nodeBefore?.marks.some((mark) =>
+            mark.eq(explicit),
+          ) &&
+          transactions.every((transaction) =>
+            transaction.steps.every((step) => {
+              const change = step.toJSON() as {
+                stepType: string
+                from?: number
+                to?: number
+                slice?: { content?: Array<{ type: string }> }
+              }
+              return (
+                change.stepType === 'replace' &&
+                change.from === oldState.selection.from &&
+                change.from === change.to &&
+                !!change.slice?.content?.length &&
+                change.slice.content.every((node) => node.type === 'text')
+              )
+            }),
+          )
+        ) {
+          const trailing = /\s+$/.exec(
+            newState.selection.$from.nodeBefore?.text ?? '',
+          )?.[0]
+          if (trailing) {
+            const end = newState.selection.from
+            base.removeMark(end - trailing.length, end, explicit)
+            base.setStoredMarks(
+              explicit.type.removeFromSet(oldState.storedMarks!),
+            )
+          } else
+            base.setStoredMarks(newState.storedMarks ?? oldState.storedMarks)
+        }
         if (written) {
-          closeAngleEnds(base, transactions)
           codeAngles(base, editedBlocks(oldState.doc, base.doc))
         }
         let edited = editedBlocks(oldState.doc, base.doc)
@@ -646,13 +660,14 @@ export const autolinkLiterals = $prose(
           const wanted = wantedLinks(ctx, chars, index(from), index(to))
           if (differs(chars, wanted)) blocks.push({ pos, chars, wanted })
         }
-        if (!base.steps.length && !blocks.length) return null
+        if (!base.steps.length && !blocks.length && !base.storedMarksSet)
+          return null
         // Mark steps clear stored marks. Keep the input rule's explicit end
         // to formatting, including an empty set after its closing delimiter.
         const stored = base.storedMarks ?? newState.storedMarks
         const finish = (tr: Transaction) => {
           if (stored) tr.setStoredMarks(stored)
-          if (!tr.steps.length) return null
+          if (!tr.steps.length && !tr.storedMarksSet) return null
           // A document change clears the state that lets Backspace undo an
           // input rule. Only marks changed here, so the rule stays undoable.
           for (const plugin of newState.plugins)
