@@ -67,7 +67,7 @@
       },
       {
         "label": "npm",
-        "icon": "npm",
+        "icon": "/images/npm-n.svg",
         "href": "https://www.npmjs.com/package/@aicayzer/inkkit"
       }
     ]
@@ -80,27 +80,6 @@
       "Import only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. Never import Milkdown or ProseMirror, and never rely on Inkkit's internal classes or markup.",
       "Pass the current generation to every call that takes one. Handle failures by `InkKitError.code`, not by message.",
       "Save only the text of a `snapshot()` call that succeeded. A failed snapshot is not an unchanged document."
-    ]
-  },
-  "footer": {
-    "links": [
-      {
-        "header": "Project",
-        "items": [
-          {
-            "label": "Releases",
-            "href": "https://github.com/aicayzer/inkkit/releases"
-          },
-          {
-            "label": "GitHub",
-            "href": "https://github.com/aicayzer/inkkit"
-          },
-          {
-            "label": "npm",
-            "href": "https://www.npmjs.com/package/@aicayzer/inkkit"
-          }
-        ]
-      }
     ]
   }
 }

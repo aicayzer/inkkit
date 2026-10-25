@@ -1,6 +1,6 @@
 ---
 title: 'Appearance and labels'
-description: 'Style Inkkit with --inkkit-* tokens, match light and dark mode, adjust focus rings and localize the text it draws.'
+description: 'Match your app’s typography, colors and language.'
 ---
 
 Inkkit's styles apply only inside the mounted root, so the rest of your page keeps its own.
@@ -23,7 +23,9 @@ import '@aicayzer/inkkit/style.css'
 }
 ```
 
-Inkkit reads no other custom property, so your own `--accent` or `--text` never changes the editor. Properties that begin `--_inkkit-` are internal. To line up a header you draw outside the root with the writing column, set `--inkkit-column-inset` on an ancestor of both. [Tokens](/reference/appearance#tokens) lists every token and its default.
+Use the public `--inkkit-*` tokens; properties beginning `--_inkkit-` are internal. [Tokens](/reference/appearance#tokens) lists the available settings and defaults.
+
+To align your own header with the writing column, set `--inkkit-column-inset` on an ancestor of both.
 
 ## Match light and dark mode
 
@@ -90,9 +92,13 @@ If a change you need has no token, [open an issue](https://github.com/aicayzer/i
 
 Inkkit gives the editing surfaces accessible names from `formattedEditor`, `sourceEditor` and `plainTextEditor`. Its controls are buttons that the keyboard reaches, with names from labels. File cards, footnote definitions, author comments and preserved Markdown blocks carry roles and names, and the slash and suggestion menus expose a listbox with the selected option announced.
 
+<Accordion title="Known accessibility gaps">
+
 Known gaps are tracked under the [`accessibility` label](https://github.com/aicayzer/inkkit/issues?q=is%3Aissue%20is%3Aopen%20label%3Aaccessibility). These are the ones a host is most likely to work around:
 
 - A read-only editor isn't exposed as read-only ([#161](https://github.com/aicayzer/inkkit/issues/161)).
 - A link can't be opened from the keyboard ([#160](https://github.com/aicayzer/inkkit/issues/160)).
 - Task items don't expose a checkbox or toggle from the keyboard ([#154](https://github.com/aicayzer/inkkit/issues/154)).
 - In light mode, the default accent color on link text and the unchecked task checkbox border fall below WCAG contrast minimums ([#158](https://github.com/aicayzer/inkkit/issues/158)). A darker `--inkkit-accent-color` fixes the link text; the checkbox border has no token.
+
+</Accordion>
