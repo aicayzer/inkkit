@@ -108,6 +108,8 @@ try {
               path: 'text',
               equalsFrom: { name: 'pasted', path: 'text' },
             },
+            { op: 'assert', path: 'error', equals: null },
+            { op: 'assert', path: 'diagnostics', equals: [] },
             { op: 'reopen', name: 'reopened' },
             {
               op: 'assert',
