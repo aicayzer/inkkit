@@ -59,7 +59,6 @@ jobs:
 
   browser:
     needs: changes
-    if: ${{ needs.changes.outputs.editor == 'true' }}
     name: browser (${{ matrix.engine }})
     strategy:
       fail-fast: false
@@ -72,16 +71,24 @@ jobs:
             os: macos-latest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # Keep both required check names present even for documentation-only changes.
     steps:
       - uses: actions/checkout@v4
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - uses: actions/setup-node@v4
+        if: ${{ needs.changes.outputs.editor == 'true' }}
         with:
           node-version: '26'
       - run: npm install --global pnpm@11.0.9
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm install --frozen-lockfile
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: node --test scripts/test-browser.test.mjs
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: node scripts/test-browser.mjs --project=${{ matrix.engine }}
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:
