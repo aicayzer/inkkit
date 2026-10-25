@@ -1,2 +1,3 @@
 patchedDependencies:
+  prosemirror-drop-indicator@0.1.4: patches/prosemirror-drop-indicator@0.1.4.patch
   prosemirror-view@1.42.6: patches/prosemirror-view@1.42.6.patch

@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  prosemirror-drop-indicator@0.1.4: 4afd7e652c59a5f25f8ecc7b74d6370bde7273ee46a28766df1490663f928940
   prosemirror-view@1.42.6: 808819d35255b79fc131ebc4873ab2fbcd47cd8f5bc05cd11e8caab02ecee548
 
 importers:
@@ -95,7 +96,7 @@ importers:
         version: 3.9.9
       prosemirror-drop-indicator:
         specifier: 0.1.4
-        version: 0.1.4
+        version: 0.1.4(patch_hash=4afd7e652c59a5f25f8ecc7b74d6370bde7273ee46a28766df1490663f928940)
       prosemirror-search:
         specifier: ^1.1.1
         version: 1.1.1
@@ -1996,7 +1997,7 @@ snapshots:
       '@milkdown/ctx': 7.22.3
       '@milkdown/prose': 7.22.3
       '@milkdown/utils': 7.22.3
-      prosemirror-drop-indicator: 0.1.4
+      prosemirror-drop-indicator: 0.1.4(patch_hash=4afd7e652c59a5f25f8ecc7b74d6370bde7273ee46a28766df1490663f928940)
     transitivePeerDependencies:
       - supports-color
 
@@ -3345,7 +3346,7 @@ snapshots:
       prosemirror-state: 1.4.4
       prosemirror-transform: 1.12.2
 
-  prosemirror-drop-indicator@0.1.4:
+  prosemirror-drop-indicator@0.1.4(patch_hash=4afd7e652c59a5f25f8ecc7b74d6370bde7273ee46a28766df1490663f928940):
     dependencies:
       '@ocavue/utils': 1.8.0
       prosemirror-model: 1.25.12
