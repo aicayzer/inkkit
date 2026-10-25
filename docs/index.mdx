@@ -1,11 +1,96 @@
 ---
 title: 'Inkkit'
-description: 'A Markdown editor for web pages and offline apps.'
+sidebarTitle: 'Overview'
+description: 'A Markdown editor for web pages and for apps that host a web view.'
 ---
 
-Inkkit provides document editing. Your app provides its interface, files, and storage.
+Inkkit gives your app a formatted editor for Markdown, with a source view when people need it. Your app supplies the interface and storage; Inkkit keeps the document consistent as people edit.
 
-The documentation site is being prepared. For the existing guides, see the
-[repository documentation](https://github.com/aicayzer/inkkit/tree/main/docs).
-Published versions are listed on the
-[releases page](https://github.com/aicayzer/inkkit/releases).
+<div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#111111]">
+  <img
+    className="block dark:hidden m-0"
+    src="/images/editor-light.png"
+    alt="Design review notes in Inkkit, with paragraphs, a list, tasks and a table."
+  />
+  <img
+    className="hidden dark:block m-0"
+    src="/images/editor-dark.png"
+    alt="The same design review notes in Inkkit's dark appearance."
+  />
+</div>
+
+## How it works
+
+Inkkit keeps the Markdown it loaded. If you make no edits, saving returns exactly that text. After an edit, it preserves untouched blocks and checks that the result still reads as the document shown in the editor. If that check fails, the edit is refused and the document stays as it was.
+
+<Columns cols={3}>
+  <Card title="Keep the source" icon="file-text">
+    Load Markdown without normalising the whole file.
+  </Card>
+  <Card title="Edit the document" icon="pencil">
+    Work in formatted or source view, with one undo history.
+  </Card>
+  <Card title="Save checked text" icon="check">
+    Your app takes a snapshot and writes it to storage.
+  </Card>
+</Columns>
+
+See [Preservation](/concepts/preservation) for the guarantee and its limits. Inkkit is built on [Milkdown](https://milkdown.dev) and [ProseMirror](https://prosemirror.net).
+
+## Inkkit and your app
+
+<Columns cols={2}>
+  <Card title="Inkkit handles the document" icon="file-pen-line">
+    <ul>
+      <li>Formatted and source editing, undo and redo</li>
+      <li>Tables, lists, links, images and supported Markdown</li>
+      <li>Code highlighting and offline diagram previews</li>
+      <li>Paste conversion, copy and printable output</li>
+      <li>Preservation checks and structured errors</li>
+    </ul>
+  </Card>
+  <Card title="Your app makes it a product" icon="app-window">
+    <ul>
+      <li>Files, saving, autosave and sync</li>
+      <li>Image and attachment storage</li>
+      <li>Toolbars, menus, search and windows</li>
+      <li>System clipboard, print dialogs and opening links</li>
+      <li>Shortcuts, language and appearance</li>
+    </ul>
+  </Card>
+</Columns>
+
+## When it helps
+
+- Your app stores Markdown files, and people expect them to stay as they wrote them, including files they also edit elsewhere.
+- You want formatted editing without hiding the source. Your app can switch to source mode at any time, and both modes share one undo history.
+- You build your own interface around the editor. Inkkit runs offline from one bundled page and makes no network requests, which suits native apps that host a web view.
+
+## Limitations
+
+- **One editor, one document.** There is no real-time collaboration.
+- **No application interface.** Inkkit draws the document and its inline controls, such as table and image controls, but not a toolbar or menus. It binds no formatting shortcuts until you supply them.
+- **A fixed feature set.** You configure Inkkit through options, adapters, labels and tokens. It doesn't load your own ProseMirror plugins or node types.
+- **No framework components.** Inkkit mounts into a DOM element, so you can use it from React, Vue or any other framework, but you write the small wrapper yourself. The package is ESM only.
+- **Markdown and plain text only.** Inkkit edits Markdown and TXT documents. Syntax it doesn't support, such as math, stays as editable literal text. Right-to-left text isn't supported yet ([#165](https://github.com/aicayzer/inkkit/issues/165)).
+- **Tested engines.** CI tests Chromium and WebKit. Firefox meets the API requirements but isn't tested. Diagram previews make up most of the page size; an entry without them is available. See [Compatibility](/compatibility).
+- **Pre-1.0.** The API can change between minor versions. Pin an exact version and read the [release notes](https://github.com/aicayzer/inkkit/releases).
+
+Inkkit is used in [Memos](https://github.com/aicayzer/memos) and [PadPad](https://github.com/aicayzer/padpad), two Mac apps whose source shows complete web view hosts.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Quickstart" href="/quickstart">
+    Mount an editor, load a document and save it.
+  </Card>
+  <Card title="Documents and saving" href="/concepts/documents">
+    The rules that keep a host from losing or overwriting text.
+  </Card>
+  <Card title="Embed in a web view" href="/guides/web-view">
+    Connect Inkkit to a native app through a JavaScript bridge.
+  </Card>
+  <Card title="Editor reference" href="/reference/editor">
+    Every method, with its results and errors.
+  </Card>
+</Columns>

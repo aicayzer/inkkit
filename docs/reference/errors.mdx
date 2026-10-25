@@ -1,0 +1,95 @@
+---
+title: 'Errors'
+description: 'Every InkKitError code, what it means and what your app should do, where errors arrive, and the warnings that degraded output carries.'
+---
+
+Every failure Inkkit reports is an `InkKitError`. Branch on its `code`; the `message` is for logs. A failed call changes nothing, except after `internal`.
+
+## InkKitError
+
+```ts
+import type { EditorErrorCode } from '@aicayzer/inkkit'
+
+declare class InkKitError extends Error {
+  readonly name: 'InkKitError'
+  readonly code: EditorErrorCode
+  constructor(
+    code: EditorErrorCode,
+    message: string,
+    options?: { cause?: unknown },
+  )
+}
+```
+
+`EditorErrorCode` is the closed list of codes in [error codes](#error-codes). When a failure started outside Inkkit, such as in an adapter, the host clipboard handler or the diagram renderer, the original error is `cause`. There is no separate source field: the code and `cause` say where a failure came from. You can construct an `InkKitError` yourself, for example in a test double.
+
+```ts
+import { InkKitError } from '@aicayzer/inkkit'
+
+declare const generation: number
+declare function writeFile(text: string): Promise<void>
+
+try {
+  await writeFile(editor.snapshot(generation).text)
+} catch (error) {
+  if (!(error instanceof InkKitError)) throw error
+  if (error.code === 'composition' || error.code === 'operation-pending') {
+    // Not saved yet. Save again after the next commandStateChanged.
+  } else {
+    // Not saved. Keep the document open and tell the person.
+    console.error(error.code, error.message)
+  }
+}
+```
+
+## How errors arrive
+
+- **Synchronous members throw; asynchronous members reject.** `mount`, `printableSnapshot`, `clipboardSnapshot`, `paste` and `destroy` never throw, and `destroy` never rejects. A thrown or rejected `InkKitError` means the call changed nothing and sent no `changed` or `commandStateChanged` event for it. See [state checks](/reference/editor#state-checks) for which member checks what, and in which order.
+- **A failure goes to the caller and nowhere else.** When the preservation check refuses an edit that a call such as `insertText`, `format` or `paste` makes, that call throws or rejects with `preservation`, and `events.error` isn't called.
+- **`events.error` receives failures that no call is waiting for**, such as an edit the person makes or a file that fails to resolve. See [failures without a caller](#failures-without-a-caller).
+- **Results describe partial outcomes.** `false` means a call didn't apply. Degraded clipboard and print output describes itself in [warnings](#warnings) and isn't also reported as an error.
+- **Exceptions from your own handlers stay yours.** When `changed`, `commandStateChanged`, `openLink`, `copy` or `error` throws, Inkkit passes the exception to the platform's `reportError()` and carries on. It never becomes an `InkKitError` and never makes a call fail. A `clipboard` handler that throws or rejects is reported as `clipboard-unavailable`.
+
+Any error except `destroyed` and `internal` leaves the editor usable.
+
+## Error codes
+
+| Code                    | Meaning                                                                                                                                                                                                                                                                                                                            | Arrives as                                                                  | What to do                                                                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `not-ready`             | A member that needs a document was called before the first `loadDocument`.                                                                                                                                                                                                                                                         | Thrown or rejected.                                                         | Call `loadDocument` first.                                                                                                                      |
+| `destroyed`             | A member was called after `destroy`. Calling `destroy` again does nothing. Pending asynchronous calls also reject with it.                                                                                                                                                                                                         | Thrown or rejected.                                                         | Stop using the editor. Mount a new one if you need it.                                                                                          |
+| `stale-document`        | The expected generation isn't the loaded one; a text range or heading entry comes from an older snapshot; or the document changed while asynchronous work, such as a copy, print, image import, cut or host slash command, was running.                                                                                            | Thrown or rejected; `events.error` for work the person started.             | Don't retry with the same generation or range. Read the state again and act again if it still applies.                                          |
+| `composition`           | Text composition (IME) is in progress and the call would read or change the document, or change editability or input preferences.                                                                                                                                                                                                  | Thrown or rejected.                                                         | Retry after `commandStateChanged` reports `composing: false`.                                                                                   |
+| `operation-pending`     | An image import is still running.                                                                                                                                                                                                                                                                                                  | Thrown or rejected; `events.error` for a copy or cut.                       | Retry after `commandStateChanged` reports `pending: false`.                                                                                     |
+| `read-only`             | A member that changes the document was called while `editable` is `false`, or the person pressed an editing key.                                                                                                                                                                                                                   | Thrown or rejected; `events.error` for a cut or shortcut.                   | Call `setEditable(true)` first, or disable the control.                                                                                         |
+| `invalid-argument`      | An argument has the wrong type, is out of range, or names something unknown: an option, event, label, shortcut, command, mode, scope or field. It also covers a load whose generation isn't greater than the loaded one, a link destination Inkkit wouldn't open, and a host slash command that returns something other than text. | Thrown or rejected; `events.error` for a slash command.                     | Fix the call. It is a host defect and fails again with the same arguments.                                                                      |
+| `invalid-range`         | A current text range can't be used: an offset is outside the text or splits a surrogate pair, it covers part of an image label, footnote label or callout title, or a replacement crosses an image, a line break, a hidden comment or a block boundary.                                                                            | Thrown.                                                                     | Don't retry the same range. Use a range inside one text block, or source mode for syntax.                                                       |
+| `preservation`          | An edit would save Markdown that doesn't reopen as shown, so it was refused; a load got Markdown it can't keep; or `snapshot`, a copy or a mode switch can't write the current content.                                                                                                                                            | Thrown or rejected by the call; `events.error` for an edit the person made. | Don't retry the same edit or load. After a failed snapshot, don't save, and keep the document open. See [preservation](/concepts/preservation). |
+| `image-unavailable`     | Image bytes can't be obtained: print found an authored image with no adapter or with unreadable bytes; a paste or drop couldn't import an image and inserted a placeholder; or a cut was refused because a selected image can't be copied.                                                                                         | Rejected by `printableSnapshot`; `events.error`.                            | Supply the bytes through the adapter, then retry.                                                                                               |
+| `diagram-unavailable`   | A Mermaid diagram can't be previewed; print can't rasterize a diagram that previewed; or a cut was refused because a selected diagram can't be copied.                                                                                                                                                                             | Rejected by `printableSnapshot`; `events.error`.                            | Nothing; the source is kept. If the page sets a Content Security Policy, allow `blob:` images, which diagram export needs.                      |
+| `file-unavailable`      | A file or wiki link can't be resolved, shown or opened, or a note suggestion request failed.                                                                                                                                                                                                                                       | `events.error`.                                                             | Fix the adapter result. The file card's Retry button asks again. See [adapters](/reference/adapters).                                           |
+| `clipboard-unavailable` | Images or diagrams were copied or cut with no `events.clipboard` handler, or the handler threw or rejected. A cut removes nothing.                                                                                                                                                                                                 | `events.error`.                                                             | Add a `clipboard` handler, or let the person try again once the clipboard can be written.                                                       |
+| `internal`              | An unexpected exception. It is never a designed outcome, except that an error thrown by a host slash command's `action` also arrives as `internal` ([#332](https://github.com/aicayzer/inkkit/issues/332)). The original error is `cause`.                                                                                         | Thrown, rejected or `events.error`.                                         | Report it, keep the document open, and take a fresh `snapshot` before trusting the editor's state.                                              |
+
+## Failures without a caller
+
+`events.error` receives these failures, each as an `InkKitError`. Without an `error` handler they are dropped.
+
+| Source                                                                                                                                                                                                          | Code                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| An edit the person makes, such as typing, a shortcut, a DOM paste, a drop or a cut, that the preservation check refuses.                                                                                        | `preservation`                                             |
+| A shortcut, table control or code block language change whose command fails.                                                                                                                                    | The failure's code.                                        |
+| An image that a finished paste or drop couldn't import. A placeholder is inserted instead.                                                                                                                      | `image-unavailable`                                        |
+| A DOM paste or drop whose document was replaced while its images were importing. Nothing is inserted.                                                                                                           | `stale-document`                                           |
+| A Mermaid preview that can't render.                                                                                                                                                                            | `diagram-unavailable`                                      |
+| A file or wiki link that can't be resolved, previewed or opened, and a failed or invalid note suggestion answer.                                                                                                | `file-unavailable`                                         |
+| A copy or cut of images or diagrams without a `clipboard` handler, or a handler that throws or rejects.                                                                                                         | `clipboard-unavailable`                                    |
+| A copy or cut of images or diagrams that can't be prepared: the document, its revision or the mode changed first, an image import is running, or the selection can't be written. Nothing is written or removed. | `stale-document`, `operation-pending` or `preservation`    |
+| A cut of a selected image or diagram that can't be copied.                                                                                                                                                      | `image-unavailable` or `diagram-unavailable`               |
+| A cut whose document, revision, mode or editability changed before the `clipboard` handler finished.                                                                                                            | `stale-document`, or the state's code, such as `read-only` |
+| A host slash command whose result arrives after the document or selection changed, or that returns something other than text.                                                                                   | `stale-document` or `invalid-argument`                     |
+| An unexpected exception in work that no call is waiting for, or a host slash command that throws or rejects.                                                                                                    | `internal`                                                 |
+
+## Warnings
+
+Degraded output describes itself instead of failing. `PrintableDocument.warnings` holds `PrintableWarning` values, each with a `code` and a `message`; their codes are separate from `EditorErrorCode`. In `ClipboardOutput`, an image or diagram whose picture couldn't be produced carries `error`. [Copy, paste and print](/concepts/clipboard#print) describes each warning.

@@ -1,9 +1,16 @@
-// Fails when the API reference leaves out part of the built public surface: an export of
-// `dist/index.d.ts`, a public member of `InkKitEditor`, or an option, event or label key.
-// Run `pnpm build` first.
-import { readFile } from 'node:fs/promises'
+// Fails when the API reference in docs/reference/ leaves out part of the built public
+// surface: an export of `dist/index.d.ts`, a public member of `InkKitEditor`, or an option,
+// event or label key. Run `pnpm build` first.
+import { readdir, readFile } from 'node:fs/promises'
 
-const reference = await readFile('docs/api.md', 'utf8')
+const pages = (await readdir('docs/reference')).filter((name) =>
+  name.endsWith('.mdx'),
+)
+const reference = (
+  await Promise.all(
+    pages.map((name) => readFile(`docs/reference/${name}`, 'utf8')),
+  )
+).join('\n')
 
 // The names a declaration file exports, following `export *`.
 async function exportedNames(file) {
@@ -68,9 +75,9 @@ const missing = [...wanted]
 if (wanted.size < 100)
   throw new Error(`Only ${wanted.size} names found; the parser is out of date`)
 if (missing.length) {
-  console.error(`docs/api.md does not mention:\n  ${missing.join('\n  ')}`)
+  console.error(`docs/reference does not mention:\n  ${missing.join('\n  ')}`)
   process.exit(1)
 }
 console.log(
-  `docs/api.md mentions all ${wanted.size} exported names, members and keys`,
+  `docs/reference mentions all ${wanted.size} exported names, members and keys`,
 )

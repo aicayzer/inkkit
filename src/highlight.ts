@@ -23,7 +23,7 @@ export const highlightLimit = 5_000
 // reaches many blocks. Once highlighting in one load or edit has taken this
 // many milliseconds, the blocks it has not reached stay plain until they are
 // edited. A note of ordinary code reaches it only with about a megabyte of
-// code; docs/performance.md has the measurements.
+// code; docs/maintainers/performance.md has the measurements.
 export const highlightBudget = 200
 
 // Colors are decorations over the plain text, so the markdown is untouched;

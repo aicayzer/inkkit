@@ -1,0 +1,120 @@
+---
+title: 'Quickstart'
+description: 'Install Inkkit, mount an editor, load a Markdown document, save it, add formatting shortcuts and dispose of the editor.'
+---
+
+The example keeps the note in `localStorage`; your app replaces that with its own storage.
+
+<Steps>
+<Step title="Install the package">
+
+<CodeGroup>
+
+```sh npm
+npm install --save-exact @aicayzer/inkkit
+```
+
+```sh pnpm
+pnpm add --save-exact @aicayzer/inkkit
+```
+
+</CodeGroup>
+
+Inkkit is ESM-only and is imported through a bundler. Pin an exact version; see [Versioning](/compatibility#versioning).
+
+</Step>
+<Step title="Add a root element">
+
+Declare UTF-8, which WebKit needs to load the bundle, and give the editor an element of its own:
+
+```html
+<!doctype html>
+<meta charset="utf-8" />
+<div id="editor"></div>
+<script type="module" src="./main.ts"></script>
+```
+
+Inkkit adds the class `inkkit-root` to the element and owns everything inside it.
+
+</Step>
+<Step title="Mount, load and save">
+
+This example imports `@aicayzer/inkkit`, which renders Mermaid diagrams. To leave Mermaid out of your page, import `@aicayzer/inkkit/core` instead; see [Compatibility](/compatibility#entries-with-and-without-mermaid).
+
+```ts
+import { InkKitEditor, InkKitError } from '@aicayzer/inkkit'
+import '@aicayzer/inkkit/style.css'
+
+const root = document.getElementById('editor')!
+const generation = 1
+let saveTimer: ReturnType<typeof setTimeout> | undefined
+
+const editor = await InkKitEditor.mount(
+  root,
+  {
+    changed() {
+      clearTimeout(saveTimer)
+      saveTimer = setTimeout(save, 500)
+    },
+    error(error) {
+      console.error(error.code, error.message)
+    },
+  },
+  {
+    keymap: {
+      bold: ['Mod-b'],
+      italic: ['Mod-i'],
+      strikethrough: ['Shift-Mod-x'],
+      code: ['Mod-e'],
+      heading1: ['Mod-Alt-1'],
+      heading2: ['Mod-Alt-2'],
+    },
+  },
+)
+
+editor.loadDocument({
+  documentId: 'note',
+  generation,
+  format: 'md',
+  text: localStorage.getItem('note') ?? '# Hello\n\nStart writing.\n',
+})
+
+function save(): boolean {
+  try {
+    localStorage.setItem('note', editor.snapshot(generation).text)
+    return true
+  } catch (error) {
+    if (!(error instanceof InkKitError)) throw error
+    // Nothing was written. These two clear by themselves, so try again.
+    if (error.code === 'composition' || error.code === 'operation-pending')
+      saveTimer = setTimeout(save, 500)
+    else console.error('Not saved:', error.code, error.message)
+    return false
+  }
+}
+
+async function close(): Promise<void> {
+  clearTimeout(saveTimer)
+  if (!save()) return
+  await editor.destroy()
+  root.remove()
+}
+```
+
+- **`changed` only prompts a save.** At the moment you write, call `snapshot(generation)` and write its `text`.
+- **A snapshot that throws saved nothing.** Keep the document open and don't treat it as unchanged. `composition` and `operation-pending` clear when text input or an image import finishes; for the other codes, see [Save the document](/concepts/documents#save-the-document).
+- **`generation` names this load.** Pass it to every call that takes one, and give each later load a greater one. See [Documents and saving](/concepts/documents).
+- **Inkkit binds no formatting keys.** Supply them in `keymap`, by the same names as the `format` commands. `Mod` is Command on Apple platforms and Control elsewhere. Undo, redo and moving blocks have default keys. To change bindings later, call `setKeymap`, which replaces the whole map. See [Bind shortcuts](/guides/controls#bind-shortcuts).
+- **`error` receives failures that no call is waiting for,** such as an edit the person makes that Inkkit refuses because it would not save as shown.
+- **`close` saves first, then awaits `destroy()`** before it removes the root. If the save fails, the editor stays open.
+
+</Step>
+</Steps>
+
+## Next steps
+
+- [Documents and saving](/concepts/documents): generations, reloads, read-only mode and switching documents.
+- [Toolbars, shortcuts and search](/guides/controls): drive your own controls from `commandState`.
+- [Images, files and wiki links](/guides/adapters): connect Inkkit to your app's storage.
+- [Embed in a web view](/guides/web-view): call Inkkit from a native app.
+- [Editor reference](/reference/editor): every member, its result and its errors.

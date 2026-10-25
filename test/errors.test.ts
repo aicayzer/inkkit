@@ -76,8 +76,8 @@ function state(editor: InkKitEditor) {
 }
 
 test('the API reference has a row for every error code and no other', () => {
-  const api = readFileSync('docs/api.md', 'utf8')
-  const section = api.slice(api.indexOf('\n## Errors\n'))
+  const api = readFileSync('docs/reference/errors.mdx', 'utf8')
+  const section = api.slice(api.indexOf('\n## Error codes\n'))
   const table = section.slice(0, section.indexOf('\n## ', 1))
   const documented = [...table.matchAll(/^\| `([a-z-]+)` +\|/gm)].map(
     (match) => match[1],

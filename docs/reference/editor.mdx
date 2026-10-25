@@ -1,0 +1,537 @@
+---
+title: 'Editor'
+description: 'Every InkKitEditor member: signature, result, the state it checks and the errors it reports, grouped by task.'
+---
+
+`InkKitEditor` is the one class in Inkkit. You create it with `InkKitEditor.mount`, load a document, and read it back with `snapshot`. Options and events are in [Options and events](/reference/options), adapter interfaces in [Adapters](/reference/adapters), and every error code in [Errors](/reference/errors).
+
+## Conventions
+
+These rules apply to every member:
+
+- **Synchronous members throw and asynchronous members reject**, always with an [`InkKitError`](/reference/errors#inkkiterror). `mount`, `printableSnapshot`, `clipboardSnapshot`, `paste` and `destroy` return promises and never throw. Every other member returns its result at once.
+- **A failed call changes nothing.** The document, selection, revision and undo history are as they were, and no `changed` or `commandStateChanged` event is sent for it. The exception is `internal`, after which the editor's state can't be trusted. See [how errors arrive](/reference/errors#how-errors-arrive).
+- **Events from a call arrive before it returns.** When a synchronous call succeeds, its `changed` and `commandStateChanged` events are sent in order immediately before it returns. An asynchronous call sends the events it raises after its first pause as they happen. If your handler makes a call that sends a newer event of the same kind, the older ones still waiting are dropped.
+- **`null` counts as omitted** for an optional parameter or option field, because WebKit bridges send JSON `null` for a missing value. `snapshot(null)` reads the current generation.
+- **Unknown names fail.** An option, event handler, label, shortcut name, command or options field that this reference doesn't list throws `invalid-argument`, so a misspelling is never ignored. The input values `DocumentInput`, `TextRange` and `Heading` are checked only for the fields they need.
+- **Pass the expected generation.** Most members that read or change the document take `expectedGeneration` as their last parameter. When the loaded document has another generation, the call throws `stale-document` and changes nothing. Omitted means the current generation. A host that calls Inkkit across a native bridge should pass it on every call. See [documents and saving](/concepts/documents).
+- **Offsets are UTF-16 code units** in the text of the snapshot that names them, and `to` is exclusive. Row and column indices are zero-based.
+- **Points and rectangles are CSS pixels** in the web view's client area, the coordinates of DOM pointer events. They aren't device pixels and aren't relative to the root.
+- **`false` means the call didn't apply here**, such as a formatting command in source mode, and nothing changed.
+
+## State checks
+
+Each member first throws `destroyed` if the editor was destroyed, then `invalid-argument` for a bad argument, including an expected generation that isn't an integer. The state checks in the last column follow, in that order.
+
+| Members                                                                                                                                                                                           | Expected generation                                    | Then throws                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `editable`, `editingMode`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`                                                                                                           | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
+| `loadDocument`                                                                                                                                                                                    | None.                                                  | `invalid-argument` when the generation isn't greater than the loaded one, then `preservation` when the Markdown can't be loaded.                                                          |
+| `setEditable`, `setTextInputPreferences`                                                                                                                                                          | None.                                                  | `composition`.                                                                                                                                                                            |
+| `reloadDocument`                                                                                                                                                                                  | Optional, the last parameter. Checked only when given. | `not-ready` and `stale-document`, only when the generation is given. Then the same errors as `loadDocument`.                                                                              |
+| `commandState`, `focus`, `blur`                                                                                                                                                                   | Optional, the last parameter.                          | `not-ready`, `stale-document`.                                                                                                                                                            |
+| `snapshot`, `printableSnapshot`, `clipboardSnapshot`, `setEditingMode`, `find`, `navigateFootnote`, `textSnapshot`, `headings`                                                                    | Optional, the last parameter.                          | `not-ready`, `stale-document`, `composition`, `operation-pending`.                                                                                                                        |
+| `navigateHeading`                                                                                                                                                                                 | None. The heading entry names a version.               | `not-ready`, `stale-document` for another generation, `composition`, `operation-pending`, then `stale-document` for an older revision or mode.                                            |
+| `selectTextRange`, `revealTextRange`, `textRangesRects`, `visibleTextRanges`                                                                                                                      | None. The range's `snapshotId` names a version.        | `not-ready`, `composition`, `operation-pending`, `stale-document` for a `snapshotId` that isn't current, then `invalid-range`.                                                            |
+| `replaceTextRange`                                                                                                                                                                                | None. The range's `snapshotId` names a version.        | `not-ready`, `composition`, `operation-pending`, `stale-document`, `invalid-range`, `read-only`.                                                                                          |
+| `paste`, `pasteAsPlainText`, `replaceSource`, `undo`, `redo`, `replace`, `replaceAll`, `format`, `table`, `moveBlock`, `insertPaths`, `insertImages`, `insertFootnote`, `editReferenceDefinition` | Optional, the last parameter.                          | `not-ready`, `stale-document`, `composition`, `operation-pending`, `read-only`.                                                                                                           |
+| `insertText`                                                                                                                                                                                      | Required.                                              | `not-ready`, `stale-document`, `operation-pending`, `read-only`. During composition with the current generation it returns `false` instead.                                               |
+| `keyDown`                                                                                                                                                                                         | Required.                                              | `not-ready`, `stale-document`, `operation-pending`, then `read-only` for an editing key in a read-only editor. During composition with the current generation it returns `false` instead. |
+
+`mount` checks only its arguments, and `destroy` has no checks.
+
+A member that changes the document also throws `preservation` when the result can't be saved as Markdown that reopens as shown, and changes nothing. `snapshot`, `clipboardSnapshot`, `printableSnapshot`, `replaceSource` and switching to source mode throw or reject with `preservation` when the current content can't be written. See [preservation](/concepts/preservation).
+
+## Entry points
+
+| Specifier                    | Contents                                                                     |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| `@aicayzer/inkkit`           | `InkKitEditor`, `InkKitError` and every type, with Mermaid diagram previews. |
+| `@aicayzer/inkkit/core`      | The same exports. It never imports Mermaid, so the bundle leaves it out.     |
+| `@aicayzer/inkkit/style.css` | The stylesheet, for either entry. It is scoped to the editor root.           |
+
+With the core entry, `mermaid` fences stay editable code blocks that keep their source, and no preview is shown whatever `rendering.diagramPreview` says. `events.error` never reports `diagram-unavailable`. Clipboard output keeps each diagram's source with an `error` on its `diagrams` entry, and `printableSnapshot` prints the source as code with a `diagram-unavailable` warning.
+
+Import from one entry throughout the app. If any module imports `@aicayzer/inkkit`, the bundle includes Mermaid. See [compatibility](/compatibility) for what each entry costs.
+
+```ts
+import { InkKitEditor } from '@aicayzer/inkkit/core'
+import '@aicayzer/inkkit/style.css'
+```
+
+## Lifecycle
+
+### mount
+
+`static mount(root: HTMLElement, events: EditorEvents, options?: EditorOptions): Promise<InkKitEditor>`
+
+Builds the editor inside `root` and adds the class `inkkit-root` to it. The editor has no document until you call [`loadDocument`](#loaddocument). Keep the root in the page, and leave its children alone, until `destroy` completes.
+
+`mount` rejects with `invalid-argument` when `root` isn't an `HTMLElement`, when `events` has no `changed` function or names something that isn't an event, or when `options` has an unknown field or a field of the wrong type. See [`EditorEvents`](/reference/options#events) and [`EditorOptions`](/reference/options#editor-options).
+
+### destroy
+
+`destroy(): Promise<void>`
+
+Cancels pending work, releases the editor and removes `inkkit-root` from the root if Inkkit added it. Pending `clipboardSnapshot`, `printableSnapshot` and `paste` calls reject with `destroyed`. It resolves when the editor is gone and never rejects. Afterwards every member except `destroy` throws `destroyed`, and calling `destroy` again does nothing. Await it before you remove the root from the page.
+
+## Documents
+
+Every output names the document it describes with the fields of `DocumentVersion`. `generation` is the host's number for one load; `revision` counts content changes within that load from 0. `DocumentFormat` is `'md'` for Markdown or `'txt'` for literal text. See [documents and saving](/concepts/documents) for how to use them.
+
+```ts
+type DocumentFormat = 'md' | 'txt'
+
+interface DocumentVersion {
+  documentId: string
+  generation: number
+  revision: number
+}
+
+interface DocumentInput {
+  documentId: string // The host's name. Inkkit never interprets it.
+  generation: number // An integer greater than the loaded generation.
+  format: DocumentFormat // 'txt' is literal text with no formatted mode.
+  text: string // The complete text. '' is an empty document.
+}
+```
+
+### loadDocument
+
+`loadDocument(input: DocumentInput): void`
+
+Replaces the document. The generation must be greater than the loaded one; the first load accepts any integer. A generation that isn't greater throws `invalid-argument`. Markdown that can't be kept even as literal source throws `preservation`. Either way the load changes nothing.
+
+A load clears the undo history, returns to formatted mode, cancels pending imports and exports, and sends one `commandStateChanged` and no `changed`. [Load a document](/concepts/documents#load-a-document) lists everything it resets.
+
+### reloadDocument
+
+`reloadDocument(input: DocumentInput, expectedGeneration?: number): void`
+
+Replaces the document with a newer version of it, under the same generation rule and errors as `loadDocument`. It keeps the selection where it still fits, the focus, the scroll position and, for Markdown, the editing mode, and clears the undo history. See [Reload a changed document](/concepts/documents#reload-a-changed-document).
+
+With `expectedGeneration`, the loaded document must be that generation, or the call throws `stale-document` and changes nothing. That check comes before the generation rule.
+
+### snapshot
+
+`snapshot(expectedGeneration?: number): DocumentSnapshot`
+
+Returns the complete current text, which is what a host saves. The `text` is the exact source, including line endings; an unedited document returns the bytes that were loaded. In source mode it includes what was typed there.
+
+```ts
+import type { DocumentInput, DocumentVersion } from '@aicayzer/inkkit'
+
+interface DocumentSnapshot extends DocumentInput, DocumentVersion {
+  dirty: boolean // The text differs from the text of the last load.
+}
+```
+
+It throws `preservation` when the current content can't be written as Markdown that reopens as shown. A failed snapshot is not an unchanged document: don't save, and keep the document open. See [the save rules](/concepts/documents).
+
+## Editability and input
+
+### editable and setEditable
+
+`get editable(): boolean`
+
+`setEditable(editable: boolean): void`
+
+`editable` is whether the person can edit. `setEditable` turns editing on or off for the formatted surface and the source and TXT surface, and sends `commandStateChanged`. It throws `composition` during text composition. It keeps focus, selection, source, revision, dirty state and history.
+
+Every member that changes the document throws `read-only` while editing is off, including `undo` and `redo`. [Read-only mode](/concepts/documents#read-only-mode) lists what stays available.
+
+### setTextInputPreferences
+
+`setTextInputPreferences(preferences: TextInputPreferences): void`
+
+Replaces the input preferences on both surfaces. A field you leave out goes back to its default. It throws `composition` during text composition and is a presentation change, not an edit. See [`TextInputPreferences`](/reference/options#editor-options).
+
+### setKeymap
+
+`setKeymap(keymap: Keymap): void`
+
+Replaces every shortcut binding. A name you leave out returns to its default, and a `null` entry keeps that name's default. An unknown name, or a value that isn't an array of strings, throws `invalid-argument`. A command that fails from a shortcut reports its error to `events.error`. Formatting has no default bindings. See [shortcuts](/reference/appearance#shortcuts) for every name, its default and key notation.
+
+### commandState
+
+`commandState(expectedGeneration?: number): CommandState`
+
+Returns what the editor can do now, for enabling toolbar buttons and menu items, without changing anything. Unlike `snapshot`, it works during composition and pending imports, with the affected commands reported as unavailable. `events.commandStateChanged` sends the same value when it changes. The result describes the moment you ask; a later call can still fail. See [`CommandState`](/reference/options#command-state), which also describes `CaretState`, `Mark` and `Block`.
+
+## Formatting
+
+### format
+
+`format(command: FormatCommand, options?: FormatOptions, expectedGeneration?: number): boolean`
+
+Applies one formatting command to the selection in formatted mode, focuses the editor, and returns whether the document, or the marks the next typed text takes, changed. It returns `false` in source and TXT modes and when the command has nothing to change.
+
+[Format commands](/reference/options#format-commands) lists what each `FormatCommand` does and the `FormatOptions` it takes. With `link`, a destination that Inkkit wouldn't open or can't save throws `invalid-argument`, and in a reference link the shared definition changes, as [`editReferenceDefinition`](#editreferencedefinition) does. Giving a link the destination it already has returns `false`.
+
+### moveBlock
+
+`moveBlock(direction: BlockMoveDirection, expectedGeneration?: number): boolean`
+
+`BlockMoveDirection` is `'up'` or `'down'`. Moves the block that holds the caret, or every block the selection touches, one place within its list, quote, callout, footnote or note, as one undo step. In a list, the list item moves with any sublist it holds. Returns whether the blocks moved. It returns `false` at the first or last place, in a table and in source and TXT modes. Front matter stays first. A move that can't be saved and reopened as the same document throws `preservation`.
+
+## Tables
+
+### table
+
+`table(command: TableCommand, options?: TableOptions, expectedGeneration?: number): boolean`
+
+Runs one table command in formatted mode and returns whether it applied. It returns `false` in source and TXT modes, outside a table for commands that need one, and at a boundary a move can't cross. Each command is one undo step. An option that belongs to another command throws `invalid-argument`.
+
+[Table commands](/reference/options#table-commands) lists what each `TableCommand` does and the `TableOptions` it takes. The table controls Inkkit draws run these same commands; a refused one reports to `events.error`.
+
+## History and modes
+
+### editingMode and setEditingMode
+
+`get editingMode(): EditingMode`
+
+`setEditingMode(mode: EditingMode, expectedGeneration?: number): boolean`
+
+`EditingMode` is `'formatted'` or `'source'`, which shows the Markdown in a textarea. A TXT document is always `'source'`. Markdown loads in formatted mode.
+
+`setEditingMode` switches the current Markdown document without changing its identity, generation, revision or dirty state, and maps the selection to the matching text. It returns `false` when the mode is already set, and for TXT. It works in a read-only editor. Switching to source mode throws `preservation` when the formatted document can't be written. Leaving source mode makes everything edited there one step of the formatted history. The host owns the mode control.
+
+### replaceSource
+
+`replaceSource(text: string, expectedGeneration?: number): boolean`
+
+Replaces the complete source as one undo step and returns `false` for identical source. It accepts any text, including unsupported or incomplete Markdown, and the snapshot holds it as given.
+
+### undo and redo
+
+`undo(expectedGeneration?: number): boolean`
+
+`redo(expectedGeneration?: number): boolean`
+
+Each steps through the history and returns whether it applied a step. In source mode they also step through edits made on the text. Loading a document clears the history. Undo and Redo that the browser sends as input events, such as from its Edit menu, run these members.
+
+## Find and navigation
+
+### find
+
+`find(text: string, expectedGeneration?: number): boolean`
+
+Selects the next match after the selection, wrapping at the end, and returns whether it found one. Search is literal and case-insensitive. Source and TXT modes search the full text, including syntax; formatted mode searches readable text within one text segment, not link destinations or other attributes. An empty search finds nothing. It works in a read-only editor and doesn't change the revision. For a host-owned find bar, see [controls](/guides/controls).
+
+### replace and replaceAll
+
+`replace(search: string, replacement: string, expectedGeneration?: number): boolean`
+
+`replaceAll(search: string, replacement: string, expectedGeneration?: number): number`
+
+`replace` replaces the selected match, or the next one, selects the inserted text and returns whether text changed. `replaceAll` replaces every non-overlapping match once and returns how many. Each call is one undo step. The replacement is literal: `$&`, `$1` and backslashes stay as typed. In formatted mode a replacement keeps the surrounding formatting, and a newline becomes a line break; in code, source and TXT it stays literal.
+
+### headings
+
+`headings(expectedGeneration?: number): readonly Heading[]`
+
+Returns the outline in document order, as frozen entries. TXT, code and literal blocks give no entries. Query again after an edit, undo, load or mode change.
+
+```ts
+import type { DocumentVersion } from '@aicayzer/inkkit'
+
+interface Heading extends Readonly<DocumentVersion> {
+  readonly id: string // Opaque. Belongs to this load, revision and editing mode.
+  readonly level: number // 1 to 6.
+  readonly text: string // Readable text, without author comments.
+}
+```
+
+### navigateHeading
+
+`navigateHeading(heading: Heading): boolean`
+
+Moves the caret to the heading, focuses it, scrolls to it and unfolds callouts that hold it. It returns `true`, or throws `stale-document` for an entry from another generation, revision or mode, and `invalid-argument` for a value that isn't a heading entry. It doesn't change the revision.
+
+## Footnotes, references and comments
+
+### insertFootnote
+
+`insertFootnote(label?: string, expectedGeneration?: number): boolean`
+
+Inserts a footnote reference after the selection and, when the label has no definition, appends one at the end of the document and puts the caret in it. Both are one undo step. An omitted label uses the lowest positive integer that no footnote uses. A label must be 1 to 999 characters with no whitespace, brackets or backslashes, or the call throws `invalid-argument`. It returns `false` in source and TXT modes.
+
+### navigateFootnote
+
+`navigateFootnote(target: 'definition' | 'reference', expectedGeneration?: number): boolean`
+
+Moves the caret to the definition, or the first reference, of the footnote at the caret, and returns whether there was one. Alt+Enter and Alt+Shift+Enter do the same. It works in a read-only editor and returns `false` in source and TXT modes.
+
+### editReferenceDefinition
+
+`editReferenceDefinition(label: string, destination: string, title?: string, expectedGeneration?: number): boolean`
+
+Changes the destination of the shared link definition for `label`, which matches regardless of case and runs of whitespace, so every link that uses it changes. `destination` follows the same rule as a `format('link')` destination. An omitted `title` keeps the current title; a non-empty one replaces it. An empty `title` throws `preservation`. It returns `false` when no definition has the label, and in source and TXT modes.
+
+### setCommentsVisible
+
+`setCommentsVisible(visible: boolean): void`
+
+Shows or hides author comments. Comments start hidden. This is presentation only: the revision, history and dirty state don't change. While comments are hidden, an edit from a caret that would remove one is refused with `preservation`. See [comments](/concepts/markdown#comments).
+
+## Images and paths
+
+### insertImages
+
+`insertImages(images: ImageInsertion[], at?: ClientPoint, expectedGeneration?: number): boolean`
+
+Inserts images that an adapter already stored, at the selection, or as blocks at the drop point `at`: in place of an empty paragraph there, or after the top-level block there. It returns `false`, and changes nothing, for an empty list, in source and TXT modes, and when neither an `images` nor a `files` adapter is set.
+
+```ts
+interface ImageInsertion {
+  reference: string // Written as the image's Markdown destination.
+  alt: string
+  title?: string
+}
+```
+
+`ClientPoint` is `{ clientX, clientY }`, finite CSS pixels. The reference is read like a URL: with a file adapter, everything after the first `#` is the fragment, so write a `#` in a file name as `%23`. In a table cell, the images go inline on one line. In a code block, comment, front matter or literal block, they go after that block. See [adapters](/guides/adapters).
+
+### insertPaths
+
+`insertPaths(paths: string[], at: ClientPoint, expectedGeneration?: number): boolean`
+
+Inserts dropped file paths as literal text. In formatted mode each path becomes a paragraph at the drop point: in place of an empty block, or after the top-level block there. In source and TXT modes `at` is ignored and the paths go at the selection, separated by blank lines. It returns `false` only for an empty list.
+
+## Clipboard and print
+
+These members prepare content for a host that writes the native clipboard or prints. [Copy, paste and print](/concepts/clipboard) describes what each output contains.
+
+### clipboardSnapshot
+
+`clipboardSnapshot(scope?: ClipboardScope, expectedGeneration?: number): Promise<ClipboardOutput>`
+
+`ClipboardScope` is `'document'`, the default, or `'selection'`. Resolves with clipboard content and the version it was copied from. It rejects with `stale-document` if the document, its revision or the editing mode changes before the output is ready, and with `preservation` when the selection can't be written as Markdown. Resolve it before you touch the native clipboard, and keep the existing clipboard on failure. A missing image or diagram picture is reported in the `error` of its `ClipboardImage` or `ClipboardDiagram` entry, not as a rejection.
+
+```ts
+import type { DocumentVersion, PortableImage } from '@aicayzer/inkkit'
+
+interface ClipboardOutput extends DocumentVersion {
+  text: string // Readable plain text.
+  html: string // Semantic HTML with no private image URL.
+  markdown: string // The scope's Markdown source. A whole document gives its exact source.
+  images: ClipboardImage[] // The images in html, in order.
+  diagrams: ClipboardDiagram[] // Each complete Mermaid diagram in the scope.
+}
+
+interface ClipboardImage {
+  reference: string // The authored reference. Empty for the picture of a diagram.
+  alt: string
+  image?: PortableImage
+  error?: string // Why image is missing.
+}
+
+interface ClipboardDiagram {
+  source: string
+  image?: PortableImage // A PNG of the rendered diagram.
+  error?: string // Why image is missing. The source is still in the output.
+}
+```
+
+### paste
+
+`paste(input: ClipboardInput, expectedGeneration?: number): Promise<void>`
+
+Pastes content that the host read from the native clipboard, through the same import as a paste the person makes. Read the clipboard once; don't read it again while this runs. An unknown field throws `invalid-argument`.
+
+```ts
+import type { CapturedImage } from '@aicayzer/inkkit'
+
+interface ClipboardInput {
+  text: string
+  markdown?: string // Explicit Markdown. Takes precedence over text and html.
+  html?: string
+  images?: CapturedImage[] // Bytes for the images that html refers to.
+}
+```
+
+An image item whose `source` equals an image's `src` belongs to that image; items without a `source` fill the rest in order. In Markdown source mode, `paste` inserts `markdown`, or else `text`, literally; in TXT it inserts `text`. The promise resolves once the content is inserted. It rejects with `stale-document` if the document is replaced, or editing is turned off, while images import. An image that can't be imported becomes the text `[Name: image unavailable]` and `events.error` receives `image-unavailable`; the paste still resolves.
+
+### pasteAsPlainText
+
+`pasteAsPlainText(text: string, expectedGeneration?: number): boolean`
+
+Inserts `text` literally at the selection and returns whether the document changed. It is the one way to paste literal text in formatted mode, and it never makes links or formatting.
+
+### printableSnapshot
+
+`printableSnapshot(expectedGeneration?: number): Promise<PrintableDocument>`
+
+Resolves with the whole current document as standalone HTML, whatever the selection, folding and comment visibility. The host owns the Print and PDF commands. The result and its arrays are frozen, and `assets` holds copies of the bytes.
+
+```ts
+import type {
+  DocumentFormat,
+  DocumentVersion,
+  PortableImage,
+} from '@aicayzer/inkkit'
+
+interface PrintableDocument extends DocumentVersion {
+  format: DocumentFormat
+  html: string // A complete HTML document with the print CSS embedded and data: images only.
+  styles: string // The print CSS on its own.
+  assets: readonly PortableImage[] // The images, in the order they appear in html.
+  warnings: readonly PrintableWarning[]
+}
+
+interface PrintableWarning {
+  code: 'diagram-unavailable' | 'attachment-fallback' | 'attachment-unavailable'
+  message: string
+}
+```
+
+It rejects rather than return partial output: with `stale-document` if the document changes while it runs, `image-unavailable` when an authored image has no adapter or its bytes can't be read, and `diagram-unavailable` when a diagram that previewed can't be rasterized. Output that degrades is reported in `warnings`; see [print](/concepts/clipboard#print).
+
+## Readable text and layout
+
+These members let a host build its own find bar, accessibility or overlay UI over the editor's readable text. See [controls](/guides/controls) for the pattern.
+
+### textSnapshot
+
+`textSnapshot(expectedGeneration?: number): ReadableTextSnapshot`
+
+Returns the readable text and the selection, frozen, with a `snapshotId` that names them. In source and TXT modes the text is the textarea's text, with CRLF as LF. In formatted mode, blocks and line breaks are joined with LF, and author comments and the metadata of reference definitions are left out.
+
+```ts
+import type { DocumentFormat, DocumentVersion } from '@aicayzer/inkkit'
+
+interface ReadableTextSnapshot extends DocumentVersion {
+  snapshotId: string // Opaque, and local to this editor.
+  format: DocumentFormat
+  mode: 'source' | 'formatted'
+  text: string
+  selection: TextRange
+}
+
+interface TextRange {
+  snapshotId: string
+  from: number // Zero-based UTF-16 offset in the snapshot's text.
+  to: number // Exclusive.
+}
+```
+
+A load, a reload, a new revision or a mode change makes earlier snapshot IDs stale, and a range that carries one throws `stale-document`. Caret changes, scrolling and resizing don't. A range with an offset outside the text, `to` before `from`, or an offset that splits a surrogate pair throws `invalid-range`.
+
+### selectTextRange
+
+`selectTextRange(range: TextRange, options?: { focus?: boolean; reveal?: boolean }): void`
+
+Selects the range. `focus` puts focus in the editor and `reveal` scrolls the range into view; both default to `false`, so focus stays in a host search field. A complete image alt text or footnote label selects that node, and a callout title selects the callout. Part of one throws `invalid-range`. It works in a read-only editor.
+
+### revealTextRange
+
+`revealTextRange(range: TextRange): void`
+
+Scrolls the range into the viewport that [`setViewport`](#setviewport) describes, unfolding a callout that holds it. It works in a read-only editor.
+
+### replaceTextRange
+
+`replaceTextRange(range: TextRange, text: string): boolean`
+
+Replaces the range with literal text as one undo step, keeping the surrounding structure and formatting, and returns whether the text changed. In formatted mode the range must sit in one text block. A range that crosses an image, a line break, a hidden comment or a block boundary throws `invalid-range`; use source mode to change syntax.
+
+### textRangesRects
+
+`textRangesRects(ranges: readonly TextRange[]): readonly (readonly TextRect[])[]`
+
+Measures a batch of ranges and returns one frozen array of rectangles for each, in order. It checks the whole batch before measuring, keeps no cache, and returns an empty array for an empty batch. Hidden content has no rectangles.
+
+```ts
+interface TextRect {
+  left: number
+  top: number
+  right: number
+  bottom: number
+  width: number
+  height: number
+}
+```
+
+### visibleTextRanges
+
+`visibleTextRanges(snapshotId: string): readonly TextRange[]`
+
+Returns the ranges of the snapshot's text that are inside the viewport now.
+
+### setViewport
+
+`setViewport(options: ViewportOptions): void`
+
+Names the element that scrolls and how far host chrome covers it, replacing earlier settings. Reveal, find and heading navigation keep text out of the covered edges. A `scrollContainer` that isn't the root or an ancestor of it, or a `ViewportInsets` side that is negative or not finite, throws `invalid-argument`.
+
+```ts
+interface ViewportInsets {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+interface ViewportOptions {
+  scrollContainer?: HTMLElement // Defaults to the root.
+  insets?: Partial<ViewportInsets> // CSS pixels. Each side defaults to 0.
+}
+```
+
+### viewport
+
+`viewport(): ViewportSnapshot`
+
+Returns the visible area, the insets in effect and the scroll offsets, frozen.
+
+```ts
+import type { TextRect, ViewportInsets } from '@aicayzer/inkkit'
+
+interface ViewportSnapshot {
+  rect: TextRect // The visible area of the container, root and window, less the insets.
+  insets: ViewportInsets
+  scrollTop: number // The container's offset plus, in source and TXT modes, the textarea's.
+  scrollLeft: number
+}
+```
+
+## Native text input
+
+A host whose native layer receives typing or keys before the web view does passes them to Inkkit with these members. Both require the expected generation, so input meant for a replaced document fails instead of landing in the new one. See [embed in a web view](/guides/web-view).
+
+### insertText
+
+`insertText(text: string, generation: number): boolean`
+
+Inserts exactly `text` at the selection and returns `true`. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally.
+
+### keyDown
+
+`keyDown(input: KeyInput, expectedGeneration: number): boolean`
+
+Runs a key press through Inkkit's key handling and returns whether Inkkit handled it. When it returns `true`, the host must not also handle the key natively.
+
+```ts
+interface KeyInput {
+  key: string // KeyboardEvent.key, such as 'Enter' or 'b'.
+  code?: string // KeyboardEvent.code, such as 'KeyB'.
+  metaKey?: boolean // An omitted modifier isn't held.
+  ctrlKey?: boolean
+  altKey?: boolean
+  shiftKey?: boolean
+}
+```
+
+It handles the keymap bindings and, in formatted mode, Alt+Enter and Alt+Shift+Enter for footnotes and the editor's own keys such as Enter, Tab and Backspace in lists and tables. In source and TXT modes it handles Enter, Tab, Backspace and Delete with no Command, Control or Alt held, and returns `false` for other keys. It returns `false` during composition.
+
+In a read-only editor, a bound key and Enter, Tab, Backspace and Delete throw `read-only`. Tab and Shift+Tab still move between table cells in formatted mode, and a block move key returns `false` so the native caret movement applies.
+
+## Focus
+
+### focus and blur
+
+`focus(expectedGeneration?: number): void`
+
+`blur(expectedGeneration?: number): void`
+
+`focus` puts focus in the surface for the current mode: the formatted editor, or the textarea in source and TXT modes. `blur` takes focus off Inkkit's text surfaces and leaves focus anywhere else, such as in a host control or a button Inkkit draws, where it is. Use it instead of finding Inkkit's elements yourself. Neither checks composition, read-only or pending imports. Loading takes focus off the editor, so call `focus` after a load only when editing should start at once.

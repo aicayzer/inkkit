@@ -1,0 +1,79 @@
+---
+title: 'Compatibility'
+description: 'Browser requirements, package entries, page size and versioning.'
+---
+
+Inkkit runs in WebKit and Chromium from the versions below, ships as ES modules only, and has two entries: one that renders Mermaid diagrams and one that leaves Mermaid out of your page.
+
+## Browser engines
+
+| Engine                                     | Oldest supported version                    |
+| ------------------------------------------ | ------------------------------------------- |
+| WebKit: Safari and `WKWebView`             | 17.5, the WebKit in iOS 17.5 and macOS 14.5 |
+| Chromium: Chrome, Edge and Android WebView | 123                                         |
+| Firefox                                    | 125, untested                               |
+
+These are the oldest versions in which every required API below works, according to MDN browser compatibility data 8.1.5:
+
+| API                                                                                                           | WebKit | Chromium | Firefox | In an older engine                                                                                   |
+| ------------------------------------------------------------------------------------------------------------- | ------ | -------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| [`Intl.Segmenter`](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/Segmenter) | 14.1   | 87       | 125     | The editor doesn't load.                                                                             |
+| Regular expression lookbehind assertions                                                                      | 16.4   | 62       | 78      | The editor doesn't load.                                                                             |
+| ES2022 class static blocks                                                                                    | 16.4   | 94       | 93      | The editor doesn't load.                                                                             |
+| CSS [`light-dark()`](https://developer.mozilla.org/docs/Web/CSS/color_value/light-dark)                       | 17.5   | 123      | 120     | Code text takes the editor text color until you set the `--inkkit-code-*` tokens.                    |
+| CSS [`color-mix()`](https://developer.mozilla.org/docs/Web/CSS/color_value/color-mix)                         | 16.2   | 111      | 113     | Muted text, rules, code backgrounds and the selection lose their default colors.                     |
+| CSS [`:has()`](https://developer.mozilla.org/docs/Web/CSS/:has)                                               | 15.4   | 105      | 121     | A small image preview isn't widened to its minimum size.                                             |
+| CSS [`lh` unit](https://developer.mozilla.org/docs/Web/CSS/length#lh)                                         | 16.4   | 109      | 120     | Task checkboxes aren't centered on the first line of their item.                                     |
+| [CSS Custom Highlight API](https://developer.mozilla.org/docs/Web/API/CSS_Custom_Highlight_API)               | 17.2   | 105      | 149     | Optional. The engine draws its own selection, which also fills the margins beside the selected text. |
+
+Inkkit uses the Custom Highlight API only when the engine supports both `CSS.highlights` and `::highlight()` styling. Firefox has the first from 140 and the second from 149.
+
+### What is tested
+
+Changes to editor code, dependencies and workflows run the browser test suite in Playwright's Chromium on Linux and Playwright's WebKit on macOS, and opens pages built from the packed package in both. Documentation-only changes use formatting and site checks instead. These are the current Playwright builds, not the oldest supported versions. Firefox isn't tested. Playwright's WebKit is not `WKWebView`, so test your app's own web view on the systems you support.
+
+## Page requirements
+
+Declare UTF-8 in the page that loads Inkkit, for example with `<meta charset="utf-8">`. Without it, WebKit can read a single-file page as Latin-1 and the script doesn't load; see [Embed in a web view](/guides/web-view#build-a-single-offline-page).
+
+## Package format
+
+- **ES modules only.** The package is `"type": "module"` and its exports have only `import` conditions, so `require()` can't load it. Import it through a bundler; the build targets ES2022.
+- **Three specifiers.** Import only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. Other paths in the package aren't exported. TypeScript declarations are included.
+- **Dependencies are bundled.** The package contains Milkdown, ProseMirror and every other runtime dependency except Mermaid, so your app runs the tree that Inkkit tested. A fix in a bundled package reaches you only through an Inkkit release, and your own dependency audit doesn't see bundled packages.
+- **Mermaid is the one dependency,** pinned to an exact version. Your package manager installs it whichever entry you import.
+- **Node.js 22.14 or later** is declared in `engines`, which applies to the tools that install and build the package. The editor itself runs in the page.
+
+## Entries with and without Mermaid
+
+| Specifier               | Contents                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------ |
+| `@aicayzer/inkkit`      | The editor, with Mermaid diagram previews.                                                             |
+| `@aicayzer/inkkit/core` | The same exports. It never imports Mermaid, so `mermaid` code blocks stay editable source, unrendered. |
+
+Both entries use `@aicayzer/inkkit/style.css`. Import from one entry throughout your app: if any module imports `@aicayzer/inkkit`, your bundle includes Mermaid. Setting `rendering.diagramPreview` to `false` turns previews off but doesn't remove Mermaid from the page. For what the core entry does with diagrams in copies and print, see [Markdown support](/concepts/markdown#mermaid).
+
+### Page size
+
+Measured on October 25, 2026, with the package built from `main` after version 0.1.6: a minimal page built with Vite and `vite-plugin-singlefile`, with every script and style inlined.
+
+| Entry                   | Page size |
+| ----------------------- | --------: |
+| `@aicayzer/inkkit`      |    6.2 MB |
+| `@aicayzer/inkkit/core` |    1.0 MB |
+
+Mermaid makes up about 83% of the main-entry page, and a single-file build runs its module code at start-up even before a diagram renders. Measure your own page.
+
+## License notices
+
+The package carries three notice files:
+
+- `LICENSE`: Inkkit's MIT license.
+- `NOTICE`: the notice for the table styles that Inkkit adapts from prosemirror-tables, and a pointer to the file below.
+- `dist/THIRD-PARTY-NOTICES.txt`: the name, version, license and license text of every package bundled into either entry. The package build generates it from the bundled modules.
+
+A page that bundles Inkkit contains the packages in `dist/THIRD-PARTY-NOTICES.txt`, so ship that file, `LICENSE` and `NOTICE` with your app. Mermaid and its dependencies aren't in that file: if you import the main entry, collect their notices from your own build ([#188](https://github.com/aicayzer/inkkit/issues/188)).
+
+## Versioning
+
+Inkkit is before version 1.0. Pin an exact version, for example with `npm install --save-exact`, and read the [release notes on GitHub](https://github.com/aicayzer/inkkit/releases) before you upgrade. They describe public API changes and any migration your app needs.

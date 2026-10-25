@@ -1,0 +1,233 @@
+---
+title: 'Toolbars, shortcuts and search'
+description: 'Drive your own toolbar, shortcuts, slash menu, find bar and outline from Inkkit commands and state.'
+---
+
+Your app draws its toolbar, menus, search field and outline. Inkkit tells you what is available through command state, and you act through editor methods that check the generation you pass.
+
+## Drive controls from command state
+
+`events.commandStateChanged` sends a `CommandState` whenever the selection, document, history, mode, editability, composition or a pending import changes, and once after each load. Use `commands` to enable controls and `caret` to show active formatting. Call `commandState()` to read the same state on demand.
+
+```ts
+import {
+  InkKitEditor,
+  InkKitError,
+  type CommandState,
+  type FormatCommand,
+} from '@aicayzer/inkkit'
+
+const buttons = new Map<FormatCommand, HTMLButtonElement>()
+for (const button of document.querySelectorAll<HTMLButtonElement>(
+  '[data-format]',
+))
+  buttons.set(button.dataset.format as FormatCommand, button)
+
+let state: CommandState | undefined
+
+function render(next: CommandState): void {
+  state = next
+  for (const [command, button] of buttons) {
+    button.disabled = !next.commands.format[command]
+    const mark = next.caret.marks.find((name) => name === command)
+    button.setAttribute('aria-pressed', String(mark !== undefined))
+  }
+}
+
+const editor = await InkKitEditor.mount(root, {
+  ...events,
+  commandStateChanged: render,
+})
+
+for (const [command, button] of buttons)
+  button.addEventListener('click', () => {
+    if (!state) return
+    try {
+      editor.format(command, undefined, state.generation)
+    } catch (error) {
+      if (!(error instanceof InkKitError)) throw error
+      if (error.code !== 'stale-document')
+        console.warn(error.code, error.message)
+    }
+  })
+```
+
+Availability describes the moment it was sent, not a promise. Pass the generation with each call and handle the error. Every entry in `commands` is `false` while the editor is read-only, composing or importing an image, and every `format` and `table` entry is `false` in source and TXT modes. [CommandState](/reference/options#command-state) lists every field.
+
+## Format text and edit tables
+
+`format(command, options?, expectedGeneration?)` applies one formatting command to the selection and returns whether anything changed. Headings, lists and quotes toggle: applying the current form turns it off. A link takes the destination from your own prompt:
+
+```ts
+import { InkKitError } from '@aicayzer/inkkit'
+
+function setLink(destination: string, generation: number): boolean {
+  try {
+    return editor.format('link', { destination }, generation)
+  } catch (error) {
+    if (error instanceof InkKitError && error.code === 'invalid-argument')
+      return false
+    throw error
+  }
+}
+```
+
+`format('link')` without a destination removes the link. A destination that the editor wouldn't open, such as a `javascript:` address, throws `invalid-argument`.
+
+`table(command, options?, expectedGeneration?)` inserts and edits tables. `state.table` is present when the selection is in a table, with the cell's `row` and `column` and the table's size:
+
+```ts
+declare const generation: number
+
+editor.table('insert', { rows: 3, columns: 4 }, generation)
+editor.table(
+  'sortRows',
+  { order: 'descending', comparison: 'number' },
+  generation,
+)
+```
+
+Both return `false`, and change nothing, when the command doesn't apply here. [Format commands](/reference/options#format-commands) and [Table commands](/reference/options#table-commands) list every command and option.
+
+## Bind shortcuts
+
+Inkkit binds undo, redo, block moves and table exit by default. It binds no formatting keys. Pass a `keymap` at mount, by the same names as the `format` and `table` commands, in [ProseMirror key notation](https://prosemirror.net/docs/ref/#keymap), where `Mod` is Command on Apple platforms and Control elsewhere:
+
+```ts
+import { InkKitEditor, type Keymap } from '@aicayzer/inkkit'
+
+const keymap: Keymap = {
+  bold: ['Mod-b'],
+  italic: ['Mod-i'],
+  heading1: ['Mod-Alt-1'],
+  tableAddRowAfter: ['Mod-Alt-ArrowDown'],
+}
+
+const editor = await InkKitEditor.mount(root, events, { keymap })
+editor.setKeymap({ ...keymap, code: ['Mod-e'] })
+```
+
+`setKeymap` replaces the whole map, so pass every binding you want each time. An omitted default name returns to its default, and an empty array disables it. A shortcut whose command fails reports the error through `events.error`. [Shortcuts](/reference/appearance#shortcuts) lists every name and default.
+
+## Add the slash menu
+
+The slash menu is off by default. Enable it at mount to offer block commands when the person types `/` on an empty line. Choose the built-in commands with `commands`, and add your own with `customCommands`:
+
+```ts
+import { InkKitEditor, type DocumentContext } from '@aicayzer/inkkit'
+
+declare function chooseNoteLink(
+  context: DocumentContext,
+): Promise<string | undefined>
+
+const editor = await InkKitEditor.mount(root, events, {
+  slashMenu: {
+    enabled: true,
+    commands: [
+      'heading1',
+      'heading2',
+      'bulletList',
+      'taskList',
+      'quote',
+      'table',
+    ],
+    customCommands: [
+      {
+        name: 'Link to Note',
+        keywords: ['note', 'link'],
+        action: chooseNoteLink,
+      },
+    ],
+  },
+  labels: { slashTaskList: 'To-do List' },
+})
+```
+
+Here `chooseNoteLink` is your own picker, which returns a Markdown link such as `[Plans](notes/plans.md)`. A custom `action` returns Markdown, which replaces the line that holds the slash as one undo step, after the same preservation checks as any edit. Return `undefined` to cancel and keep the typed text. The action can be slow without blocking typing. If the document, selection or mode changes before it settles, Inkkit refuses the result and reports `stale-document` through `events.error`. See [Slash menu](/reference/options#slash-menu) for filtering, keys and every built-in command.
+
+## Build your own find
+
+For a basic find bar, `find(text)` selects the next match, and `replace` and `replaceAll` replace them. To show a match count, a match list or highlights, search the readable text yourself:
+
+```ts
+import { InkKitError, type TextRange } from '@aicayzer/inkkit'
+
+function findAll(query: string): TextRange[] {
+  if (!query) return []
+  try {
+    const { snapshotId, text } = editor.textSnapshot()
+    const pattern = new RegExp(
+      query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+      'giu',
+    )
+    return [...text.matchAll(pattern)].map((match) => ({
+      snapshotId,
+      from: match.index,
+      to: match.index + match[0].length,
+    }))
+  } catch (error) {
+    if (error instanceof InkKitError && error.code === 'composition') return []
+    throw error
+  }
+}
+
+const matches = findAll('draft')
+const first = matches[0]
+if (first) {
+  editor.selectTextRange(first)
+  editor.revealTextRange(first)
+}
+```
+
+- **`textSnapshot()`** returns the text the person reads, with a `snapshotId`. Offsets are UTF-16 code units in that `text`, not Markdown offsets. Search the original string, as the regular expression does, so a case change that alters a string's length can't shift the offsets.
+- **`selectTextRange(range)`** selects without taking focus or scrolling, so typing stays in your search field. Pass `{ focus: true, reveal: true }` when the person goes to a result.
+- **`revealTextRange(range)`** scrolls the range into view and unfolds a folded callout that holds it.
+- **`replaceTextRange(range, text)`** replaces one match with literal text as one undo step. It throws `invalid-range` for a range that crosses a block or an embed.
+- **`textRangesRects(ranges)`** measures a batch of ranges, for highlights you draw. Rectangles are CSS pixels in the page's client area.
+
+Any edit, reload or mode change makes the snapshot stale, and a stale range throws `stale-document`. Search again after each change, including after `replaceTextRange`. To replace every match, call `replaceAll`. [Readable text and layout](/reference/editor#readable-text-and-layout) has the exact rules.
+
+## Keep content clear of overlapping chrome
+
+When a toolbar or search bar floats over the editor, tell Inkkit how much of the scroll container it covers. Reveal, find and heading navigation then keep their target out from under it:
+
+```ts
+const scroller = document.querySelector<HTMLElement>('main')!
+const header = document.querySelector<HTMLElement>('header')!
+
+new ResizeObserver(() => {
+  editor.setViewport({
+    scrollContainer: scroller,
+    insets: { top: header.offsetHeight },
+  })
+}).observe(header)
+```
+
+The scroll container must be the root or an ancestor of it. `setViewport` replaces the previous settings, so pass both fields each time.
+
+## Show an outline
+
+`headings(expectedGeneration?)` returns the document's headings in order, and `navigateHeading(heading)` focuses and scrolls to one. Entries go stale when the document, its revision or the mode changes, so refresh the outline when command state reports a new version. `headings` throws during composition or a pending import, so wait for the next state then:
+
+```ts
+import { InkKitEditor, type CommandState, type Heading } from '@aicayzer/inkkit'
+
+declare function drawOutline(headings: readonly Heading[]): void
+
+let version = ''
+
+function refreshOutline(state: CommandState): void {
+  if (state.composing || state.pending) return
+  const next = `${state.generation}:${state.revision}:${state.mode}`
+  if (next === version) return
+  version = next
+  drawOutline(editor.headings(state.generation))
+}
+
+const editor = await InkKitEditor.mount(root, {
+  ...events,
+  commandStateChanged: refreshOutline,
+})
+```
+
+When the person picks an entry, call `editor.navigateHeading(entry)`. A stale entry throws `stale-document`; refresh and try again.

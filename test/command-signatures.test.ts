@@ -607,11 +607,8 @@ test('insertImages and insertPaths take a client point', () =>
 
 test('ShortcutName lists every binding, as the API reference documents them', () => {
   const names: readonly ShortcutName[] = shortcutNames
-  const reference = readFileSync('docs/api.md', 'utf8')
-  const section = reference.slice(
-    reference.indexOf('`EditorOptions.keymap`'),
-    reference.indexOf('## Opening links'),
-  )
+  const reference = readFileSync('docs/reference/appearance.mdx', 'utf8')
+  const section = reference.slice(reference.indexOf('\n## Shortcuts\n'))
   const documented = new Set(
     [...section.matchAll(/`([a-z][A-Za-z0-9]*)`/g)].map((match) => match[1]),
   )

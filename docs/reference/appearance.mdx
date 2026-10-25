@@ -1,0 +1,168 @@
+---
+title: 'Tokens, labels and shortcuts'
+description: 'Every --inkkit-* CSS token with its default, every label with its default text, and every shortcut name with its default keys.'
+---
+
+For how to apply these, see [Appearance and labels](/guides/appearance) and [Toolbars, shortcuts and search](/guides/controls).
+
+## Tokens
+
+Set these CSS custom properties on the editor root or an ancestor. Inkkit reads no other custom property; properties that begin `--_inkkit-` are internal. Defaults that use `light-dark()` follow `--inkkit-color-scheme`.
+
+| Token                           | Default                                                                                                            | What it styles                                                                                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--inkkit-font-family`          | `-apple-system, BlinkMacSystemFont, system-ui, sans-serif`                                                         | Editor text. The suggestion menu also uses it, with `system-ui, sans-serif` as its own default.                                                                                                                    |
+| `--inkkit-font-size`            | `15px`                                                                                                             | Editor text. Heading sizes, spacing, table cell padding and task checkboxes scale from it.                                                                                                                         |
+| `--inkkit-line-height`          | `normal` in formatted mode, `1.5` in source and TXT                                                                | Line height of the editing surfaces.                                                                                                                                                                               |
+| `--inkkit-monospace-font`       | `ui-monospace, 'SF Mono', Menlo, monospace`                                                                        | Source and TXT text, inline code, code blocks, literal Markdown blocks and visible comments.                                                                                                                       |
+| `--inkkit-color-scheme`         | `light dark`                                                                                                       | The editor's `color-scheme`. Set `light` or `dark` to force one whatever the system setting.                                                                                                                       |
+| `--inkkit-text-color`           | `CanvasText`                                                                                                       | Text.                                                                                                                                                                                                              |
+| `--inkkit-accent-color`         | `#0a84ff`                                                                                                          | Caret, links, quote bars, ordered list numbers, checked task boxes, footnote references, Note callouts, selection and match highlights, table control highlights, selected images, and the focus rings by default. |
+| `--inkkit-muted-color`          | `color-mix(in srgb, CanvasText 55%, transparent)`                                                                  | Secondary text: the placeholder, struck-through and completed task text, callout fold buttons, visible comments, file card status, the code language button and code comments.                                     |
+| `--inkkit-rule-color`           | `color-mix(in srgb, CanvasText 14%, transparent)`                                                                  | Table borders, dividers, file card borders and table control outlines.                                                                                                                                             |
+| `--inkkit-code-background`      | `color-mix(in srgb, CanvasText 8%, transparent)`                                                                   | Inline code, code blocks, table header cells, visible comments and file card controls.                                                                                                                             |
+| `--inkkit-code-comment`         | `--inkkit-muted-color`                                                                                             | Highlighted comments and quotes, in italics.                                                                                                                                                                       |
+| `--inkkit-code-keyword`         | `light-dark(#a626a4, #c77bde)`                                                                                     | Keywords, literals, built-ins, types and doc tags.                                                                                                                                                                 |
+| `--inkkit-code-string`          | `light-dark(#3b763a, #98c379)`                                                                                     | Strings, regular expressions and additions.                                                                                                                                                                        |
+| `--inkkit-code-number`          | `light-dark(#8d6001, #d19a66)`                                                                                     | Numbers, symbols, bullets, links and meta.                                                                                                                                                                         |
+| `--inkkit-code-title`           | `light-dark(#8d6101, #e5c07b)`                                                                                     | Titles, sections, names and selectors.                                                                                                                                                                             |
+| `--inkkit-code-attr`            | `light-dark(#c82c1e, #e37981)`                                                                                     | Attributes, properties, variables, tags and deletions.                                                                                                                                                             |
+| `--inkkit-diagram-background`   | `#fff`                                                                                                             | The Mermaid preview card. The diagram itself always uses Mermaid's default light theme.                                                                                                                            |
+| `--inkkit-diagram-text-color`   | `#222`                                                                                                             | Text on the preview card, such as the rendering status.                                                                                                                                                            |
+| `--inkkit-diagram-error-color`  | `#9b2424`                                                                                                          | The message of a diagram that can't render.                                                                                                                                                                        |
+| `--inkkit-min-height`           | `100%`                                                                                                             | Minimum height of the editing surfaces.                                                                                                                                                                            |
+| `--inkkit-reading-width`        | `100%`                                                                                                             | Width of the writing column.                                                                                                                                                                                       |
+| `--inkkit-padding-top`          | `10px`                                                                                                             | Space above the text on the editing surfaces.                                                                                                                                                                      |
+| `--inkkit-padding-inline`       | `16px`                                                                                                             | Least space on each side of the writing column.                                                                                                                                                                    |
+| `--inkkit-padding-bottom`       | `48px`                                                                                                             | Space below the text on the editing surfaces.                                                                                                                                                                      |
+| `--inkkit-column-inset`         | `max(var(--inkkit-padding-inline), calc((100% - var(--inkkit-reading-width)) / 2 + var(--inkkit-padding-inline)))` | Inline padding of both editing surfaces, so text stays put when the mode changes. The `100%` resolves against the element that uses it.                                                                            |
+| `--inkkit-paragraph-spacing`    | `calc(var(--inkkit-font-size) * 0.667)`                                                                            | Space below paragraphs, lists, tables and image blocks.                                                                                                                                                            |
+| `--inkkit-checkbox-offset`      | `0px`                                                                                                              | Moves task checkboxes down, or up when negative. Boxes are centered on the first line; set it only for a font whose lines look off-center.                                                                         |
+| `--inkkit-menu-background`      | `light-dark(#fff, #252529)`                                                                                        | Suggestion menu background, for the slash menu and note suggestions.                                                                                                                                               |
+| `--inkkit-menu-text`            | `CanvasText`                                                                                                       | Suggestion menu text.                                                                                                                                                                                              |
+| `--inkkit-menu-highlight`       | `light-dark(#e8e8ed, #414146)`                                                                                     | Background of the selected suggestion.                                                                                                                                                                             |
+| `--inkkit-menu-radius`          | `8px`                                                                                                              | Suggestion menu corner radius.                                                                                                                                                                                     |
+| `--inkkit-menu-shadow`          | `0 4px 18px #0003`                                                                                                 | Suggestion menu shadow.                                                                                                                                                                                            |
+| `--inkkit-menu-width`           | `240px`                                                                                                            | Suggestion menu width, at most the viewport width less 8 pixels.                                                                                                                                                   |
+| `--inkkit-focus-width`          | `2px`                                                                                                              | Width of the focus ring on every control Inkkit draws, on footnote and wiki links, and on the editing surfaces.                                                                                                    |
+| `--inkkit-focus-color`          | `--inkkit-accent-color`; `currentColor` on footnote and wiki links                                                 | Color of those focus rings.                                                                                                                                                                                        |
+| `--inkkit-focus-offset`         | `-2px`; `2px` on footnote and wiki links                                                                           | Offset of those focus rings.                                                                                                                                                                                       |
+| `--inkkit-surface-focus-width`  | `--inkkit-focus-width`                                                                                             | Width of the focus ring on the formatted and source or TXT surfaces only. `0` draws none there and keeps the controls' rings.                                                                                      |
+| `--inkkit-surface-focus-color`  | `--inkkit-focus-color`                                                                                             | Color of the surfaces' focus ring.                                                                                                                                                                                 |
+| `--inkkit-surface-focus-offset` | `--inkkit-focus-offset`                                                                                            | Offset of the surfaces' focus ring.                                                                                                                                                                                |
+
+## Labels
+
+Pass any of these keys in [`labels`](/reference/options#editor-options) at mount to replace the default text. Labels are fixed at mount.
+
+| Label                    | Default text              | Where it appears                                                                                |
+| ------------------------ | ------------------------- | ----------------------------------------------------------------------------------------------- |
+| `formattedEditor`        | Formatted Markdown editor | Accessible name of the formatted editing surface.                                               |
+| `sourceEditor`           | Markdown source editor    | Accessible name of the Markdown source surface.                                                 |
+| `plainTextEditor`        | Plain text editor         | Accessible name of the TXT surface.                                                             |
+| `placeholder`            | Start typing…             | Shown in an empty formatted document.                                                           |
+| `copyCode`               | Copy                      | The code block Copy button, drawn only when `events.copy` is set.                               |
+| `codeLanguage`           | Code language             | Accessible name of a code block's language button and its list.                                 |
+| `codeLanguageSearch`     | Search languages          | Placeholder and accessible name of the language search field.                                   |
+| `codeAuto`               | Auto                      | The language choice for a fence with no language, highlighted by detection.                     |
+| `codePlainText`          | Plain text                | The language choice that writes `text` and turns highlighting off.                              |
+| `expandCallout`          | Expand                    | The fold button of a collapsed callout, followed by the callout's title in its accessible name. |
+| `collapseCallout`        | Collapse                  | The fold button of an expanded callout, followed by the callout's title in its accessible name. |
+| `diagramRendering`       | Rendering diagram…        | The preview card while a diagram renders.                                                       |
+| `diagramUnavailable`     | Diagram unavailable:      | Prefix of the renderer's message on a diagram that can't render.                                |
+| `footnote`               | Footnote                  | Prefix of the footnote label in the accessible name of footnote references and definitions.     |
+| `tableAddRow`            | Add row                   | Table row menu: add a row after it.                                                             |
+| `tableAddColumn`         | Add column                | Table column menu: add a column after it.                                                       |
+| `tableDeleteRow`         | Delete row                | Table row menu: delete the row. The header row doesn't offer it.                                |
+| `tableDeleteColumn`      | Delete column             | Table column menu: delete the column.                                                           |
+| `tableAlignLeft`         | Align left                | Table column menu: align left.                                                                  |
+| `tableAlignCenter`       | Align center              | Table column menu: align center.                                                                |
+| `tableAlignRight`        | Align right               | Table column menu: align right.                                                                 |
+| `tableMoveColumn`        | Move column               | The control above the active column, which opens its menu and moves it.                         |
+| `tableMoveRow`           | Move row                  | The control beside the active row, which opens its menu and moves it.                           |
+| `fileLoading`            | Loading file…             | File card status while `FileAdapter.resolve` runs.                                              |
+| `fileMissing`            | File unavailable          | File card status when the file resolves as `missing`.                                           |
+| `fileError`              | File could not be loaded  | File card status when resolution fails, or resolves as `error` with an empty `message`.         |
+| `fileRetry`              | Retry                     | The file card button that resolves the file again.                                              |
+| `fileOpen`               | Open                      | Name and tooltip of the file card Open button, drawn only when `FileAdapter.open` is set.       |
+| `filePreviewUnavailable` | Preview unavailable       | File card status when its image, audio, video or PDF fails to load.                             |
+| `filePDFPreview`         | Open to view this PDF     | Status line of a PDF card.                                                                      |
+| `wikiMissing`            | Link unavailable          | Tooltip of a wiki link that `WikiLinkAdapter.resolve` reports missing.                          |
+| `comment`                | Author comment            | Accessible name of a visible author comment.                                                    |
+| `preservedMarkdown`      | Preserved Markdown        | Accessible name of a block that Inkkit keeps as authored Markdown and doesn't render.           |
+| `suggestions`            | Suggestions               | Accessible name of the suggestion list, for the slash menu and note suggestions.                |
+| `suggestionsLoading`     | Loading…                  | The suggestion list while `WikiLinkAdapter.suggest` runs.                                       |
+| `suggestionsEmpty`       | No matches                | Shown briefly when nothing matches, before the list closes.                                     |
+| `slashHeading1`          | Heading 1                 | Slash menu: `heading1`.                                                                         |
+| `slashHeading2`          | Heading 2                 | Slash menu: `heading2`.                                                                         |
+| `slashHeading3`          | Heading 3                 | Slash menu: `heading3`.                                                                         |
+| `slashBulletList`        | Bulleted List             | Slash menu: `bulletList`.                                                                       |
+| `slashOrderedList`       | Numbered List             | Slash menu: `orderedList`.                                                                      |
+| `slashTaskList`          | Checklist                 | Slash menu: `taskList`.                                                                         |
+| `slashQuote`             | Quote                     | Slash menu: `quote`.                                                                            |
+| `slashCodeBlock`         | Code Block                | Slash menu: `codeBlock`.                                                                        |
+| `slashTable`             | Table                     | Slash menu: `table`.                                                                            |
+| `slashCallout`           | Callout                   | Slash menu: `callout`, which opens the callout choices.                                         |
+| `slashDivider`           | Divider                   | Slash menu: `divider`.                                                                          |
+| `slashDiagram`           | Diagram                   | Slash menu: `diagram`, when previews are available.                                             |
+| `slashNote`              | Note                      | Slash menu callout choice.                                                                      |
+| `slashTip`               | Tip                       | Slash menu callout choice.                                                                      |
+| `slashImportant`         | Important                 | Slash menu callout choice.                                                                      |
+| `slashWarning`           | Warning                   | Slash menu callout choice.                                                                      |
+| `slashCaution`           | Caution                   | Slash menu callout choice.                                                                      |
+
+## Shortcuts
+
+Pass bindings in [`keymap`](/reference/options#editor-options) at mount, or replace them later with [`setKeymap`](/reference/editor#setkeymap). Each call replaces the whole map: a name you leave out loses its binding, except that a name with default keys keeps them. `[]` removes a name's defaults. Formatting has no default bindings, and `link` has no name because it needs a destination.
+
+| `ShortcutName`         | Default keys           | What it does                |
+| ---------------------- | ---------------------- | --------------------------- |
+| `heading1`             | None                   | `format('heading1')`        |
+| `heading2`             | None                   | `format('heading2')`        |
+| `heading3`             | None                   | `format('heading3')`        |
+| `heading4`             | None                   | `format('heading4')`        |
+| `heading5`             | None                   | `format('heading5')`        |
+| `heading6`             | None                   | `format('heading6')`        |
+| `paragraph`            | None                   | `format('paragraph')`       |
+| `bold`                 | None                   | `format('bold')`            |
+| `italic`               | None                   | `format('italic')`          |
+| `strikethrough`        | None                   | `format('strikethrough')`   |
+| `highlight`            | None                   | `format('highlight')`       |
+| `code`                 | None                   | `format('code')`            |
+| `codeBlock`            | None                   | `format('codeBlock')`       |
+| `quote`                | None                   | `format('quote')`           |
+| `bulletList`           | None                   | `format('bulletList')`      |
+| `orderedList`          | None                   | `format('orderedList')`     |
+| `taskList`             | None                   | `format('taskList')`        |
+| `undo`                 | `Mod-z`                | `undo()`                    |
+| `redo`                 | `Mod-y`, `Shift-Mod-z` | `redo()`                    |
+| `moveBlockUp`          | `Alt-ArrowUp`          | `moveBlock('up')`           |
+| `moveBlockDown`        | `Alt-ArrowDown`        | `moveBlock('down')`         |
+| `tableInsert`          | None                   | `table('insert')`           |
+| `tableAddRowBefore`    | None                   | `table('addRowBefore')`     |
+| `tableAddRowAfter`     | None                   | `table('addRowAfter')`      |
+| `tableAddColumnBefore` | None                   | `table('addColumnBefore')`  |
+| `tableAddColumnAfter`  | None                   | `table('addColumnAfter')`   |
+| `tableDeleteRow`       | None                   | `table('deleteRow')`        |
+| `tableDeleteColumn`    | None                   | `table('deleteColumn')`     |
+| `tableDeleteTable`     | None                   | `table('deleteTable')`      |
+| `tableAlignLeft`       | None                   | `table('alignLeft')`        |
+| `tableAlignCenter`     | None                   | `table('alignCenter')`      |
+| `tableAlignRight`      | None                   | `table('alignRight')`       |
+| `tableMoveRowUp`       | None                   | `table('moveRowUp')`        |
+| `tableMoveRowDown`     | None                   | `table('moveRowDown')`      |
+| `tableMoveColumnLeft`  | None                   | `table('moveColumnLeft')`   |
+| `tableMoveColumnRight` | None                   | `table('moveColumnRight')`  |
+| `tableSortRows`        | None                   | `table('sortRows')`         |
+| `tableExit`            | `Mod-Enter`, `Enter`   | `table('exit')`, in a table |
+
+A `Keymap` maps each name to an array of keys. An unknown name, or a value that isn't an array of strings, throws `invalid-argument`; a `null` entry counts as omitted.
+
+- **Where bindings apply.** History bindings work on every surface. Formatting, block move and table bindings work only in formatted mode. `Mod-z`, `Mod-y` and `Shift-Mod-z` are always consumed, even when unbound, so the browser's own undo never changes source or TXT text.
+- **A key shared by two names** goes to the later group, in the order history, formatting, block moves, tables. A table binding passes its key on to a block move bound to the same key when its command isn't available, so `tableMoveRowUp` and `moveBlockUp` can share a key: rows move in a table, blocks move elsewhere.
+- **A bound key is consumed** even when its history, formatting or block move command isn't available now. A table binding passes the key on when its command isn't available. A block move binding passes the key on in a table, in a read-only editor and where there is no block to move, so the web view's own caret movement applies; on a Mac, Option-Up and Option-Down move to the start or end of a paragraph.
+- **A command that fails from a shortcut** the person presses reports its error through `events.error`. Through [`keyDown`](/reference/editor#keydown), a bound key in a read-only editor throws `read-only`, except a block move key, which returns `false`.
+
+### Key notation
+
+Keys use [ProseMirror key notation](https://prosemirror.net/docs/ref/#keymap): modifiers joined to a `KeyboardEvent.key` value with `-`, such as `Mod-b`, `Shift-Mod-z` or `Alt-ArrowDown`. `Mod` is Command on Apple platforms and Control elsewhere, and `Alt` is Option on a Mac.

@@ -1,0 +1,159 @@
+---
+title: 'Markdown support'
+description: 'Which Markdown Inkkit renders and edits, which it keeps as literal source, what needs an adapter, and the rules for each construct.'
+---
+
+Inkkit edits CommonMark and GitHub Flavored Markdown (GFM) in formatted mode, plus footnotes, callouts, highlights and author comments. Anything else stays in the document as literal source that people can still edit and save. Source mode edits every document as plain Markdown text.
+
+## Support at a glance
+
+The status applies to formatted mode.
+
+| Content                                                                            | Example                                                               | Status                                                                   |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Headings (ATX and setext), paragraphs, emphasis, inline code, lists, quotes, rules | `# Title`, `**bold**`, `` `code` ``, `1. Item`                        | Rendered and editable                                                    |
+| Links and autolinks                                                                | `[docs](https://example.com)`, `<ada@example.com>`, `www.example.com` | Rendered and editable                                                    |
+| Code blocks                                                                        | A fence with a language word                                          | Rendered and editable, with highlighting                                 |
+| GFM tables, task lists and strikethrough                                           | `\| A \| B \|`, `- [x] Done`, `~~old~~`                               | Rendered and editable                                                    |
+| Footnotes                                                                          | `Text[^1]` and `[^1]: Note`                                           | Rendered and editable                                                    |
+| Reference links                                                                    | `[text][id]`, `[id][]`, `[id]` with `[id]: /url`                      | Rendered and editable when the label has a definition; otherwise literal |
+| Callouts                                                                           | `> [!NOTE]- Details`                                                  | Rendered and editable for five types; other types literal                |
+| Highlights                                                                         | `==important==`                                                       | Rendered and editable                                                    |
+| Author comments                                                                    | `<!-- note -->`, `%% note %%`                                         | Hidden by default; editable when shown                                   |
+| Mermaid diagrams                                                                   | A `mermaid` fence                                                     | Editable source with an offline preview                                  |
+| Images                                                                             | `![Alt](reference)`                                                   | Needs the `images` or `files` option; literal without it                 |
+| Image references                                                                   | `![Alt][id]`                                                          | Literal                                                                  |
+| Wiki links and file embeds                                                         | `[[Note]]`, `![[photo.png\|400]]`                                     | Needs the `wikiLinks` or `files` option; literal without it              |
+| Raw HTML and front matter                                                          | `<details>`, a YAML `---` or TOML `+++` block                         | Literal; HTML is never executed                                          |
+| HTML line breaks                                                                   | `<br>`, `<br />`                                                      | Rendered as a line break                                                 |
+| Other syntax, such as math and emoji codes                                         | `$x^2$`, `:smile:`                                                    | Plain text                                                               |
+| TXT documents                                                                      | A document loaded with `format: 'txt'`                                | Literal text with no Markdown                                            |
+| Embedding one note in another, block references                                    | `[[Note#^block]]`                                                     | Unsupported; kept as literal source                                      |
+
+## Literal blocks
+
+A top-level block that holds syntax Inkkit can't show formatted, such as inline HTML, an unresolved reference or an image without an adapter, is shown as its Markdown source. The whole block stays literal: a list or quote with one such item is literal as a whole. The rest of the document stays formatted.
+
+- Text typed into a literal block is saved as typed, Markdown characters included. Lines the edit doesn't reach keep their spelling.
+- When an edit makes the block readable, such as removing its only inline HTML, Inkkit shows it formatted in the same undo step. Front matter stays literal while you edit it.
+- Enter at the end of a literal block starts an empty paragraph after it. Shift+Enter in a literal block does nothing.
+- An edit that would make a literal block change how other blocks read is refused; see [Preservation](/concepts/preservation#why-an-edit-is-refused).
+
+## Tables
+
+- A row with fewer cells than the header stays short until one of its missing cells gets content.
+- A row with more cells than the header keeps the table literal, because GFM ignores the extra cells. A `|` inside a code span is a common cause; write it as `\|` to make the table editable.
+- HTML tables, including tables with merged cells or nested blocks, stay literal.
+- A `<br>` in a cell keeps its spelling. Shift+Enter in a cell inserts a break written as `<br />`.
+- Adding or deleting a row keeps the other rows and the delimiter row as written. Adding, deleting, moving or aligning a column rewrites every row and pads the table afresh.
+
+To start a table by typing, type a row and press Enter or Tab at the end of the line. The paragraph must hold only that line, start and end with `|`, and have 2 to 100 cells, such as `| Name | Date |`. The cells become the header, an empty row follows, and the caret moves to its first cell. Undo right after restores the typed line. This works in lists, quotes, callouts and footnotes, but not in code, front matter, a table, a task item or a paragraph with other lines.
+
+[Toolbars, shortcuts and search](/guides/controls) describes the `table` commands.
+
+## Footnotes and reference links
+
+Footnotes use `[^label]` references and `[^label]: text` definitions. Reference links can be full (`[text][id]`), collapsed (`[id][]`) or shortcut (`[id]`), with a definition such as `[id]: https://example.com "Title"`.
+
+- Labels and definitions keep their spelling, including definitions that several links share and definitions that nothing uses.
+- `editReferenceDefinition` changes a definition, and every link that uses it follows. `format('link', { destination })` in a reference link does the same.
+- Editing the text of a collapsed or shortcut reference rewrites only that link as a full reference when it needs one to keep its target.
+- A reference whose label has no definition keeps its block literal.
+
+`insertFootnote` and `navigateFootnote` add footnotes and move between a reference and its definition; see the [editor reference](/reference/editor).
+
+## Callouts
+
+Callouts follow [GitHub alerts](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) and part of the [Obsidian callout syntax](https://obsidian.md/help/callouts):
+
+```md
+> [!WARNING]- Before you upgrade
+> Pin an exact version.
+```
+
+- **Types:** `NOTE`, `TIP`, `IMPORTANT`, `WARNING` and `CAUTION`, in any letter case. The source keeps the case you wrote.
+- **Title:** optional plain text after the marker on the same line.
+- **Folding:** `+` directly after the closing bracket starts the callout expanded and `-` starts it collapsed, each with a fold button that Enter and Space operate. Folding changes only presentation: the source and `dirty` don't change.
+- **Literal:** other types, a space before or a repeat of the fold marker, and formatted titles keep the callout literal.
+
+In the body, Enter starts a new paragraph, and Enter in an empty last paragraph leaves the callout. Backspace at the start of the first block moves that block out of the callout. An empty paragraph in a callout is saved as a quoted `<br />` line. Copy and print include the full body of a folded callout.
+
+## Highlights
+
+`==text==` is highlighted text. It needs exactly two `=` on each side; escaped delimiters and code stay literal. `format('highlight')` toggles it. The `highlight` shortcut name has no default key. Ordinary copy writes it as `<mark>`.
+
+## Comments
+
+HTML comments (`<!-- note -->`) and Obsidian comments (`%% note %%`), inline or over several lines, are author content that readers don't see.
+
+- Comments start hidden. `setCommentsVisible(true)` shows them for editing. This changes only presentation.
+- Snapshots and Copy as Markdown keep comments. Ordinary copy and print leave them out, even when they're shown.
+- While comments are hidden, Backspace, Delete and caret movement skip them. Deleting or typing over a selection removes the hidden comments inside it, and Undo restores them.
+- A comment inside bold, italic, strikethrough, a highlight or a link stays inside it.
+- Incomplete comment syntax is plain text, and comments in code and TXT are literal. Comment delimiters inside a footnote label or a link destination are part of that label or destination.
+
+Some edits to comments are refused; see [Preservation](/concepts/preservation#why-an-edit-is-refused).
+
+## Code blocks and highlighting
+
+- **Fences:** an edit keeps the fence characters, length, info string and line endings. A fence grows when the edited code would otherwise close it. Editing an indented code block saves it as a fenced block.
+- **Converting:** typing a fence at the start of a paragraph, or `format('codeBlock')`, turns the paragraph into code that keeps the Markdown source of its text.
+- **Language selector:** choosing a language changes only the fence's language word. **Auto** removes the language word and detects a language for highlighting without saving it. **Plain text** writes `text` and turns highlighting off. An unknown language word is kept and shown without highlighting.
+- **Copy button:** shown only when you pass an `events.copy` handler, which receives the code.
+
+Highlighting recognizes Arduino, Bash, C, C++, C#, CSS, Diff, Go, GraphQL, INI, Java, JavaScript, JSON, Kotlin, Less, Lua, Makefile, Markdown, Objective-C, Perl, PHP, PHP template, Python, Python REPL, R, Ruby, Rust, SCSS, Shell, SQL, Swift, TypeScript, Visual Basic .NET, WebAssembly, HTML and XML, and YAML, under their [highlight.js](https://highlightjs.org) names and aliases, such as `js` and `py`.
+
+Highlighting has limits that keep typing responsive:
+
+- A block longer than 5,000 characters stays plain.
+- Detection with **Auto** runs only on blocks of 500 characters or fewer.
+- Once highlighting in one load or edit has taken 200 ms, the blocks it hasn't reached stay plain until they're edited.
+
+Plain blocks are still editable and save unchanged. Set [`rendering.codeHighlighting`](/reference/options) to `false` to turn highlighting off.
+
+## Mermaid
+
+A fence whose language is `mermaid` stays editable source with an offline preview beside it. Inkkit renders `flowchart` and `graph`, `sequenceDiagram`, `classDiagram`, `stateDiagram` and `stateDiagram-v2`, `erDiagram` and `pie`, with Mermaid 12.1.0, its default theme, and Arial with a sans-serif fallback.
+
+- **Limits:** a diagram renders only up to 30,000 characters and 500 edges. Exported PNG images are at most 4,096 pixels on each side.
+- **Refused:** anything that could load content or run code, or that changes Mermaid's configuration: directives and `---` configuration, HTML, URLs and links, click handlers and tooltips, styles and class definitions, icons and images, and math. Class diagram annotations such as `<<interface>>` and state diagram forks, joins and choices are allowed.
+- **Failures:** an unsupported or refused diagram keeps its source, shows that its preview is unavailable, and reports `diagram-unavailable` to `events.error`. Saving never depends on rendering.
+
+The `@aicayzer/inkkit/core` entry leaves Mermaid out: diagram fences stay editable code with no preview. [Compatibility](/compatibility) compares the two entries. Set [`rendering.diagramPreview`](/reference/options) to `false` to skip previews with the main entry. [Copy, paste and print](/concepts/clipboard) describes how diagrams leave the editor.
+
+## Links and autolinks
+
+- **Inline links** keep their form and destination when you edit their text, even when the text matches the destination.
+- **Bare addresses**, such as `https://example.com`, `www.example.com` and `ada@example.com`, link to their own text and stay bare while the text is still an address. Typing an address into text links it.
+- **Angle autolinks**, such as `<https://example.com>`, keep their brackets. Typing the closing `>` makes the link.
+- **Code:** an address inside inline code isn't linked.
+- **Spaces:** a bare URL followed by a space at the end of a block is saved as `<https://example.com>&#x20;`, because a bare URL would take in the encoded space.
+
+A primary click with Mod (Command on Apple platforms, Control elsewhere) calls `events.openLink` with the destination. Links with a scheme other than `http`, `https`, `mailto` or `tel` don't open; see [Links that Inkkit keeps](/concepts/clipboard#links-that-inkkit-keeps).
+
+## Line breaks
+
+- **Shift+Enter** inserts a hard line break, saved as a backslash and a line ending. Tables and ATX headings save it as `<br />` so the row or heading stays on one line, and so does a break directly before an inline HTML comment.
+- **Authored breaks** keep their spelling: a backslash, two trailing spaces, or `<br>` in any of its forms.
+- **A break at the end of a paragraph or setext heading** stays pending: snapshots leave it out until text follows it, because Markdown can't represent it. Reopening the snapshot drops the empty line.
+- **Soft line breaks**, single line endings inside a paragraph, are kept as written.
+- **Empty paragraphs** are saved as a `<br />` line, so they survive reopening.
+
+## Front matter and HTML
+
+Front matter is a YAML block between `---` lines, or a TOML block between `+++` lines, at the very start of the document. It stays literal, and edits to it are saved as typed.
+
+Raw HTML, in a block or inline, keeps its block literal. Inkkit never renders or executes it. It's saved as written and isn't checked for scripts or unsafe addresses, so an app that renders notes as HTML elsewhere must sanitize it.
+
+## TXT documents
+
+A document loaded with `format: 'txt'` is plain text. Every character is literal: no Markdown, no formatted mode and no diagrams. `setEditingMode` returns `false`, and copy and print give the text as written.
+
+## Wiki links and file embeds
+
+These need adapters that you pass at mount. Without one, the syntax keeps its block literal, and typed brackets are saved escaped.
+
+- **`wikiLinks`:** `[[Note]]`, `[[Note#Heading]]`, `[[Note|alias]]` and `[[#Heading]]`. Typing the closing `]]` makes the link.
+- **`files`:** `![[name]]`, `![[name|400]]` and `![[name|400x300]]` embeds, and path images such as `![Alt|400](path)`, which the host resolves to images, audio, video, PDFs or file cards. Only the width affects presentation.
+
+In a table cell, escape the pipe: `[[Note\|alias]]`. Nested brackets, line breaks, empty aliases or fragments, block references such as `#^block`, and note transclusion are unsupported. [Images, files and wiki links](/guides/adapters) shows how to implement each adapter.

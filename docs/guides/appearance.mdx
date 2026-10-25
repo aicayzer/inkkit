@@ -1,0 +1,98 @@
+---
+title: 'Appearance and labels'
+description: 'Style Inkkit with --inkkit-* tokens, match light and dark mode, adjust focus rings and localize the text it draws.'
+---
+
+Inkkit's styles apply only inside the mounted root, so the rest of your page keeps its own.
+
+## Set tokens
+
+Import the stylesheet once, then set tokens on the root or any ancestor. Each editor root can have its own values.
+
+```ts
+import '@aicayzer/inkkit/style.css'
+```
+
+```css
+.document-editor {
+  --inkkit-font-family: 'Iowan Old Style', serif;
+  --inkkit-font-size: 17px;
+  --inkkit-reading-width: 48rem;
+  --inkkit-padding-inline: 24px;
+  --inkkit-accent-color: #286343;
+}
+```
+
+Inkkit reads no other custom property, so your own `--accent` or `--text` never changes the editor. Properties that begin `--_inkkit-` are internal. To line up a header you draw outside the root with the writing column, set `--inkkit-column-inset` on an ancestor of both. [Tokens](/reference/appearance#tokens) lists every token and its default.
+
+## Match light and dark mode
+
+By default the editor follows the system setting. Its default colors use CSS `light-dark()` and system colors such as `CanvasText`, so text, menus and code highlighting switch with the scheme.
+
+When your app has its own theme setting, set `--inkkit-color-scheme` to `light` or `dark` with the rest of your theme. Inkkit doesn't paint a background behind the text, so set your page's `color-scheme` and background in the same rule:
+
+```css
+:root[data-theme='light'] {
+  color-scheme: light;
+  --inkkit-color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --inkkit-color-scheme: dark;
+}
+body {
+  background: Canvas;
+}
+```
+
+Your own token values can follow the scheme too, for example `--inkkit-accent-color: light-dark(#286343, #7bc89a)`. Diagram previews stay on a light card in both schemes, because the same rendering becomes the image in clipboard and print output.
+
+## Adjust the focus ring
+
+Inkkit draws one focus ring on its controls, such as file card buttons, table controls, audio and video, and a separate ring on the editing surfaces. Set `--inkkit-focus-width`, `--inkkit-focus-color` and `--inkkit-focus-offset` for the controls, and the `--inkkit-surface-focus-*` tokens for the surfaces, which default to the control values.
+
+To draw no ring around the text while keeping the controls' rings:
+
+```css
+.document-editor {
+  --inkkit-surface-focus-width: 0;
+}
+```
+
+Footnote references and wiki links draw their ring outside the text, in the current text color. The Copy and language buttons on code blocks keep a fixed accent ring that the focus tokens don't change.
+
+## Localize labels
+
+Inkkit draws some text of its own: accessible names for the editing surfaces, the placeholder, table and file card controls, menu items and status messages. Pass `labels` at mount with strings from your localization catalog. Omitted labels keep their English defaults.
+
+```ts
+import { InkKitEditor } from '@aicayzer/inkkit'
+
+const editor = await InkKitEditor.mount(root, events, {
+  labels: {
+    formattedEditor: 'Éditeur Markdown',
+    placeholder: 'Commencez à écrire…',
+    fileOpen: 'Ouvrir',
+    tableAddRow: 'Ajouter une ligne',
+  },
+})
+```
+
+Inkkit inserts labels as text, never as markup. An unknown key makes `mount` reject with `invalid-argument`. Labels are fixed at mount, so to change language, save, `destroy()` the editor and mount a new one. Your toolbar and menu text stay in your app. [Labels](/reference/appearance#labels) lists every key and its default.
+
+## What not to style
+
+Classes and markup inside the editor are not an API. Don't write rules for `.ProseMirror`, `.inkkit-*` classes or the elements inside the root: they can change in any release, and copied and printed output doesn't carry them. Style your own root element for layout, such as its height and scrolling, and use tokens for everything inside it.
+
+If a change you need has no token, [open an issue](https://github.com/aicayzer/inkkit/issues) rather than overriding an internal selector.
+
+## Accessibility
+
+Inkkit gives the editing surfaces accessible names from `formattedEditor`, `sourceEditor` and `plainTextEditor`. Its controls are buttons that the keyboard reaches, with names from labels. File cards, footnote definitions, author comments and preserved Markdown blocks carry roles and names, and the slash and suggestion menus expose a listbox with the selected option announced.
+
+Known gaps are tracked under the [`accessibility` label](https://github.com/aicayzer/inkkit/issues?q=is%3Aissue%20is%3Aopen%20label%3Aaccessibility). These are the ones a host is most likely to work around:
+
+- A read-only editor isn't exposed as read-only ([#161](https://github.com/aicayzer/inkkit/issues/161)).
+- A link can't be opened from the keyboard ([#160](https://github.com/aicayzer/inkkit/issues/160)).
+- Task items don't expose a checkbox or toggle from the keyboard ([#154](https://github.com/aicayzer/inkkit/issues/154)).
+- In light mode, the default accent color on link text and the unchecked task checkbox border fall below WCAG contrast minimums ([#158](https://github.com/aicayzer/inkkit/issues/158)). A darker `--inkkit-accent-color` fixes the link text; the checkbox border has no token.
