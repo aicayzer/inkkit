@@ -58,7 +58,7 @@ const images: ImageAdapter = {
 const editor = await InkKitEditor.mount(root, events, { images })
 ```
 
-When an import rejects, Inkkit inserts the text `[Name: image unavailable]` in place of the image and reports `image-unavailable` through `events.error`. Reject with an ordinary `Error`; Inkkit wraps it. An `InkKitError` rejection cancels a whole HTML paste ([#334](https://github.com/aicayzer/inkkit/issues/334)).
+When an import rejects, Inkkit inserts the text `[Name: image unavailable]` in place of the image and reports `image-unavailable` through `events.error`. Reject with an ordinary `Error` or `InkKitError` with code `image-unavailable`. Both HTML and image-file pastes keep the remaining content. Other `InkKitError` codes cancel the paste.
 
 `importImage` receives no abort signal, and Inkkit sets no time limit. While an import is pending, `snapshot()` and every edit throw `operation-pending`, so the document can't be saved. Settle the promise promptly, and give a store that can stall its own timeout. Cancellation is tracked in [#325](https://github.com/aicayzer/inkkit/issues/325).
 

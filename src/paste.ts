@@ -375,7 +375,11 @@ export class PasteController {
             element.setAttribute('src', reference)
             element.removeAttribute('srcset')
           } catch (error) {
-            if (error instanceof InkKitError) throw error
+            if (
+              error instanceof InkKitError &&
+              error.code !== 'image-unavailable'
+            )
+              throw error
             element.replaceWith(
               document.createTextNode(`[${alt}: image unavailable]`),
             )
