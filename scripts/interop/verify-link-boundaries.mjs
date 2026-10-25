@@ -124,9 +124,11 @@ for (const test of cases) {
     assertion('diagnostics', []),
     { op: 'save', name: 'saved' },
     assertion('text', test.expected, 'saved'),
-    { op: 'undo' },
+    { op: 'undo', name: 'undone' },
+    assertion('', true, 'undone'),
     ...(!test.format ? [assertion('snapshot.text', test.source)] : []),
-    { op: 'redo' },
+    { op: 'redo', name: 'redone' },
+    assertion('', true, 'redone'),
     assertion('snapshot.text', test.expected),
     assertion('error', null),
     assertion('diagnostics', []),
@@ -161,6 +163,7 @@ for (const test of cases) {
     passed:
       run.status === 0 &&
       result?.passed === true &&
+      !run.stderr.includes('WKWebView:') &&
       !result.final?.error &&
       !result.final?.diagnostics?.length &&
       nativeSteps.length > 0 &&
