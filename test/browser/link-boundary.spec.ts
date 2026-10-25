@@ -184,3 +184,40 @@ for (const movement of ['ArrowLeft', 'Backspace'])
       movement === 'ArrowLeft' ? 'x[new](docs)s\n' : 'x[ne](docs)s\n',
     )
   })
+
+for (const typed of ['new tail', 'new\u00a0tail'])
+  test(`batched explicit link typing ends at first whitespace ${JSON.stringify(typed)}`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture()
+    await operation(page, 'reload', { text: 'Start here\n' })
+    const text = (await operation(page, 'textSnapshot')) as {
+      snapshotId: string
+      text: string
+    }
+    await operation(page, 'selectTextRange', {
+      range: { snapshotId: text.snapshotId, from: 10, to: 10 },
+      options: { focus: true },
+    })
+    await operation(page, 'format', {
+      command: 'link',
+      options: { destination: 'docs' },
+    })
+    await page.keyboard.insertText(typed)
+    expect(await page.locator('.ProseMirror a').allTextContents()).toEqual([
+      'new',
+    ])
+    await page.keyboard.insertText('s')
+    const saved = (await observe(page)).snapshot!.text
+    expect(saved).toBe('Start here[new](docs)' + typed.slice(3) + 's\n')
+    expect((await observe(page)).diagnostics).toEqual([])
+    await operation(page, 'undo')
+    await operation(page, 'redo')
+    expect((await observe(page)).snapshot!.text).toBe(saved)
+    await operation(page, 'reload', { text: saved })
+    expect((await observe(page)).snapshot!.text).toBe(saved)
+    expect(await page.locator('.ProseMirror a').allTextContents()).toEqual([
+      'new',
+    ])
+  })

@@ -620,12 +620,12 @@ export const autolinkLiterals = $prose(
             }),
           )
         ) {
-          const trailing = /\s+$/.exec(
-            newState.selection.$from.nodeBefore?.text ?? '',
-          )?.[0]
-          if (trailing) {
-            const end = newState.selection.from
-            base.removeMark(end - trailing.length, end, explicit)
+          const start = oldState.selection.from
+          const end = newState.selection.from
+          const inserted = newState.doc.textBetween(start, end)
+          const whitespace = /\s/.exec(inserted)
+          if (whitespace) {
+            base.removeMark(start + whitespace.index, end, explicit)
             base.setStoredMarks(
               explicit.type.removeFromSet(oldState.storedMarks!),
             )
