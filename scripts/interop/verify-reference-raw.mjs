@@ -61,6 +61,28 @@ const source =
   ' | ' +
   tablePath +
   ' |\r\n'
+const callbackOperations = new Set([
+  'resolve',
+  'export',
+  'open',
+  'contextMenu',
+  'wikiResolve',
+  'wikiOpen',
+])
+const callbackChecks = (events, allowed, phase) => [
+  { operation: `${phase} callbacks present`, passed: events.length > 0 },
+  ...events
+    .filter((event) => callbackOperations.has(event.operation))
+    .map((event) => ({
+      operation: `${phase} ${event.operation} exact raw token`,
+      raw: event.raw,
+      passed: typeof event.raw === 'string' && allowed.includes(event.raw),
+    })),
+]
+const eventSnapshots = (result) =>
+  result.steps
+    .filter((step) => step.operation === 'fileEvents')
+    .map((step) => step.result)
 const scenarios = [
   {
     name: 'raw-adapter-contract',
@@ -88,9 +110,10 @@ const scenarios = [
       { op: 'fileEvents', name: 'reopenedCallbacks' },
     ],
     verify(result) {
-      const events = result.steps.find(
-        (s) => s.operation === 'fileEvents',
-      ).result
+      const [events, reopenedEvents] = eventSnapshots(result)
+      // loadDocument retains the fixture log, so require new callbacks after reopen.
+      const fresh = reopenedEvents.slice(events.length)
+      const allowed = [wiki, named, path, tableWiki, tableNamed, tablePath]
       const required = [
         ['wikiResolve', wiki],
         ['wikiOpen', wiki],
@@ -111,37 +134,75 @@ const scenarios = [
         ['export', tableNamed],
         ['export', tablePath],
       ]
-      return required.map(([operation, raw]) => ({
-        operation,
-        raw,
-        passed: events.some((e) => e.operation === operation && e.raw === raw),
-      }))
+      return [
+        ...callbackChecks(events, allowed, 'before reopen'),
+        ...callbackChecks(fresh, allowed, 'after reopen'),
+        ...[
+          ['wikiResolve', wiki],
+          ['wikiResolve', tableWiki],
+          ['resolve', named],
+          ['resolve', path],
+          ['resolve', tableNamed],
+          ['resolve', tablePath],
+        ].map(([operation, raw]) => ({
+          operation: `fresh ${operation}`,
+          raw,
+          passed: fresh.some(
+            (event) => event.operation === operation && event.raw === raw,
+          ),
+        })),
+        ...required.map(([operation, raw]) => ({
+          operation,
+          raw,
+          passed: events.some(
+            (e) => e.operation === operation && e.raw === raw,
+          ),
+        })),
+      ]
     },
   },
   {
     name: 'resize-marked-token-only',
-    source: '**' + named + '**\r\n\r\nTail\r\n',
+    source: '**![Path photo|120](images/native.png)**\r\n\r\nTail\r\n',
     operations: [
       { op: 'fileState', ready: true },
       { op: 'fileResize', width: 150 },
-      assert('snapshot.text', '**![[Photo|150]]**\r\n\r\nTail\r\n'),
+      assert(
+        'snapshot.text',
+        '**![Path photo|150](images/native.png)**\r\n\r\nTail\r\n',
+      ),
       { op: 'undo' },
-      assert('snapshot.text', '**' + named + '**\r\n\r\nTail\r\n'),
+      assert(
+        'snapshot.text',
+        '**![Path photo|120](images/native.png)**\r\n\r\nTail\r\n',
+      ),
       { op: 'redo' },
-      ...roundtrip('**![[Photo|150]]**\r\n\r\nTail\r\n'),
+      { op: 'fileState', ready: true },
+      { op: 'fileEvents' },
+      ...roundtrip('**![Path photo|150](images/native.png)**\r\n\r\nTail\r\n'),
       { op: 'fileState', ready: true },
       { op: 'fileEvents' },
     ],
     verify(result) {
-      const events =
-        result.steps.findLast((s) => s.operation === 'fileEvents')?.result ?? []
+      const [events, reopenedEvents] = eventSnapshots(result)
+      const fresh = reopenedEvents.slice(events.length)
+      const resized = '![Path photo|150](images/native.png)'
       return [
-        {
-          operation: 'resized resolve raw',
-          passed: events.some(
-            (e) => e.operation === 'resolve' && e.raw === '![[Photo|150]]',
+        ...callbackChecks(
+          events,
+          ['![Path photo|120](images/native.png)', resized],
+          'before reopen',
+        ),
+        ...callbackChecks(fresh, [resized], 'after reopen'),
+        ...[
+          ['before reopen', events],
+          ['after reopen', fresh],
+        ].map(([phase, callbacks]) => ({
+          operation: `${phase} resized resolve raw`,
+          passed: callbacks.some(
+            (event) => event.operation === 'resolve' && event.raw === resized,
           ),
-        },
+        })),
       ]
     },
   },
@@ -215,7 +276,19 @@ for (const scenario of scenarios) {
   try {
     result = JSON.parse(readFileSync(resultPath))
   } catch {}
-  const contracts = result?.passed ? (scenario.verify?.(result) ?? []) : []
+  const contracts = result?.passed
+    ? [
+        ...(scenario.verify?.(result) ?? []),
+        ...result.steps
+          .filter((step) => ['undo', 'redo'].includes(step.operation))
+          .map((step) => ({
+            operation: `${step.operation} returned true`,
+            passed: step.result === true,
+          })),
+      ]
+    : []
+  const assertions =
+    result?.steps?.filter((step) => step.operation === 'assert').length ?? 0
   evidence.cases.push({
     name: scenario.name,
     status: run.status,
@@ -228,6 +301,13 @@ for (const scenario of scenarios) {
     contracts,
     passed:
       run.status === 0 &&
+      !run.error &&
+      !run.signal &&
+      run.stderr.trim() === '' &&
+      assertions > 0 &&
+      contracts.length > 0 &&
+      result?.steps?.length === scenario.operations.length &&
+      result.steps.every((step) => step.passed === true && !step.skipped) &&
       result?.passed === true &&
       result.final?.diagnostics?.length === 0 &&
       contracts.every((c) => c.passed),
@@ -235,6 +315,7 @@ for (const scenario of scenarios) {
 }
 evidence.passed =
   evidence.installedProseMirror.length > 0 &&
+  evidence.cases.length === 3 &&
   evidence.cases.every((c) => c.passed)
 writeFileSync(join(output, 'evidence.json'), JSON.stringify(evidence, null, 2))
 console.log(JSON.stringify(evidence, null, 2))
