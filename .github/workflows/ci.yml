@@ -13,10 +13,32 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      editor: ${{ steps.scope.outputs.editor }}
+      site: ${{ steps.scope.outputs.site }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: node scripts/ci-scope.mjs
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
   check:
+    needs: [changes, docs]
+    # A failed classifier must fail this required check, not silently skip it.
+    if: ${{ always() && (needs.changes.result != 'success' || needs.docs.result == 'failure' || needs.docs.result == 'cancelled' || needs.changes.outputs.editor == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - if: ${{ needs.changes.result != 'success' || needs.docs.result == 'failure' || needs.docs.result == 'cancelled' }}
+        run: exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -24,6 +46,7 @@ jobs:
       - run: npm install --global pnpm@11.0.9
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
+      - run: node --test scripts/ci-scope.test.mjs
       # The packed-consumer test opens its pages in both engines.
       - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm check
@@ -35,6 +58,8 @@ jobs:
           path: _local/release/
 
   browser:
+    needs: changes
+    if: ${{ needs.changes.outputs.editor == 'true' }}
     name: browser (${{ matrix.engine }})
     strategy:
       fail-fast: false
@@ -62,3 +87,16 @@ jobs:
         with:
           name: browser-${{ matrix.engine }}
           path: _local/playwright/
+
+  docs:
+    needs: changes
+    if: ${{ needs.changes.outputs.site == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      - run: npx --yes mint@4.2.1125 validate
+        working-directory: docs
