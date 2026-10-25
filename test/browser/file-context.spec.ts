@@ -267,3 +267,160 @@ for (const wrapper of ['strong', 'link'])
     }
     expect(result.errors).toEqual([])
   })
+
+for (const [kind, tableRaw, paragraphRaw] of [
+  ['named', '![[photo.png\\|40]]', '![[photo.png|40]]'],
+  ['path', '![a&amp;b\\|40](a\\_b.png)', '![a&amp;b\\|40](a\\_b.png)'],
+])
+  test(`dragging a ${kind} image out of a table updates its raw context`, async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await page.waitForFunction(() => Boolean(window.inkkitPlayground))
+    const source = `| before ${tableRaw} after | B |\n| --- | --- |\n| c | d |\n\nDestination paragraph.\n`
+    await page.evaluate(
+      async ({ moduleUrl, source }) => {
+        const { InkKitEditor } = await import(moduleUrl)
+        const root = document.createElement('div')
+        root.id = 'file-transfer'
+        document.body.prepend(root)
+        const calls: string[][] = []
+        const errors: string[] = []
+        const editor = await InkKitEditor.mount(
+          root,
+          {
+            changed() {},
+            error(e: any) {
+              errors.push(e.code)
+            },
+          },
+          {
+            files: {
+              async resolve(r: any) {
+                calls.push(['resolve', r.raw])
+                return {
+                  kind: 'image',
+                  url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+                }
+              },
+              open(r: any) {
+                calls.push(['open', r.raw])
+              },
+              contextMenu(r: any) {
+                calls.push(['context', r.raw])
+              },
+              async exportImage(r: any) {
+                calls.push(['export', r.raw])
+                return {
+                  bytes: new Uint8Array([71, 73, 70, 56, 57, 97]),
+                  mimeType: 'image/gif',
+                }
+              },
+            },
+          },
+        )
+        editor.loadDocument({
+          documentId: 'transfer',
+          generation: 1,
+          format: 'md',
+          text: source,
+        })
+        Object.assign(window, { fileTransfer: { editor, calls, errors } })
+      },
+      { moduleUrl, source },
+    )
+    const image = page.locator('#file-transfer img')
+    await expect(image).toBeVisible()
+    await image.click()
+    const start = (await image.boundingBox())!
+    const end = (await page
+      .locator('#file-transfer p', { hasText: 'Destination paragraph.' })
+      .boundingBox())!
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(
+      start.x + start.width / 2 + 15,
+      start.y + start.height / 2 + 15,
+      { steps: 10 },
+    )
+    await page.mouse.move(end.x + 60, end.y + end.height / 2, { steps: 20 })
+    await page.mouse.up()
+    const result = await page.evaluate(async () => {
+      const { editor, calls, errors } = (window as any).fileTransfer
+      const root = document.querySelector('#file-transfer')!
+      const saved = editor.snapshot().text
+      const transfer = calls.splice(0)
+      const actions = async () => {
+        root
+          .querySelector<HTMLButtonElement>('button[aria-label^=Open]')!
+          .click()
+        root
+          .querySelector('.inkkit-file')!
+          .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+        await editor.clipboardSnapshot('document')
+      }
+      await actions()
+      const before = calls.splice(0)
+      const undone = editor.undo()
+      const undoText = editor.snapshot().text
+      const redone = editor.redo()
+      const redoText = editor.snapshot().text
+      calls.splice(0)
+      editor.loadDocument({
+        documentId: 'reopened',
+        generation: 2,
+        format: 'md',
+        text: saved,
+      })
+      await new Promise((r) => setTimeout(r, 30))
+      await actions()
+      const after = calls.splice(0)
+      await editor.destroy()
+      root.remove()
+      return {
+        saved,
+        transfer,
+        before,
+        after,
+        undone,
+        undoText,
+        redone,
+        redoText,
+        errors,
+      }
+    })
+    expect(result.saved).toBe(
+      source
+        .replace(tableRaw, '')
+        .replace(
+          'Destination paragraph.',
+          `${paragraphRaw}\n\nDestination paragraph.`,
+        ),
+    )
+    expect(result.transfer).toEqual([
+      ['resolve', tableRaw],
+      ['resolve', paragraphRaw],
+    ])
+    expect(result.undone).toBe(true)
+    expect(result.undoText).toBe(source)
+    expect(result.redone).toBe(true)
+    expect(result.redoText).toBe(result.saved)
+    expect(result.before.map((call: string[]) => call[0])).toEqual([
+      'open',
+      'context',
+      'resolve',
+      'export',
+    ])
+    expect(result.after.map((call: string[]) => call[0])).toEqual([
+      'resolve',
+      'open',
+      'context',
+      'resolve',
+      'export',
+    ])
+    for (const calls of [result.before, result.after])
+      expect(calls.every((call: string[]) => call[1] === paragraphRaw)).toBe(
+        true,
+      )
+    expect(result.errors).toEqual([])
+  })
