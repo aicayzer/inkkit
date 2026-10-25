@@ -1,22 +1,22 @@
 export const EditorDemo = ({ fullPage = false }) => {
-  const frame = useRef(null);
+  const frame = useRef(null)
   const sendTheme = () => {
     frame.current?.contentWindow?.postMessage(
       {
-        type: "inkkit-demo-theme",
-        dark: document.documentElement.classList.contains("dark"),
+        type: 'inkkit-demo-theme',
+        dark: document.documentElement.classList.contains('dark'),
       },
-      "*",
-    );
-  };
+      '*',
+    )
+  }
   useEffect(() => {
-    const observer = new MutationObserver(sendTheme);
+    const observer = new MutationObserver(sendTheme)
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["class"],
-    });
-    return () => observer.disconnect();
-  }, []);
+      attributeFilter: ['class'],
+    })
+    return () => observer.disconnect()
+  }, [])
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.1.7/dist/style.css">
@@ -30,7 +30,7 @@ nav { display: flex; gap: 4px; }
 button { font: inherit; color: inherit; border: 0; background: transparent; border-radius: 5px; padding: 4px 8px; cursor: pointer; }
 button:hover,button[aria-pressed=true] { background: light-dark(#f0f0f0,#252525); }
 button:disabled { opacity: .4; cursor: default; }
-#editor { --inkkit-font-family: system-ui,sans-serif; --inkkit-font-size: 15px; --inkkit-line-height: 1.55; --inkkit-reading-width: ${fullPage ? "48rem" : "100%"}; --inkkit-padding-inline: 24px; --inkkit-surface-focus-width: 0; min-height: 410px; padding-block: 18px; }
+#editor { --inkkit-font-family: system-ui,sans-serif; --inkkit-font-size: 15px; --inkkit-line-height: 1.55; --inkkit-reading-width: ${fullPage ? '48rem' : '100%'}; --inkkit-padding-inline: 24px; --inkkit-surface-focus-width: 0; min-height: 410px; padding-block: 18px; }
 #status { font-size: 12px; opacity: .65; padding: 0 24px 12px; margin: 0; }
 @media(max-width:440px) { header { padding-inline: 12px; } header span { max-width: 110px; } #editor { --inkkit-padding-inline: 16px; } }
 </style></head><body>
@@ -77,7 +77,7 @@ try {
   console.error(error);
   status.textContent = 'The demo could not load. Refresh the page to try again.';
 }
-</script></body></html>`;
+</script></body></html>`
   return (
     <iframe
       ref={frame}
@@ -85,7 +85,7 @@ try {
       srcDoc={html}
       sandbox="allow-scripts"
       onLoad={sendTheme}
-      className={fullPage ? "inkkit-demo inkkit-demo-full" : "inkkit-demo"}
+      className={fullPage ? 'inkkit-demo inkkit-demo-full' : 'inkkit-demo'}
     />
-  );
-};
+  )
+}

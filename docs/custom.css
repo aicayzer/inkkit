@@ -4,8 +4,8 @@
 }
 
 /* Icon links retain their text for assistive technology. */
-#navbar a[href="https://github.com/aicayzer/inkkit"] > span,
-#navbar a[href="https://www.npmjs.com/package/@aicayzer/inkkit"] > span {
+#navbar a[href='https://github.com/aicayzer/inkkit'] > span,
+#navbar a[href='https://www.npmjs.com/package/@aicayzer/inkkit'] > span {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -42,12 +42,12 @@
 
 /* Keep the default reading width; give the extra shell width to the gaps. */
 @media (min-width: 1600px) {
-  html:not([data-page-mode="custom"])
+  html:not([data-page-mode='custom'])
     div:has(> #sidebar):has(> #content-container) {
     max-width: 1600px;
     column-gap: 4rem;
   }
-  html:not([data-page-mode="custom"])
+  html:not([data-page-mode='custom'])
     #content-container
     > div:has(> #content-area) {
     column-gap: 7rem;
@@ -73,7 +73,7 @@
   }
 }
 
-.dark #navbar a[href="https://www.npmjs.com/package/@aicayzer/inkkit"] img {
+.dark #navbar a[href='https://www.npmjs.com/package/@aicayzer/inkkit'] img {
   filter: invert(1);
 }
 
