@@ -1,3 +1,4 @@
+import { literalTextNodes } from './literal-text'
 import { wikiSession, wikiSuggestionTransaction } from './wiki-suggestions'
 import type { SlashMenuOptions, SlashCommandName, SlashCommand } from './types'
 import { Suggestions, type SuggestionSession } from './suggestions'
@@ -2754,25 +2755,10 @@ export class InkKitEditor {
                 view.state.selection.$to,
               )) ??
           []
-        const children: ProseNode[] = []
         const isHTML =
           !inHiddenComment && htmlBreakAt(view.state.selection.$from)
         const lines = text.replace(/\r\n?/g, '\n').split('\n')
-        lines.forEach((line, index) => {
-          const finalBreak = index === lines.length - 1 && line === ''
-          if (index)
-            children.push(
-              schema.nodes.hardbreak!.create(
-                {
-                  isHTML,
-                },
-                null,
-                // A terminal break must sit outside closing formatting delimiters.
-                finalBreak ? [] : marks,
-              ),
-            )
-          if (line) children.push(schema.text(line, marks))
-        })
+        const children = literalTextNodes(schema, text, marks, isHTML)
         if (!children.length) {
           view.dispatch(view.state.tr.deleteSelection())
           return

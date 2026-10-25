@@ -1,3 +1,5 @@
+import { literalTextNodes } from './literal-text'
+import { htmlBreakAt } from './hard-break'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
@@ -313,16 +315,26 @@ export class PasteController {
           )
           return
         }
-        const paragraphs = input.text
-          .replace(/\r\n?/g, '\n')
-          .split('\n')
-          .map((line) =>
-            schema.nodes.paragraph!.create(
-              null,
-              line ? schema.text(line) : undefined,
-            ),
-          )
-        slice = new Slice(Fragment.fromArray(paragraphs), 1, 1)
+        const anchor = this.anchor(operation)
+        const start = view.state.doc.resolve(anchor.from)
+        const end = view.state.doc.resolve(anchor.to)
+        const marks =
+          view.state.storedMarks ??
+          (anchor.from === anchor.to
+            ? start.marks()
+            : start.marksAcross(end)) ??
+          []
+        const nodes = literalTextNodes(
+          schema,
+          input.text,
+          marks,
+          htmlBreakAt(start),
+        )
+        slice = new Slice(
+          Fragment.from(schema.nodes.paragraph!.create(null, nodes)),
+          1,
+          1,
+        )
       } else if (input.html) {
         const container = visibleContent(ctx, input.html)
         const imported = new Map<string, string>()
