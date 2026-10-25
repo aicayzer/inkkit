@@ -1,12 +1,20 @@
 ---
 title: 'Preservation'
-description: 'What Inkkit keeps byte for byte when you save, when it writes a block afresh, and every reason it refuses an edit with preservation.'
+description: 'What stays unchanged, what an edit can rewrite, and how preservation failures are handled.'
 ---
 
 Inkkit saves the Markdown you loaded, not a fresh export of what the editor shows. An unedited document saves byte for byte, and an edit rewrites only the blocks it touches. When Inkkit can't save an edit so that it reopens exactly as shown, it refuses the edit with the `preservation` error code and changes nothing.
 
-<img className="block dark:hidden" src="/images/how-inkkit-works.svg" alt="Inkkit keeps untouched source, writes edited blocks and checks the result before accepting an edit." />
-<img className="hidden dark:block" src="/images/how-inkkit-works-dark.svg" alt="Inkkit's source preservation and read-back check, in dark mode." />
+<img
+  className="block dark:hidden"
+  src="/images/how-inkkit-works.svg"
+  alt="Inkkit keeps untouched source, writes edited blocks and checks the result before accepting an edit."
+/>
+<img
+  className="hidden dark:block"
+  src="/images/how-inkkit-works-dark.svg"
+  alt="Inkkit's source preservation and read-back check, in dark mode."
+/>
 
 ## What Inkkit keeps
 
@@ -28,7 +36,7 @@ Inkkit writes a block in canonical form when it can't keep the authored spelling
 - **Repeated blocks.** When the same block appears more than once, Inkkit can't always tell which copy you edited or moved, and that copy can be written in canonical form.
 - **Neighboring lists.** Markdown reads two adjacent lists of one kind as one list unless their markers differ. A new, moved or rewritten list takes a bullet (`-`, `*` or `+`) or number delimiter (`.` or `)`) that the lists beside it don't use. An item added to an authored list takes that list's marker.
 - **Thematic breaks.** A `---` rule that comes to open the document while another `---` line follows it is written as `***`, because it would otherwise read as front matter. A new rule inside a list item, quote, callout or footnote is written as `___`.
-- **Spaces at the edge of a block or table cell** are written as `&#x20;`, because Markdown would otherwise drop them.
+- **Spaces at the edge of a block or table cell, or beside a soft line break** are written as `&#x20;`, because Markdown would otherwise drop them.
 - **A line break at the end of a paragraph** isn't saved until text follows it. See [Line breaks](/concepts/markdown#line-breaks).
 
 ## How an edit is checked
@@ -55,6 +63,8 @@ A refusal that a call reports isn't also sent to `events.error`. [Errors](/refer
 
 Each reason below reports `preservation`, and each leaves the document, revision and history unchanged and the editor usable. A refused edit or load needs no recovery. A failed snapshot does: don't save. Branch on the `code`, not the message, which is for logs.
 
+<Accordion title="Detailed refusal reference">
+
 | Reason                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Arrives as                                                                                       | What to do                                                                                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
 | **The edit would save Markdown that reads differently.** See the common cases after this table.                                                                                                                                                                                                                                                                                                                                                         | Thrown, rejected or `events.error`, by who made the edit                                         | Nothing. The person can make the change as text in source mode.                                                   |
@@ -67,12 +77,13 @@ Each reason below reports `preservation`, and each leaves the document, revision
 | **The source can't be read.** Switching from source mode to formatted mode can't read the text typed in source mode.                                                                                                                                                                                                                                                                                                                                    | Thrown by `setEditingMode('formatted')`. The editor stays in source mode with the text as typed. | Keep the document in source mode. `snapshot()` still returns the text.                                            |
 | **The headings can't be located.** In source mode, `headings` or `navigateHeading` can't match the headings in the text to the document's headings.                                                                                                                                                                                                                                                                                                     | Thrown                                                                                           | Read the outline in formatted mode.                                                                               |
 
+</Accordion>
+
 Edits that would read differently are usually one of these:
 
 - Deleting the block between two lists that use the same marker, which would merge them.
 - Leaving an HTML comment at the start of a paragraph, or a paragraph that holds only an HTML comment. Markdown reads that line as an HTML block.
-- Leaving a space at the end of a line that a soft line break follows, in a paragraph, quote or callout of several lines.
 - Ending a literal block with a line break, or typing text into one that would change how other blocks read.
-- Turning text into a code block when the code can't be saved as the same text, such as two spaces before a line end.
+- Turning text into a code block when the code can't be saved as the same text.
 - Removing a code block's language when the rest of its info string would then read as the language.
 - Calling `editReferenceDefinition` with an empty `title`.

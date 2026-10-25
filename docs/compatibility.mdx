@@ -1,6 +1,6 @@
 ---
 title: 'Compatibility'
-description: 'Check which browser engines Inkkit supports, what the page must declare, which entry to import, what each costs in page size, and how to pin versions.'
+description: 'Browser requirements, package entries, page size and versioning.'
 ---
 
 Inkkit runs in WebKit and Chromium from the versions below, ships as ES modules only, and has two entries: one that renders Mermaid diagrams and one that leaves Mermaid out of your page.
@@ -30,7 +30,7 @@ Inkkit uses the Custom Highlight API only when the engine supports both `CSS.hig
 
 ### What is tested
 
-Every pull request runs the browser test suite in Playwright's Chromium on Linux and Playwright's WebKit on macOS, and opens pages built from the packed package in both. These are the current Playwright builds, not the oldest supported versions. Firefox isn't tested. Playwright's WebKit is not `WKWebView`, so test your app's own web view on the systems you support.
+Changes to editor code, dependencies and workflows run the browser test suite in Playwright's Chromium on Linux and Playwright's WebKit on macOS, and opens pages built from the packed package in both. Documentation-only changes use formatting and site checks instead. These are the current Playwright builds, not the oldest supported versions. Firefox isn't tested. Playwright's WebKit is not `WKWebView`, so test your app's own web view on the systems you support.
 
 ## Page requirements
 

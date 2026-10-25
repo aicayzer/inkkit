@@ -1,6 +1,6 @@
 ---
 title: 'Documents and saving'
-description: 'Load and reload documents, save from a snapshot at the right moment, keep calls on the right document with generations, and use read-only mode.'
+description: 'Load the right document, save a current snapshot, and handle failures without losing text.'
 ---
 
 Inkkit holds one document at a time and never writes it anywhere. Your app loads the text, saves from a fresh `snapshot` when it writes, and passes the document's generation with each call, so a call meant for a document that has since been replaced fails instead of changing the new one.
@@ -64,14 +64,19 @@ With `expectedGeneration`, the reload first checks that the loaded document is t
 Saving has two parts: `changed` tells you the text changed, and `snapshot` gives you the text to write.
 
 <Columns cols={3}>
-  <Card title="1. An edit happens" icon="pencil">`changed` tells your app that the document needs saving.</Card>
-  <Card title="2. Take a snapshot" icon="file-check">Call `snapshot` with the current generation when you are ready to save.</Card>
-  <Card title="3. Write or keep open" icon="save">Write the returned text. If the snapshot fails, keep the document open and do not overwrite the file.</Card>
+  <Card title="1. An edit happens" icon="pencil">
+    `changed` tells your app that the document needs saving.
+  </Card>
+  <Card title="2. Take a snapshot" icon="file-check">
+    Call `snapshot` with the current generation when you are ready to save.
+  </Card>
+  <Card title="3. Write or keep open" icon="save">
+    Write the returned text. If the snapshot fails, keep the document open and
+    do not overwrite the file.
+  </Card>
 </Columns>
 
-1. **Use `changed` to schedule a save.** It fires after each change to the saved text. During one of your calls, it arrives just before the call returns, and not at all if the call fails. It doesn't fire for a load, a reload or a refused edit. A change that leaves the saved text as it was increases the revision without sending `changed`. Its value is a `DocumentSnapshot`, and its revision is the one that a snapshot taken in the handler carries.
-2. **Call `snapshot(generation)` when you write.** It returns the complete current text. Write the snapshot's `text` only if the call returns.
-3. **If `snapshot` throws, nothing is saved.** A failed snapshot is never an unchanged document. Don't close, switch or quit as if there were nothing to save; keep the document open.
+**Use `changed` to schedule a save.** It fires after each change to the saved text. During one of your calls, it arrives just before the call returns, and not at all if the call fails. It doesn't fire for a load, a reload or a refused edit. A change that leaves the saved text as it was increases the revision without sending `changed`. Its value is a `DocumentSnapshot`, and its revision is the one that a snapshot taken in the handler carries.
 
 ```ts
 import { InkKitError } from '@aicayzer/inkkit'

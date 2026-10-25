@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 698" width="800" height="698" role="img" aria-labelledby="title desc">
   <title id="title">How Inkkit keeps Markdown as written</title>
-  <desc id="desc">A formatted Markdown editor that rebuilds the whole file from its own model when it saves, which changes list markers, spacing and escaping you never touched. Inkkit loads a Markdown file and edits it formatted with Milkdown. A preservation layer between Milkdown and the file saves a note you opened and left byte for byte unchanged. After an edit, unchanged blocks keep their original bytes and only edited blocks are written by Milkdown. Inkkit then reads the result back. If it reopens as the same document, the edit is kept and saved. If not, the edit is refused and the note stays as it was. Your app owns the files, storage, toolbar and appearance.</desc>
+  <desc id="desc">Rebuilding Markdown can change markers, spacing and escaping. Inkkit retains the original source for unchanged blocks, writes edited blocks and checks that the result reads back as the intended document. A failed check refuses the edit. Your app owns storage.</desc>
   <style>
     text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
     .t { font-size: 16px; font-weight: 600; }
@@ -25,7 +25,7 @@
   <text x="400" y="93" text-anchor="middle" class="s" fill="#dedede">from the editor's own model</text>
   <path d="M 508 78 H 566" fill="none" stroke="#8c8c8c" stroke-width="1.75" marker-end="url(#head)"/>
   <rect x="568" y="50" width="200" height="56" rx="10" fill="#181818" stroke="#8c8c8c" stroke-width="1.5"/>
-  <text x="668" y="73" text-anchor="middle" class="t" fill="#dedede">Spelling can change</text>
+  <text x="668" y="73" text-anchor="middle" class="t" fill="#dedede">Source can change</text>
   <text x="668" y="93" text-anchor="middle" class="s" fill="#dedede">markers, spacing, escaping</text>
   <line x1="32" y1="130" x2="768" y2="130" stroke="#262626" stroke-width="1"/>
   <text x="32" y="158" text-anchor="start" class="h" fill="#dedede">WITH INKKIT</text>

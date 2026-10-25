@@ -1,2 +1,18 @@
 /* Keep the supplied artwork intact; reduce only its size in the site header. */
-.nav-logo { height: 21px; }
+.nav-logo {
+  height: 21px;
+}
+
+/* Icon links retain their text for assistive technology. */
+#navbar a[href='https://github.com/aicayzer/inkkit'] > span,
+#navbar a[href='https://www.npmjs.com/package/@aicayzer/inkkit'] > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

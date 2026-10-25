@@ -26,11 +26,7 @@
     "groups": [
       {
         "group": "Get started",
-        "pages": [
-          "index",
-          "quickstart",
-          "compatibility"
-        ]
+        "pages": ["index", "quickstart", "compatibility"]
       },
       {
         "group": "Concepts",
@@ -71,19 +67,13 @@
       },
       {
         "label": "npm",
-        "icon": "/images/npm.svg",
+        "icon": "npm",
         "href": "https://www.npmjs.com/package/@aicayzer/inkkit"
       }
     ]
   },
   "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "claude",
-      "chatgpt",
-      "mcp"
-    ]
+    "options": ["copy", "view", "claude", "chatgpt", "mcp"]
   },
   "markdown": {
     "instructions": [
