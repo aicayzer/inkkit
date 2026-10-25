@@ -604,6 +604,28 @@ window.interop = {
               )
             result = [...files.events]
             break
+          case 'nativeClipboard': {
+            const bridge = window.webkit?.messageHandlers?.nativeClipboard
+            if (!bridge) throw Error('Native clipboard bridge is unavailable')
+            if (operation.action === 'hostCopy') {
+              const exported = await exportClipboard(false)
+              result = await bridge.postMessage({
+                action: 'write',
+                text: exported.text,
+                html: exported.html,
+              })
+            } else if (operation.action === 'hostPaste') {
+              result = await bridge.postMessage({ action: 'read' })
+              await editor.paste({ text: result.text, html: result.html })
+            } else {
+              result = await bridge.postMessage({
+                action: operation.action,
+                text: operation.text,
+                html: operation.html,
+              })
+            }
+            break
+          }
           case 'domCopy': {
             receivedClipboard = undefined
             activeEditor().dispatchEvent(

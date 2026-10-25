@@ -151,3 +151,20 @@ Additional fixture operations are `fileMode` (`normal`, `reject`, `hold`, `corru
 The `integration` group combines minimal/rich source, read-only, history, native range invalidation, same-generation reloads, TXT, multiline insertion/rejection, delayed image import/file-output cancellation and per-instance comment/privacy checks. It includes one frozen native PDF case: use the clipboard/print-preference protection described above. That case verifies explicit diagram print/copy with minimal previews disabled. Combine this group with bounded core and selected resource/layout cases; do not run every historical group.
 
 `mountSecond` accepts optional source; `secondState` captures its snapshot and computed comment display. `fileAbortCount` records cancelled fixture callbacks. Held output must actually start before its cancellation can be claimed. These helpers remain engine fixtures and do not prove app storage or native actions.
+
+## Comment movement through the native clipboard
+
+Run the bounded comment clipboard regression against an exact candidate archive:
+
+```sh
+node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE _local/interop/comment-consumer
+swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/comment-host
+swiftc scripts/interop/Clipboard.swift -o _local/interop/comment-clipboard
+node scripts/interop/verify-comment-clipboard.mjs CANDIDATE_ARCHIVE _local/interop/comment-consumer/dist/index.html _local/interop/comment-results _local/interop/comment-host _local/interop/comment-clipboard
+```
+
+The named cases exercise formatted and source modes, selecting text containing hidden or revealed inline `%%` and HTML comments in one loaded document. Native cases invoke the WKWebView responder's Cut and Paste actions. Host cases export through `clipboardSnapshot`, write its text and HTML to the native pasteboard, delete the selection through `insertText`, read the pasteboard and call `paste`. The host sequence checks the facade transfer contract; it does not establish an atomic host Cut implementation. Neither path rewrites pasteboard HTML.
+
+Assertions require comment-free external text and HTML, preserved comments after local movement, undo of the paste and removal, and exact save/reopen bytes. Evidence records archive, bundle and host hashes. These disposable fixture checks establish package WKWebView behaviour, not Memos or PadPad integration.
+
+The runner saves and restores all native pasteboard representations, verifies restoration independently and removes private backups only after a byte match. The host also restores its snapshot before exiting normally or reporting an error. Keep results in ignored scratch storage. A rejected native action or empty selection is a failure.
