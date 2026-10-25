@@ -76,7 +76,7 @@ const runCase = (name, input) => {
       )[1]?.collapsed === true,
   })
 }
-const source = 'One needle end.\n\nTwo needle end.\n'
+const source = 'needle café 😀 end.\r\n\r\nTwo needle end.\r\n'
 for (const occurrence of [1, 2]) {
   for (const direction of ['left', 'right']) {
     for (const deletion of ['backward', 'forward']) {
@@ -86,11 +86,14 @@ for (const occurrence of [1, 2]) {
       )
       const caret = offset + (direction === 'right' ? 6 : 0)
       const removed = caret - (deletion === 'backward' ? 1 : 0)
-      const expected = source.slice(0, removed) + source.slice(removed + 1)
+      const expected =
+        removed < 0
+          ? source
+          : source.slice(0, removed) + source.slice(removed + 1)
       runCase(`match-${occurrence}-${direction}-${deletion}`, {
         source,
         operations: [
-          { op: 'select', text: 'One', from: 0, to: 0 },
+          { op: 'select', text: 'needle', from: 0, to: 0 },
           native(123, '\uf702'),
           {
             op: 'nativeInput',
@@ -116,6 +119,10 @@ for (const occurrence of [1, 2]) {
           { op: 'assert', name: 'saved', path: 'text', equals: expected },
           { op: 'undo' },
           { op: 'assert', path: 'snapshot.text', equals: source },
+          { op: 'redo' },
+          { op: 'assert', path: 'snapshot.text', equals: expected },
+          { op: 'assert', path: 'error', equals: null },
+          { op: 'assert', path: 'diagnostics', equals: [] },
           { op: 'reopen', name: 'reopened' },
           { op: 'assert', name: 'reopened', path: 'text', equals: expected },
         ],
