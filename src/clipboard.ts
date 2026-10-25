@@ -4,6 +4,7 @@ import {
   type Node,
   type Schema,
 } from '@milkdown/kit/prose/model'
+import { schemaCtx } from '@milkdown/kit/core'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { shareableFragment } from './comments'
@@ -136,10 +137,7 @@ function nodeText(
   return clipboardText(node.content, missingImages, fileDescriptions)
 }
 
-export function clipboardContent(
-  content: Fragment,
-  schema: Schema,
-): ClipboardContent {
+function clipboardDOM(content: Fragment, schema: Schema): HTMLElement {
   content = shareableFragment(content)
   const container = document.createElement('div')
   const serializer = DOMSerializer.fromSchema(schema)
@@ -196,14 +194,39 @@ export function clipboardContent(
     label.textContent = `[${definition.getAttribute('data-inkkit-label')}] `
     definition.prepend(label)
   }
-  return { text: clipboardText(content), html: container.innerHTML }
+  return container
+}
+
+export function clipboardContent(
+  content: Fragment,
+  schema: Schema,
+): ClipboardContent {
+  return {
+    text: clipboardText(content),
+    html: clipboardDOM(content, schema).innerHTML,
+  }
+}
+
+function clipboardSerializer(schema: Schema): DOMSerializer {
+  const serializer = DOMSerializer.fromSchema(schema)
+  const safe = new DOMSerializer(serializer.nodes, serializer.marks)
+  // Drag transport shares the clipboard policy. Keep the original slice for
+  // moves within this editor; only the DOM sent outside it loses private data.
+  safe.serializeFragment = (content, options = {}, target) => {
+    const output =
+      target ?? (options.document ?? document).createDocumentFragment()
+    output.append(...clipboardDOM(content, schema).childNodes)
+    return output
+  }
+  return safe
 }
 
 export const visibleClipboard = $prose(
-  () =>
+  (ctx) =>
     new Plugin({
       key: new PluginKey('visibleClipboard'),
       props: {
+        clipboardSerializer: clipboardSerializer(ctx.get(schemaCtx)),
         clipboardTextSerializer: (slice) => clipboardText(slice.content),
       },
     }),
