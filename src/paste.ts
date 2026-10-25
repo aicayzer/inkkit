@@ -27,6 +27,7 @@ import {
   blockDropRange,
   caretAfter,
   caretAfterInsertion,
+  calloutFolds,
 } from './drop-placement'
 import { isImage } from './image-blocks'
 import { hiddenCommentExit } from './hidden-comments'
@@ -274,7 +275,9 @@ export class PasteController {
     const end = tr.mapping.map(range.to)
     this.dispatch(
       view,
-      tr.setSelection(caretAfter(tr.doc, end)).scrollIntoView(),
+      tr
+        .setSelection(caretAfter(tr.doc, end, calloutFolds(view, tr)))
+        .scrollIntoView(),
     )
   }
   /** Imports the input at the selection, or in place of `target`. */
@@ -631,6 +634,7 @@ export class PasteController {
               insertion.after(),
               new Slice(slice.content, 0, 0),
             ),
+            view,
           ).scrollIntoView(),
         )
       } else
@@ -649,6 +653,7 @@ export class PasteController {
                     view.state.doc.resolve(anchor.to),
                   ),
             ),
+            view,
           ).scrollIntoView(),
         )
     } finally {

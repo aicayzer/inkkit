@@ -193,6 +193,8 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
   group: 'block',
   content: 'block+',
   defining: true,
+  // A folded body has no visible text caret, including at the document end.
+  createGapCursor: true,
   attrs: {
     kind: { default: 'NOTE' },
     marker: { default: '[!NOTE]' },

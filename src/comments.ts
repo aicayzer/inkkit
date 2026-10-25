@@ -391,6 +391,8 @@ function commentNode(inline: boolean) {
     marks: '',
     code: true,
     defining: true,
+    // A block comment must permit typing after it without entering its source.
+    createGapCursor: !inline,
     attrs: { syntax: { default: 'html' }, block: { default: !inline } },
     // A comment element in inserted HTML shows its text, so it imports as
     // that text rather than as a comment, which starts hidden.

@@ -205,15 +205,15 @@ test('typing after pasted blocks never goes into a comment or a folded callout',
     expect(pasted.typed, text).toBe(typed)
     expect(pasted.text, text).toBe(typed.replace('X', ''))
   }
-  // With no text after the paste, typing goes before the comment.
+  // With no text after the paste, typing continues after the comment.
   expect(await pasteAt('Before‸\n', { text: 'x\n\n<!-- note -->' })).toEqual({
     text: 'Beforex\n\n<!-- note -->\n',
-    typed: 'BeforexX\n\n<!-- note -->\n',
+    typed: 'Beforex\n\n<!-- note -->\n\nX\n',
   })
   // Blocks pasted into an empty note take the place of its empty paragraph.
   expect(await pasteAt('‸', { text: 'x\n\n<!-- note -->' })).toEqual({
     text: 'x\n\n<!-- note -->\n',
-    typed: 'xX\n\n<!-- note -->\n',
+    typed: 'x\n\n<!-- note -->\n\nX\n',
   })
 })
 
@@ -270,4 +270,76 @@ test('a pasted line joins the text of a table cell', async () => {
     text: '| A | B |\n| - | - |\n| xwordy | z |\n',
     typed: '| A | B |\n| - | - |\n| xwordXy | z |\n',
   })
+})
+
+test('terminal pasted hidden blocks preserve surrounding bytes through the public facade', async () => {
+  for (const tail of ['<!-- private é🌻 -->', '> [!NOTE]- Title\n> hidden']) {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const editor = await InkKitEditor.mount(root, {
+      changed() {},
+      copy() {},
+      openLink() {},
+    })
+    try {
+      const source = '*  untouched é🌻\n\nBefore\n'
+      editor.loadDocument({
+        documentId: 'note',
+        generation: 1,
+        format: 'md',
+        text: source,
+      })
+      const snapshot = editor.textSnapshot()
+      const from = snapshot.text.indexOf('Before') + 'Before'.length
+      editor.selectTextRange({
+        snapshotId: snapshot.snapshotId,
+        from,
+        to: from,
+      })
+      await editor.paste({ text: `x\n\n${tail}` }, 1)
+      const inserted = editor.snapshot().text
+      expect(inserted).toBe(`*  untouched é🌻\n\nBeforex\n\n${tail}\n`)
+      await new Promise((resolve) => setTimeout(resolve, 550))
+      editor.insertText('X', 1)
+      const saved = editor.snapshot().text
+      expect(saved).toBe(`${inserted.trimEnd()}\n\nX\n`)
+      expect(editor.undo(1)).toBe(true)
+      expect(editor.snapshot().text).toBe(inserted)
+      expect(editor.redo(1)).toBe(true)
+      expect(editor.snapshot().text).toBe(saved)
+      editor.loadDocument({
+        documentId: 'reopened',
+        generation: 2,
+        format: 'md',
+        text: saved,
+      })
+      expect(editor.snapshot().text).toBe(saved)
+      await expect(
+        editor.paste({ text: `x\n\n${tail}` }, 1),
+      ).rejects.toMatchObject({ code: 'stale-document' })
+      editor.setEditable(false)
+      await expect(
+        editor.paste({ text: `x\n\n${tail}` }, 2),
+      ).rejects.toMatchObject({ code: 'read-only' })
+      editor.setEditable(true)
+      root
+        .querySelector('.ProseMirror')!
+        .dispatchEvent(
+          new CompositionEvent('compositionstart', { bubbles: true }),
+        )
+      await expect(
+        editor.paste({ text: `x\n\n${tail}` }, 2),
+      ).rejects.toMatchObject({ code: 'composition' })
+      root
+        .querySelector('.ProseMirror')!
+        .dispatchEvent(
+          new CompositionEvent('compositionend', { bubbles: true }),
+        )
+      expect(editor.snapshot().text).toBe(saved)
+      expect(editor.undo(2)).toBe(false)
+    } finally {
+      await editor.destroy()
+      root.remove()
+    }
+  }
 })
