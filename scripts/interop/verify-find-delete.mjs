@@ -95,6 +95,8 @@ for (const occurrence of [1, 2]) {
         operations: [
           { op: 'select', text: 'needle', from: 0, to: 0 },
           native(123, '\uf702'),
+          { op: 'hostFocus', name: 'host' },
+          { op: 'assert', name: 'host', path: 'focused', equals: true },
           {
             op: 'nativeInput',
             focus: false,
