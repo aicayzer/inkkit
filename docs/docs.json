@@ -3,9 +3,9 @@
   "theme": "mint",
   "name": "InkKit",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#171717",
+    "light": "#F5F5F5",
+    "dark": "#404040"
   },
   "navigation": {
     "groups": [
@@ -22,5 +22,16 @@
         "href": "https://github.com/aicayzer/inkkit"
       }
     ]
+  },
+  "logo": {
+    "light": "/images/brand/logo-light.png",
+    "dark": "/images/brand/logo-dark.png"
+  },
+  "favicon": {
+    "light": "/images/brand/mark-light.png",
+    "dark": "/images/brand/mark-dark.png"
+  },
+  "appearance": {
+    "default": "system"
   }
 }
