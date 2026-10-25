@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index d52a5260a7b9924b2865053ea1e8c6484225277b..258c4e94fbbdbbf0cafc1d09f54e815b8fc4b1f8 100644
+index d52a5260a7b9924b2865053ea1e8c6484225277b..38c84e4ec276d8145dcfd1567d7b54957480c2cf 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -2961,6 +2961,7 @@ var InputState = _createClass(function InputState() {
@@ -32,7 +32,7 @@ index d52a5260a7b9924b2865053ea1e8c6484225277b..258c4e94fbbdbbf0cafc1d09f54e815b
    view.input.lastKeyCodeTime = Date.now();
    if (android && chrome && event.keyCode == 13) return;
    if (event.keyCode != 229) view.domObserver.forceFlush();
-+  if (![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
++  if (event.keyCode != 229 && ![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
 +    view.domObserver.flush();
 +    view.input.lastFocus = 0;
 +  }
@@ -57,7 +57,7 @@ index d52a5260a7b9924b2865053ea1e8c6484225277b..258c4e94fbbdbbf0cafc1d09f54e815b
    if (view.focused) {
      view.domObserver.stop();
 diff --git a/dist/index.js b/dist/index.js
-index dc0d117b85e1da3eae915b4d8ff8e5e604683861..0743612c61ca03c3dc69929ccde89a87f58893d0 100644
+index dc0d117b85e1da3eae915b4d8ff8e5e604683861..b9ac5a7d20501750f7c7b5ead6dc0d3f67d3f406 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -3132,6 +3132,7 @@ class InputState {
@@ -91,7 +91,7 @@ index dc0d117b85e1da3eae915b4d8ff8e5e604683861..0743612c61ca03c3dc69929ccde89a87
          return;
      if (event.keyCode != 229)
          view.domObserver.forceFlush();
-+    if (![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
++    if (event.keyCode != 229 && ![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
 +      view.domObserver.flush();
 +      view.input.lastFocus = 0;
 +    }
@@ -117,7 +117,7 @@ index dc0d117b85e1da3eae915b4d8ff8e5e604683861..0743612c61ca03c3dc69929ccde89a87
      if (view.focused) {
          view.domObserver.stop();
 diff --git a/src/input.ts b/src/input.ts
-index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..e87c42b44bc8081c31efed19e41eb8fa713e81c2 100644
+index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..ad561edc8edc67c4e80d1424a2cdcfe2c804890b 100644
 --- a/src/input.ts
 +++ b/src/input.ts
 @@ -27,6 +27,7 @@ export class InputState {
@@ -153,7 +153,7 @@ index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..e87c42b44bc8081c31efed19e41eb8fa
    // and handling them eagerly tends to corrupt the input.
    if (browser.android && browser.chrome && event.keyCode == 13) return
    if (event.keyCode != 229) view.domObserver.forceFlush()
-+  if (![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
++  if (event.keyCode != 229 && ![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
 +    view.domObserver.flush()
 +    view.input.lastFocus = 0
 +  }

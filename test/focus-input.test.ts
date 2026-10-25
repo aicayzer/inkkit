@@ -195,3 +195,18 @@ test('modifier and composition keys leave an unreported caret pending', async ()
     new CompositionEvent('compositionend', { bubbles: true }),
   )
 })
+
+test('a 229 key before compositionstart leaves an unreported caret pending', async () => {
+  const surface = await mount()
+  const node = surface.querySelector('p')!.firstChild!
+  const end = node.textContent!.length
+  window.getSelection()!.collapse(node, end)
+  surface.dispatchEvent(
+    new KeyboardEvent('keydown', { keyCode: 229, bubbles: true }),
+  )
+  expect(editor!.textSnapshot().selection).toMatchObject({ from: 1, to: 1 })
+  expect(window.getSelection()!.anchorOffset).toBe(end)
+  vi.advanceTimersByTime(20)
+  expect(window.getSelection()!.anchorOffset).toBe(end)
+  expect(editor!.textSnapshot().selection).toMatchObject({ from: 1, to: 1 })
+})
