@@ -45,13 +45,15 @@ pnpm test:built-playground  # opens the built page; needs the build first
 ```
 
 - One unit file: `pnpm exec vitest run test/<name>.test.ts`.
-- Browser tests use Playwright against the playground: `pnpm exec playwright install chromium webkit` once, then `pnpm exec playwright test --project=chromium test/browser/<name>.spec.ts`. CI runs every browser test on each pull request, in Chromium on Linux and in WebKit on macOS, and both jobs must pass. Before pushing, run the specs for what you changed, in WebKit too when selection, input, clipboard or layout changes. A test that cannot run in an engine calls `test.skip` with the reason.
+- Browser tests use Playwright against the playground: `pnpm exec playwright install chromium webkit` once, then `pnpm exec playwright test --project=chromium test/browser/<name>.spec.ts`. For code, dependency and workflow changes, CI runs every browser test, in Chromium on Linux and in WebKit on macOS, and both jobs must pass. Before pushing, run the specs for what you changed, in WebKit too when selection, input, clipboard or layout changes. A test that cannot run in an engine calls `test.skip` with the reason.
 - The native runner in `scripts/interop/` tests the packed candidate in a real `WKWebView`. Run selected groups when focus, input, the bridge, clipboard, print or resource lifecycle changes. Browser WebKit does not prove `WKWebView` behavior. A rejected or empty selection is a failure, not a pass.
+- Documentation-only edits run a formatting check and skip editor and browser tests. Mintlify page, asset or configuration changes validate the site. Release runs retain all checks.
 - Choose checks from the changed behavior, not every fixture and configuration; [development](docs/development.md) has the table. Say which checks you did not run. A local pass does not show that hosted CI passed.
 
 ## Conventions
 
 - A behavior change needs a regression test that fails without it, through the public facade, including failure and untidy input: CRLF, unusual list markers, Unicode, composition, stale generations.
+- During the Mintlify migration, maintain essential factual corrections in the existing guides. Replace each guide once; do not keep a second hand-maintained copy for the website. Development and release procedures remain repository documentation.
 - A public API change updates `docs/api.md`, and any of `integration.md`, `supported-syntax.md` and `preservation.md` that describe it, in the same pull request.
 - A performance claim cites a measurement: command, machine, document and before and after medians. Record lasting results in `docs/performance.md`.
 - Comments explain reasons or constraints the code cannot show.

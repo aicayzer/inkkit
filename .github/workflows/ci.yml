@@ -13,28 +13,63 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      editor: ${{ steps.scope.outputs.editor }}
+      site: ${{ steps.scope.outputs.site }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: node scripts/ci-scope.mjs
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+
   check:
+    needs: [changes, docs]
+    # A failed classifier must fail this required check, not silently skip it.
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - if: ${{ needs.changes.result != 'success' || needs.docs.result == 'failure' || needs.docs.result == 'cancelled' }}
+        run: exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
+      - if: ${{ needs.changes.outputs.editor != 'true' }}
+        run: npx --yes prettier@3.9.9 --check .
       - run: npm install --global pnpm@11.0.9
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm install --frozen-lockfile
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm format:check
+        if: ${{ needs.changes.outputs.editor == 'true' }}
+      - run: node --test scripts/ci-scope.test.mjs
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       # The packed-consumer test opens its pages in both engines.
       - run: pnpm exec playwright install --with-deps chromium webkit
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm check
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm build:playground
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm test:built-playground
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - uses: actions/upload-artifact@v4
+        if: ${{ needs.changes.outputs.editor == 'true' }}
         with:
           name: package-candidate
           path: _local/release/
 
   browser:
+    needs: changes
     name: browser (${{ matrix.engine }})
     strategy:
       fail-fast: false
@@ -47,18 +82,39 @@ jobs:
             os: macos-latest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # Keep both required check names present even for documentation-only changes.
     steps:
       - uses: actions/checkout@v4
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - uses: actions/setup-node@v4
+        if: ${{ needs.changes.outputs.editor == 'true' }}
         with:
           node-version: '26'
       - run: npm install --global pnpm@11.0.9
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm install --frozen-lockfile
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: node --test scripts/test-browser.test.mjs
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: node scripts/test-browser.mjs --project=${{ matrix.engine }}
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:
           name: browser-${{ matrix.engine }}
           path: _local/playwright/
+
+  docs:
+    needs: changes
+    if: ${{ needs.changes.outputs.site == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      - run: npx --yes mint@4.2.1125 validate
+        working-directory: docs
