@@ -10,6 +10,15 @@ import { EditorDemo } from '/snippets/editor-demo.mdx'
 
 <EditorDemo />
 
+<a
+  className="demo-open-link"
+  href="/editor"
+  target="_blank"
+  rel="noopener noreferrer"
+>
+  Open editor ↗
+</a>
+
 ## How it works
 
 Inkkit keeps the Markdown it loaded. If you make no edits, saving returns exactly that text. After an edit, it preserves untouched blocks and checks that the result still reads as the document shown in the editor. If that check fails, the edit is refused and the document stays as it was.

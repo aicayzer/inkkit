@@ -61,6 +61,10 @@
   "navbar": {
     "links": [
       {
+        "label": "Try editor",
+        "href": "/editor"
+      },
+      {
         "label": "GitHub",
         "icon": "github",
         "href": "https://github.com/aicayzer/inkkit"

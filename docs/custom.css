@@ -40,10 +40,17 @@
   font-size: 1.125rem;
 }
 
-/* Expand the shell only on larger displays, keeping normal laptop spacing. */
+/* Keep the default reading width; give the extra shell width to the gaps. */
 @media (min-width: 1600px) {
-  div:has(> #sidebar):has(> #content-container) {
+  html:not([data-page-mode='custom'])
+    div:has(> #sidebar):has(> #content-container) {
     max-width: 1600px;
+    column-gap: 4rem;
+  }
+  html:not([data-page-mode='custom'])
+    #content-container
+    > div:has(> #content-area) {
+    column-gap: 7rem;
   }
   #navbar > div:not(#navbar-transition) {
     max-width: 1600px;
@@ -68,4 +75,34 @@
 
 .dark #navbar a[href='https://www.npmjs.com/package/@aicayzer/inkkit'] img {
   filter: invert(1);
+}
+
+.editor-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 24px;
+}
+.editor-page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.editor-page-heading h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+.editor-page-heading a,
+.demo-open-link {
+  font-size: 14px;
+}
+.inkkit-demo-full {
+  height: calc(100dvh - 190px);
+  min-height: 560px;
+}
+.demo-open-link {
+  display: block;
+  text-align: right;
+  margin-top: -12px;
+  border-bottom: 0;
 }
