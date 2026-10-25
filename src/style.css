@@ -462,8 +462,19 @@
   background: transparent;
 }
 
-.inkkit-root ::highlight(inkkit-selection) {
-  background-color: color-mix(in srgb, var(--_inkkit-accent) 30%, transparent);
+.inkkit-root.inkkit-selection-active ::highlight(inkkit-selection),
+.inkkit-root.inkkit-selection-active ::selection {
+  background: var(
+    --inkkit-selection-background,
+    color-mix(in srgb, var(--_inkkit-accent) 30%, transparent)
+  );
+}
+.inkkit-root ::highlight(inkkit-selection),
+.inkkit-root ::selection {
+  background: var(
+    --inkkit-inactive-selection-background,
+    light-dark(#d4d4d4, #555)
+  );
 }
 
 .inkkit-root .ProseMirror > :first-child {
