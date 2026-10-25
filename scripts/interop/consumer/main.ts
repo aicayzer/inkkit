@@ -604,6 +604,45 @@ window.interop = {
               )
             result = [...files.events]
             break
+          case 'nativeInput': {
+            const bridge = window.webkit?.messageHandlers?.nativeInput
+            if (!bridge) throw Error('Native input bridge is unavailable')
+            editor.focus()
+            const target = activeEditor()
+            if (document.activeElement !== target)
+              throw Error('Editor is not the DOM active element')
+            const events = []
+            const observe = (event) =>
+              events.push({
+                type: event.type,
+                key: event.key,
+                trusted: event.isTrusted,
+                inputType: event.inputType ?? null,
+              })
+            for (const type of ['keydown', 'keyup', 'beforeinput', 'input'])
+              target.addEventListener(type, observe)
+            try {
+              const native = await bridge.postMessage(operation)
+              await settle()
+              if (
+                events.filter(
+                  (event) => event.type === 'keydown' && event.trusted,
+                ).length !== (operation.keys?.length ?? 1)
+              )
+                throw Error(
+                  'Trusted DOM keydown count does not match AppKit key batch',
+                )
+              result = {
+                ...native,
+                events,
+                active: document.activeElement === target,
+              }
+            } finally {
+              for (const type of ['keydown', 'keyup', 'beforeinput', 'input'])
+                target.removeEventListener(type, observe)
+            }
+            break
+          }
           case 'nativeClipboard': {
             const bridge = window.webkit?.messageHandlers?.nativeClipboard
             if (!bridge) throw Error('Native clipboard bridge is unavailable')

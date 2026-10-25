@@ -178,6 +178,59 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
+        if message.name == "nativeInput" {
+            guard let request = message.body as? [String: Any] else {
+                replyHandler(nil, "Invalid native key request")
+                return
+            }
+            let keys = request["keys"] as? [[String: Any]] ?? [request]
+            guard !keys.isEmpty, keys.count <= 32,
+                  keys.allSatisfy({ key in
+                      guard let code = key["keyCode"] as? Int, (0...127).contains(code),
+                            key["characters"] is String else { return false }
+                      return true
+                  }) else {
+                replyHandler(nil, "Invalid native key batch")
+                return
+            }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeFirstResponder(web)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(100))
+                guard self.window.isKeyWindow,
+                      let responder = self.window.firstResponder as? NSView,
+                      responder === self.web || responder.isDescendant(of: self.web) else {
+                    replyHandler(nil, "WKWebView is not key first responder")
+                    return
+                }
+                // Queue the entire batch without per-key waits, including navigation/delete pairs.
+                for key in keys {
+                    var flags: NSEvent.ModifierFlags = []
+                    if key["metaKey"] as? Bool == true { flags.insert(.command) }
+                    if key["shiftKey"] as? Bool == true { flags.insert(.shift) }
+                    if key["altKey"] as? Bool == true { flags.insert(.option) }
+                    if key["ctrlKey"] as? Bool == true { flags.insert(.control) }
+                    let code = key["keyCode"] as! Int
+                    let characters = key["characters"] as! String
+                    for type in [NSEvent.EventType.keyDown, .keyUp] {
+                        guard let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags,
+                            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: self.window.windowNumber,
+                            context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                            isARepeat: false, keyCode: UInt16(code)) else {
+                            replyHandler(nil, "Could not construct native key event")
+                            return
+                        }
+                        NSApp.postEvent(event, atStart: false)
+                    }
+                }
+                // Let AppKit deliver the queued events through its ordinary run loop.
+                try? await Task.sleep(for: .milliseconds(200))
+                replyHandler(["keyWindow": self.window.isKeyWindow,
+                              "firstResponder": String(describing: type(of: responder))], nil)
+            }
+            return
+        }
         guard let request = message.body as? [String: Any],
               let action = request["action"] as? String,
               ["cut", "copy", "paste", "read", "write"].contains(action) else {
@@ -222,6 +275,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         let configuration = WKWebViewConfiguration()
         configuration.userContentController.add(self, name: "diagnostic")
         configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "nativeClipboard")
+        configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "nativeInput")
         configuration.userContentController.addUserScript(WKUserScript(source: """
             addEventListener('error', event => window.webkit.messageHandlers.diagnostic.postMessage(String(event.message)));
             addEventListener('unhandledrejection', event => window.webkit.messageHandlers.diagnostic.postMessage(String(event.reason)));
