@@ -51,13 +51,30 @@ export function blockDropRange(
  * callout, where typing would change text the reader can't see or didn't
  * choose.
  */
-export function caretAfter(doc: Node, pos: number): Selection {
+export function caretAfter(
+  doc: Node,
+  pos: number,
+  folds: ReadonlyMap<Node, boolean> = new Map(),
+): Selection {
+  const hides = (node: Node) =>
+    isComment(node) ||
+    (node.type.name === 'inkkit_callout' &&
+      (folds.get(node) ?? node.attrs.fold === '-'))
+  const concealedDepth = ($pos: ResolvedPos): number => {
+    for (let depth = 1; depth <= $pos.depth; depth++)
+      if (hides($pos.node(depth))) return depth
+    return -1
+  }
+  const concealed = ($pos: ResolvedPos) => concealedDepth($pos) >= 0
+
   const $pos = doc.resolve(pos)
   const before = $pos.nodeBefore
   if (before?.isTextblock && !concealed(doc.resolve(pos - 1)))
     return TextSelection.create(doc, pos - 1)
   // `valid` is public at run time but missing from the type declarations.
   const gap = GapCursor as unknown as { valid($pos: ResolvedPos): boolean }
+  const forward = before && !showsText(before) ? shownText(doc, pos, 1) : null
+  if (forward) return forward
   if (gap.valid($pos)) return new GapCursor($pos)
   const [first, second] = before && !showsText(before) ? [1, -1] : [-1, 1]
   return (
@@ -65,58 +82,61 @@ export function caretAfter(doc: Node, pos: number): Selection {
     shownText(doc, pos, second) ??
     Selection.near($pos)
   )
-}
 
-// A comment, shown or not, or the body of a callout that opens folded.
-function hides(node: Node): boolean {
-  return (
-    isComment(node) ||
-    (node.type.name === 'inkkit_callout' && node.attrs.fold === '-')
-  )
-}
-
-// The depth of the outermost node around `$pos` that hides it, or -1.
-function concealedDepth($pos: ResolvedPos): number {
-  for (let depth = 1; depth <= $pos.depth; depth++)
-    if (hides($pos.node(depth))) return depth
-  return -1
-}
-
-function concealed($pos: ResolvedPos): boolean {
-  return concealedDepth($pos) >= 0
-}
-
-function showsText(node: Node): boolean {
-  if (hides(node)) return false
-  if (node.isTextblock) return true
-  let found = false
-  node.descendants((child) => {
-    if (found || hides(child)) return false
-    if (child.isTextblock) found = true
-    return !found
-  })
-  return found
-}
-
-// The nearest text position from `pos` in direction `dir` that isn't hidden.
-function shownText(doc: Node, pos: number, dir: number): Selection | null {
-  let $from = doc.resolve(pos)
-  for (;;) {
-    const found = TextSelection.findFrom($from, dir, true)
-    if (!found) return null
-    const depth = concealedDepth(found.$head)
-    if (depth < 0) return found
-    $from = doc.resolve(
-      dir > 0 ? found.$head.after(depth) : found.$head.before(depth),
-    )
+  function showsText(node: Node): boolean {
+    if (hides(node)) return false
+    if (node.isTextblock) return true
+    let found = false
+    node.descendants((child) => {
+      if (found || hides(child)) return false
+      if (child.isTextblock) found = true
+      return !found
+    })
+    return found
   }
+
+  // The nearest text position from `pos` in direction `dir` that isn't hidden.
+  function shownText(doc: Node, pos: number, dir: number): Selection | null {
+    let $from = doc.resolve(pos)
+    for (;;) {
+      const found = TextSelection.findFrom($from, dir, true)
+      if (!found) return null
+      const depth = concealedDepth(found.$head)
+      if (depth < 0) return found
+      $from = doc.resolve(
+        dir > 0 ? found.$head.after(depth) : found.$head.before(depth),
+      )
+    }
+  }
+}
+
+/** Capture reader folding before dispatch, then map it to the new document. */
+export function calloutFolds(
+  view: EditorView,
+  tr: Transaction,
+): Map<Node, boolean> {
+  const folds = new Map<Node, boolean>()
+  view.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'inkkit_callout') return
+    const dom = view.nodeDOM(pos)
+    if (!(dom instanceof HTMLElement)) return
+    const mapped = tr.mapping.mapResult(pos, 1)
+    if (mapped.deleted) return
+    const next = tr.doc.nodeAt(mapped.pos)
+    if (next?.type === node.type)
+      folds.set(next, dom.getAttribute('data-inkkit-folded') === 'true')
+  })
+  return folds
 }
 
 /**
  * Puts the caret just after what the transaction's last step inserted, so
  * typing continues after pasted or dropped content instead of replacing it.
  */
-export function caretAfterInsertion(tr: Transaction): Transaction {
+export function caretAfterInsertion(
+  tr: Transaction,
+  view?: EditorView,
+): Transaction {
   const map = tr.mapping.maps[tr.mapping.maps.length - 1]
   let end: number | undefined
   map?.forEach((_from, _to, _newFrom, newTo) => {
@@ -127,6 +147,6 @@ export function caretAfterInsertion(tr: Transaction): Transaction {
   return tr.setSelection(
     $end.parent.inlineContent
       ? TextSelection.create(tr.doc, end)
-      : caretAfter(tr.doc, end),
+      : caretAfter(tr.doc, end, view && calloutFolds(view, tr)),
   )
 }
