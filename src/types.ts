@@ -72,6 +72,10 @@ export interface PortableImage {
   mimeType: string
   filename?: string
 }
+/** The document and cancellation signal for one image import. */
+export interface ImageImportContext extends DocumentContext {
+  signal: AbortSignal
+}
 /** Stores, shows and exports the images a host owns. References stay opaque to the editor. */
 export interface ImageAdapter {
   /** The display URL for `reference`, or `undefined` when the image is unavailable. */
@@ -79,7 +83,7 @@ export interface ImageAdapter {
   /** Stores the bytes and returns the reference to write into the Markdown. */
   importImage(
     input: CapturedImage,
-    context: DocumentContext,
+    context: ImageImportContext,
   ): Promise<{ reference: string }>
   /** The stored bytes and type of `reference`, for portable clipboard and print output. */
   exportImage(

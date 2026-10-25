@@ -75,12 +75,15 @@ interface Anchor {
   from: number
   to: number
 }
+interface ImportOperation extends Anchor {
+  controller: AbortController
+}
 interface MappedAnchor extends Anchor {
   operation: Anchor
 }
 
 export class PasteController {
-  private active?: Anchor
+  private active?: ImportOperation
   private readonly key = new PluginKey<MappedAnchor | null>('inkkitPaste')
   private dead = false
   private claimed = false
@@ -197,7 +200,10 @@ export class PasteController {
     return mapped?.operation === operation ? mapped : operation
   }
   cancelPending(): void {
+    const operation = this.active
+    if (!operation) return
     this.active = undefined
+    operation.controller.abort()
     this.options.onPendingChanged?.()
   }
   destroy(): void {
@@ -217,6 +223,38 @@ export class PasteController {
         'stale-document',
         'The document changed while images were importing.',
       )
+  }
+  private async importImage(
+    image: CapturedImage,
+    context: DocumentContext,
+    operation: ImportOperation,
+  ): Promise<{ reference: string }> {
+    this.assertContext(context, operation)
+    const signal = operation.controller.signal
+    let abort!: () => void
+    const cancelled = new Promise<never>((_, reject) => {
+      abort = () =>
+        reject(
+          new InkKitError(
+            this.dead ? 'destroyed' : 'stale-document',
+            'The image import was cancelled.',
+          ),
+        )
+      signal.addEventListener('abort', abort, { once: true })
+    })
+    try {
+      return await Promise.race([
+        new Promise<{ reference: string }>((resolve) => {
+          resolve(
+            this.options.adapter!.importImage(image, { ...context, signal }),
+          )
+        }),
+        cancelled,
+      ])
+    } finally {
+      signal.removeEventListener('abort', abort)
+      this.assertContext(context, operation)
+    }
   }
   private commit<T>(apply: () => T): T {
     return this.options.commit ? this.options.commit(apply) : apply()
@@ -269,9 +307,13 @@ export class PasteController {
       !view.state.doc.resolve(exit).parent.inlineContent
     )
       target = { from: exit, to: exit }
-    const operation: Anchor = target
-      ? { ...target }
-      : { from: view.state.selection.from, to: view.state.selection.to }
+    const operation: ImportOperation = {
+      ...(target ?? {
+        from: view.state.selection.from,
+        to: view.state.selection.to,
+      }),
+      controller: new AbortController(),
+    }
     const inCode = () =>
       view.state.doc.resolve(this.anchor(operation).from).parent.type.spec.code
     this.active = operation
@@ -366,9 +408,8 @@ export class PasteController {
                 matched ?? dataImage(source) ?? positional[index++]
               if (!captured || !this.options.adapter)
                 throw new Error('The pasted image is unavailable.')
-              reference = (
-                await this.options.adapter.importImage(captured, { ...context })
-              ).reference
+              reference = (await this.importImage(captured, context, operation))
+                .reference
               this.assertContext(context, operation)
               imported.set(source, reference)
             }
@@ -470,9 +511,7 @@ export class PasteController {
                 'image-unavailable',
                 'No image adapter is configured.',
               )
-            const imported = await this.options.adapter.importImage(image, {
-              ...context,
-            })
+            const imported = await this.importImage(image, context, operation)
             this.assertContext(context, operation)
             const imageNode = schema.nodes.image?.create({
               src: imported.reference,

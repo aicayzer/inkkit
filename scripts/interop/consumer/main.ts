@@ -1,4 +1,4 @@
-import { InkKitEditor } from '@aicayzer/inkkit'
+import { InkKitEditor, InkKitError } from '@aicayzer/inkkit'
 import '@aicayzer/inkkit/style.css'
 import {
   ControlledImages,
@@ -6,7 +6,9 @@ import {
   imageBytes,
   fixtures,
 } from './fixtures'
-const images = new ControlledImages()
+const images = new ControlledImages(
+  () => new InkKitError('image-unavailable', 'Fixture image unavailable'),
+)
 const files = new ControlledFiles()
 let linkedEnabled = false
 let receivedClipboard
@@ -775,6 +777,10 @@ window.interop = {
             result = capture()
             break
           }
+          case 'imageImport':
+            images.setMode('import', operation.mode ?? 'normal')
+            result = true
+            break
           case 'imageExport':
             images.setMode('export', operation.mode ?? 'normal')
             result = true
@@ -802,23 +808,48 @@ window.interop = {
           }
           case 'startImagePaste':
             images.setMode('import', 'hold')
-            pendingPaste = editor.paste({
-              text: '',
-              images: [{ bytes, mimeType: 'image/png', filename: 'held.png' }],
-            })
+            pendingPaste = editor
+              .paste({
+                text: operation.html ? 'cancelled text' : '',
+                ...(operation.html
+                  ? { html: '<p>cancelled text<img src="held" alt="Held"></p>' }
+                  : {}),
+                images: [
+                  {
+                    bytes,
+                    mimeType: 'image/png',
+                    filename: 'held.png',
+                    source: 'held',
+                  },
+                ],
+              })
+              .then(
+                (value) => ({ value }),
+                (error) => ({ error }),
+              )
             for (let count = 0; count < 100 && !images.started.import; count++)
               await settle()
             if (!images.started.import)
               throw Error('Held image import did not start')
             result = { pending: true }
             break
-          case 'finishImagePaste':
-            images.release('import')
-            if (!pendingPaste) throw Error('No image paste is pending')
-            await pendingPaste
-            pendingPaste = undefined
+          case 'cancelPendingImports':
+            editor.cancelPendingImports(operation.generation)
             result = capture()
             break
+          case 'releaseImageImport':
+            images.release('import')
+            result = true
+            break
+          case 'finishImagePaste': {
+            if (operation.release !== false) images.release('import')
+            if (!pendingPaste) throw Error('No image paste is pending')
+            const completed = await pendingPaste
+            pendingPaste = undefined
+            if (completed.error) throw completed.error
+            result = capture()
+            break
+          }
           case 'editable':
             result = editor.setEditable(operation.editable)
             break
