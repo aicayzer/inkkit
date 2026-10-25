@@ -12,11 +12,14 @@ const hash = (path) =>
   createHash('sha256').update(readFileSync(path)).digest('hex')
 const resultPath = join(output, 'native-drop.json')
 rmSync(resultPath, { force: true })
+for (const phase of ['inside', 'outside', 'reentry', 'ended'])
+  rmSync(join(output, `native-drop.${phase}.png`), { force: true })
 const evidence = {
   archiveSha256: hash(archive),
   bundleSha256: hash(bundle),
   hostSha256: hash(host),
   scope: 'Native WKWebView dragover, exit, reentry and insertion',
+  captures: {},
   failures: [],
 }
 const run = spawnSync(host, [bundle, resultPath], {
@@ -30,14 +33,37 @@ writeFileSync(
 try {
   if (run.error || run.status !== 0)
     throw Error(`Native helper failed: ${run.error?.message ?? run.status}`)
+  if (
+    /WebContent.*(?:crash|exited)|WebProcess.*(?:crash|exited)|JavaScript.*exception/i.test(
+      run.stderr ?? '',
+    )
+  )
+    evidence.failures.push(
+      'WebKit stderr reported a process or JavaScript failure',
+    )
   const result = JSON.parse(readFileSync(resultPath, 'utf8'))
   if (result.error) throw Error(result.error)
+  for (const phase of ['inside', 'outside', 'reentry', 'ended']) {
+    const capture = join(output, `native-drop.${phase}.png`)
+    const bytes = readFileSync(capture)
+    if (
+      bytes.length < 100 ||
+      bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a'
+    )
+      throw Error(`${phase}: missing or invalid PNG capture`)
+    evidence.captures[phase] = { sha256: hash(capture), bytes: bytes.length }
+  }
   for (const type of ['dragstart', 'dragover', 'drop', 'dragend'])
     if (!result.events.some((event) => event.type === type && event.trusted))
       evidence.failures.push(`Missing trusted ${type}`)
   const samples = Object.fromEntries(
     result.samples.map((sample) => [sample.phase, sample]),
   )
+  for (const phase of ['inside', 'outside', 'reentry', 'ended'])
+    if (!samples[phase]?.keyWindow)
+      evidence.failures.push(`${phase}: native window was not key`)
+  if (!result.destination?.some((entry) => entry.phase === 'draggingEntered'))
+    evidence.failures.push('Native outside receiver did not receive the drag')
   for (const phase of ['inside', 'reentry']) {
     const sample = samples[phase]
     const cursor = sample?.cursors.find(
@@ -70,16 +96,33 @@ try {
     )
       evidence.failures.push(`${phase}: indicator remains visible`)
   }
-  const text = result.after?.snapshot?.text ?? ''
-  const insertion = text.indexOf('Native insertion')
-  if (
-    insertion < text.indexOf('First target paragraph.') ||
-    insertion > text.indexOf('Second target paragraph.') ||
-    insertion < 0
-  )
-    evidence.failures.push(
-      'Native drop did not insert between the target paragraphs',
+  for (const shift of [false, true])
+    if (
+      !result.events.some(
+        (event) =>
+          event.type === 'keydown' &&
+          event.trusted &&
+          event.meta &&
+          event.shift === shift &&
+          event.key?.toLowerCase() === 'z',
+      )
     )
+      evidence.failures.push(
+        `Missing trusted native ${shift ? 'redo' : 'undo'} key event`,
+      )
+  const original = 'First target paragraph.\n\nSecond target paragraph.\n'
+  const expected =
+    'First target paragraph.\n\nNative insertion\n\nSecond target paragraph.\n'
+  if (result.before?.snapshot?.text !== original)
+    evidence.failures.push('Initial source does not match the exact fixture')
+  for (const [phase, text] of [
+    ['inserted', expected],
+    ['undone', original],
+    ['redone', expected],
+    ['reopened', expected],
+  ])
+    if (result.fidelity?.[phase]?.text !== text)
+      evidence.failures.push(`${phase}: source bytes differ from expected`)
   if (result.after?.diagnostics?.length || result.after?.error)
     evidence.failures.push('Editor reported an error')
 } catch (error) {
