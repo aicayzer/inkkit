@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import { InkKitEditor, type EditorEvents } from '../src/index'
+import { InkKitError, InkKitEditor, type EditorEvents } from '../src/index'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -563,3 +563,245 @@ test('random typing, undo, redo and mode switches keep every view of the text in
     vi.useRealTimers()
   }
 }, 15_000)
+
+for (const text of ['', 'Prior\r\n\r\n* untouched 🦊\r\n']) {
+  test(
+    'source branching permanently discards formatted redo: ' +
+      (text || 'empty'),
+    () =>
+      run((editor, plain) => {
+        editor.loadDocument({ ...document1, text })
+        editor.replaceSource(text + 'A')
+        editor.replaceSource(text + 'AB')
+        editor.setEditingMode('source')
+        expect(editor.undo()).toBe(true)
+        type(plain, 'n')
+        expect(editor.undo()).toBe(true)
+        expect(editor.snapshot().text).toBe(text + 'A')
+        expect(editor.commandState().commands.redo).toBe(true)
+        editor.setEditingMode('formatted')
+        expect(editor.commandState().commands.redo).toBe(false)
+        expect(editor.redo()).toBe(false)
+        for (let iteration = 0; iteration < 2; iteration++) {
+          expect(editor.undo()).toBe(true)
+          expect(editor.snapshot().text).toBe(text)
+          editor.setEditingMode('source')
+          expect(editor.commandState().commands.redo).toBe(true)
+          expect(editor.redo()).toBe(true)
+          expect(editor.snapshot().text).toBe(text + 'A')
+          expect(editor.redo()).toBe(false)
+          editor.setEditingMode('formatted')
+          expect(editor.redo()).toBe(false)
+        }
+        const saved = editor.snapshot().text
+        editor.loadDocument({ ...document1, generation: 4, text: saved })
+        expect(editor.snapshot().text).toBe(text + 'A')
+        expect(editor.commandState().commands).toMatchObject({
+          undo: false,
+          redo: false,
+        })
+      }),
+  )
+}
+
+test('source branching orders earlier formatted undos before literal redo', () =>
+  run((editor, plain) => {
+    const text = 'Baseline\r\n'
+    editor.loadDocument({ ...document1, text })
+    for (const suffix of ['A', 'AB', 'ABC']) editor.replaceSource(text + suffix)
+    editor.setEditingMode('source')
+    editor.undo()
+    type(plain, 'n')
+    const typed = editor.snapshot().text
+    editor.undo()
+    expect(editor.undo()).toBe(true)
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe(text)
+    for (const suffix of ['A', 'AB']) {
+      expect(editor.redo()).toBe(true)
+      expect(editor.snapshot().text).toBe(text + suffix)
+    }
+    expect(editor.redo()).toBe(true)
+    expect(editor.snapshot().text).toBe(typed)
+    editor.undo()
+    editor.setEditingMode('formatted')
+    expect(editor.snapshot().text).toBe(text + 'AB')
+    expect(editor.redo()).toBe(false)
+  }))
+
+for (const settle of ['changed', 'baseline'] as const) {
+  test(
+    'settling source at ' + settle + ' never revives discarded formatted redo',
+    () =>
+      run((editor) => {
+        const text = 'Base\r\n'
+        editor.loadDocument({ ...document1, text })
+        editor.replaceSource(text + 'A')
+        editor.replaceSource(text + 'AB')
+        editor.undo()
+        editor.setEditingMode('source')
+        editor.replaceSource(text + 'n')
+        if (settle === 'baseline') editor.replaceSource(text + 'A')
+        const saved = editor.snapshot().text
+        editor.setEditingMode('formatted')
+        expect(editor.redo()).toBe(false)
+        expect(editor.undo()).toBe(true)
+        expect(editor.redo()).toBe(true)
+        expect(editor.snapshot().text).toBe(saved)
+        expect(editor.redo()).toBe(false)
+      }),
+  )
+}
+
+test('identical and refused source edits retain available formatted redo', () =>
+  run((editor, plain) => {
+    editor.loadDocument({ ...document1, text: 'Base' })
+    editor.replaceSource('BaseA')
+    editor.undo()
+    editor.setEditingMode('source')
+    expect(editor.replaceSource('Base')).toBe(false)
+    expect(() => editor.replaceSource('changed', 2)).toThrow()
+    editor.setEditable(false)
+    expect(() => editor.replaceSource('changed')).toThrow()
+    editor.setEditable(true)
+    plain.dispatchEvent(
+      new CompositionEvent('compositionstart', { bubbles: true }),
+    )
+    expect(() => editor.replaceSource('changed')).toThrow()
+    plain.dispatchEvent(
+      new CompositionEvent('compositionend', { bubbles: true }),
+    )
+    editor.setEditingMode('formatted')
+    expect(editor.commandState().commands.redo).toBe(true)
+    expect(editor.redo()).toBe(true)
+    expect(editor.snapshot().text).toBe('BaseA')
+  }))
+
+test('refused formatted history does not consume the permitted redo', () =>
+  run((editor) => {
+    editor.loadDocument({ ...document1, text: 'Base' })
+    editor.replaceSource('BaseA')
+    editor.replaceSource('BaseAB')
+    editor.undo()
+    editor.setEditingMode('source')
+    editor.replaceSource('BaseAn')
+    editor.undo()
+    editor.setEditingMode('formatted')
+    const internals = editor as unknown as {
+      assertPreserved: (...args: unknown[]) => void
+    }
+    const refuse = () => {
+      throw new InkKitError('preservation', 'Refused for regression test')
+    }
+    let spy = vi.spyOn(internals, 'assertPreserved').mockImplementation(refuse)
+    expect(() => editor.undo()).toThrow()
+    spy.mockRestore()
+    expect(editor.commandState().commands.redo).toBe(false)
+    expect(editor.undo()).toBe(true)
+    const before = editor.snapshot()
+    spy = vi.spyOn(internals, 'assertPreserved').mockImplementation(refuse)
+    expect(() => editor.redo()).toThrow()
+    spy.mockRestore()
+    expect(editor.snapshot()).toEqual(before)
+    expect(editor.commandState().commands.redo).toBe(true)
+    expect(editor.redo()).toBe(true)
+    expect(editor.snapshot().text).toBe('BaseA')
+    expect(editor.redo()).toBe(false)
+  }))
+
+test('refused formatted redo in source mode keeps its place before literal redo', () =>
+  run((editor, plain) => {
+    editor.loadDocument({ ...document1, text: 'Base' })
+    editor.replaceSource('BaseA')
+    editor.replaceSource('BaseAB')
+    editor.undo()
+    editor.setEditingMode('source')
+    type(plain, 'n')
+    const typed = editor.snapshot().text
+    editor.undo()
+    editor.undo()
+    const before = editor.snapshot()
+    const internals = editor as unknown as {
+      assertPreserved: (...args: unknown[]) => void
+    }
+    const spy = vi
+      .spyOn(internals, 'assertPreserved')
+      .mockImplementation(() => {
+        throw new InkKitError('preservation', 'Refused for regression test')
+      })
+    expect(() => editor.redo()).toThrow()
+    spy.mockRestore()
+    expect(editor.snapshot()).toEqual(before)
+    expect(editor.redo()).toBe(true)
+    expect(editor.snapshot().text).toBe('BaseA')
+    expect(editor.redo()).toBe(true)
+    expect(editor.snapshot().text).toBe(typed)
+    editor.undo()
+    editor.setEditingMode('formatted')
+    expect(editor.redo()).toBe(false)
+  }))
+
+test('trimmed formatted history never exposes the discarded redo tail', () =>
+  run((editor, plain) => {
+    editor.loadDocument({ ...document1, text: 'Base\r\n' })
+    for (let index = 0; index < 130; index++)
+      editor.replaceSource('Base\r\n' + index)
+    editor.undo()
+    editor.setEditingMode('source')
+    type(plain, 'n')
+    editor.undo()
+    editor.setEditingMode('formatted')
+    const states = [editor.snapshot().text]
+    while (editor.undo()) states.push(editor.snapshot().text)
+    expect(states.length).toBeGreaterThan(90)
+    for (const text of states.slice(0, -1).reverse()) {
+      expect(editor.redo()).toBe(true)
+      expect(editor.snapshot().text).toBe(text)
+    }
+    expect(editor.commandState().commands.redo).toBe(false)
+    expect(editor.redo()).toBe(false)
+  }))
+
+for (const earlierUndo of [false, true]) {
+  test(
+    'a later refusal restores the discarded redo boundary: ' + earlierUndo,
+    () =>
+      run((editor) => {
+        editor.loadDocument({ ...document1, text: 'Base' })
+        editor.replaceSource('BaseA')
+        editor.replaceSource('BaseAB')
+        editor.undo()
+        editor.setEditingMode('source')
+        editor.replaceSource('BaseAn')
+        editor.undo()
+        editor.setEditingMode('formatted')
+        if (earlierUndo) editor.undo()
+        const before = editor.snapshot()
+        const internals = editor as unknown as {
+          assertPreserved: (...args: unknown[]) => void
+        }
+        const original = internals.assertPreserved
+        let checks = 0
+        const spy = vi
+          .spyOn(internals, 'assertPreserved')
+          .mockImplementation(function (...args) {
+            if (++checks === 2)
+              throw new InkKitError(
+                'preservation',
+                'Refused after the accepted replacement',
+              )
+            return original.apply(internals, args)
+          })
+        expect(() => editor.replaceSource('New source')).toThrow()
+        spy.mockRestore()
+        expect(checks).toBe(2)
+        expect(editor.snapshot()).toEqual(before)
+        expect(editor.commandState().commands.redo).toBe(earlierUndo)
+        if (earlierUndo) {
+          expect(editor.redo()).toBe(true)
+          expect(editor.snapshot().text).toBe('BaseA')
+        }
+        expect(editor.redo()).toBe(false)
+      }),
+  )
+}
