@@ -431,6 +431,44 @@ export const wikiLinkComposition = $prose(
   () =>
     new Plugin<Composed>({
       key: composed,
+      appendTransaction(transactions, _before, state) {
+        if (!transactions.some((tr) => tr.docChanged)) return null
+        // A pasted or moved atom retains its original attributes. Store the
+        // spelling its new context saves before preservation and node views
+        // observe it, so adapter references and clipboard metadata agree.
+        let ranges: Array<[number, number]> = []
+        for (const transaction of transactions)
+          for (const map of transaction.mapping.maps) {
+            ranges = ranges.map(([from, to]) => [
+              map.map(from, -1),
+              map.map(to),
+            ])
+            map.forEach((_from, _to, from, to) => ranges.push([from, to]))
+          }
+        const tr = state.tr
+        const seen = new Set<number>()
+        for (const [from, to] of ranges)
+          state.doc.nodesBetween(from, to, (node, pos) => {
+            if (node.type.name !== 'inkkit_wiki_link' || seen.has(pos)) return
+            seen.add(pos)
+            const $pos = state.doc.resolve(pos)
+            let inTable = false
+            for (let depth = $pos.depth; depth > 0; depth--)
+              if (
+                ['table_cell', 'table_header'].includes(
+                  $pos.node(depth).type.name,
+                )
+              )
+                inTable = true
+            if (inTable !== Boolean(node.attrs.inTable))
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                raw: wikiMarkdown(node, inTable),
+                inTable,
+              })
+          })
+        return tr.steps.length ? tr : null
+      },
       state: {
         init: () => ({ composition: null, closing: null }),
         apply(tr, value) {

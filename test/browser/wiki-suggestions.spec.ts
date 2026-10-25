@@ -1,9 +1,14 @@
 import { expect, test, type Page } from '@playwright/test'
-import type { FileContext, InkKitEditor } from '../../src/core'
+import type {
+  FileContext,
+  InkKitEditor,
+  WikiLinkReference,
+} from '../../src/core'
 
 type WikiWindow = Window & {
   wikiEditor: InkKitEditor
   wikiErrors: string[]
+  wikiReferences: { resolve: WikiLinkReference[]; open: WikiLinkReference[] }
   wikiRequests: Array<{
     query: string
     context: FileContext
@@ -57,9 +62,16 @@ async function mount(
       const host = window as unknown as WikiWindow
       host.wikiRequests = []
       host.wikiErrors = []
+      host.wikiReferences = { resolve: [], open: [] }
       const names = options.names ?? ['Alpha', 'Alpine', 'Beta']
       const wikiLinks = {
-        open() {},
+        open(reference: WikiLinkReference) {
+          host.wikiReferences.open.push({ ...reference })
+        },
+        resolve(reference: WikiLinkReference) {
+          host.wikiReferences.resolve.push({ ...reference })
+          return { missing: false }
+        },
         ...(options.suggest === false
           ? {}
           : {
@@ -573,3 +585,63 @@ test('slash and wiki providers reuse one popup and restore editor semantics on c
   ).toBeVisible()
   await expect(root(page).getByRole('combobox')).toHaveCount(0)
 })
+
+for (const name of ['A|B', ' A\\|B 日本語 😀 ', 'A\\\\|B', ' A\tCafé ']) {
+  test(`table suggestion callback spelling survives reopening: ${JSON.stringify(name)}`, async ({
+    page,
+  }) => {
+    const source = '| TARGET | b |\r\n| --- | --- |\r\n| c | d |\r\n'
+    await mount(page, { text: source, names: [name] })
+    await page.evaluate(() => {
+      const editor = (window as unknown as WikiWindow).wikiEditor
+      editor.find('TARGET')
+      editor.insertText('[[', 1)
+    })
+    const typed = await saved(page)
+    await option(page, name).click()
+    const escaped = name
+      .replace(/[\\[\]|#]/g, '\\$&')
+      .replace(
+        /(\\*)\|/g,
+        (_match, escapes: string) => `${'\\'.repeat(escapes.length * 2 + 1)}|`,
+      )
+    const expected = { raw: `[[${escaped}]]`, target: name, label: name }
+    const inserted = await saved(page)
+    expect(inserted).toBe(source.replace('TARGET', `[[${escaped}]]`))
+    const check = async () => {
+      expect(
+        await page.evaluate(() =>
+          (window as unknown as WikiWindow).wikiReferences.resolve.at(-1),
+        ),
+      ).toEqual(expected)
+      await root(page).getByRole('link').focus()
+      await page.keyboard.press('Enter')
+      expect(
+        await page.evaluate(() =>
+          (window as unknown as WikiWindow).wikiReferences.open.at(-1),
+        ),
+      ).toEqual(expected)
+    }
+    await check()
+    await page.evaluate(() =>
+      (window as unknown as WikiWindow).wikiEditor.undo(),
+    )
+    await expectSaved(page, typed)
+    await page.evaluate(() =>
+      (window as unknown as WikiWindow).wikiEditor.redo(),
+    )
+    await expectSaved(page, inserted)
+    await page.evaluate(
+      (text) =>
+        (window as unknown as WikiWindow).wikiEditor.loadDocument({
+          documentId: 'reopened',
+          generation: 2,
+          format: 'md',
+          text,
+        }),
+      inserted,
+    )
+    await check()
+    await expectSaved(page, inserted)
+  })
+}
