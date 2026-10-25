@@ -26,7 +26,7 @@ To place a new case: if two hosts would build it the same way and it needs no st
 Rules that follow from the boundary:
 
 - Keep the facade free of native storage, Marfa, app names and app UI. Hosts import only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. Internal classes and markup are not a styling API.
-- The package bundles every runtime dependency except Mermaid, so hosts run the tree Inkkit tested; a dependency update is a lockfile change in a pull request ([development](docs/development.md#dependencies)).
+- The package bundles every runtime dependency except Mermaid, so hosts run the tree Inkkit tested; a dependency update is a lockfile change in a pull request ([development](docs/maintainers/development.md#dependencies)).
 - Keep image and file references opaque. Never infer a storage path, fetch from the network or export a private display URL.
 - Everything runs offline from one bundled page. Prefer maintained libraries that bundle offline and do not rewrite source. Only `src/index.ts` registers Mermaid; the `core` entry must bundle without it.
 - A failed operation changes nothing and reports an `InkKitError` with a documented code. A failed snapshot is never an unchanged document.
@@ -48,7 +48,7 @@ pnpm test:built-playground  # opens the built page; needs the build first
 - Browser tests use Playwright against the playground: `pnpm exec playwright install chromium webkit` once, then `pnpm exec playwright test --project=chromium test/browser/<name>.spec.ts`. For code, dependency and workflow changes, CI runs every browser test, in Chromium on Linux and in WebKit on macOS, and both jobs must pass. Before pushing, run the specs for what you changed, in WebKit too when selection, input, clipboard or layout changes. A test that cannot run in an engine calls `test.skip` with the reason.
 - The native runner in `scripts/interop/` tests the packed candidate in a real `WKWebView`. Run selected groups when focus, input, the bridge, clipboard, print or resource lifecycle changes. Browser WebKit does not prove `WKWebView` behavior. A rejected or empty selection is a failure, not a pass.
 - Documentation-only edits run a formatting check and skip editor and browser tests. Mintlify page, asset or configuration changes validate the site. Release runs retain all checks.
-- Choose checks from the changed behavior, not every fixture and configuration; [development](docs/development.md) has the table. Say which checks you did not run. A local pass does not show that hosted CI passed.
+- Choose checks from the changed behavior, not every fixture and configuration; [development](docs/maintainers/development.md) has the table. Say which checks you did not run. A local pass does not show that hosted CI passed.
 
 ## Conventions
 
@@ -57,17 +57,17 @@ pnpm test:built-playground  # opens the built page; needs the build first
 - A behavior change needs a regression test that fails without it, through the public facade, including failure and untidy input: CRLF, unusual list markers, Unicode, composition, stale generations.
 - During the Mintlify migration, maintain essential factual corrections in the existing guides. Replace each guide once; do not keep a second hand-maintained copy for the website. Development and release procedures remain repository documentation.
 - A public API change updates `docs/api.md`, and any of `integration.md`, `supported-syntax.md` and `preservation.md` that describe it, in the same pull request.
-- A performance claim cites a measurement: command, machine, document and before and after medians. Record lasting results in `docs/performance.md`.
+- A performance claim cites a measurement: command, machine, document and before and after medians. Record lasting results in `docs/maintainers/performance.md`.
 - Comments explain reasons or constraints the code cannot show.
 - Use feature branches and scoped Conventional Commits, and preserve unrelated changes. `main` takes squash-merged pull requests with passing CI and resolved conversations.
 - CI uses GitHub-hosted runners only, because the repository is public.
 - Repository prose follows the Google developer documentation style guide.
-- Change the version or push a tag only in an authorized release ([releasing](docs/releasing.md)).
+- Change the version or push a tag only in an authorized release ([releasing](docs/maintainers/releasing.md)).
 
 ## Where scope and decisions live
 
 - GitHub issues hold outcomes, acceptance criteria and decisions; record a decision on its issue. Version milestones hold release scope and the publication checklist. The [Inkkit Project](https://github.com/users/aicayzer/projects/3) is the roadmap.
-- [Development](docs/development.md) has the GitHub workflow and verification policy; [releasing](docs/releasing.md) has publication.
+- [Development](docs/maintainers/development.md) has the GitHub workflow and verification policy; [releasing](docs/maintainers/releasing.md) has publication.
 - Adopting a release in a host is separate work in that host's repository, after publication. Temporary `file:` dependencies never reach a host's merged lockfile.
 
 ## Code Review Rules

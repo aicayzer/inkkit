@@ -76,4 +76,4 @@ The configured report is `_local/playwright/report`, individual artefacts are in
 pnpm exec playwright test --project=chromium --grep @intentional-failure --grep-invert '^$'
 ```
 
-Record its expected non-zero result separately from passing smoke/regression evidence, and retain that run's artefacts before another run overwrites the configured output. See [development](development.md#bounded-verification) for check triggers and confidence limits, and the [native runner](../scripts/interop/README.md) for selected WKWebView checks.
+Record its expected non-zero result separately from passing smoke/regression evidence, and retain that run's artefacts before another run overwrites the configured output. See [development](development.md#bounded-verification) for check triggers and confidence limits, and the [native runner](../../scripts/interop/README.md) for selected WKWebView checks.

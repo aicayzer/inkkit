@@ -1,6 +1,6 @@
 # Releases
 
-Release `0.0.1` was published manually from the verified tarball. The [verification record](verification.md) contains the first-release evidence. Later releases are published by the release workflow.
+Release `0.0.1` was published manually from the verified tarball. Later releases are published by the release workflow.
 
 ## What the release workflow checks
 

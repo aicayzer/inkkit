@@ -1,4 +1,4 @@
-// Measures structural edits in long notes for docs/performance.md. It runs
+// Measures structural edits in long notes for docs/maintainers/performance.md. It runs
 // only when INKKIT_MEASURE names a folder for the results:
 //
 //   INKKIT_MEASURE=_local/measure pnpm exec playwright test \

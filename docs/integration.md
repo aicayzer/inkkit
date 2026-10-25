@@ -56,7 +56,7 @@ Capture `editor.snapshot(1)` when saving. Persist its complete `text` only after
 
 Without an image adapter, image references remain literal Markdown. TXT documents use `format: 'txt'` and remain literal on both screen and export. The host can offer formatted/source switching through `setEditingMode()` without replacing the document; source edits made in source mode become one history step when the formatted view is shown again.
 
-Omit `rendering` to keep highlighting and diagram previews. Explicit clipboard and printable diagram exports still render when previews are disabled. The generic isolated native consumer and its selectable `integration` group exercise assembled minimal/rich interactions; these fixture hosts establish engine contracts without proving app storage, permissions or opening actions. See [measured costs](performance.md) and the [native runner](../scripts/interop/README.md).
+Omit `rendering` to keep highlighting and diagram previews. Explicit clipboard and printable diagram exports still render when previews are disabled. The generic isolated native consumer and its selectable `integration` group exercise assembled minimal/rich interactions; these fixture hosts establish engine contracts without proving app storage, permissions or opening actions. See [measured costs](maintainers/performance.md) and the [native runner](../scripts/interop/README.md).
 
 ## A richer document app
 
