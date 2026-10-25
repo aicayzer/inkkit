@@ -1,7 +1,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 import { $view } from '@milkdown/kit/utils'
-import { wikiLinkSchema } from './linked-syntax'
+import { wikiLinkSchema, wikiMarkdown } from './linked-syntax'
 import { modHeld } from './modifier'
 import type {
   DocumentContext,
@@ -27,6 +27,7 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
     dom.setAttribute('role', 'link')
     dom.tabIndex = 0
     const reference = (): WikiLinkReference => ({
+      raw: wikiMarkdown(current, Boolean(current.attrs.inTable)),
       target: String(current.attrs.target),
       ...(current.attrs.fragment
         ? { fragment: String(current.attrs.fragment) }

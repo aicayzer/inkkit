@@ -122,6 +122,7 @@ export class FileResolution {
 
   update(reference: FileReference): void {
     const key = JSON.stringify([
+      reference.raw,
       reference.reference,
       reference.kind,
       reference.fragment,

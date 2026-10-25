@@ -146,6 +146,7 @@ test('escaped dimension pipe belongs to the target, not size metadata', () =>
     (editor, preservation) => {
       const named = nodes(editor, 'image')[0]!.node
       expect(fileReference(named)).toEqual({
+        raw: String.raw`![[ Two word file\|400x300.png ]]`,
         reference: 'Two word file|400x300.png',
         kind: 'wiki',
         target: 'Two word file|400x300.png',
@@ -164,6 +165,7 @@ test('tabbed named dimensions retain exact source through edited-block serializa
     const view = editor.ctx.get(editorViewCtx)
     const named = nodes(editor, 'image')[0]!
     expect(fileReference(named.node)).toEqual({
+      raw,
       reference: 'photo.png#page=2',
       kind: 'wiki',
       target: 'photo.png',
@@ -232,6 +234,7 @@ test('wiki atoms retain exact source through adjacent edit, source reopen and hi
     const view = editor.ctx.get(editorViewCtx)
     const wiki = nodes(editor, 'inkkit_wiki_link')[0]!.node
     expect(wikiReference(wiki)).toEqual({
+      raw: '[[Note#Heading|Alias]]',
       target: 'Note',
       fragment: 'Heading',
       label: 'Alias',
@@ -296,6 +299,7 @@ test('named and path embeds share opaque image nodes while retaining their disti
       const named = images[0]!.node,
         path = images[1]!.node
       expect(fileReference(named)).toEqual({
+        raw: String.raw`![[folder/A\]B.png#page=2|00400]]`,
         reference: 'folder/A]B.png#page=2',
         kind: 'wiki',
         target: 'folder/A]B.png',
@@ -304,6 +308,7 @@ test('named and path embeds share opaque image nodes while retaining their disti
         width: 400,
       })
       expect(fileReference(path)).toEqual({
+        raw: '![Alt|320](opaque/path#frag)',
         reference: 'opaque/path#frag',
         kind: 'path',
         target: 'opaque/path',
@@ -352,6 +357,7 @@ test('a named reference ending in an escaped numeric pipe has no accidental widt
   run(String.raw`![[file\|400]]` + '\n', (editor) => {
     const node = nodes(editor, 'image')[0]!.node
     expect(fileReference(node)).toEqual({
+      raw: String.raw`![[file\|400]]`,
       reference: 'file|400',
       kind: 'wiki',
       target: 'file|400',
@@ -366,7 +372,11 @@ test('GFM escaped separator pipes parse as aliases/sizes and copy to valid stand
   return run(source, (editor, preservation) => {
     const wiki = nodes(editor, 'inkkit_wiki_link')[0]!.node
     const image = nodes(editor, 'image')[0]!.node
-    expect(wikiReference(wiki)).toEqual({ target: 'Note', label: 'Alias' })
+    expect(wikiReference(wiki)).toEqual({
+      raw: '[[Note\\|Alias]]',
+      target: 'Note',
+      label: 'Alias',
+    })
     expect(wikiMarkdown(wiki)).toBe('[[Note|Alias]]')
     expect(wikiMarkdown(wiki, true)).toBe('[[Note\\|Alias]]')
     expect(namedFileMarkdown(image)).toBe('![[photo.png|400]]')
@@ -406,7 +416,11 @@ test('table literal pipes use a separate escaping layer from alias and sizing se
   return run(source, (editor, preservation) => {
     const wiki = nodes(editor, 'inkkit_wiki_link')[0]!.node
     const image = nodes(editor, 'image')[0]!.node
-    expect(wikiReference(wiki)).toEqual({ target: 'A|B', label: 'Alias' })
+    expect(wikiReference(wiki)).toEqual({
+      raw: String.raw`[[A\\\|B\|Alias]]`,
+      target: 'A|B',
+      label: 'Alias',
+    })
     expect(wikiMarkdown(wiki)).toBe(String.raw`[[A\|B|Alias]]`)
     expect(wikiMarkdown(wiki, true)).toBe(String.raw`[[A\\\|B\|Alias]]`)
     expect(fileReference(image)).toMatchObject({

@@ -896,7 +896,7 @@ While Mod is held and the pointer is over the editor root, InkKit's stylesheet s
 
 `EditorOptions.wikiLinks` and `EditorOptions.files` are independent optional adapters. Omitting both retains the existing simple editor and `ImageAdapter` contract. See [supported syntax](supported-syntax.md#linked-syntax) for the bounded grammar and representation table.
 
-`WikiLinkAdapter.open(reference, context)` receives a `WikiLinkReference` with decoded `target`, optional `fragment` and authored readable `label`. Optional synchronous `resolve(reference, context)` returns `{ missing?: boolean }` for presentation. It does not supply an editor URL. The host owns lookup, permissions and navigation; use source mode to edit the authored target or alias. A primary click with Mod (see [Opening links](#opening-links)) or Enter or Space on the focused link invokes `open`, including in read-only mode. No note index, backlink graph or transclusion is created.
+`WikiLinkAdapter.open(reference, context)` receives a `WikiLinkReference` with `raw`, decoded `target`, optional `fragment` and authored readable `label`. `raw` is the link's Markdown as the document holds it, such as `[[Plan|Plan]]`, escapes included, so a host can tell `[[Plan]]` from `[[Plan|Plan]]` and match a link to what it has read from the saved text. In a table, it keeps the table's `\|` escapes. Optional synchronous `resolve(reference, context)` returns `{ missing?: boolean }` for presentation. It does not supply an editor URL. The host owns lookup, permissions and navigation; use source mode to edit the authored target or alias. A primary click with Mod (see [Opening links](#opening-links)) or Enter or Space on the focused link invokes `open`, including in read-only mode. No note index, backlink graph or transclusion is created.
 
 ### Typing a wiki link
 
@@ -938,6 +938,7 @@ Names must be nonblank and valid targets in the [supported wiki-link syntax](sup
 A `FileReference` has these fields:
 
 - `kind`: `path` for `![alt](destination)` and `wiki` for `![[name]]`.
+- `raw`: the embed's Markdown as the document holds it, such as `![alt|400](a\_b.png "Title")` or `![[photo.png|400]]`, with its escapes and, in a table, its `\|` escapes. It's the authored text while the embed is unchanged, and the text InkKit writes for it once it's inserted or resized. Use it to match an embed to what you read from the saved text; `reference` and `target` have Markdown's escapes and entities removed.
 - `reference`: the whole reference, including any fragment. For `path`, it's the Markdown destination, `a/b.mp4#t=10`. For `wiki`, it's `target#fragment`, or `target` when there is no fragment.
 - `target`: the reference without its fragment. Use it to find the file.
 - `fragment`: optional. Everything after the separating `#`, such as `t=10` or `page=3`. When it's absent, `target` equals `reference`.

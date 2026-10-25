@@ -1,8 +1,12 @@
 import { $inputRule, $node, $prose, $remark } from '@milkdown/kit/utils'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { InputRule } from '@milkdown/kit/prose/inputrules'
-import { Mark, type Node as ProseNode } from '@milkdown/kit/prose/model'
-import type { Literal } from 'mdast'
+import {
+  Mark,
+  type Node as ProseNode,
+  type Schema,
+} from '@milkdown/kit/prose/model'
+import type { Literal, Nodes, Root } from 'mdast'
 import type { Extension as FromExtension } from 'mdast-util-from-markdown'
 import { defaultHandlers, type Handle } from 'mdast-util-to-markdown'
 import type { Code, Extension, Tokenizer, State } from 'micromark-util-types'
@@ -28,6 +32,7 @@ declare module 'mdast' {
   }
   interface Image {
     inkkitFileRaw?: string
+    inkkitFileSource?: string
     inkkitFileTarget?: string
     inkkitFileFragment?: string | null
     inkkitFileWidth?: number | null
@@ -196,6 +201,7 @@ export function wikiMarkdown(node: ProseNode, inTable = false): string {
 
 export function wikiReference(node: ProseNode): WikiLinkReference {
   return {
+    raw: wikiMarkdown(node, Boolean(node.attrs.inTable)),
     target: String(node.attrs.target),
     ...(node.attrs.fragment != null
       ? { fragment: String(node.attrs.fragment) }
@@ -205,6 +211,11 @@ export function wikiReference(node: ProseNode): WikiLinkReference {
 }
 
 export function fileReference(node: ProseNode): FileReference {
+  return { ...fileFields(node), raw: fileSource(node) }
+}
+
+/** `fileReference` without the embed's text, which takes writing it. */
+export function fileFields(node: ProseNode): Omit<FileReference, 'raw'> {
   const reference = String(node.attrs.src ?? '')
   const named = node.attrs.inkkitFileRaw != null
   const alt = String(node.attrs.alt ?? '')
@@ -243,6 +254,60 @@ export function fileReference(node: ProseNode): FileReference {
   }
 }
 
+/** A path image's Markdown as it was read, with the attributes it was read as. */
+export interface AuthoredImage {
+  text: string
+  src: string
+  alt: string
+  title: string
+}
+
+const writers = new WeakMap<Schema, (node: ProseNode) => string>()
+
+/** Sets how an image of `schema` is written when it has no authored text. */
+export function setImageWriter(
+  schema: Schema,
+  write: (node: ProseNode) => string,
+): void {
+  writers.set(schema, write)
+}
+
+/**
+ * A file embed's Markdown as the document holds it: its authored text while
+ * the embed is unchanged, otherwise the text InkKit writes for it.
+ */
+function fileSource(node: ProseNode): string {
+  if (node.attrs.inkkitFileRaw != null)
+    return namedFileMarkdown(node, Boolean(node.attrs.inkkitFileInTable)) ?? ''
+  const authored = node.attrs.inkkitFileSource as AuthoredImage | null
+  if (
+    authored &&
+    authored.src === node.attrs.src &&
+    authored.alt === node.attrs.alt &&
+    authored.title === node.attrs.title
+  )
+    return authored.text
+  return writers.get(node.type.schema)?.(node) ?? ''
+}
+
+/** Records each path image's Markdown as written, for `FileReference.raw`. */
+export function remarkFileSources() {
+  return (tree: Root, file: { value?: unknown }) => {
+    // Positions count from after a byte order mark.
+    const source = String(file.value ?? '').replace(/^\uFEFF/, '')
+    const visit = (node: Nodes) => {
+      if (node.type === 'image' && node.inkkitFileRaw == null) {
+        const start = node.position?.start.offset
+        const end = node.position?.end.offset
+        if (start != null && end != null)
+          node.inkkitFileSource = source.slice(start, end)
+      }
+      if ('children' in node) node.children.forEach(visit)
+    }
+    visit(tree)
+  }
+}
+
 export function namedFileMarkdown(
   node: ProseNode,
   inTable = false,
@@ -250,7 +315,7 @@ export function namedFileMarkdown(
   if (node.attrs.inkkitFileRaw == null) return undefined
   let raw = String(node.attrs.inkkitFileRaw)
   const authoredInTable = Boolean(node.attrs.inkkitFileInTable)
-  const width = fileReference(node).width ?? null
+  const width = fileFields(node).width ?? null
   const original = node.attrs.inkkitFileWidth ?? null
   if (width !== original) {
     if (authoredInTable) raw = fromTable(raw)

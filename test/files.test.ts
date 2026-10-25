@@ -16,6 +16,7 @@ import {
 import { defaultLabels } from '../src/labels'
 
 const reference: FileReference = {
+  raw: '![Authored|120](opaque)',
   reference: 'opaque',
   kind: 'path',
   target: 'opaque',
@@ -88,6 +89,7 @@ test('resolution retries abort old requests and reject late reference/document r
   await Promise.resolve()
   expect(resolver.state.status).toBe('loading')
   resolver.update({
+    raw: '![[other#page=2]]',
     reference: 'other#page=2',
     kind: 'wiki',
     target: 'other',
@@ -99,6 +101,7 @@ test('resolution retries abort old requests and reject late reference/document r
   fixture.requests[2]!.resolve(image)
   await vi.waitFor(() => expect(resolver.state.status).toBe('loading'))
   resolver.update({
+    raw: '![[other#page=2]]',
     reference: 'other#page=2',
     kind: 'wiki',
     target: 'other',

@@ -1,4 +1,9 @@
-import { editorViewCtx, serializerCtx } from '@milkdown/kit/core'
+import {
+  SerializerReady,
+  editorViewCtx,
+  schemaCtx,
+  serializerCtx,
+} from '@milkdown/kit/core'
 import type { Ctx, MilkdownPlugin } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import {
@@ -59,7 +64,9 @@ import {
   wikiLinkInputRule,
   wikiLinkSchema,
   namedFileMarkdown,
-  fileReference,
+  fileFields,
+  remarkFileSources,
+  setImageWriter,
 } from './linked-syntax'
 import {
   normalizeTableAlignment,
@@ -528,6 +535,25 @@ export const remarkLinkFormsPlugin = $remark(
   () => remarkLinkForms,
 )
 
+const remarkFileSourcesPlugin = $remark(
+  'inkkitFileSources',
+  () => remarkFileSources,
+)
+
+// An image with no authored text is written as InkKit writes it alone.
+const imageWriter: MilkdownPlugin = (ctx) => async () => {
+  await ctx.wait(SerializerReady)
+  const schema = ctx.get(schemaCtx)
+  setImageWriter(schema, (node) => {
+    const block = node.isBlock
+      ? node
+      : schema.nodes.paragraph!.create(null, node)
+    return ctx
+      .get(serializerCtx)(schema.topNodeType.create(null, block))
+      .replace(/\n+$/, '')
+  })
+}
+
 // The preset drops the final empty paragraph, which makes trailing spacers shrink on each reload.
 const preserveSpacerParagraphs = paragraphSchema.extendSchema(
   (base) => (ctx) => {
@@ -685,7 +711,7 @@ const normalizedImages = imageSchema.extendSchema((base) => (ctx) => {
           inkkitFileRaw: raw,
           inkkitFileTarget: node.attrs.inkkitFileTarget,
           inkkitFileFragment: node.attrs.inkkitFileFragment,
-          inkkitFileWidth: fileReference(node).width ?? null,
+          inkkitFileWidth: fileFields(node).width ?? null,
           inkkitFileInTable: node.attrs.inkkitFileInTable,
         })
       },
@@ -854,6 +880,7 @@ export function createDialect(
     remarkCodeFences,
     remarkReferencesPlugin,
     remarkLinkFormsPlugin,
+    remarkFileSourcesPlugin,
     remarkCalloutsPlugin,
     remarkCommentsPlugin,
     wikiLinks || files ? linkedSyntax(wikiLinks, files) : [],
@@ -897,6 +924,7 @@ export function createDialect(
     tables,
     literalBlock,
     checkedParser,
+    imageWriter,
   ].flat()
 }
 
