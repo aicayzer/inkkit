@@ -6,12 +6,12 @@ description: 'What stays unchanged, what an edit can rewrite, and how preservati
 Inkkit saves the Markdown you loaded, not a fresh export of what the editor shows. An unedited document saves byte for byte, and an edit rewrites only the blocks it touches. When Inkkit can't save an edit so that it reopens exactly as shown, it refuses the edit with the `preservation` error code and changes nothing.
 
 <img
-  className="block dark:hidden"
+  className="block dark:hidden mx-auto max-w-[640px]"
   src="/images/how-inkkit-works.svg"
   alt="Inkkit keeps untouched source, writes edited blocks and checks the result before accepting an edit."
 />
 <img
-  className="hidden dark:block"
+  className="hidden dark:block mx-auto max-w-[640px]"
   src="/images/how-inkkit-works-dark.svg"
   alt="Inkkit's source preservation and read-back check, in dark mode."
 />
@@ -79,7 +79,7 @@ Each reason below reports `preservation`, and each leaves the document, revision
 
 </Accordion>
 
-Edits that would read differently are usually one of these:
+<Accordion title="Examples of edits that would read differently">
 
 - Deleting the block between two lists that use the same marker, which would merge them.
 - Leaving an HTML comment at the start of a paragraph, or a paragraph that holds only an HTML comment. Markdown reads that line as an HTML block.
@@ -87,3 +87,5 @@ Edits that would read differently are usually one of these:
 - Turning text into a code block when the code can't be saved as the same text.
 - Removing a code block's language when the rest of its info string would then read as the language.
 - Calling `editReferenceDefinition` with an empty `title`.
+
+</Accordion>

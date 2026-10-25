@@ -1,6 +1,6 @@
 ---
 title: 'Quickstart'
-description: 'Install Inkkit, mount an editor, load a Markdown document, save it, add formatting shortcuts and dispose of the editor.'
+description: 'Mount an editor and connect it to your app’s storage.'
 ---
 
 The example keeps the note in `localStorage`; your app replaces that with its own storage.
@@ -101,12 +101,16 @@ async function close(): Promise<void> {
 }
 ```
 
+<Accordion title="What the example handles">
+
 - **`changed` only prompts a save.** At the moment you write, call `snapshot(generation)` and write its `text`.
 - **A snapshot that throws saved nothing.** Keep the document open and don't treat it as unchanged. `composition` and `operation-pending` clear when text input or an image import finishes; for the other codes, see [Save the document](/concepts/documents#save-the-document).
 - **`generation` names this load.** Pass it to every call that takes one, and give each later load a greater one. See [Documents and saving](/concepts/documents).
 - **Inkkit binds no formatting keys.** Supply them in `keymap`, by the same names as the `format` commands. `Mod` is Command on Apple platforms and Control elsewhere. Undo, redo and moving blocks have default keys. To change bindings later, call `setKeymap`, which replaces the whole map. See [Bind shortcuts](/guides/controls#bind-shortcuts).
 - **`error` receives failures that no call is waiting for,** such as an edit the person makes that Inkkit refuses because it would not save as shown.
 - **`close` saves first, then awaits `destroy()`** before it removes the root. If the save fails, the editor stays open.
+
+</Accordion>
 
 </Step>
 </Steps>
