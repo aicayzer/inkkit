@@ -13,7 +13,7 @@ import type { PasteInput } from './paste'
 import { literalCommentSpans } from './comments'
 import { restoreConvertedSpaces } from './paste-html'
 import { importableSlice } from './html-import'
-import { caretAfter, caretAfterInsertion } from './drop-placement'
+import { caretAfter, caretAfterInsertion, calloutFolds } from './drop-placement'
 import { normalizeTableAlignment } from './table-alignment'
 import {
   dispatchTableOperation,
@@ -97,7 +97,10 @@ export function pasteSpreadsheet(
     const selection = view.state.selection
     // A drop puts the caret after the dropped block, as other drops do.
     const tr = at
-      ? caretAfterInsertion(view.state.tr.replaceWith(at.from, at.to, content))
+      ? caretAfterInsertion(
+          view.state.tr.replaceWith(at.from, at.to, content),
+          view,
+        )
       : selection.$from.parent.type.name === 'paragraph' &&
           selection.empty &&
           selection.$from.parent.content.size === 0
@@ -145,7 +148,13 @@ export function pasteSpreadsheet(
     })
     if (tableStart < 0) reject()
     // Selecting the new table would let the next keystroke replace it.
-    tr.setSelection(caretAfter(tr.doc, tableStart - 1 + table.nodeSize))
+    tr.setSelection(
+      caretAfter(
+        tr.doc,
+        tableStart - 1 + table.nodeSize,
+        calloutFolds(view, tr),
+      ),
+    )
     dispatchTableOperation(view, tr)
     return true
   }
