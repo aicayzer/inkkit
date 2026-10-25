@@ -1515,6 +1515,19 @@ function retainSource(
     )
     const first = before.children[0]!
     if (spacer(first)) return retained
+    const gap = source.slice(
+      first.position!.end.offset!,
+      before.children[1]!.position!.start.offset!,
+    )
+    if (!/\r?\n[ \t]*\r?\n/.test(gap)) {
+      const from = first.position!.start.offset! - start
+      const to = before.children[1]!.position!.start.offset! - start
+      // Without a separating blank line, an HTML break would absorb the
+      // following block. Omit only the retained introduction and its gap.
+      return retained.startsWith(source.slice(start, start + to))
+        ? retained.slice(0, from) + retained.slice(to)
+        : retained
+    }
     // An emptied first line is kept as the `<br />` line it reads back as.
     const from = first.position!.start.offset! - start
     const to = first.position!.end.offset! - start

@@ -5,6 +5,7 @@ import {
   editorViewCtx,
   remarkStringifyOptionsCtx,
   rootCtx,
+  serializerCtx,
 } from '@milkdown/kit/core'
 import { history } from '@milkdown/kit/plugin/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -16,6 +17,7 @@ import { dialect, stringifyOptions } from '../src/dialect'
 import {
   autoHighlightLimit,
   highlightLimit,
+  highlightBudget,
   highlightPlugin,
 } from '../src/highlight'
 
@@ -115,6 +117,8 @@ let editor: Editor
 let view: EditorView
 
 beforeEach(async () => {
+  // Correctness comparisons must not depend on the machine exhausting the budget.
+  vi.spyOn(performance, 'now').mockReturnValue(0)
   root = document.createElement('div')
   document.body.append(root)
   editor = await Editor.make()
@@ -134,6 +138,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await editor.destroy()
   root.remove()
+  vi.restoreAllMocks()
 })
 
 function find(text: string): number {
@@ -154,6 +159,38 @@ function insertAt(pos: number, text: string) {
 test('the initial decorations equal a full recompute', () => {
   expect(actual(view).length).toBeGreaterThan(10)
   expect(actual(view)).toEqual(expected(view.state.doc))
+})
+
+test('exhausting the budget leaves later code plain until it is edited', () => {
+  const code = view.state.schema.nodes.code_block!
+  const blocks = ['const first = 1', 'const second = 2', 'const later = 3'].map(
+    (text) => code.create({ language: 'ts' }, view.state.schema.text(text)),
+  )
+  const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, blocks)
+  const serialize = editor.ctx.get(serializerCtx)
+  const unchangedSource = serialize(tr.doc)
+  // Two completed blocks consume the budget before the third starts.
+  vi.mocked(performance.now).mockImplementation(() =>
+    calls.count >= 2 ? highlightBudget + 1 : 0,
+  )
+  view.dispatch(tr)
+  const later = find('const later')
+  expect(calls.count).toBe(2)
+  expect(serialize(view.state.doc)).toBe(unchangedSource)
+  expect(actual(view)).toEqual(
+    expected(view.state.doc).filter(([from]) => from < later),
+  )
+  expect(actual(view).some(([from]) => from > later)).toBe(false)
+
+  vi.mocked(performance.now).mockReturnValue(highlightBudget + 1)
+  calls.count = 0
+  insertAt(later + 1, '// edited\n')
+  expect(calls.count).toBe(1)
+  expect(actual(view)).toEqual(expected(view.state.doc))
+  expect(actual(view).some(([from]) => from > later)).toBe(true)
+  expect(serialize(view.state.doc)).toBe(
+    unchangedSource.replace('const later', '// edited\nconst later'),
+  )
 })
 
 test('editing text outside code blocks does not highlight', () => {
@@ -474,6 +511,7 @@ async function colorfulBlock(characters: number) {
 // as in the small one when time grows linearly (4800 / 400 is 12) and about
 // 100 times when it grows quadratically; the bound lies between.
 test('one edit in a block of many colors takes time linear in its size', async () => {
+  vi.restoreAllMocks()
   const smallSize = 400
   const largeSize = 4800
   expect(largeSize).toBeLessThanOrEqual(highlightLimit)
