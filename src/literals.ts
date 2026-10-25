@@ -31,16 +31,17 @@ export function lineBreakHTML(value: string): boolean {
   return ['<br />', '<br>', '<br >', '<br/>'].includes(value.trim())
 }
 
-function restoreInlineBreaks(node: Nodes): void {
-  // Cells and ATX headings cannot hold source line endings, so even a lone
-  // break there is content. A lone paragraph break remains a spacer.
-  if (
+function restoreInlineBreaks(node: Nodes, inline = false): void {
+  // Cells and headings retain every break. A standalone paragraph break is a
+  // spacer; formatting descendants inherit their containing block's policy.
+  const container =
     (node.type === 'paragraph' && node.children.length > 1) ||
     node.type === 'heading' ||
     node.type === 'tableCell'
-  ) {
+  const restore = container || inline
+  if ('children' in node) {
     node.children = node.children.map((child) =>
-      child.type === 'html' && lineBreakHTML(child.value)
+      restore && child.type === 'html' && lineBreakHTML(child.value)
         ? {
             type: 'break',
             data: { inkkitHTMLBreak: true },
@@ -48,8 +49,8 @@ function restoreInlineBreaks(node: Nodes): void {
           }
         : child,
     )
+    node.children.forEach((child) => restoreInlineBreaks(child, restore))
   }
-  if ('children' in node) node.children.forEach(restoreInlineBreaks)
 }
 function containsUnsupported(
   node: Nodes,

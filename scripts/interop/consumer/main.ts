@@ -669,6 +669,9 @@ window.interop = {
             } else if (operation.action === 'hostPaste') {
               result = await bridge.postMessage({ action: 'read' })
               await editor.paste({ text: result.text, html: result.html })
+            } else if (operation.action === 'hostPastePlain') {
+              result = await bridge.postMessage({ action: 'read' })
+              editor.pasteAsPlainText(result.text)
             } else {
               result = await bridge.postMessage({
                 action: operation.action,
