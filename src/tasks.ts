@@ -6,26 +6,56 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 
-// A click on the task marker lands on the <li> itself, since the marker is a
-// pseudo-element; clicks inside the item's text land on its children.
+// The marker is a pseudo-element, so its events target the list item. Keep
+// clicks in the item's padding or nested-list margins out of the control.
+function onTaskMarker(event: MouseEvent): boolean {
+  const target = event.target
+  if (
+    !(target instanceof HTMLElement) ||
+    !target.matches('li[data-item-type="task"]')
+  )
+    return false
+  const marker = getComputedStyle(target, '::before')
+  const rect = target.getBoundingClientRect()
+  const left = rect.left + parseFloat(marker.left)
+  const top = rect.top + parseFloat(marker.top)
+  return (
+    event.clientX >= left &&
+    event.clientX <= left + parseFloat(marker.width) &&
+    event.clientY >= top &&
+    event.clientY <= top + parseFloat(marker.height)
+  )
+}
 export const taskListPlugin = $prose(
   () =>
     new Plugin({
       key: new PluginKey('taskToggle'),
       props: {
-        handleClickOn(view, _pos, node, nodePos, event) {
-          if (!view.editable) return false
-          if (node.type.name !== 'list_item' || node.attrs.checked == null)
-            return false
-          const target = event.target as HTMLElement
-          if (!target.matches('li[data-item-type="task"]')) return false
-          view.dispatch(
-            view.state.tr.setNodeMarkup(nodePos, undefined, {
-              ...node.attrs,
-              checked: !node.attrs.checked,
-            }),
-          )
-          return true
+        handleDOMEvents: {
+          mousedown(view, event) {
+            if (!view.editable || event.button !== 0 || !onTaskMarker(event))
+              return false
+            // Toggling a control must not first move the native text selection.
+            event.preventDefault()
+            return true
+          },
+
+          click(view, event) {
+            if (!view.editable || event.button !== 0 || !onTaskMarker(event))
+              return false
+            const nodePos = view.posAtDOM(event.target as HTMLElement, 0) - 1
+            const node = view.state.doc.nodeAt(nodePos)
+            if (node?.type.name !== 'list_item' || node.attrs.checked == null)
+              return false
+            event.preventDefault()
+            view.dispatch(
+              view.state.tr.setNodeMarkup(nodePos, undefined, {
+                ...node.attrs,
+                checked: !node.attrs.checked,
+              }),
+            )
+            return true
+          },
         },
       },
     }),

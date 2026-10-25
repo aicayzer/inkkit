@@ -36,6 +36,7 @@ const versions = [
   '0.0.12',
   '0.0.13',
   '0.0.14',
+  '0.2.0',
 ]
 if (!versions.includes(version))
   throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
@@ -1791,6 +1792,50 @@ if (releaseAtLeast('0.0.7')) {
         same('scrollLeft', 'beforeReload', 'scrollLeft', 'afterReload'),
         { op: 'sourceViewport', name: 'reloadViewport' },
         assert('inView', true, 'reloadViewport'),
+      ],
+    },
+  })
+}
+
+if (releaseAtLeast('0.2.0')) {
+  Object.assign(scenarios, {
+    'host-task-marker-selection': {
+      source: 'Before café\r\n\r\n* [ ] First task\r\n* [x] Second task\r\n',
+      operations: [
+        { op: 'select', text: 'café', from: 4, to: 4 },
+        { op: 'textSnapshot', name: 'before' },
+        {
+          op: 'taskMarkerClick',
+          selector: 'li[data-item-type="task"]',
+          name: 'clicked',
+        },
+        assert('prevented', true, 'clicked'),
+        same('selection.from', 'before', 'selection.from', 'clicked'),
+        same('selection.to', 'before', 'selection.to', 'clicked'),
+        { op: 'snapshot', name: 'ticked' },
+        assert(
+          'text',
+          'Before café\r\n\r\n* [x] First task\r\n* [x] Second task\r\n',
+          'ticked',
+        ),
+        { op: 'undo' },
+        assert(
+          'snapshot.text',
+          'Before café\r\n\r\n* [ ] First task\r\n* [x] Second task\r\n',
+        ),
+        { op: 'editable', editable: false },
+        {
+          op: 'taskMarkerClick',
+          selector: 'li[data-item-type="task"]',
+          name: 'readonlyClick',
+        },
+        assert('prevented', false, 'readonlyClick'),
+        { op: 'snapshot', name: 'readonlySnapshot' },
+        assert(
+          'text',
+          'Before café\r\n\r\n* [ ] First task\r\n* [x] Second task\r\n',
+          'readonlySnapshot',
+        ),
       ],
     },
   })

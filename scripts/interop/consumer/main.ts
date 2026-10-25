@@ -919,6 +919,32 @@ window.interop = {
             result = inspectDOM(operation.selector)
             break
           }
+          case 'taskMarkerClick': {
+            const target = view().querySelector(operation.selector)
+            if (!target) throw Error(`Task not found: ${operation.selector}`)
+            const rect = target.getBoundingClientRect()
+            const marker = getComputedStyle(target, '::before')
+            const options = {
+              bubbles: true,
+              cancelable: true,
+              button: 0,
+              clientX:
+                rect.left +
+                parseFloat(marker.left) +
+                parseFloat(marker.width) / 2,
+              clientY:
+                rect.top +
+                parseFloat(marker.top) +
+                parseFloat(marker.height) / 2,
+            }
+            const prevented = !target.dispatchEvent(
+              new MouseEvent('mousedown', options),
+            )
+            target.dispatchEvent(new MouseEvent('mouseup', options))
+            target.dispatchEvent(new MouseEvent('click', options))
+            result = { prevented, ...editor.textSnapshot() }
+            break
+          }
           case 'click': {
             const target = view().querySelector(operation.selector)
             if (!target)
