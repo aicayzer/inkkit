@@ -155,7 +155,7 @@ func portraitRasterProof(_ page: CGPDFPage, region: CGRect) -> [String: Any] {
 }
 
 @MainActor
-final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler {
+final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler, WKScriptMessageHandlerWithReply {
     var web: WKWebView!
     var window: NSWindow!
     let args = CommandLine.arguments
@@ -163,6 +163,56 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
     var printNavigation: CheckedContinuation<Void, Error>?
     var printContinuation: CheckedContinuation<Bool, Never>?
     var loadStarted = Date()
+    var savedPasteboard: [[NSPasteboard.PasteboardType: Data]]?
+
+    func restorePasteboard() {
+        guard let saved = savedPasteboard else { return }
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.writeObjects(saved.map { values in
+            let item = NSPasteboardItem()
+            for (type, data) in values { item.setData(data, forType: type) }
+            return item
+        })
+        savedPasteboard = nil
+    }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
+        guard let request = message.body as? [String: Any],
+              let action = request["action"] as? String,
+              ["cut", "copy", "paste", "read", "write"].contains(action) else {
+            replyHandler(nil, "Unknown native clipboard action")
+            return
+        }
+        let board = NSPasteboard.general
+        if savedPasteboard == nil {
+            savedPasteboard = (board.pasteboardItems ?? []).map { item in
+                Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
+                    item.data(forType: type).map { (type, $0) }
+                })
+            }
+        }
+        if action == "write" {
+            board.clearContents()
+            let item = NSPasteboardItem()
+            item.setString(request["text"] as? String ?? "", forType: .string)
+            item.setString(request["html"] as? String ?? "", forType: .html)
+            board.writeObjects([item])
+        } else if action != "read" {
+            window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(web)
+            guard NSApp.sendAction(NSSelectorFromString(action + ":"), to: web, from: nil) else {
+                replyHandler(nil, "WKWebView rejected native " + action)
+                return
+            }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            replyHandler(["text": board.string(forType: .string) ?? "",
+                          "html": board.string(forType: .html) ?? "",
+                          "types": board.types?.map { $0.rawValue } ?? []], nil)
+        }
+    }
 
     func applicationDidFinishLaunching(_ note: Notification) {
         guard args.count == 5 else {
@@ -171,6 +221,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         }
         let configuration = WKWebViewConfiguration()
         configuration.userContentController.add(self, name: "diagnostic")
+        configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "nativeClipboard")
         configuration.userContentController.addUserScript(WKUserScript(source: """
             addEventListener('error', event => window.webkit.messageHandlers.diagnostic.postMessage(String(event.message)));
             addEventListener('unhandledrejection', event => window.webkit.messageHandlers.diagnostic.postMessage(String(event.reason)));
@@ -390,6 +441,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
                     throw NSError(domain: "Interop", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unknown mode: \(args[2])"])
                 }
             }
+            restorePasteboard()
             try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
                 .write(to: URL(fileURLWithPath: args[4]))
             if let scenario = result as? [String: Any], scenario["passed"] as? Bool == false {
@@ -398,6 +450,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
             }
             NSApplication.shared.terminate(nil)
         } catch {
+            restorePasteboard()
             fputs("\(error)\n", stderr)
             exit(1)
         }

@@ -58,6 +58,7 @@ export interface PasteInput extends ClipboardInput {
   plainText?: boolean
 }
 export interface PasteControllerOptions {
+  restoreCopy?: (input: PasteInput) => PasteInput
   ctx: () => Ctx
   context: () => DocumentContext
   adapter?: ImageAdapter
@@ -249,6 +250,7 @@ export class PasteController {
         'operation-pending',
         'An image paste is still pending.',
       )
+    input = this.options.restoreCopy?.(input) ?? input
     const context = { ...this.options.context() }
     const ctx = this.options.ctx()
     const view = ctx.get(editorViewCtx)

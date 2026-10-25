@@ -189,6 +189,9 @@ import {
 import {
   assertCommentsEndWhereWritten,
   commentSelectionContent,
+  commentProvenance,
+  literalCommentSpans,
+  isComment,
   isWrittenEdit,
   setCommentVisibility,
   sourceReplacement,
@@ -1293,6 +1296,89 @@ export class InkKitEditor {
   private auxClickHandler?: (event: MouseEvent) => void
   private untrackLinkModifier?: () => void
   private footnoteKeyHandler?: (event: KeyboardEvent) => void
+  private readonly localCopies = new Map<
+    string,
+    { text: string; html: string; markdown: string }
+  >()
+
+  private rememberCopy<T extends { text: string; html: string }>(
+    output: T,
+    markdown: string,
+    content: Fragment,
+    privateSource = false,
+    actualCopy = false,
+  ): T {
+    let comments = privateSource
+    content.descendants((node) => {
+      const labelled = (label: unknown) =>
+        typeof label === 'string' && literalCommentSpans(label).length > 0
+      if (
+        isComment(node) ||
+        (/^(?:reference|footnote)_/.test(node.type.name) &&
+          labelled(node.attrs.label)) ||
+        node.marks.some(
+          (mark) =>
+            mark.type.name === 'link' &&
+            (labelled(mark.attrs.label) ||
+              commentProvenance(mark.attrs.referenceContent)),
+        )
+      )
+        comments = true
+    })
+    if (!comments) {
+      if (actualCopy) this.localCopies.clear()
+      return output
+    }
+    const key = JSON.stringify([output.text, output.html, markdown])
+    const previous = this.localCopies.get(key)
+    if (previous) {
+      output.html = previous.html
+      if (actualCopy) this.localCopies.clear()
+      this.localCopies.set(key, previous)
+      return output
+    }
+    const wrapper = document.createElement('div')
+    const token = Array.from(
+      crypto.getRandomValues(new Uint8Array(16)),
+      (byte) => byte.toString(16).padStart(2, '0'),
+    ).join('')
+    wrapper.setAttribute('data-inkkit-local-copy', token)
+    wrapper.innerHTML = output.html
+    output.html = wrapper.outerHTML
+    if (actualCopy) this.localCopies.clear()
+    this.localCopies.set(key, {
+      text: output.text,
+      html: output.html,
+      markdown,
+    })
+    return output
+  }
+
+  private retainCopy(html: string): void {
+    for (const [key, copy] of this.localCopies)
+      if (copy.html !== html) this.localCopies.delete(key)
+  }
+
+  private restoreCopy<
+    T extends {
+      text: string
+      html?: string
+      markdown?: string
+      plainText?: boolean
+    },
+  >(input: T): T {
+    const copy = [...this.localCopies.values()].find(
+      (copy) => copy.text === input.text && copy.html === input.html,
+    )
+    return copy &&
+      input.markdown == null &&
+      !input.plainText &&
+      copy.text === input.text &&
+      copy.html === input.html
+      ? { ...input, markdown: copy.markdown }
+      : input
+  }
+
   private copyHandler?: (event: ClipboardEvent) => void
   private originalSource = ''
   private reportingSuppressed = false
@@ -2084,7 +2170,9 @@ export class InkKitEditor {
     this.assertAlive()
     expectString(text, 'text')
     this.assertMutation(expectedGeneration)
-    return this.applySource(text, true)
+    const changed = this.applySource(text, true)
+    if (changed) this.localCopies.clear()
+    return changed
   }
 
   private applySource(
@@ -2551,6 +2639,13 @@ export class InkKitEditor {
     if (metadata != null)
       result.html = withReferenceMetadata(result.html, metadata)
     this.assertCaptured(captured)
+    this.rememberCopy(
+      result,
+      markdown,
+      content,
+      selectedSource != null &&
+        selectedSource.markdown !== selectedSource.shareable,
+    )
     return { ...version, ...result }
   }
 
@@ -2561,7 +2656,7 @@ export class InkKitEditor {
     expectedGeneration?: number,
   ): Promise<void> {
     this.assertAlive()
-    input = clipboardInput(input)
+    input = this.restoreCopy(clipboardInput(input))
     this.assertMutation(expectedGeneration)
     if (this.literalSurface) {
       this.pasteAsPlainText(
@@ -2696,6 +2791,7 @@ export class InkKitEditor {
   async destroy(): Promise<void> {
     if (this.destroyed) return
     this.destroyed = true
+    this.localCopies.clear()
     this.ready = false
     this.session.close()
     this.pendingSource = undefined
@@ -2763,6 +2859,7 @@ export class InkKitEditor {
           .then(async (content) => {
             if (cut) refuseUnportableCut(content)
             await writeClipboard(this.events, content)
+            this.retainCopy(content.html)
             if (cut) {
               this.assertCut(captured)
               this.plain.setSelectionRange(from, to)
@@ -2773,6 +2870,13 @@ export class InkKitEditor {
       } else {
         const output = clipboardContent(parsed.content, parsed.type.schema)
         if (!event.clipboardData) return
+        this.rememberCopy(
+          output,
+          selected.markdown,
+          parsed.content,
+          selected.markdown !== selected.shareable,
+          true,
+        )
         event.clipboardData.setData('text/plain', output.text)
         event.clipboardData.setData('text/html', output.html)
         if (portable) {
@@ -2803,6 +2907,7 @@ export class InkKitEditor {
     instance.ownsRootClass = !root.classList.contains('inkkit-root')
     root.classList.add('inkkit-root')
     instance.pasteController = new PasteController({
+      restoreCopy: (input) => instance.restoreCopy(input),
       ctx: () => instance.editor.ctx,
       context: () => instance.context(),
       adapter: options.images,
@@ -3114,6 +3219,7 @@ export class InkKitEditor {
       void instance
         .paste({
           text: event.clipboardData.getData('text/plain'),
+          html: event.clipboardData.getData('text/html'),
           markdown: event.clipboardData.getData('text/markdown') || undefined,
         })
         .catch((error) => instance.report(error))
@@ -3219,18 +3325,16 @@ export class InkKitEditor {
             valid,
           )
           const output = clipboardContent(content, view.state.schema)
-          event.clipboardData.setData('text/plain', output.text)
           const metadata = referenceMetadata(
             instance.editor.ctx,
             view.state.doc,
             valid,
           )
-          event.clipboardData.setData(
-            'text/html',
-            metadata != null
-              ? withReferenceMetadata(output.html, metadata)
-              : output.html,
-          )
+          if (metadata != null)
+            output.html = withReferenceMetadata(output.html, metadata)
+          instance.rememberCopy(output, markdown, fragment, false, true)
+          event.clipboardData.setData('text/plain', output.text)
+          event.clipboardData.setData('text/html', output.html)
           if (event.type === 'cut' && instance.writable)
             view.dispatch(view.state.tr.deleteSelection().scrollIntoView())
         } catch (error) {
@@ -3249,6 +3353,7 @@ export class InkKitEditor {
           .then(async (content) => {
             if (cut) refuseUnportableCut(content)
             await writeClipboard(events, content)
+            instance.retainCopy(content.html)
             if (cut) {
               instance.assertCut(captured)
               view.dispatch(
@@ -3910,6 +4015,7 @@ export class InkKitEditor {
   }
 
   private load(markdown: string, preservation: Preservation): void {
+    this.localCopies.clear()
     this.originalSource = markdown
     const { ctx } = this.editor
     const view = ctx.get(editorViewCtx)
