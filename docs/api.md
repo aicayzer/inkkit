@@ -1,8 +1,8 @@
 # Host API
 
-This page is the reference for everything the `@aicayzer/inkkit` package exports: the editor, its options and events, every method with its arguments, results and errors, and the types, tokens and labels around them. To connect InkKit to an app, start with the [integration guide](integration.md). For what the editor renders and keeps, see [supported syntax](supported-syntax.md) and [preservation and clipboard behavior](preservation.md).
+This page is the reference for everything the `@aicayzer/inkkit` package exports: the editor, its options and events, every method with its arguments, results and errors, and the types, tokens and labels around them. To connect Inkkit to an app, start with the [integration guide](integration.md). For what the editor renders and keeps, see [supported syntax](supported-syntax.md) and [preservation and clipboard behavior](preservation.md).
 
-InkKit has one class, `InkKitEditor`, and one error type, `InkKitError`. Every other export is a type. A host imports only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. The classes and markup inside the editor are not part of the API.
+Inkkit has one class, `InkKitEditor`, and one error type, `InkKitError`. Every other export is a type. A host imports only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. The classes and markup inside the editor are not part of the API.
 
 These conventions apply to every member:
 
@@ -65,7 +65,7 @@ await editor.destroy()
 An app that hosts the editor in a web view reaches these members through its own JavaScript shim. These points matter at that boundary:
 
 - **Pass the generation your native model holds** as `expectedGeneration` on every call that takes one. A call meant for a document that has since been replaced then fails with `stale-document` instead of changing the new one.
-- **Send JSON `null` for a missing value.** InkKit treats it as omitted.
+- **Send JSON `null` for a missing value.** Inkkit treats it as omitted.
 - **Await promises in the shim.** `mount`, `printableSnapshot`, `clipboardSnapshot`, `paste` and `destroy` return promises. Every other method returns its result at once.
 - **Send `code` and `message` to native code,** not the error object. JSON serialization drops an error's `message`, and `code` is what native code should branch on.
 - **Encode bytes.** A `Uint8Array`, in image adapters, `ClipboardInput.images`, `PortableImage` and `PrintableDocument.assets`, has no useful JSON form. Encode it, for example as base64, on each side.
@@ -101,7 +101,7 @@ InkKitEditor.mount(
 
 `images`, `files`, `wikiLinks`, `labels`, `rendering` and `slashMenu` are fixed at mount, and so is whether `events.copy` is set, because it decides whether code blocks draw a Copy button. The other options can change later through the methods named in the table.
 
-`destroy(): Promise<void>` cancels pending work, releases the editor, and removes `inkkit-root` from the root if InkKit added it. It resolves when the editor is gone and never rejects. After it, every member except `destroy` throws `destroyed`; calling `destroy` again does nothing. Await it before you remove the root from the page.
+`destroy(): Promise<void>` cancels pending work, releases the editor, and removes `inkkit-root` from the root if Inkkit added it. It resolves when the editor is gone and never rejects. After it, every member except `destroy` throws `destroyed`; calling `destroy` again does nothing. Await it before you remove the root from the page.
 
 ## Document identity
 
@@ -119,7 +119,7 @@ interface DocumentVersion {
 
 `DocumentSnapshot`, `PrintableDocument`, `ReadableTextSnapshot`, `CommandState`, `Heading` and `ClipboardOutput` extend it, and so do the values that `changed` and `commandStateChanged` receive. Clipboard output carries the version that the copy started from, on `clipboardSnapshot()` and on `events.clipboard`, so a clipboard handler doesn't need to call `snapshot()`.
 
-Most methods that read or change the document, its selection or its focus take `expectedGeneration` as their last parameter; the following table shows which don't. When the loaded document has a different generation, the method throws `stale-document`, or rejects if it's asynchronous, and changes nothing. Omitted or `null` means the current generation, which suits a page with one document. A host that calls InkKit across a native bridge should pass it on every call, so that a call meant for a document that has since been replaced fails instead of acting on the new one.
+Most methods that read or change the document, its selection or its focus take `expectedGeneration` as their last parameter; the following table shows which don't. When the loaded document has a different generation, the method throws `stale-document`, or rejects if it's asynchronous, and changes nothing. Omitted or `null` means the current generation, which suits a page with one document. A host that calls Inkkit across a native bridge should pass it on every call, so that a call meant for a document that has since been replaced fails instead of acting on the new one.
 
 The following table lists every member by what it checks. Each member first throws `destroyed` if the editor was destroyed, then `invalid-argument` for a bad argument. The last column lists the state checks that follow, in order. Synchronous methods throw these errors, and asynchronous methods reject with them.
 
@@ -151,7 +151,7 @@ The following table lists every member by what it checks. Each member first thro
 
 | Field        | Type              | Meaning                                                                                                                                |
 | ------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `documentId` | `string`          | The host's name for the document. InkKit never interprets it. It comes back on every output and goes to every adapter call.            |
+| `documentId` | `string`          | The host's name for the document. Inkkit never interprets it. It comes back on every output and goes to every adapter call.            |
 | `generation` | integer           | The number of this load. It must be greater than the loaded generation. The first load accepts any integer.                            |
 | `format`     | `'md'` or `'txt'` | `md` loads Markdown. `txt` loads literal text, which is shown, edited and exported as typed, with no formatting and no formatted mode. |
 | `text`       | `string`          | The complete text. An empty string is an empty document.                                                                               |
@@ -166,7 +166,7 @@ A top-level block of Markdown that the editor can't build in full loads as liter
 
 ## Errors
 
-Every failure InkKit reports is an `InkKitError`, which extends `Error`. Its `name` is `'InkKitError'`. Branch on its `code`, an `EditorErrorCode` that is one of the values in the following table; the `message` is for logs. You can construct one, for example in a test double, with `new InkKitError(code, message, { cause })`. When the failure started elsewhere, such as in an adapter, the host clipboard or the diagram renderer, the original error is `cause`.
+Every failure Inkkit reports is an `InkKitError`, which extends `Error`. Its `name` is `'InkKitError'`. Branch on its `code`, an `EditorErrorCode` that is one of the values in the following table; the `message` is for logs. You can construct one, for example in a test double, with `new InkKitError(code, message, { cause })`. When the failure started elsewhere, such as in an adapter, the host clipboard or the diagram renderer, the original error is `cause`.
 
 | Code                    | Raised when                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Arrives as                                                                                                           | Retry                                                                                                                 |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -183,7 +183,7 @@ Every failure InkKit reports is an `InkKitError`, which extends `Error`. Its `na
 | `diagram-unavailable`   | A Mermaid diagram can't be previewed, print can't rasterize one that previewed, or a cut is refused because a selected diagram can't be copied.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Rejected by `printableSnapshot()`; `events.error`.                                                                   | Not expected to succeed; the source is kept.                                                                          |
 | `file-unavailable`      | A file or wiki link can't be resolved, shown or opened, or a note suggestion request fails: `FileAdapter.resolve` rejects or returns an invalid presentation, a resolved media resource fails to load, or `WikiLinkAdapter.resolve`, `WikiLinkAdapter.open`, `FileAdapter.open` or `FileAdapter.contextMenu` throws.                                                                                                                                                                                                                                                                                                                                   | `events.error`.                                                                                                      | Yes, with the card's Retry button, or once the host can resolve it.                                                   |
 | `clipboard-unavailable` | Images or diagrams were copied or cut without an `events.clipboard` handler, or `events.clipboard` threw or rejected. A cut removes nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `events.error`.                                                                                                      | Yes, once the host can write the clipboard.                                                                           |
-| `internal`              | An unexpected exception inside InkKit. It's a defect, never a designed outcome; the exception is `cause`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Thrown; rejected; `events.error`.                                                                                    | No. Report it, keep the document open, and take a fresh snapshot before trusting the editor's state.                  |
+| `internal`              | An unexpected exception inside Inkkit. It's a defect, never a designed outcome; the exception is `cause`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Thrown; rejected; `events.error`.                                                                                    | No. Report it, keep the document open, and take a fresh snapshot before trusting the editor's state.                  |
 
 How a failure arrives:
 
@@ -191,7 +191,7 @@ How a failure arrives:
 - **A failure goes to the caller and nowhere else.** When the preservation check refuses an edit that a facade call makes, such as `insertText`, `pasteAsPlainText`, `format` or `paste`, the call throws or rejects with `preservation`, and `events.error` isn't called.
 - **`events.error` is for failures that no call is waiting for:** edits the person makes (typing, shortcuts, DOM paste, drop and cut), background presentation work (diagram previews and file and wiki-link resolution), DOM copy and cut, and images that a finished paste or drop couldn't import. It always receives an `InkKitError`; [Error sources](#error-sources) lists what it can receive.
 - **Results describe partial outcomes.** `false` means that the call didn't apply here. Degraded output describes itself, in `ClipboardOutput.images[].error`, `ClipboardOutput.diagrams[].error` and `PrintableDocument.warnings`, and isn't also reported as an error.
-- **An exception from your own event handler stays yours.** When `changed`, `commandStateChanged`, `openLink`, `copy` or `error` throws, InkKit passes the exception to the platform's `reportError()` and carries on, so it never becomes an `InkKitError` and never makes a call throw. A `clipboard` handler that throws or rejects is `clipboard-unavailable`.
+- **An exception from your own event handler stays yours.** When `changed`, `commandStateChanged`, `openLink`, `copy` or `error` throws, Inkkit passes the exception to the platform's `reportError()` and carries on, so it never becomes an `InkKitError` and never makes a call throw. A `clipboard` handler that throws or rejects is `clipboard-unavailable`.
 - **Checks run in a fixed order.** `destroyed` comes first, then `invalid-argument`, then the document's state: `not-ready`, `stale-document`, `composition`, `operation-pending` and `read-only`. Two cases differ. A text range's `snapshotId` and a heading entry's revision are checked after `operation-pending`, so a stale range during composition throws `composition`. And `reloadDocument` with an expected generation: a stale expectation throws `stale-document` before a new generation that isn't greater throws `invalid-argument`.
 - **`null` means omitted** for an optional parameter or option field, because WebKit bridges send JSON `null` for a missing value. For example, `snapshot(null)` reads the current generation, and a keymap entry of `null` keeps that name's default bindings.
 
@@ -199,7 +199,7 @@ Any `InkKitError` except `destroyed` and `internal` leaves the editor usable.
 
 ### Error sources
 
-`events.error` receives the following failures. Each is an `InkKitError` with the code shown; when the failure started outside InkKit, the original error is `cause`.
+`events.error` receives the following failures. Each is an `InkKitError` with the code shown; when the failure started outside Inkkit, the original error is `cause`.
 
 | Source                                                                                                                                                                                                                                             | Code                                                         |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
@@ -215,7 +215,7 @@ Any `InkKitError` except `destroyed` and `internal` leaves the editor usable.
 | A cut whose document, revision, editing mode or editability changed before the `clipboard` handler finished.                                                                                                                                       | `stale-document`, or the editor's state, such as `read-only` |
 | An unexpected exception in work that no call is waiting for.                                                                                                                                                                                       | `internal`                                                   |
 
-A cut that fails removes nothing. Without an `events.clipboard` handler, copying a selection that holds images or diagrams puts its readable text, and that text as HTML, on the clipboard, and reports `clipboard-unavailable`; with the handler, InkKit writes nothing to the DOM clipboard itself and calls the handler.
+A cut that fails removes nothing. Without an `events.clipboard` handler, copying a selection that holds images or diagrams puts its readable text, and that text as HTML, on the clipboard, and reports `clipboard-unavailable`; with the handler, Inkkit writes nothing to the DOM clipboard itself and calls the handler.
 
 ## Events
 
@@ -226,7 +226,7 @@ Pass the handlers as the second argument to `mount`. Only `changed` is required.
 | `changed`             | Yes      | The document's text changes: an edit, undo, redo, paste, source replacement or typing in source mode. Not for a load, a reload or a refused edit.                                              | A `DocumentSnapshot` of the new text: `documentId`, `generation`, `revision`, `format`, `text` and `dirty`.                |
 | `commandStateChanged` | No       | The selection, document, history, editing mode, editability, input preferences, composition or a pending import changes, and once after each load or reload.                                   | The current `CommandState`. Its `caret` holds the active marks and block; this is the only event that reports caret state. |
 | `openLink`            | No       | A primary click with Mod on a rendered Markdown link whose address isn't empty; see [Opening links](#opening-links). Without the handler, links don't open.                                    | The link's destination as authored.                                                                                        |
-| `copy`                | No       | The Copy button on a code block is clicked. Without the handler, InkKit draws no Copy button.                                                                                                  | The code block's text.                                                                                                     |
+| `copy`                | No       | The Copy button on a code block is clicked. Without the handler, Inkkit draws no Copy button.                                                                                                  | The code block's text.                                                                                                     |
 | `error`               | No       | A failure that no call is waiting for; see [Error sources](#error-sources).                                                                                                                    | An `InkKitError`.                                                                                                          |
 | `clipboard`           | No       | The person copies or cuts a selection that holds an image or a diagram. Return a promise that resolves after the native clipboard write succeeds; a cut removes the selection only after that. | A `ClipboardOutput` of the selection, with the version that the copy started from.                                         |
 
@@ -258,7 +258,7 @@ Entering read-only cancels pending imports and invalidates deferred destructive 
 
 ### Smart punctuation
 
-`smartPunctuation: boolean` turns typed quotes and dashes into curly quotes and dashes. It is `false` by default. It is InkKit's own behavior, not an HTML attribute, so it doesn't depend on the browser's settings. It applies to typing in formatted mode. You can turn it on at mount or with `setTextInputPreferences`, and a change takes effect on the next key press, with no remount.
+`smartPunctuation: boolean` turns typed quotes and dashes into curly quotes and dashes. It is `false` by default. It is Inkkit's own behavior, not an HTML attribute, so it doesn't depend on the browser's settings. It applies to typing in formatted mode. You can turn it on at mount or with `setTextInputPreferences`, and a change takes effect on the next key press, with no remount.
 
 The rules change only the character being typed:
 
@@ -275,7 +275,7 @@ One Undo straight after a rule, or Backspace, puts back what was typed: `"` or `
 
 The rules don't apply:
 
-- In inline code, including a code span you are still typing (an unmatched backtick outside code earlier in the block), in code blocks, in front matter, in comments and in any block that InkKit holds as literal Markdown.
+- In inline code, including a code span you are still typing (an unmatched backtick outside code earlier in the block), in code blocks, in front matter, in comments and in any block that Inkkit holds as literal Markdown.
 - In Markdown syntax that you are typing out: a link destination and title after `](`, a web address (`https://`, `www.` or `mailto:`), a wiki link or footnote label that isn't closed yet, an HTML tag or comment that isn't closed yet, a reference definition (`[label]: …`), and `--` in a line that starts with `|`, as a typed table row does.
 - In source view and TXT notes, where the text is typed as is. The same goes for `insertText` in those modes.
 
@@ -335,7 +335,7 @@ Availability describes the moment you ask. It doesn't promise that a later call 
 | `moveBlock(direction, expectedGeneration?)`      | `boolean` | Moves the blocks at the selection up or down.                |
 | `keyDown(input: KeyInput, expectedGeneration)`   | `boolean` | Runs a key press that the host's native input received.      |
 | `focus(expectedGeneration?)`                     | `void`    | Puts focus in the editing surface for the current mode.      |
-| `blur(expectedGeneration?)`                      | `void`    | Takes focus off InkKit's text surfaces.                      |
+| `blur(expectedGeneration?)`                      | `void`    | Takes focus off Inkkit's text surfaces.                      |
 | `setKeymap(bindings: Keymap)`                    | `void`    | Replaces the shortcut bindings. See [Shortcuts](#shortcuts). |
 
 `format(command, options?, expectedGeneration?)` applies one `FormatCommand` to the selection in formatted mode and returns whether the document, or the marks the next typed text takes, changed. It returns `false` in source and TXT modes and when the command has nothing to change. In formatted mode, `format` focuses the editor.
@@ -374,7 +374,7 @@ At a caret, marks toggled for the text typed next, such as `bold`, stay toggled 
 
 ### Native input
 
-When the host's native layer receives typed text or a key before the web view does, it can pass them to InkKit with two methods. Both require the expected generation, so that input meant for a document that has since been replaced fails instead of landing in the new one.
+When the host's native layer receives typed text or a key before the web view does, it can pass them to Inkkit with two methods. Both require the expected generation, so that input meant for a document that has since been replaced fails instead of landing in the new one.
 
 `insertText(text, expectedGeneration)` inserts exactly the text it's given and changes nothing outside it. It returns `false`, and inserts nothing, while text composition is in progress. In formatted mode, Markdown input rules apply at most as if the last character had been typed after the rest: `**x**` becomes strong `x`, and `*x* ` stays literal because its last character is a space. Backspace straight afterwards undoes the rule, as it does after typing. Text the browser inserts in one piece, such as dictation or a text replacement, follows the same rule. In formatted mode, the insertion is one history step. Multiline text is inserted as ordinary text with semantic line breaks, normalizing CRLF and CR to LF; in a code block the lines stay literal. Source and TXT modes insert the text literally.
 
@@ -382,7 +382,7 @@ A formatted insertion checks that the document can still be saved before it disp
 
 In formatted mode, Shift+Enter inserts a line break as a separate undo step. A trailing break in a paragraph or setext heading remains in the live editor and history, but `snapshot()` omits it until content follows. Saving, autosaving or reopening that snapshot retains the completed text without the pending empty line. Breaks in table cells and ATX headings save as `<br />`. A break directly before an inline HTML comment also saves as `<br />`. Shift+Enter inside a literal Markdown block does nothing and leaves its source and history unchanged. `insertText`, `pasteAsPlainText` and text replacement use the same saved forms. Selection Markdown also omits pending trailing breaks. See [line-break preservation](preservation.md) for the saved forms.
 
-`keyDown(input, expectedGeneration)` passes a key that the host's native input received to InkKit, as if it were pressed in the editor. It returns `true` when InkKit handled the key, and then the host must not also handle it natively; `false` means the host's native handling applies.
+`keyDown(input, expectedGeneration)` passes a key that the host's native input received to Inkkit, as if it were pressed in the editor. It returns `true` when Inkkit handled the key, and then the host must not also handle it natively; `false` means the host's native handling applies.
 
 | `KeyInput` field                           | Type      | Meaning                                                                      |
 | ------------------------------------------ | --------- | ---------------------------------------------------------------------------- |
@@ -390,7 +390,7 @@ In formatted mode, Shift+Enter inserts a line break as a separate undo step. A t
 | `code`                                     | `string`  | The `KeyboardEvent.code` value, such as `KeyB`. Defaults to an empty string. |
 | `metaKey`, `ctrlKey`, `altKey`, `shiftKey` | `boolean` | Whether the modifier is held. An omitted or `null` modifier isn't held.      |
 
-During composition with the current generation, `keyDown` returns `false`. Otherwise InkKit handles:
+During composition with the current generation, `keyDown` returns `false`. Otherwise Inkkit handles:
 
 - The bindings from `setKeymap`, including history, block move and table bindings, in every mode where they apply. A bound key is handled even when its command isn't available now, except a table binding, which passes the key on, and a block move binding in a table cell, which does too.
 - **Alt+Enter** and **Alt+Shift+Enter** in formatted mode, which move between a footnote reference and its definition, as `navigateFootnote` does. They work in a read-only editor.
@@ -398,7 +398,7 @@ During composition with the current generation, `keyDown` returns `false`. Other
 - In source and TXT modes, Enter, Tab, Backspace and Delete edit the text when no Command, Control or Alt key is held. Other keys return `false`.
 - When the editor is read-only, a bound key throws `read-only`, and so do Enter, Tab, Backspace and Delete. The exception is formatted mode, where Tab and Shift+Tab with no Command, Control or Alt key move between table cells, and return `false` outside a table. A key bound to a block move also returns `false`, even when a table name shares it, so the host's native caret movement applies.
 
-`focus(expectedGeneration?)` puts focus in the formatted editor or the source and TXT textarea, whichever is showing. `blur(expectedGeneration?)` moves focus off InkKit's text surfaces and leaves focus anywhere else, such as in a host control or a button InkKit draws, where it is; use it instead of finding InkKit's elements yourself. Neither checks composition, read-only or pending imports. Both throw `not-ready` before the first load.
+`focus(expectedGeneration?)` puts focus in the formatted editor or the source and TXT textarea, whichever is showing. `blur(expectedGeneration?)` moves focus off Inkkit's text surfaces and leaves focus anywhere else, such as in a host control or a button Inkkit draws, where it is; use it instead of finding Inkkit's elements yourself. Neither checks composition, read-only or pending imports. Both throw `not-ready` before the first load.
 
 ## Native readable text and layout
 
@@ -479,7 +479,7 @@ Supported callouts render editable bodies, plain titles and optional fold button
 
 ## Images
 
-The optional `ImageAdapter` stores, shows and exports images that the host owns. InkKit keeps references opaque: it never infers a storage path, fetches from the network or exports a private display URL.
+The optional `ImageAdapter` stores, shows and exports images that the host owns. Inkkit keeps references opaque: it never infers a storage path, fetches from the network or exports a private display URL.
 
 | Member                                       | Returns                          | Purpose                                                                                     |
 | -------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -492,7 +492,7 @@ The optional `ImageAdapter` stores, shows and exports images that the host owns.
 | `CapturedImage` | `bytes: Uint8Array` and `mimeType: string`, required. `filename?: string`. `source?: string`, the `src` of the HTML image that the bytes belong to, when there is one. |
 | `PortableImage` | `bytes: Uint8Array`, `mimeType: string` and `filename?: string`.                                                                                                       |
 
-Every adapter call receives a `DocumentContext`: `documentId`, `generation` and `operationId`. The operation ID is an opaque string that is different for each adapter call from one editor. Validate the context in native callbacks. Alt text, titles and the `alt|width` convention are editor metadata. The adapter owns storage, access control and networking. InkKit contains no Marfa types or storage-path assumptions.
+Every adapter call receives a `DocumentContext`: `documentId`, `generation` and `operationId`. The operation ID is an opaque string that is different for each adapter call from one editor. Validate the context in native callbacks. Alt text, titles and the `alt|width` convention are editor metadata. The adapter owns storage, access control and networking. Inkkit contains no Marfa types or storage-path assumptions.
 
 Keep imported bytes available while the captured operation is pending and after insertion, including before the host saves its document. Retention and orphan cleanup belong to the host; a sweep based only on saved Markdown can miss an in-flight import or an unsaved edit. Reject stale callbacks without inserting their references into a replacement document.
 
@@ -506,13 +506,13 @@ Images and diagrams reach a native clipboard through `events.clipboard`; see [Cl
 
 | `ImageInsertion` field | Type     | Meaning                                                                                               |
 | ---------------------- | -------- | ----------------------------------------------------------------------------------------------------- |
-| `reference`            | `string` | What the host's adapter stored the image under. InkKit writes it as the image's Markdown destination. |
+| `reference`            | `string` | What the host's adapter stored the image under. Inkkit writes it as the image's Markdown destination. |
 | `alt`                  | `string` | The alt text.                                                                                         |
 | `title`                | `string` | Optional. The image title.                                                                            |
 
 `ClientPoint` is `{ clientX: number, clientY: number }`: the position of the drop in CSS pixels of the web view's client area, the same coordinates as DOM pointer events. Both values must be finite numbers.
 
-The reference is written as the image's Markdown destination, so it's read like a URL. With a file adapter, everything after the first `#` is the fragment, not part of `FileReference.target`. Write a `#` that belongs to a file name as `%23`, such as `Scans/My%23Notes.png`; InkKit doesn't decode it.
+The reference is written as the image's Markdown destination, so it's read like a URL. With a file adapter, everything after the first `#` is the fragment, not part of `FileReference.target`. Write a `#` that belongs to a file name as `%23`, such as `Scans/My%23Notes.png`; Inkkit doesn't decode it.
 
 - **Paragraph, heading, list item, quote, callout or footnote:** inserts one image block per image, replacing a selection and splitting the paragraph around a caret. The caret ends after the last image.
 - **Table cell:** a cell holds one line and no blocks, so the images go inline in the cell, in order and on one line, replacing a selection inside the cell. Alt text and titles are collapsed to one line. The images sit next to each other with no space between them. The caret ends after the last image, the rest of the table keeps its authored spelling, and one undo removes all the images.
@@ -655,7 +655,7 @@ A Mermaid diagram stays editable code, and clipboard output describes it in `dia
 
 In source and TXT modes, `paste` inserts `markdown` (Markdown source) or `text` literally and ignores the rest. `pasteAsPlainText` is the one way to paste literal text in formatted mode; `ClipboardInput` has no plain-text flag. An image that can't be imported becomes the text `[Name: image unavailable]`, where `Name` is the image's alt text, its file name or `Image`, and `events.error` receives `image-unavailable`.
 
-When the person copies or cuts, InkKit handles the browser's event itself. If the selection holds an image or a diagram, `events.clipboard` receives a `ClipboardOutput` of it. A paste the person makes runs the same import as `paste`. See [Events](#events).
+When the person copies or cuts, Inkkit handles the browser's event itself. If the selection holds an image or a diagram, `events.clipboard` receives a `ClipboardOutput` of it. A paste the person makes runs the same import as `paste`. See [Events](#events).
 
 ## Printing
 
@@ -725,15 +725,15 @@ interface SlashCommand {
 }
 ```
 
-`name` is the nonempty displayed name. Optional `keywords` adds prefix matches using the same case-insensitive comparison as built-in commands. `action` receives the current document ID, generation and a new operation ID. The host owns any lookup, permissions or interface needed to choose the content. Return Markdown for InkKit to parse and insert atomically in place of the trigger line. Return `undefined` to cancel and keep the text as typed. Return `''` to remove the slash and filter and restore the line as it was before the slash, including an empty heading's level or a hard break. A host command has the same preservation checks and undo behavior as a built-in command; it does not need access to editor internals.
+`name` is the nonempty displayed name. Optional `keywords` adds prefix matches using the same case-insensitive comparison as built-in commands. `action` receives the current document ID, generation and a new operation ID. The host owns any lookup, permissions or interface needed to choose the content. Return Markdown for Inkkit to parse and insert atomically in place of the trigger line. Return `undefined` to cancel and keep the text as typed. Return `''` to remove the slash and filter and restore the line as it was before the slash, including an empty heading's level or a hard break. A host command has the same preservation checks and undo behavior as a built-in command; it does not need access to editor internals.
 
-The menu closes when the action starts. A promise does not block typing. If the document, revision, mode, editability, selection or editor presentation changes before the result arrives, InkKit refuses the stale result and reports `stale-document`. Destruction silently cancels pending actions: late results and errors are ignored. A refusal leaves the current document intact. An invalid return value reports `invalid-argument`; a thrown or rejected action error is reported as an `InkKitError` through `events.error`. A failed action, or one that returns `undefined`, keeps the trigger text.
+The menu closes when the action starts. A promise does not block typing. If the document, revision, mode, editability, selection or editor presentation changes before the result arrives, Inkkit refuses the stale result and reports `stale-document`. Destruction silently cancels pending actions: late results and errors are ignored. A refusal leaves the current document intact. An invalid return value reports `invalid-argument`; a thrown or rejected action error is reported as an `InkKitError` through `events.error`. A failed action, or one that returns `undefined`, keeps the trigger text.
 
 Unknown option fields or command names, a blank command name, non-string keywords or a missing action make `mount` reject with `invalid-argument`. Use [labels](#labels) for built-in names and the [menu tokens](#appearance-labels-and-shortcuts) for appearance.
 
 ## Appearance, labels and shortcuts
 
-The mounted root receives `.inkkit-root`. Package rules, including table styles, are scoped beneath it; they do not set the host's `:root` font size or color scheme. Set these public CSS custom properties on the root or an ancestor. InkKit reads no other custom property, so a host's own `--accent`, `--text` or `--reading-width` never changes the editor. Properties beginning `--_inkkit-` are internal.
+The mounted root receives `.inkkit-root`. Package rules, including table styles, are scoped beneath it; they do not set the host's `:root` font size or color scheme. Set these public CSS custom properties on the root or an ancestor. Inkkit reads no other custom property, so a host's own `--accent`, `--text` or `--reading-width` never changes the editor. Properties beginning `--_inkkit-` are internal.
 
 | Tokens                                                                                                                                        | Default or purpose                                                                                                                                                                                                                                                                        |
 | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -755,7 +755,7 @@ The mounted root receives `.inkkit-root`. Package rules, including table styles,
 | `--inkkit-muted-color`, `--inkkit-rule-color`, `--inkkit-code-background`                                                                     | System text mixed with transparency for secondary text, borders and code background.                                                                                                                                                                                                      |
 | `--inkkit-code-comment`, `--inkkit-code-keyword`, `--inkkit-code-string`, `--inkkit-code-number`, `--inkkit-code-title`, `--inkkit-code-attr` | Syntax highlighting colors. The defaults follow the editor color scheme and meet WCAG AA contrast on the default code background over a `Canvas` page.                                                                                                                                    |
 | `--inkkit-diagram-background`, `--inkkit-diagram-text-color`, `--inkkit-diagram-error-color`                                                  | `#fff`, `#222`, `#9b2424` for the diagram preview card and its error text.                                                                                                                                                                                                                |
-| `--inkkit-focus-width`, `--inkkit-focus-color`, `--inkkit-focus-offset`                                                                       | `2px`, editor accent, `-2px`. The ring on every control InkKit draws: buttons, the attachment Open control, audio and video. Footnote and wiki links draw it outside the text, in current text color with a `2px` offset. The PDF preview frame keeps the browser's own focus indication. |
+| `--inkkit-focus-width`, `--inkkit-focus-color`, `--inkkit-focus-offset`                                                                       | `2px`, editor accent, `-2px`. The ring on every control Inkkit draws: buttons, the attachment Open control, audio and video. Footnote and wiki links draw it outside the text, in current text color with a `2px` offset. The PDF preview frame keeps the browser's own focus indication. |
 | `--inkkit-surface-focus-width`, `--inkkit-surface-focus-color`, `--inkkit-surface-focus-offset`                                               | The `--inkkit-focus-*` values. The ring on the formatted and source/TXT editing surfaces only. Set the width to `0` to draw none there and keep the controls' rings.                                                                                                                      |
 
 The editor color scheme is `--inkkit-color-scheme`, or the system setting when it is `light dark`. Default syntax colors use the light or dark palette of that scheme, so a host that forces `light` or `dark` gets matching code colors whatever the system setting. The defaults use CSS `light-dark()`; see [Supported engines](integration.md#supported-engines).
@@ -782,7 +782,7 @@ max(
 )
 ```
 
-As with any padding, the `100%` resolves against the containing block of the element that uses the value; for InkKit's surfaces, that block is as wide as the editor root. To line up a header or toolbar that the host draws outside the root with the column, set `--inkkit-column-inset` once on an ancestor of both, put the header in a container as wide as the editor root, and give the header no border or margin of its own:
+As with any padding, the `100%` resolves against the containing block of the element that uses the value; for Inkkit's surfaces, that block is as wide as the editor root. To line up a header or toolbar that the host draws outside the root with the column, set `--inkkit-column-inset` once on an ancestor of both, put the header in a container as wide as the editor root, and give the header no border or margin of its own:
 
 ```css
 .page {
@@ -800,13 +800,13 @@ As with any padding, the `100%` resolves against the containing block of the ele
 }
 ```
 
-InkKit then uses that value on its surfaces, so the host overrides no InkKit selector. Leave the token unset to keep the default.
+Inkkit then uses that value on its surfaces, so the host overrides no Inkkit selector. Leave the token unset to keep the default.
 
-**Classes.** Every class InkKit draws begins `inkkit-`. The classes that ProseMirror, its table plugin and Milkdown add, such as `ProseMirror`, `ProseMirror-selectednode` and `selectedCell`, keep their names, and so do the classes inside a diagram preview's SVG, which Mermaid draws. Classes and markup are not a styling API: style the editor through the tokens above, and expect a class to change in any release. Copied and printable HTML carry no class that does not begin `inkkit-`.
+**Classes.** Every class Inkkit draws begins `inkkit-`. The classes that ProseMirror, its table plugin and Milkdown add, such as `ProseMirror`, `ProseMirror-selectednode` and `selectedCell`, keep their names, and so do the classes inside a diagram preview's SVG, which Mermaid draws. Classes and markup are not a styling API: style the editor through the tokens above, and expect a class to change in any release. Copied and printable HTML carry no class that does not begin `inkkit-`.
 
 ### Labels
 
-`EditorOptions.labels` is `Partial<EditorLabels>`. Omitted labels keep their defaults, and an unknown key or a value that isn't a string makes `mount` reject with `invalid-argument`. InkKit inserts every label as text, never as markup. Labels are fixed at mount.
+`EditorOptions.labels` is `Partial<EditorLabels>`. Omitted labels keep their defaults, and an unknown key or a value that isn't a string makes `mount` reject with `invalid-argument`. Inkkit inserts every label as text, never as markup. Labels are fixed at mount.
 
 | Key                      | Default                     | Used for                                                                                                          |
 | ------------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
@@ -842,7 +842,7 @@ InkKit then uses that value on its surfaces, so the host overrides no InkKit sel
 | `filePDFPreview`         | `Open to view this PDF`     | The status line of a PDF card.                                                                                    |
 | `wikiMissing`            | `Link unavailable`          | The tooltip of a wiki link that `WikiLinkAdapter.resolve` reports missing.                                        |
 | `comment`                | `Author comment`            | The name of an author comment, which stays out of the readable text.                                              |
-| `preservedMarkdown`      | `Preserved Markdown`        | The name of a block of Markdown that InkKit keeps as authored and doesn't render.                                 |
+| `preservedMarkdown`      | `Preserved Markdown`        | The name of a block of Markdown that Inkkit keeps as authored and doesn't render.                                 |
 | `suggestions`            | `Suggestions`               | The accessible name of the suggestion list.                                                                       |
 | `suggestionsLoading`     | `Loading…`                  | The status while a note-suggestion request is pending.                                                            |
 | `suggestionsEmpty`       | `No matches`                | The temporary message when no suggestion matches.                                                                 |
@@ -887,10 +887,10 @@ Query [command availability](#command-availability) to present the current state
 
 A primary click with Mod held opens a link, in formatted mode, whether or not the editor is editable. Mod is Command on Apple platforms and Control elsewhere: the same key as `Mod` in [keymap](#shortcuts) notation, detected from `navigator.platform` in the same way. On a Mac, Control-click keeps opening the context menu. A click without Mod places the caret as usual. No click on a link, with or without Mod, Shift or the middle button, makes the web view follow it, including in read-only mode, and Mod-click on a link doesn't select the link or its paragraph.
 
-- **Markdown link:** InkKit calls `events.openLink(href)` with the link's destination. Without an `openLink` handler, Markdown links don't open. It doesn't call `openLink` when the rendered address is empty. That includes `[text]()` and any address that isn't relative, a fragment, a query, or an `http`, `https`, `mailto` or `tel` address, such as `javascript:`, `ftp:`, `file:` or an app-specific scheme. The editor renders those links without an address, and copies them as their text; it's the same list that HTML import and print use. The Markdown source keeps the address as authored. Relative addresses and fragments, such as `notes/a.md` or `#intro`, reach the host as they are, not resolved against the page's address.
-- **Wiki link:** InkKit calls `WikiLinkAdapter.open`. See [Optional wiki links and files](#optional-wiki-links-and-files).
+- **Markdown link:** Inkkit calls `events.openLink(href)` with the link's destination. Without an `openLink` handler, Markdown links don't open. It doesn't call `openLink` when the rendered address is empty. That includes `[text]()` and any address that isn't relative, a fragment, a query, or an `http`, `https`, `mailto` or `tel` address, such as `javascript:`, `ftp:`, `file:` or an app-specific scheme. The editor renders those links without an address, and copies them as their text; it's the same list that HTML import and print use. The Markdown source keeps the address as authored. Relative addresses and fragments, such as `notes/a.md` or `#intro`, reach the host as they are, not resolved against the page's address.
+- **Wiki link:** Inkkit calls `WikiLinkAdapter.open`. See [Optional wiki links and files](#optional-wiki-links-and-files).
 
-While Mod is held and the pointer is over the editor root, InkKit's stylesheet shows the pointer cursor over each link that opens. InkKit tracks the key itself, including while focus is in a host control, so hosts don't need key listeners or classes for it. Opening a Markdown link from the keyboard isn't supported yet.
+While Mod is held and the pointer is over the editor root, Inkkit's stylesheet shows the pointer cursor over each link that opens. Inkkit tracks the key itself, including while focus is in a host control, so hosts don't need key listeners or classes for it. Opening a Markdown link from the keyboard isn't supported yet.
 
 ## Optional wiki links and files
 
@@ -919,7 +919,7 @@ interface WikiLinkAdapter {
 }
 ```
 
-`query` is the text after `[[`, without the brackets. The host returns matching note names in display order and owns matching, access checks and storage. Each name appears as one row. `context` includes the document ID, generation, operation ID and an `AbortSignal`. A newer query or a closed menu aborts the previous request. Honor the signal when possible; InkKit ignores stale answers and stale failures even when the host ignores it. Slow requests leave typing available. While waiting, the list shows `suggestionsLoading`, reports `aria-busy`, and offers no stale rows to choose.
+`query` is the text after `[[`, without the brackets. The host returns matching note names in display order and owns matching, access checks and storage. Each name appears as one row. `context` includes the document ID, generation, operation ID and an `AbortSignal`. A newer query or a closed menu aborts the previous request. Honor the signal when possible; Inkkit ignores stale answers and stale failures even when the host ignores it. Slow requests leave typing available. While waiting, the list shows `suggestionsLoading`, reports `aria-busy`, and offers no stale rows to choose.
 
 Suggestions open in formatted text, including headings, list items, quotes, callouts and table cells. They do not open in read-only documents, source or TXT mode, inline or block code, front matter, comments, preserved literal blocks or during composition. Escaped brackets and the file-embed prefix `![[` do not start note suggestions.
 
@@ -931,7 +931,7 @@ Names must be nonblank and valid targets in the [supported wiki-link syntax](sup
 
 `FileAdapter` provides:
 
-- `resolve(reference, context): Promise<FilePresentation>`: resolves an opaque `FileReference`, described below. The host identifies the actual file kind; InkKit does not infer it from an extension.
+- `resolve(reference, context): Promise<FilePresentation>`: resolves an opaque `FileReference`, described below. The host identifies the actual file kind; Inkkit does not infer it from an extension.
 - Optional `exportImage(reference, context): Promise<PortableImage>`: supplies portable image bytes for copy and print. If omitted, `ImageAdapter.exportImage` exports path images. Named images require this callback for portable image output. Image import remains with `ImageAdapter.importImage`; no file storage/import API is added.
 - Optional `open(reference, context)` and `contextMenu(reference, point, context)`: target the authored reference for host actions. `point` is a `ClientPoint`, `{ clientX, clientY }` in CSS pixels of the web view's client area. The host owns permissions, Open/Reveal UI and error handling for asynchronous native actions.
 
@@ -953,9 +953,9 @@ A `FileReference` has these fields:
 | `![[ My file.pdf # page=3 \|200]]` | `wiki` | `My file.pdf#page=3`    | `My file.pdf`    | `page=3`      |
 | `![[My\#Notes.pdf#page=2]]`        | `wiki` | `My#Notes.pdf#page=2`   | `My#Notes.pdf`   | `page=2`      |
 
-In a path, the fragment starts at the first `#`, so a `#` that belongs to a file name must be written `%23`, as in any URL. InkKit doesn't decode it: the target of `My%23Notes.pdf` is `My%23Notes.pdf`. A backslash escape doesn't keep a `#` in a path's name, because Markdown removes it before InkKit reads the destination: the target of `![](My\#Notes.pdf)` is `My`. InkKit gives `?` no meaning, so a query stays in `target`. In a named file, a `#` in the name is escaped as `\#`, and `target` holds the name with the escape removed, so don't find the target by splitting `reference` at its first `#`. Named targets and fragments are trimmed; internal spaces are kept.
+In a path, the fragment starts at the first `#`, so a `#` that belongs to a file name must be written `%23`, as in any URL. Inkkit doesn't decode it: the target of `My%23Notes.pdf` is `My%23Notes.pdf`. A backslash escape doesn't keep a `#` in a path's name, because Markdown removes it before Inkkit reads the destination: the target of `![](My\#Notes.pdf)` is `My`. Inkkit gives `?` no meaning, so a query stays in `target`. In a named file, a `#` in the name is escaped as `\#`, and `target` holds the name with the escape removed, so don't find the target by splitting `reference` at its first `#`. Named targets and fragments are trimmed; internal spaces are kept.
 
-`FileContext` extends `DocumentContext` with an `AbortSignal`. Honor the signal when you can; InkKit ignores late results either way.
+`FileContext` extends `DocumentContext` with an `AbortSignal`. Honor the signal when you can; Inkkit ignores late results either way.
 
 `resolve` returns a `FilePresentation`, one of these shapes:
 
@@ -966,7 +966,7 @@ In a path, the fragment starts at the first `#`, so a `#` that belongs to a file
 | `missing`                        | `label?: string`                                     | A card that uses the `fileMissing` label.                                                                                |
 | `error`                          | `message: string`, `label?: string`                  | A card whose status is `message`, a short reason written for the person. An empty `message` shows the `fileError` label. |
 
-The `url` is private and must serve the declared kind in the host's offline web view. A `mimeType` must match the kind. An unknown kind, an executable URL scheme, a data URL whose type doesn't match the kind, or a missing `url` or `message` makes the presentation invalid, and InkKit reports `file-unavailable` through `events.error`. The adapter owns the URL's lifetime, byte validation, access checks and fragment mapping, including media `#t=` or PDF `#page=`. InkKit keeps the authored fragments without interpreting storage paths or creating a network fallback.
+The `url` is private and must serve the declared kind in the host's offline web view. A `mimeType` must match the kind. An unknown kind, an executable URL scheme, a data URL whose type doesn't match the kind, or a missing `url` or `message` makes the presentation invalid, and Inkkit reports `file-unavailable` through `events.error`. The adapter owns the URL's lifetime, byte validation, access checks and fragment mapping, including media `#t=` or PDF `#page=`. Inkkit keeps the authored fragments without interpreting storage paths or creating a network fallback.
 
 Resolution never changes authored Markdown or revision. Each view captures the document ID and generation. Retry, reference replacement, source mode, folded ancestors, reloads and destruction abort obsolete work; late results are ignored even when the host ignores the signal. Width/label changes use current editor metadata without changing reference identity. The Retry button starts a new request. Missing, rejected, undecodable and unsupported presentations retain source and expose a descriptive card. A rejected or invalid resolution, a preview that fails to load, and an exception from `FileAdapter.open`, `FileAdapter.contextMenu`, `WikiLinkAdapter.resolve` or `WikiLinkAdapter.open` are reported through `events.error` as `file-unavailable`, with the original error as `cause`. Use source mode to edit or remove a reference.
 

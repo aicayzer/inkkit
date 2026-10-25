@@ -1,10 +1,10 @@
-# InkKit
+# Inkkit
 
-InkKit is an MIT TypeScript Markdown editor for the web and for apps that host a web view, published to npm as `@aicayzer/inkkit`. It is built on Milkdown and ProseMirror. Memos and PadPad bundle it into one offline page in a `WKWebView`; each is a separate repository.
+Inkkit is an MIT TypeScript Markdown editor for the web and for apps that host a web view, published to npm as `@aicayzer/inkkit`. It is built on Milkdown and ProseMirror. Memos and PadPad bundle it into one offline page in a `WKWebView`; each is a separate repository.
 
-## What belongs in InkKit and what belongs in the host
+## What belongs in Inkkit and what belongs in the host
 
-InkKit owns what happens to the document inside the editor root:
+Inkkit owns what happens to the document inside the editor root:
 
 - Markdown parsing, the supported dialect and source preservation ([preservation](docs/preservation.md), [supported syntax](docs/supported-syntax.md)).
 - Editing behavior in formatted, source and TXT modes: formatting, tables, footnotes, references, callouts, comments, image placement, find and replace, undo history, and the composition, generation and read-only guards.
@@ -17,16 +17,16 @@ The host owns everything outside the editor root, and anything that needs storag
 
 - Files, saving, autosave policy, sync, and what to do when a snapshot fails.
 - Image and file bytes, references, display URLs, permissions and cleanup, through `ImageAdapter`, `FileAdapter` and `WikiLinkAdapter`.
-- Windows, toolbars, menus, the search field, headers, titles and metadata. InkKit takes shortcut choices through `keymap`, localized text through `labels` and appearance through tokens.
+- Windows, toolbars, menus, the search field, headers, titles and metadata. Inkkit takes shortcut choices through `keymap`, localized text through `labels` and appearance through tokens.
 - Writing the native clipboard, Print and PDF dialogs, and opening links and files (`openLink`, `WikiLinkAdapter.open`, `FileAdapter.open`, `FileAdapter.contextMenu`).
 - Marfa and anything specific to one app.
 
-To place a new case: if two hosts would build it the same way and it needs no storage, platform or product knowledge, it belongs in InkKit. Otherwise InkKit offers an adapter, event, option or token and the host decides. A host workaround, such as matching an error message, toggling a class InkKit's CSS reads or styling `.ProseMirror`, points to a gap in the facade. Fix the facade instead of documenting the workaround.
+To place a new case: if two hosts would build it the same way and it needs no storage, platform or product knowledge, it belongs in Inkkit. Otherwise Inkkit offers an adapter, event, option or token and the host decides. A host workaround, such as matching an error message, toggling a class Inkkit's CSS reads or styling `.ProseMirror`, points to a gap in the facade. Fix the facade instead of documenting the workaround.
 
 Rules that follow from the boundary:
 
 - Keep the facade free of native storage, Marfa, app names and app UI. Hosts import only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. Internal classes and markup are not a styling API.
-- The package bundles every runtime dependency except Mermaid, so hosts run the tree InkKit tested; a dependency update is a lockfile change in a pull request ([development](docs/development.md#dependencies)).
+- The package bundles every runtime dependency except Mermaid, so hosts run the tree Inkkit tested; a dependency update is a lockfile change in a pull request ([development](docs/development.md#dependencies)).
 - Keep image and file references opaque. Never infer a storage path, fetch from the network or export a private display URL.
 - Everything runs offline from one bundled page. Prefer maintained libraries that bundle offline and do not rewrite source. Only `src/index.ts` registers Mermaid; the `core` entry must bundle without it.
 - A failed operation changes nothing and reports an `InkKitError` with a documented code. A failed snapshot is never an unchanged document.
@@ -52,6 +52,8 @@ pnpm test:built-playground  # opens the built page; needs the build first
 
 ## Conventions
 
+- Public-facing prose uses **Inkkit**. Keep package names and API identifiers such as `InkKitEditor` and `InkKitError` unchanged. Use the [brand assets and palette](docs/images/brand/README.md); retain Mintlify’s native component styling.
+
 - A behavior change needs a regression test that fails without it, through the public facade, including failure and untidy input: CRLF, unusual list markers, Unicode, composition, stale generations.
 - During the Mintlify migration, maintain essential factual corrections in the existing guides. Replace each guide once; do not keep a second hand-maintained copy for the website. Development and release procedures remain repository documentation.
 - A public API change updates `docs/api.md`, and any of `integration.md`, `supported-syntax.md` and `preservation.md` that describe it, in the same pull request.
@@ -64,7 +66,7 @@ pnpm test:built-playground  # opens the built page; needs the build first
 
 ## Where scope and decisions live
 
-- GitHub issues hold outcomes, acceptance criteria and decisions; record a decision on its issue. Version milestones hold release scope and the publication checklist. The [InkKit Project](https://github.com/users/aicayzer/projects/3) is the roadmap.
+- GitHub issues hold outcomes, acceptance criteria and decisions; record a decision on its issue. Version milestones hold release scope and the publication checklist. The [Inkkit Project](https://github.com/users/aicayzer/projects/3) is the roadmap.
 - [Development](docs/development.md) has the GitHub workflow and verification policy; [releasing](docs/releasing.md) has publication.
 - Adopting a release in a host is separate work in that host's repository, after publication. Temporary `file:` dependencies never reach a host's merged lockfile.
 

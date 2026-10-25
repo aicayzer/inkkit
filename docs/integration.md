@@ -1,10 +1,10 @@
 # Integration and customisation
 
-InkKit supplies document editing and portable exports. Your app supplies its interface, files and storage. Use exports from `@aicayzer/inkkit`; hosts do not import Milkdown or ProseMirror internals. The [API reference](api.md) defines errors and asynchronous contracts, and [preservation](preservation.md) explains source and clipboard fidelity.
+Inkkit supplies document editing and portable exports. Your app supplies its interface, files and storage. Use exports from `@aicayzer/inkkit`; hosts do not import Milkdown or ProseMirror internals. The [API reference](api.md) defines errors and asynchronous contracts, and [preservation](preservation.md) explains source and clipboard fidelity.
 
 ## Supported engines
 
-InkKit supports these engines. Each version is the oldest in which every API below, except the optional one, works as designed.
+Inkkit supports these engines. Each version is the oldest in which every API below, except the optional one, works as designed.
 
 | Engine                                     | Oldest supported version                         |
 | ------------------------------------------ | ------------------------------------------------ |
@@ -25,9 +25,9 @@ The versions come from these APIs. Each one shipped in at least one engine after
 | CSS [`lh` unit](https://developer.mozilla.org/docs/Web/CSS/length#lh)                                         | 16.4   | 109      | 120     | Task checkboxes are not centered on the first line of their item.                                    |
 | [CSS Custom Highlight API](https://developer.mozilla.org/docs/Web/API/CSS_Custom_Highlight_API)               | 17.2   | 105      | 149     | Optional. The engine draws its own selection, which also fills the margins beside the selected text. |
 
-Versions are from MDN browser compatibility data 8.1.5. `CSS.highlights` arrived in Firefox 140, but the `::highlight()` styling InkKit needs arrived in 149, so InkKit checks for both.
+Versions are from MDN browser compatibility data 8.1.5. `CSS.highlights` arrived in Firefox 140, but the `::highlight()` styling Inkkit needs arrived in 149, so Inkkit checks for both.
 
-Declare UTF-8 in the page that loads InkKit, for example with `<meta charset="utf-8">`. The bundle contains non-ASCII text, and WebKit reads an undeclared single-file page as Latin-1, which stops the script from loading.
+Declare UTF-8 in the page that loads Inkkit, for example with `<meta charset="utf-8">`. The bundle contains non-ASCII text, and WebKit reads an undeclared single-file page as Latin-1, which stops the script from loading.
 
 ## A simple writing tool
 
@@ -103,7 +103,7 @@ After loading, `editor.commandState(1)` returns current availability without cha
 
 `editor.setEditable(false)` makes both editing surfaces read-only. Selection, copying, find, heading navigation, folding and mode switching remain available. Host document loading is still allowed. Re-enable editing with `editor.setEditable(true)`; history is retained. Pending imports and deferred destructive operations invalidated by the transition cannot later commit, even after editing is re-enabled. The host adapter remains responsible for retained bytes and orphan cleanup.
 
-`editor.setTextInputPreferences({ spellcheck: false })` changes native HTML input attributes on both surfaces. It replaces the preference set; omitted fields remove earlier explicit attributes and leave behaviour to the browser. Editability and input-policy changes throw `composition` during composition, without partial changes; successful transitions preserve source, revision, dirty state, history, focus and selection. Browser and OS support determines whether an input preference takes effect. `smartPunctuation` is InkKit's own and doesn't depend on the browser; see [Smart punctuation](api.md#smart-punctuation).
+`editor.setTextInputPreferences({ spellcheck: false })` changes native HTML input attributes on both surfaces. It replaces the preference set; omitted fields remove earlier explicit attributes and leave behaviour to the browser. Editability and input-policy changes throw `composition` during composition, without partial changes; successful transitions preserve source, revision, dirty state, history, focus and selection. Browser and OS support determines whether an input preference takes effect. `smartPunctuation` is Inkkit's own and doesn't depend on the browser; see [Smart punctuation](api.md#smart-punctuation).
 
 ## Optional slash block menu
 
@@ -138,7 +138,7 @@ async function mountWithBlockMenu(
 }
 ```
 
-In this example, the host's `chooseNoteLink` searches its notes and returns the Markdown link to insert on the trigger line. The host owns lookup, permissions and navigation. Return `undefined` when the person cancels. InkKit parses returned Markdown, checks preservation and commits the replacement as one undo step. One Undo restores the line from before the slash. A slow action leaves typing responsive; changes to the document, selection, mode, editability or presentation invalidate its pending result. Handle failures through `events.error`; failed and canceled actions keep the typed text.
+In this example, the host's `chooseNoteLink` searches its notes and returns the Markdown link to insert on the trigger line. The host owns lookup, permissions and navigation. Return `undefined` when the person cancels. Inkkit parses returned Markdown, checks preservation and commits the replacement as one undo step. One Undo restores the line from before the slash. A slow action leaves typing responsive; changes to the document, selection, mode, editability or presentation invalidate its pending result. Handle failures through `events.error`; failed and canceled actions keep the typed text.
 
 Omit `commands` to offer every built-in command. The order is fixed, and Diagram is offered only when the loaded entry supplies diagram previews and `rendering.diagramPreview` is not `false`. The menu supports empty lines inside lists, quotes and callouts; source, TXT, read-only, code, table and front matter contexts do not open it. The [slash menu API](api.md#slash-block-menu) defines filtering, keys, dismissal and host action contracts.
 
@@ -154,9 +154,9 @@ Loading a document does not grab focus or scroll a browsing host to a caret. Ext
 
 ## Appearance, labels and shortcuts
 
-Package styles are scoped to the InkKit root so another editor or unrelated host content does not inherit its rules. Set documented `--inkkit-*` properties on the mounted root or an ancestor. Keep your own layout, toolbar and menus in the host. The [API reference](api.md#appearance-labels-and-shortcuts) lists tokens, label names and shortcut contracts.
+Package styles are scoped to the Inkkit root so another editor or unrelated host content does not inherit its rules. Set documented `--inkkit-*` properties on the mounted root or an ancestor. Keep your own layout, toolbar and menus in the host. The [API reference](api.md#appearance-labels-and-shortcuts) lists tokens, label names and shortcut contracts.
 
-InkKit owns attachment preview sizing, footer wrapping, control line height and resize-handle geometry. Long filenames use a single ellipsized line with the full name retained as accessible text and a tooltip; status descriptions remain readable. Attachment controls, wiki links and media use the same documented color, font and focus tokens as the editor. Customize those tokens rather than overriding internal `.inkkit-image`, `.inkkit-image-handle` or `.inkkit-file-*` selectors. Internal classes and markup are not a supported styling API. The Open control is a compact arrow after the filename, labelled with the `fileOpen` label and the filename for assistive technology. Read-only images hide the resize handle; Open, Retry and media playback remain available. To draw no focus ring on the editing surfaces while keeping the controls' rings, set `--inkkit-surface-focus-width: 0` on the root rather than overriding `.ProseMirror` or `.inkkit-plain`.
+Inkkit owns attachment preview sizing, footer wrapping, control line height and resize-handle geometry. Long filenames use a single ellipsized line with the full name retained as accessible text and a tooltip; status descriptions remain readable. Attachment controls, wiki links and media use the same documented color, font and focus tokens as the editor. Customize those tokens rather than overriding internal `.inkkit-image`, `.inkkit-image-handle` or `.inkkit-file-*` selectors. Internal classes and markup are not a supported styling API. The Open control is a compact arrow after the filename, labelled with the `fileOpen` label and the filename for assistive technology. Read-only images hide the resize handle; Open, Retry and media playback remain available. To draw no focus ring on the editing surfaces while keeping the controls' rings, set `--inkkit-surface-focus-width: 0` on the root rather than overriding `.ProseMirror` or `.inkkit-plain`.
 
 Mount-time `labels` override the editor's built-in accessible names and visible text. Supply plain text from the host's localisation catalogue; supplied labels are not interpreted as markup. Host toolbar and native menu labels are outside this option.
 
@@ -174,7 +174,7 @@ For native clipboard writes, await `clipboardSnapshot(scope, generation)` and ch
 
 Add `wikiLinks` and/or `files` to the mount options when the host can resolve them. Keep the existing `images` adapter for captured-image imports and legacy path-image export. File resolution receives an abort signal and opaque reference; return a declared kind and a private offline display resource, or an explicit missing/error result. Supply portable image bytes through `files.exportImage` when named images must copy or print. Storage, permissions, URL creation/revocation, note lookup and native Open/Reveal actions stay in the host.
 
-Keep private URLs out of source and host clipboard writers. Use `clipboardSnapshot`/`events.clipboard` output for portable rich copy, and `printableSnapshot` for printing. Media/file descriptions are supported print representations, with `attachment-fallback` warnings; unresolved files produce `attachment-unavailable`. Handle `image-unavailable` as an asset failure rather than printing a broken image. Honour `FileContext.signal`; InkKit also ignores stale results and cancels pending output if the captured document or mode changes. No app adoption is implied by enabling these package adapters.
+Keep private URLs out of source and host clipboard writers. Use `clipboardSnapshot`/`events.clipboard` output for portable rich copy, and `printableSnapshot` for printing. Media/file descriptions are supported print representations, with `attachment-fallback` warnings; unresolved files produce `attachment-unavailable`. Handle `image-unavailable` as an asset failure rather than printing a broken image. Honour `FileContext.signal`; Inkkit also ignores stale results and cancels pending output if the captured document or mode changes. No app adoption is implied by enabling these package adapters.
 
 See the [public adapter contract](api.md#optional-wiki-links-and-files) and [representation table](supported-syntax.md#linked-syntax) before wiring native actions.
 
@@ -195,4 +195,4 @@ const editor = await InkKitEditor.mount(root, events, {
 })
 ```
 
-The host owns the note index, matching and access policy. Return only note names the person may select. InkKit owns the shared suggestion list, bracket insertion, escaping, history and preservation checks. Requests carry document identity and an abort signal; do not apply their results directly to the editor. See [note suggestions](api.md#note-suggestions) for cancellation and error behavior.
+The host owns the note index, matching and access policy. Return only note names the person may select. Inkkit owns the shared suggestion list, bracket insertion, escaping, history and preservation checks. Requests carry document identity and an abort signal; do not apply their results directly to the editor. See [note suggestions](api.md#note-suggestions) for cancellation and error behavior.

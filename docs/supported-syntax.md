@@ -2,7 +2,7 @@
 
 This matrix describes the current package. Source mode can edit all Markdown literally; the statuses below describe formatted mode.
 
-- **Rendered and editable:** InkKit recognises the construct and exposes its content for editing.
+- **Rendered and editable:** Inkkit recognises the construct and exposes its content for editing.
 - **Preserved literally:** source remains editable and saveable, without that construct's formatted behaviour.
 - **Adapter-dependent:** a host image adapter supplies presentation and portable bytes; the source reference stays opaque.
 - **Unsupported:** the file format or feature has no package implementation. Planned work is not supported content.
@@ -29,7 +29,7 @@ See the sections below for limits and [the API](api.md) for host controls. The [
 
 `printableSnapshot()` exports all supported document content as standalone semantic HTML with print styles and portable assets. Footnotes, resolved reference links, tables, full folded callouts and highlights remain readable; author comments and editor controls are excluded even when revealed. Invalid or unsupported Mermaid retains code with an explicit warning. Unavailable image assets reject the export; linked media use the defined descriptive fallbacks. TXT remains literal.
 
-InkKit supports CommonMark, task lists, strikethrough, autolinks, GFM tables, footnotes and full, collapsed and shortcut reference links. Unresolved references and unsupported constructs remain editable literal source. TXT mode treats every character literally.
+Inkkit supports CommonMark, task lists, strikethrough, autolinks, GFM tables, footnotes and full, collapsed and shortcut reference links. Unresolved references and unsupported constructs remain editable literal source. TXT mode treats every character literally.
 
 Typing a table row and pressing Enter or Tab at the end of the line starts a table without the menu. The paragraph must hold only that line, start and end with `|`, and hold at least two cells, such as `| Name | Date |`. The typed cells, trimmed of surrounding spaces, become the header row, one empty row follows, and the caret moves to its first cell. The saved Markdown is the table `table('insert')` writes. A `\|` or a pipe in inline code belongs to its cell, and cells can hold formatted text. Undo right after the conversion restores the typed line with the caret at its end. The shortcut works in lists, quotes, callouts and footnotes. Anywhere else, including code, front matter, a table, a task item, a paragraph with other lines or more than 100 cells, Enter and Tab do what they did before.
 
@@ -37,7 +37,7 @@ A bare URL, `www.` address or email address links to its own text. Editing that 
 
 Punctuation between the address and that space doesn't stop it: the URL is saved as `<https://example.com>.&#x20;`, and a `www.` address as `[www.example.com](http://www.example.com).&#x20;`. Once text follows the space, the address is saved bare again. An address in inline code isn't linked, including one you type before the closing backtick that makes the code. An address ends at its first backtick, and text after the backtick is read again for addresses of its own.
 
-Plain-text paste keeps Markdown formatting characters visible, including those around an address. InkKit uses a link form that reopens with the same text, rather than interpreting those characters as formatting. An edited URL containing a pipe in a table cell is written as an explicit link, with the pipe escaped in both the label and destination, so it does not split the cell or add a backslash to the address.
+Plain-text paste keeps Markdown formatting characters visible, including those around an address. Inkkit uses a link form that reopens with the same text, rather than interpreting those characters as formatting. An edited URL containing a pipe in a table cell is written as an explicit link, with the pipe escaped in both the label and destination, so it does not split the cell or add a backslash to the address.
 
 Shift+Enter inserts a hard line break within a paragraph. In paragraphs and setext headings, a trailing break remains pending in the editor until content follows and is omitted from saved Markdown in the meantime. Tables and ATX headings save line breaks as `<br />`. A break directly before an inline HTML comment also uses `<br />`. Shift+Enter inside a literal Markdown block does nothing. See [preservation](preservation.md) for saving and Undo behavior.
 
@@ -49,22 +49,22 @@ Code blocks offer a searchable language selector. `Auto` detects a language for 
 
 Fences labelled `mermaid` retain editable source beside an offline preview. Supported types are `flowchart`/`graph`, `sequenceDiagram`, `classDiagram`, `stateDiagram`/`stateDiagram-v2`, `erDiagram` and `pie`, using Mermaid 12.1.0 and the default theme and system fonts. Other types remain editable source with a reported preview failure. Rendering is limited to 30,000 source characters and 500 edges; portable PNGs are bounded to 4096 pixels on either axis.
 
-Before rendering, InkKit refuses author configuration (`%%{` directives and front matter), HTML, HTML entities, URL schemes, `//`, `@{` shape data, `$$` maths, backslash escapes and the CSS resource syntax `url(`, `image-set(`, `cross-fade(` and `@import`. These restrictions apply anywhere in the source, including labels and comments.
+Before rendering, Inkkit refuses author configuration (`%%{` directives and front matter), HTML, HTML entities, URL schemes, `//`, `@{` shape data, `$$` maths, backslash escapes and the CSS resource syntax `url(`, `image-set(`, `cross-fade(` and `@import`. These restrictions apply anywhere in the source, including labels and comments.
 
 Annotations are the one exception to the HTML restriction, in the positions where Mermaid reads them:
 
 - Class diagrams accept an annotation name of ASCII letters, digits, underscores, spaces and hyphens, such as `<<interface>>`, `<<abstract>>`, `<<service>>` or `<<enumeration>>`. It can stand on its own line in a class body, start a line before a class name (`<<interface>> Shape`) or follow a class name (`class Shape <<interface>>`).
 - State diagrams accept `<<fork>>`, `<<join>>` and `<<choice>>` at the end of a `state Name` line.
 
-Anywhere else, including labels, notes, messages and other diagram types, `<<name>>` is refused like other HTML when the name starts with an ASCII letter. In class diagrams, `<<` followed by a comment is also refused. Other `<<` text, such as `shift << 2` in a label, is accepted. After parsing, InkKit refuses the diagram if Mermaid did not read each accepted annotation as an annotation, for example one on a line inside a multi-line note.
+Anywhere else, including labels, notes, messages and other diagram types, `<<name>>` is refused like other HTML when the name starts with an ASCII letter. In class diagrams, `<<` followed by a comment is also refused. Other `<<` text, such as `shift << 2` in a label, is accepted. After parsing, Inkkit refuses the diagram if Mermaid did not read each accepted annotation as an annotation, for example one on a line inside a multi-line note.
 
-InkKit then parses the source with Mermaid and refuses a diagram whose parse result holds a style statement, a class definition, a link style, a link, a click handler or callback, a tooltip, an icon or an image, or a sequence actor's links or properties. This applies wherever Mermaid's grammar accepts the statement, not only at the start of a line. Words such as `click`, `link`, `image`, `style` and `classDef` are ordinary text in labels, edge labels, messages, notes and attributes. Applying a class name without a definition, for example `A:::warn`, is allowed because it carries no styles.
+Inkkit then parses the source with Mermaid and refuses a diagram whose parse result holds a style statement, a class definition, a link style, a link, a click handler or callback, a tooltip, an icon or an image, or a sequence actor's links or properties. This applies wherever Mermaid's grammar accepts the statement, not only at the start of a line. Words such as `click`, `link`, `image`, `style` and `classDef` are ordinary text in labels, edge labels, messages, notes and attributes. Applying a class name without a definition, for example `A:::warn`, is allowed because it carries no styles.
 
 The rendered SVG is sanitised before display: scripts, `foreignObject`, images, links and event handlers are removed, as are attributes and style elements that contain resource syntax. Rejected or invalid source remains available; editing or saving does not depend on successful rendering. No diagram callbacks or external links are activated.
 
 A host built from the core entry, without Mermaid, shows no previews. Diagram fences stay editable source, and copy and print keep the source as readable code with the diagram-unavailable fallback. See [Builds without diagrams](api.md#builds-without-diagrams).
 
-Copy as Markdown retains the complete source fence for whole documents and complete diagram selections. Ordinary rich export uses an offline PNG for complete diagrams, retaining surrounding content and inert Mermaid source metadata for InkKit paste. Partial source selections remain code text. Other applications can retain the image while discarding Mermaid metadata. If rendering or rasterisation fails, rich output retains readable code and reports the failure. TXT does not render diagrams.
+Copy as Markdown retains the complete source fence for whole documents and complete diagram selections. Ordinary rich export uses an offline PNG for complete diagrams, retaining surrounding content and inert Mermaid source metadata for Inkkit paste. Partial source selections remain code text. Other applications can retain the image while discarding Mermaid metadata. If rendering or rasterisation fails, rich output retains readable code and reports the failure. TXT does not render diagrams.
 
 ## Callouts
 
@@ -126,24 +126,24 @@ Plain text and explicit Markdown are read as Markdown. A paragraph at the start 
 
 After a paste, the caret is after the pasted content, including when the paste replaced a selection, so typing continues after it instead of replacing it. When the pasted or dropped content ends with a block that shows no text, such as a rule, an image or a comment, the caret goes to the start of the text that follows. The caret never goes into a comment, shown or hidden, or into a callout that opens folded. A web address pasted over selected text links that text and puts the caret after the link. Cells pasted into a table stay selected.
 
-HTML import keeps only structure that reads back the same. Before pasted or dropped HTML is inserted, InkKit writes it as Markdown and reads that Markdown back. A part that would read back as different structure, or whose Markdown would hold a link address that HTML import refuses when read as GitHub Flavored Markdown, as strict CommonMark, or as CommonMark with raw HTML turned off, is imported in a simpler form that reads back the same:
+HTML import keeps only structure that reads back the same. Before pasted or dropped HTML is inserted, Inkkit writes it as Markdown and reads that Markdown back. A part that would read back as different structure, or whose Markdown would hold a link address that HTML import refuses when read as GitHub Flavored Markdown, as strict CommonMark, or as CommonMark with raw HTML turned off, is imported in a simpler form that reads back the same:
 
-- Literal source, including source copied from InkKit, stays literal when it reads back as one block that ends where it was written and holds no refused address. Otherwise it imports as a code block with the same text.
+- Literal source, including source copied from Inkkit, stays literal when it reads back as one block that ends where it was written and holds no refused address. Otherwise it imports as a code block with the same text.
 - A `%%` comment whose text other Markdown apps would read as formatting or links imports as an HTML comment, unless an app with raw HTML turned off would then read a refused address in it. A comment whose text would end it early, as described under comments, imports as plain text.
 - A callout title taken from the callout's visible text is saved with its punctuation escaped, so it reads back as the same plain title.
 - A reference or footnote label and a reference definition title are saved on one line, with each line break replaced by a space, and a bracket in a label is escaped. A code fence with an unclosed or invalid fence marker imports as an ordinary fence.
 - Text that Markdown reads as a link, such as a bare web address, imports as that link.
-- Any other part that would read back differently first loses InkKit's metadata, such as a reference label or callout, then its formatting, keeping its text.
+- Any other part that would read back differently first loses Inkkit's metadata, such as a reference label or callout, then its formatting, keeping its text.
 
 Code blocks and literal source are inserted as their own blocks, not joined to the paragraph at the insertion point.
 
 Pasted or dropped HTML adds nothing to a note that it does not show:
 
 - HTML comments, `template`, `noscript` and `noembed` contents, and elements hidden with the `hidden` attribute or an inline `display: none` style are left out.
-- An element that InkKit writes for an author comment imports as the text it shows, not as a comment, which would start hidden.
-- HTML copied from InkKit also carries the Markdown it was copied from, which keeps reference links, their definitions and footnotes. InkKit pastes that Markdown only when, after the checks above, InkKit's clipboard HTML for it reads as the HTML it came with: the same text, formatting, addresses, images and structure. Markdown that holds comments, comment syntax in a reference or footnote label, or a code fence whose info string says more than the block's language, is not used.
-- From that Markdown, InkKit keeps a reference definition only when a pasted link uses it with the same address and title, and keeps only the first definition of each label. A wiki link stays a link only when it shows its own target; one written with other text pastes as that text. A file embed pastes as the image the HTML shows.
-- A reference definition, footnote reference or wiki link element keeps its InkKit metadata only when its text is what that metadata shows. A footnote definition keeps its label only when it starts with that label, `[label] `, as InkKit's clipboard HTML writes it. A callout keeps its authored title only when that title shows as its visible title. A code block's language is the first word of its `data-language`, and the block keeps the fence marker that InkKit records with that language as its info string. A diagram figure pastes its Mermaid source only when it holds just the diagram image, whose text alternative is that source. Otherwise each imports as what it shows.
+- An element that Inkkit writes for an author comment imports as the text it shows, not as a comment, which would start hidden.
+- HTML copied from Inkkit also carries the Markdown it was copied from, which keeps reference links, their definitions and footnotes. Inkkit pastes that Markdown only when, after the checks above, Inkkit's clipboard HTML for it reads as the HTML it came with: the same text, formatting, addresses, images and structure. Markdown that holds comments, comment syntax in a reference or footnote label, or a code fence whose info string says more than the block's language, is not used.
+- From that Markdown, Inkkit keeps a reference definition only when a pasted link uses it with the same address and title, and keeps only the first definition of each label. A wiki link stays a link only when it shows its own target; one written with other text pastes as that text. A file embed pastes as the image the HTML shows.
+- A reference definition, footnote reference or wiki link element keeps its Inkkit metadata only when its text is what that metadata shows. A footnote definition keeps its label only when it starts with that label, `[label] `, as Inkkit's clipboard HTML writes it. A callout keeps its authored title only when that title shows as its visible title. A code block's language is the first word of its `data-language`, and the block keeps the fence marker that Inkkit records with that language as its info string. A diagram figure pastes its Mermaid source only when it holds just the diagram image, whose text alternative is that source. Otherwise each imports as what it shows.
 - A pasted or dropped callout starts expanded, so a folded body is not hidden: `-` is imported as `+`.
 - When HTML imports as nothing, the plain text that came with it is pasted instead.
 
@@ -168,7 +168,7 @@ These features are optional. Enable `wikiLinks` for wiki links and `files` for h
 - `[[target]]` and `[[target#fragment]]` resolve a target and optional fragment through the host. Unicode and internal spaces are retained.
 - `[[target|alias]]` and `[[target#fragment|alias]]` use a plain-text readable alias.
 - `[[#Heading]]` passes a local fragment to the host with an empty target.
-- `![[name]]`, `![[name#fragment|400]]` and `![[name|400x300]]` resolve a file through the host. Width and optional height are positive integers from 1 to 99999. Only width affects presentation. InkKit does not guess extensions or transclude documents.
+- `![[name]]`, `![[name#fragment|400]]` and `![[name|400x300]]` resolve a file through the host. Width and optional height are positive integers from 1 to 99999. Only width affects presentation. Inkkit does not guess extensions or transclude documents.
 - `![alt|400](opaque-path#fragment)` retains the existing path image syntax. A file adapter may resolve another supported kind.
 
 Typing the closing `]]` of a complete wiki link makes it a link, and the note keeps the typed characters; see [Typing a wiki link](api.md#typing-a-wiki-link). Without `wikiLinks`, typed brackets are text and save escaped.
