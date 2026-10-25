@@ -124,6 +124,7 @@ for (const ending of ['\n', '\r\n'])
         passed:
           run.status === 0 &&
           result?.passed === true &&
+          !run.stderr.includes('WKWebView:') &&
           trustedSpace &&
           !result?.final?.error &&
           result?.final?.diagnostics?.length === 0,
