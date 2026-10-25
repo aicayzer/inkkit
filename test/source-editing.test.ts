@@ -784,3 +784,32 @@ test('source selection measurement bounds the selected text rather than remainin
       restore()
     }
   }))
+
+test('terminal source replacement leaves selection and history intact when refused', () =>
+  run((editor, _plain, ctx) => {
+    editor.loadDocument({ ...input, text: 'Original' })
+    const source = 'Café 😀\r\n\r\n---'
+    expect(editor.replaceSource(source, 12)).toBe(true)
+    const view = ctx.get(editorViewCtx)
+    const before = editor.snapshot()
+    const selection = view.state.selection.toJSON()
+    expect(editor.replaceSource(source, 12)).toBe(false)
+    expect(() => editor.replaceSource('---', 11)).toThrow(
+      expect.objectContaining({ code: 'stale-document' }),
+    )
+    view.dom.dispatchEvent(
+      new CompositionEvent('compositionstart', { bubbles: true }),
+    )
+    expect(() => editor.replaceSource('---', 12)).toThrow(
+      expect.objectContaining({ code: 'composition' }),
+    )
+    view.dom.dispatchEvent(
+      new CompositionEvent('compositionend', { bubbles: true }),
+    )
+    expect(editor.snapshot()).toEqual(before)
+    expect(view.state.selection.toJSON()).toEqual(selection)
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe('Original')
+    expect(editor.redo()).toBe(true)
+    expect(editor.snapshot().text).toBe(source)
+  }))

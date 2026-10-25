@@ -826,6 +826,17 @@ function caretState(state: EditorState): CaretState {
   }
 }
 
+// Prefer the last writing position without selecting a terminal atom that typing could replace.
+function terminalSelection(doc: ProseNode): Selection {
+  const $end = doc.resolve(doc.content.size)
+  const gap = GapCursor as unknown as { valid($pos: ResolvedPos): boolean }
+  if (isImageBlock(doc.lastChild) && gap.valid($end)) return new GapCursor($end)
+  const text = Selection.findFrom($end, -1, true)
+  if (text) return text
+  if (gap.valid($end)) return new GapCursor($end)
+  throw new InkKitError('preservation', 'Document has no safe writing position')
+}
+
 // True only when one quote holds the whole selection, so the state matches what the command can lift.
 function quoted($from: ResolvedPos, $to: ResolvedPos): boolean {
   return (
@@ -2388,7 +2399,7 @@ export class InkKitEditor {
       .replaceWith(0, view.state.doc.content.size, parsed.content)
       .setDocAttribute(sourceAttribute, provenance)
       .setMeta(sourceReplacement, true)
-    tr.setSelection(Selection.atEnd(tr.doc))
+    tr.setSelection(terminalSelection(tr.doc))
     if (isolated) tr = closeHistory(tr)
     view.dispatch(tr)
     if (isolated)
@@ -4036,14 +4047,7 @@ export class InkKitEditor {
     this.preservation = preservation
     this.carried = undefined
     this.lastMarkdown = markdown
-    // A caret at the end, where writing carries on; at the start it would sit in a first-line heading and
-    // show its marks. The last place text can go, so a document ending in a rule takes a caret above it
-    // rather than selecting the rule itself. After a final image, typing opens a paragraph below it.
-    const { doc } = view.state
-    const $end = doc.resolve(doc.content.size)
-    const end = isImageBlock(doc.lastChild)
-      ? new GapCursor($end)
-      : (Selection.findFrom($end, -1, true) ?? Selection.atEnd(doc))
+    const end = terminalSelection(view.state.doc)
     view.dispatch(
       setSearchState(
         view.state.tr.setSelection(end),
