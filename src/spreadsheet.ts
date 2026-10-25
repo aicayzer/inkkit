@@ -59,7 +59,9 @@ export function pasteSpreadsheet(
   try {
     grid = input.html?.match(/<table[\s>]/i)
       ? htmlGrid(view.state.schema, input.html)
-      : input.text.includes('\t')
+      : !input.html &&
+          input.text.includes('\t') &&
+          (inTable || looksLikeGrid(input.text))
         ? textGrid(view.state.schema, input.text)
         : undefined
   } catch (error) {
@@ -224,6 +226,18 @@ function reject(): never {
   throw new InkKitError(
     'preservation',
     'This spreadsheet cannot be represented safely in a Markdown table. Paste as plain text outside the table to retain its source.',
+  )
+}
+
+// Outside a table, a tab alone is not evidence of spreadsheet cells.
+function looksLikeGrid(input: string): boolean {
+  const rows = input.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n')
+  if (rows.length < 2) return false
+  const widths = rows.map((row) => row.split('\t').length)
+  return (
+    widths[0]! > 1 &&
+    widths.every((width) => width === widths[0]) &&
+    rows.some((row) => row.split('\t')[0]!.trim().length > 0)
   )
 }
 

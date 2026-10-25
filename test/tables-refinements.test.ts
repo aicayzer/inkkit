@@ -425,25 +425,52 @@ test('public HTML spreadsheet paste creates a complete table and preserves heade
     ])
   }))
 
-test('one-row TSV retains exactly its header row without inventing body cells', () =>
+test.each([
+  'one\ttwo\t',
+  'def f():\n\treturn 1',
+  '\tfirst\n\tsecond',
+  'def f():\r\n\treturn "雪"\r\n',
+  'one\ttwo\nthree',
+  '"**unfinished\tcell',
+  Array.from({ length: 101 }, (_, index) => `\tline ${index}`).join('\n'),
+])('ambiguous tabbed plain text follows the Markdown route: %j', (text) =>
   run(async (editor, ctx) => {
     editor.loadDocument({ ...input, text: '' })
-    await editor.paste({ text: 'one\ttwo\t' })
-    expect(values(ctx)).toEqual([['one', 'two', '']])
+    await editor.paste({ text, markdown: text })
+    const expected = editor.snapshot().text
+    editor.loadDocument({ ...input, generation: 2, text: '' })
+    await editor.paste({ text })
+    expect(editor.snapshot().text).toBe(expected)
+    expect(ctx.get(editorViewCtx).dom.querySelector('table')).toBeNull()
+    const saved = editor.snapshot().text
+    const view = ctx.get(editorViewCtx)
+    undo(view.state, view.dispatch)
+    expect(editor.snapshot().text).toBe('')
+    editor.loadDocument({ ...input, generation: 3, text: saved })
+    expect(editor.snapshot().text).toBe(saved)
+  }),
+)
+
+test('rectangular TSV with CRLF, quotes, Unicode and empty cells creates a table', () =>
+  run(async (editor, ctx) => {
+    editor.loadDocument({ ...input, text: '' })
+    await editor.paste({ text: '"名"\t"quote ""here"""\t\r\n雪\t2\t\r\n' })
+    expect(values(ctx)).toEqual([
+      ['名', 'quote "here"', ''],
+      ['雪', '2', ''],
+    ])
     reopen(editor, ctx)
   }))
 
-test('public malformed TSV rejects outside a table without interpreting Markdown punctuation', () =>
-  run(async (editor) => {
-    editor.loadDocument({ ...input, text: 'untouched' })
-    await expect(
-      editor.paste({ text: '"**unfinished\tcell' }),
-    ).rejects.toMatchObject({ code: 'preservation' })
-    expect(editor.snapshot()).toMatchObject({
-      text: 'untouched',
-      dirty: false,
-      revision: 0,
+test('non-table HTML takes precedence over rectangular tabbed fallback text', () =>
+  run(async (editor, ctx) => {
+    editor.loadDocument({ ...input, text: '' })
+    await editor.paste({
+      text: 'a\tb\nc\td',
+      html: '<p><strong>Keep this</strong></p>',
     })
+    expect(editor.snapshot().text).toBe('**Keep this**\n')
+    expect(ctx.get(editorViewCtx).dom.querySelector('table')).toBeNull()
   }))
 
 test('drag commands use fixed-header complete-content movement, follow selection and isolate undo', () =>
