@@ -247,6 +247,7 @@ fixtures['linked-files'] = {
 }
 
 type FixtureReference = {
+  raw: string
   reference: string
   kind: 'path' | 'wiki'
   target: string
@@ -264,6 +265,7 @@ export class ControlledFiles {
     operation: string
     phase: string
     reference?: string
+    raw?: string
     documentId?: string
     generation?: number
     fragment?: string
@@ -303,6 +305,7 @@ export class ControlledFiles {
       operation,
       phase: 'started',
       reference: reference.reference,
+      raw: reference.raw,
       documentId: context.documentId,
       generation: context.generation,
       fragment: reference.fragment,
@@ -312,6 +315,7 @@ export class ControlledFiles {
         operation,
         phase: 'aborted',
         reference: reference.reference,
+        raw: reference.raw,
         documentId: context.documentId,
       })
     context.signal.addEventListener('abort', abort, { once: true })
@@ -322,6 +326,7 @@ export class ControlledFiles {
         operation,
         phase: 'completed',
         reference: reference.reference,
+        raw: reference.raw,
       })
     } finally {
       context.signal.removeEventListener('abort', abort)
@@ -434,6 +439,7 @@ export class ControlledFiles {
         operation: 'open',
         phase: 'activated',
         reference: reference.reference,
+        raw: reference.raw,
         fragment: reference.fragment,
         documentId: context.documentId,
         generation: context.generation,
@@ -448,22 +454,30 @@ export class ControlledFiles {
         operation: 'contextMenu',
         phase: 'activated',
         reference: reference.reference,
+        raw: reference.raw,
         documentId: context.documentId,
       })
     },
   }
   readonly wiki = {
-    resolve: (reference: { target: string }) => ({
-      missing: reference.target === 'Missing note',
-    }),
+    resolve: (reference: { target: string; raw: string }) => {
+      this.events.push({
+        operation: 'wikiResolve',
+        phase: 'completed',
+        reference: reference.target,
+        raw: reference.raw,
+      })
+      return { missing: reference.target === 'Missing note' }
+    },
     open: (
-      reference: { target: string; fragment?: string },
+      reference: { target: string; raw: string; fragment?: string },
       context: { documentId: string; generation: number },
     ) => {
       this.events.push({
         operation: 'wikiOpen',
         phase: 'activated',
         reference: reference.target,
+        raw: reference.raw,
         fragment: reference.fragment,
         documentId: context.documentId,
       })
