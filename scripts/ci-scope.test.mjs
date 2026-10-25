@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { scope } from './ci-scope.mjs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 test('prose skips editor and website builds', () => {
   assert.deepEqual(scope(['docs/api.md', 'README.md', 'AGENTS.md']), {
@@ -12,6 +17,15 @@ test('Mintlify pages and configuration build the website', () => {
   assert.deepEqual(
     scope(['docs/index.mdx', 'docs/docs.json', 'docs/.mintignore']),
     { editor: false, site: true },
+  )
+})
+test('website branding does not run editor tests', () => {
+  assert.deepEqual(
+    scope(['docs/logo.svg', 'docs/styles.css', 'docs/fonts/body.woff2']),
+    {
+      editor: false,
+      site: true,
+    },
   )
 })
 test('mixed, unknown and workflow changes retain editor checks', () => {
@@ -31,4 +45,79 @@ test('mixed, unknown and workflow changes retain editor checks', () => {
 test('empty changes fail safe; moves out of docs retain editor checks', () => {
   assert.equal(scope([]).editor, true)
   assert.equal(scope(['docs/example.md', 'src/example.md']).editor, true)
+})
+
+test('real branches exclude unrelated main changes and preserve release gates', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'inkkit-ci-scope-'))
+  const git = (...args) =>
+    execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim()
+  const commit = (path, text) => {
+    writeFileSync(join(cwd, path), text)
+    git('add', '.')
+    git(
+      '-c',
+      'user.name=CI test',
+      '-c',
+      'user.email=test@example.invalid',
+      'commit',
+      '-qm',
+      'fixture',
+    )
+    return git('rev-parse', 'HEAD')
+  }
+  const output = join(cwd, 'outputs')
+  const run = (event, ref, base, head) => {
+    writeFileSync(output, '')
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL('./ci-scope.mjs', import.meta.url))],
+      {
+        cwd,
+        env: {
+          ...process.env,
+          EVENT: event,
+          REF: ref,
+          BASE: base,
+          HEAD: head,
+          GITHUB_OUTPUT: output,
+        },
+        encoding: 'utf8',
+      },
+    )
+    return { status: result.status, output: readFileSync(output, 'utf8') }
+  }
+  try {
+    git('init', '-q', '-b', 'main')
+    const start = commit('README.md', 'Original\n')
+    git('switch', '-qc', 'docs')
+    const head = commit('README.md', 'Revised\n')
+    git('switch', '-q', 'main')
+    const base = commit('editor.js', 'export const changed = true\n')
+    assert.deepEqual(run('pull_request', 'refs/pull/1/merge', base, head), {
+      status: 0,
+      output: 'editor=false\nsite=false\n',
+    })
+    assert.deepEqual(run('push', 'refs/heads/main', start, base), {
+      status: 0,
+      output: 'editor=true\nsite=false\n',
+    })
+    assert.deepEqual(run('push', 'refs/tags/v1', start, head), {
+      status: 0,
+      output: 'editor=true\nsite=true\n',
+    })
+    assert.deepEqual(run('workflow_dispatch', 'refs/heads/main', start, head), {
+      status: 0,
+      output: 'editor=true\nsite=true\n',
+    })
+    assert.notEqual(
+      run('pull_request', 'refs/pull/1/merge', 'missing-ref', head).status,
+      0,
+    )
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
 })

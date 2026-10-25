@@ -7,7 +7,8 @@ export function scope(paths) {
     /^(README|AGENTS|CLAUDE)\.md$/.test(path) || /^docs\/.*\.md$/.test(path)
   const site = (path) =>
     path.startsWith('docs/') &&
-    (/\.mdx$/.test(path) || /^docs\/(docs\.json|\.mintignore)$/.test(path))
+    (/\.(mdx|css|svg|png|jpe?g|gif|webp|ico|woff2?|ttf|otf)$/.test(path) ||
+      /^docs\/(docs\.json|\.mintignore)$/.test(path))
   return {
     editor:
       paths.length === 0 || paths.some((path) => !prose(path) && !site(path)),

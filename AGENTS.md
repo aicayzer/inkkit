@@ -47,7 +47,7 @@ pnpm test:built-playground  # opens the built page; needs the build first
 - One unit file: `pnpm exec vitest run test/<name>.test.ts`.
 - Browser tests use Playwright against the playground: `pnpm exec playwright install chromium webkit` once, then `pnpm exec playwright test --project=chromium test/browser/<name>.spec.ts`. For code, dependency and workflow changes, CI runs every browser test, in Chromium on Linux and in WebKit on macOS, and both jobs must pass. Before pushing, run the specs for what you changed, in WebKit too when selection, input, clipboard or layout changes. A test that cannot run in an engine calls `test.skip` with the reason.
 - The native runner in `scripts/interop/` tests the packed candidate in a real `WKWebView`. Run selected groups when focus, input, the bridge, clipboard, print or resource lifecycle changes. Browser WebKit does not prove `WKWebView` behavior. A rejected or empty selection is a failure, not a pass.
-- Documentation-only edits skip editor and browser checks. Mintlify page or configuration changes validate the site. Release runs retain all checks.
+- Documentation-only edits skip editor and browser checks. Mintlify page, asset or configuration changes validate the site. Release runs retain all checks.
 - Choose checks from the changed behavior, not every fixture and configuration; [development](docs/development.md) has the table. Say which checks you did not run. A local pass does not show that hosted CI passed.
 
 ## Conventions
