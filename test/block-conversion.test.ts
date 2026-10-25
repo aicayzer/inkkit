@@ -344,16 +344,50 @@ test('blank, indented and heading lines of code keep their place in the text', a
   }
 })
 
-test('code that cannot be written as the same text is refused, not flattened', () => {
-  // Two spaces before a line end would read back as a hard line break.
-  const markdown = '```\nfirst  \nsecond\n```\n'
-  return open(markdown, ({ editor, view, errors, text }) => {
-    caret(view, 'first')
-    expect(() => editor.format('paragraph')).toThrow(refusal)
-    expect(errors).toEqual([])
-    expect(text()).toBe(markdown)
+for (const ending of ['\n', '\r\n'])
+  test(`code trailing spaces stay text beside a soft break (${JSON.stringify(ending)})`, async () => {
+    const markdown =
+      '__Before__ &amp;\n\n```\nfirst  \nsecond\n```\n\nAfter&#33;\n'.replaceAll(
+        '\n',
+        ending,
+      )
+    const saved =
+      '__Before__ &amp;\n\nfirst &#x20;\nsecond\n\nAfter&#33;\n'.replaceAll(
+        '\n',
+        ending,
+      )
+    await open(markdown, async (session) => {
+      const { editor, view, errors, text } = session
+      caret(view, 'first')
+      editor.format('paragraph')
+      expect(errors).toEqual([])
+      expect(text()).toBe(saved)
+      expectReopens(session)
+      const readable = editor.textSnapshot().text
+      expect(readable).toBe('Before &\nfirst  \nsecond\nAfter!')
+      const copied = await editor.clipboardSnapshot()
+      expect(copied.text).toBe('Before &\n\nfirst  \nsecond\n\nAfter!')
+      expect(copied.markdown).toBe(saved)
+      expect(copied.html).toContain('first  <br data-type="softbreak">second')
+      expect(editor.undo()).toBe(true)
+      expect(editor.snapshot()).toMatchObject({ text: markdown, dirty: false })
+      expect(editor.redo()).toBe(true)
+      expect(text()).toBe(saved)
+      expectReopens(session)
+      editor.loadDocument({
+        documentId: 'reopened',
+        generation: 2,
+        format: 'md',
+        text: saved,
+      })
+      expect(editor.snapshot()).toMatchObject({ text: saved, dirty: false })
+      expect(editor.textSnapshot().text).toBe(readable)
+      const reopened = await editor.clipboardSnapshot()
+      expect(reopened.text).toBe(copied.text)
+      expect(reopened.html).toBe(copied.html)
+      expect(reopened.markdown).toBe(saved)
+    })
   })
-})
 
 test('a code line turns into a heading that keeps its characters', async () => {
   expect(
