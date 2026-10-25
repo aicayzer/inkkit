@@ -513,10 +513,53 @@ const breaksWithoutMarks = $prose(
         const end = oldState.doc.content.findDiffEnd(newState.doc.content)!.b
         const type = hardbreakSchema.type(ctx)
         const tr = newState.tr
+        // A soft line ending exposed by deleting the preceding text cannot
+        // start a Markdown paragraph. Remove it in the same history event.
+        newState.doc.nodesBetween(start, Math.max(start, end), (node, pos) => {
+          if (!node.isTextblock || !node.firstChild) return
+          let count = 0
+          for (let index = 0; index < node.childCount; index++) {
+            const child = node.child(index)
+            if (
+              child.type !== type ||
+              !child.attrs.isInline ||
+              child.attrs.isHTML
+            )
+              break
+            // Newly inserted breaks belong to the edit, not the removed line.
+            let previous = pos + 1 + count
+            for (
+              let transaction = transactions.length - 1;
+              transaction >= 0;
+              transaction--
+            )
+              previous = transactions[transaction]!.mapping.invert().map(
+                previous,
+                1,
+              )
+            const before = oldState.doc.nodeAt(previous)
+            if (
+              before?.type !== type ||
+              !before.attrs.isInline ||
+              before.attrs.isHTML ||
+              oldState.doc.resolve(previous).parentOffset === 0
+            )
+              break
+            count += child.nodeSize
+          }
+          if (count)
+            tr.delete(tr.mapping.map(pos + 1), tr.mapping.map(pos + 1 + count))
+          return false
+        })
         newState.doc.nodesBetween(start, Math.max(start, end), (node, pos) => {
           if (node.type !== type) return
           for (const mark of node.marks)
-            if (mark.type.spec.code) tr.removeMark(pos, pos + 1, mark.type)
+            if (mark.type.spec.code)
+              tr.removeMark(
+                tr.mapping.map(pos),
+                tr.mapping.map(pos + 1),
+                mark.type,
+              )
         })
         return tr.steps.length ? tr : null
       },
