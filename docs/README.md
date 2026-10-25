@@ -1,6 +1,6 @@
-# InkKit documentation
+# Inkkit documentation
 
-These guides describe InkKit’s public contracts. Published versions and their verification evidence are on the [releases](https://github.com/aicayzer/inkkit/releases) page.
+These guides describe Inkkit’s public contracts. Published versions and their verification evidence are on the [releases](https://github.com/aicayzer/inkkit/releases) page.
 
 | Guide                                           | Use it to                                                                                                  |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |

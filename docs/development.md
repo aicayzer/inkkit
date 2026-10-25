@@ -20,7 +20,7 @@ The public API is `src/core.ts`; `src/index.ts` registers Mermaid and re-exports
 
 ## Dependencies
 
-The package bundles its runtime dependencies into `dist`, so a host runs the exact code that InkKit tested. Milkdown, ProseMirror, micromark, the mdast utilities, lowlight and DOMPurify are `devDependencies`, and the build bundles them with their own dependencies. `pnpm build` bundles the versions in `pnpm-lock.yaml`, the same tree that Vitest, the browser suite and the playground run. A host's lockfile cannot resolve a different parser, serializer or ProseMirror version for InkKit.
+The package bundles its runtime dependencies into `dist`, so a host runs the exact code that Inkkit tested. Milkdown, ProseMirror, micromark, the mdast utilities, lowlight and DOMPurify are `devDependencies`, and the build bundles them with their own dependencies. `pnpm build` bundles the versions in `pnpm-lock.yaml`, the same tree that Vitest, the browser suite and the playground run. A host's lockfile cannot resolve a different parser, serializer or ProseMirror version for Inkkit.
 
 Mermaid is the one runtime dependency, pinned exactly. It draws diagram previews and validates diagram source, never changes saved bytes, and would multiply the package size if bundled.
 
@@ -30,7 +30,7 @@ Mermaid is the one runtime dependency, pinned exactly. It draws diagram previews
 
 The pinned `prosemirror-view@1.42.6` patch in `patches/` cancels deferred focus restoration when a key that can edit or move the caret arrives. Otherwise, the focus timer can restore an old caret before the browser delivers `selectionchange`. Before handling a non-modifier key, it also reads the current DOM selection even if no observer timer is pending, then retires the recent-focus safeguard. This keeps a deletion after a find-and-arrow movement at the browser's caret while preserving focus correction during the first arrow. Composition and Android input guards still run before this read. Pure modifier keys retain the normal focus correction; blur and destruction clear the pending timer. Keep the patch's source and both distributed JavaScript entries aligned. `test/focus-input.test.ts` controls that event ordering through the public facade and DOM; native host checks must also exercise real keyboard input. Reassess the patch when updating ProseMirror.
 
-The trade-off: a security fix in a bundled package reaches hosts only through an InkKit release, and a host's dependency audit does not see bundled packages. Dependabot alerts are on for this repository and read `pnpm-lock.yaml`, so they cover the bundled packages. When an alert affects a bundled package, update it in a pull request and release.
+The trade-off: a security fix in a bundled package reaches hosts only through an Inkkit release, and a host's dependency audit does not see bundled packages. Dependabot alerts are on for this repository and read `pnpm-lock.yaml`, so they cover the bundled packages. When an alert affects a bundled package, update it in a pull request and release.
 
 ## Bounded verification
 
@@ -73,7 +73,7 @@ Documentation-only changes to Markdown guides, the README or agent instructions 
 
 ## GitHub workflow
 
-The [InkKit Project](https://github.com/users/aicayzer/projects/3) is the working roadmap. Issues describe outcomes and acceptance criteria; milestones group releases. [GitHub releases](https://github.com/aicayzer/inkkit/releases) record published versions and their verification evidence. Permanent client-app adoption remains separate work. Use feature-first Project views to track implementation, and version milestones to group delivery scope and publication status.
+The [Inkkit Project](https://github.com/users/aicayzer/projects/3) is the working roadmap. Issues describe outcomes and acceptance criteria; milestones group releases. [GitHub releases](https://github.com/aicayzer/inkkit/releases) record published versions and their verification evidence. Permanent client-app adoption remains separate work. Use feature-first Project views to track implementation, and version milestones to group delivery scope and publication status.
 
 - **Roadmap** lists open feature issues, excluding release records, ideas and cancelled work.
 - **Upcoming** groups the scheduled version milestones.

@@ -1,10 +1,10 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "InkKit",
+  "name": "Inkkit",
   "colors": {
-    "primary": "#171717",
-    "light": "#F5F5F5",
+    "primary": "#505050",
+    "light": "#D4D4D4",
     "dark": "#404040"
   },
   "navigation": {
@@ -30,6 +30,9 @@
   "favicon": {
     "light": "/images/brand/mark-light.png",
     "dark": "/images/brand/mark-dark.png"
+  },
+  "icons": {
+    "library": "lucide"
   },
   "appearance": {
     "default": "system"
