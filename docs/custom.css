@@ -1,0 +1,2 @@
+/* Keep the supplied artwork intact; reduce only its size in the site header. */
+.nav-logo { height: 21px; }

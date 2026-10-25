@@ -4,53 +4,42 @@ sidebarTitle: 'Overview'
 description: 'A Markdown editor for web pages and for apps that host a web view.'
 ---
 
-Inkkit is a Markdown editor that you mount in a web page or in an app's web view. People edit formatted text. Your app loads and saves plain Markdown, and anything they didn't edit is saved exactly as it was written.
+Inkkit gives your app a formatted editor for Markdown, with a source view when people need it. Your app supplies the interface and storage; Inkkit keeps the document consistent as people edit.
 
-Inkkit is built on [Milkdown](https://milkdown.dev) and [ProseMirror](https://prosemirror.net) and is published to npm as `@aicayzer/inkkit`.
-
-<Frame>
-  <img
-    className="block dark:hidden"
-    src="/images/editor-light.png"
-    alt="A note in Inkkit with a heading, bold and highlighted text, a link, a task list and a table."
-  />
-  <img
-    className="hidden dark:block"
-    src="/images/editor-dark.png"
-    alt="The same note in Inkkit's dark appearance."
-  />
-</Frame>
+<div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#111111]">
+  <img className="block dark:hidden m-0" src="/images/editor-light.png" alt="Design review notes in Inkkit, with paragraphs, a list, tasks and a table." />
+  <img className="hidden dark:block m-0" src="/images/editor-dark.png" alt="The same design review notes in Inkkit's dark appearance." />
+</div>
 
 ## How it works
 
-Most formatted Markdown editors rebuild the whole file when they save, so list markers, spacing and escaping change in places nobody touched. Inkkit keeps the text it loaded. An unedited document saves byte for byte. An edit rewrites only the blocks it changed, and Inkkit reads the result back before keeping it.
+Inkkit keeps the Markdown it loaded. If you make no edits, saving returns exactly that text. After an edit, it preserves untouched blocks and checks that the result still reads as the document shown in the editor. If that check fails, the edit is refused and the document stays as it was.
 
-A refused edit changes nothing and reports a `preservation` error. See [Preservation](/concepts/preservation) for the exact guarantees.
+<Columns cols={3}>
+  <Card title="Keep the source" icon="file-text">Load Markdown without normalising the whole file.</Card>
+  <Card title="Edit the document" icon="pencil">Work in formatted or source view, with one undo history.</Card>
+  <Card title="Save checked text" icon="check">Your app takes a snapshot and writes it to storage.</Card>
+</Columns>
 
-## What Inkkit does and what your app does
+See [Preservation](/concepts/preservation) for the guarantee and its limits. Inkkit is built on [Milkdown](https://milkdown.dev) and [ProseMirror](https://prosemirror.net).
+
+## Inkkit and your app
 
 <Columns cols={2}>
-  <div>
-    **Inkkit**
-
-    - Formatted and source editing, with one undo history
-    - Tables, task lists, footnotes, callouts, highlights, comments and reference links
-    - Code highlighting and Mermaid diagram previews, offline
-    - Paste from web pages and spreadsheets, kept to Markdown that reads back the same
-    - Copy as readable text and HTML, copy as Markdown, and printable HTML
-    - Failures reported as `InkKitError` codes, with nothing changed
-
-  </div>
-  <div>
-    **Your app**
-
+  <Card title="Inkkit handles the document" icon="file-pen-line">
+    - Formatted and source editing, undo and redo
+    - Tables, lists, links, images and supported Markdown
+    - Code highlighting and offline diagram previews
+    - Paste conversion, copy and printable output
+    - Preservation checks and structured errors
+  </Card>
+  <Card title="Your app makes it a product" icon="app-window">
     - Files, saving, autosave and sync
-    - Storing images and files, through adapters
-    - The toolbar, menus, search field and windows
-    - Writing the system clipboard, printing, and opening links and files
-    - Keyboard shortcuts, localized text and appearance, through options and tokens
-
-  </div>
+    - Image and attachment storage
+    - Toolbars, menus, search and windows
+    - System clipboard, print dialogs and opening links
+    - Shortcuts, language and appearance
+  </Card>
 </Columns>
 
 ## When it helps

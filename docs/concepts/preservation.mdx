@@ -5,6 +5,9 @@ description: 'What Inkkit keeps byte for byte when you save, when it writes a bl
 
 Inkkit saves the Markdown you loaded, not a fresh export of what the editor shows. An unedited document saves byte for byte, and an edit rewrites only the blocks it touches. When Inkkit can't save an edit so that it reopens exactly as shown, it refuses the edit with the `preservation` error code and changes nothing.
 
+<img className="block dark:hidden" src="/images/how-inkkit-works.svg" alt="Inkkit keeps untouched source, writes edited blocks and checks the result before accepting an edit." />
+<img className="hidden dark:block" src="/images/how-inkkit-works-dark.svg" alt="Inkkit's source preservation and read-back check, in dark mode." />
+
 ## What Inkkit keeps
 
 - **An unedited document** comes back from `snapshot()` as the loaded text, byte for byte, including line endings, a byte order mark, trailing spaces and a missing final line ending.
