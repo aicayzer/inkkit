@@ -1,0 +1,167 @@
+---
+title: 'Copy, paste and print'
+description: 'What Inkkit puts on the clipboard, how it imports pasted web pages, spreadsheets and text, which links it keeps, and how to print a document.'
+---
+
+Ordinary copy gives other apps readable text and semantic HTML, never Markdown source. Copy as Markdown is a separate command that your app offers. Paste imports web pages, spreadsheets and plain text as Markdown that reads back as the same content.
+
+## What copy writes
+
+When a person copies or cuts in the editor, Inkkit handles the browser's event and writes two formats:
+
+- **Plain text:** the text a reader sees, with no Markdown syntax or escapes.
+- **HTML:** semantic markup, such as headings, lists, `<strong>`, `<mark>`, tables, links and footnotes.
+
+Both leave out author comments (even when shown), private image display URLs, and the fold state of callouts, whose full body is copied. Reference definitions are left out because the copied links show their addresses; definitions copied on their own are copied as `[label]: address "title"`. A link whose address isn't [kept](#links-that-inkkit-keeps) is copied as its text.
+
+Inkkit's HTML also carries inert metadata that only Inkkit's own paste reads, so reference links, footnotes and callouts survive a copy and paste between Inkkit editors. Other apps ignore it. Comments copied and pasted back into the same loaded editor are kept, as long as the clipboard text and HTML come back unchanged; loading a document, destroying the editor or copying another selection ends that.
+
+In source mode, copy writes the readable text and HTML of the selected Markdown, not the source characters. The source is in `markdown` from `clipboardSnapshot`.
+
+## Copy as Markdown
+
+Markdown source is an explicit operation. To offer **Copy as Markdown**, call `clipboardSnapshot` and write its `markdown` to the clipboard. For the whole document, `markdown` is the exact source. For a selection, it includes the definitions that the copied references and footnotes need.
+
+```ts
+import { InkKitError } from '@aicayzer/inkkit'
+
+declare function writeClipboardText(text: string): Promise<void>
+declare function showMessage(text: string): void
+
+async function copyAsMarkdown(): Promise<void> {
+  try {
+    const output = await editor.clipboardSnapshot('selection')
+    await writeClipboardText(output.markdown)
+  } catch (error) {
+    if (!(error instanceof InkKitError)) throw error
+    showMessage(`Couldn't copy (${error.code}).`)
+  }
+}
+```
+
+Resolve the promise before you touch the native clipboard, and keep the existing clipboard when it rejects. It rejects with `stale-document` if the document, its revision or the editing mode changes before the copy is ready.
+
+## Images and diagrams on a native clipboard
+
+A web view can't put image bytes on the system clipboard by itself. When a copied or cut selection holds an image or a Mermaid diagram, Inkkit calls `events.clipboard` with a `ClipboardOutput` and writes nothing to the clipboard itself. Your handler writes the native clipboard and returns a promise that resolves after the write succeeds.
+
+```ts
+import {
+  InkKitEditor,
+  type ClipboardOutput,
+  type DocumentSnapshot,
+} from '@aicayzer/inkkit'
+
+declare function scheduleSave(snapshot: DocumentSnapshot): void
+declare function writeNativeClipboard(content: ClipboardOutput): Promise<void>
+
+const inkkit = await InkKitEditor.mount(root, {
+  changed: (snapshot) => scheduleSave(snapshot),
+  clipboard: (content) => writeNativeClipboard(content),
+})
+```
+
+- `html` embeds each image as a `data:` URL. `images` lists the portable bytes, which come from your adapter's export, in the order they appear in `html`. A diagram's image has an empty `reference`.
+- `diagrams` holds each complete diagram's source and a PNG. A diagram that can't be exported has an `error` and stays readable code in `html`.
+- An image or diagram whose bytes aren't available has an `error` and appears as text, such as `[Photo: image unavailable]`. Degraded output describes itself and isn't also reported as an error.
+- A cut removes the selection only after the handler resolves. If the handler throws or rejects, or a selected image or diagram can't be copied, the cut removes nothing and `events.error` receives the reason.
+
+Without the handler, copying such a selection writes its readable text, and that text as HTML, and reports `clipboard-unavailable`. A web view with a Content Security Policy must allow local `blob:` image URLs, which diagram export uses. [Embed in a web view](/guides/web-view) shows how to pass the bytes across a bridge.
+
+## How paste is imported
+
+A paste the person makes and a call to `paste` with what your app read from the native clipboard run the same import. In formatted mode, Inkkit picks the first route that fits:
+
+1. **Into a code block:** the text is inserted as is.
+2. **Explicit Markdown:** `markdown`, which only `paste` can supply, is read as Markdown. HTML that comes with it is used only to find its images.
+3. **A spreadsheet:** HTML that is one table, or text that contains a tab, becomes a table. See [Spreadsheets](#spreadsheets).
+4. **HTML:** a web page, notes app or word processor imports as readable content. See [Web pages](#web-pages).
+5. **Images without HTML:** each image goes through your image adapter and becomes its own paragraph.
+6. **Plain text:** read as Markdown. A web address pasted over selected text links that text instead.
+
+In source and TXT modes, paste inserts text literally; source mode uses `markdown` when it's given. `pasteAsPlainText` is the way to insert literal text in formatted mode, for a **Paste as Plain Text** command. When the person pastes code copied from Visual Studio Code, it becomes a code block in its language.
+
+A paragraph at either end of the pasted content joins the text at the caret, so a pasted phrase stays in its sentence. Other blocks, such as headings, lists and code blocks, are inserted whole. After the paste, the caret is after the pasted content.
+
+Images in pasted HTML go through your adapter's `importImage`. An image that can't be imported becomes the text `[Name: image unavailable]`, and `events.error` receives `image-unavailable`. `paste` captures one operation, so don't read the system clipboard again while it runs. An import that the editor can't save is refused with `preservation`; offer plain text instead:
+
+```ts
+import { InkKitError, type ClipboardInput } from '@aicayzer/inkkit'
+
+declare function showMessage(text: string): void
+
+async function pasteFromHost(
+  input: ClipboardInput,
+  generation: number,
+): Promise<void> {
+  try {
+    await editor.paste(input, generation)
+  } catch (error) {
+    if (error instanceof InkKitError && error.code === 'preservation') {
+      showMessage("This content can't be pasted here. Try Paste as Plain Text.")
+      return
+    }
+    throw error
+  }
+}
+```
+
+Dropping HTML from outside the editor imports it the same way as a paste, as whole blocks: in place of an empty paragraph at the drop point, or after the block under the pointer. Moves within the editor and drops of plain text keep the browser's behavior. To place dropped files, call `insertImages` or `insertPaths` with the drop point; see [Images, files and wiki links](/guides/adapters).
+
+## Web pages
+
+Pasted or dropped HTML keeps only what reads back as the same structure. Before inserting it, Inkkit writes the content as Markdown and reads it back as GitHub Flavored Markdown, as strict CommonMark and as CommonMark with raw HTML turned off. A part that would read back differently in any of them, or would hold a link address that Inkkit doesn't keep, is imported in a simpler form: first without Inkkit's metadata, such as a callout or reference label, then without its formatting, keeping its text.
+
+- **Left out:** HTML comments, `style`, `meta`, `title`, `input`, the contents of `template` and `noscript`, and elements hidden with the `hidden` attribute or an inline `display: none`.
+- **Simplified:** `u`, `sub`, `small`, `abbr`, `cite` and similar wrappers keep their text without the wrapper. `figure` keeps its image and caption text. A definition list becomes a bold term and a plain paragraph for each entry. A checkbox at the start of a list item makes a task item.
+- **Whitespace** collapses as in a browser, except in `pre`, `code` and elements whose inline style preserves whitespace, so copied code keeps its indentation. Style sheets aren't read.
+- **Literal source:** custom elements, `script`, `iframe`, `svg`, `math`, `object`, form controls such as `button` and `textarea`, and other unrecognized elements stay literal source when it reads back as written, and otherwise import as a code block with the same text. HTML is never executed.
+- **Images** are never saved by address: your adapter stores the bytes and returns the reference.
+
+When HTML imports as nothing, the plain text that came with it is pasted instead.
+
+## Spreadsheets
+
+Tab-separated text and simple HTML tables paste as table cells, without flattening them:
+
+- Rows can end in LF, CRLF or CR, and fields can use paired double quotes with doubled quotes inside. Short rows are padded with empty cells.
+- Outside a table, the first row becomes the header of a new table. HTML column alignment carries over.
+- Inside a table, the paste fills and grows a rectangle from the selected cell. Header cells stay headers.
+- Tables are limited to 100 rows and 100 columns, including growth.
+- Cell text is literal: Markdown punctuation in it is escaped on save.
+
+Merged cells, block or multi-line cell content and other unsupported content stay outside this route. Pasted into a table, they're refused with `preservation` before any cell changes. Malformed tab-separated text without HTML is refused anywhere.
+
+Text that contains a tab becomes a table even when it isn't from a spreadsheet, such as tab-indented code copied as plain text. Use `pasteAsPlainText` to insert it literally.
+
+## Links that Inkkit keeps
+
+Inkkit keeps and opens links whose address has no scheme, such as `notes/a.md`, `#intro` or `?q=1`, and links whose scheme is `http`, `https`, `mailto` or `tel`, in any letter case. An address with a control character other than leading or trailing whitespace isn't kept.
+
+A link with any other scheme, such as `javascript:`, `data:`, `file:` or an app's own scheme:
+
+- shows without an address in the editor, so Mod-click doesn't open it;
+- is refused by `format('link')` with `invalid-argument`;
+- is copied, imported from HTML and printed as its text.
+
+The Markdown source keeps every address as written. Pasted Markdown and typed text aren't filtered. Letting a host allow more schemes is tracked in [issue #324](https://github.com/aicayzer/inkkit/issues/324).
+
+## Print
+
+`printableSnapshot` returns the whole document as a standalone HTML page for printing. Your app owns the Print and PDF commands, dialogs and files: load `html` into a print view and print it.
+
+- It doesn't depend on the selection, scrolling, folding or comment visibility, and it doesn't change the source, revision or history.
+- It includes footnotes, resolved reference links, tables, images, highlights, Mermaid diagrams as images, and the full body of folded callouts. It leaves out author comments and editor controls, even when comments are shown. TXT prints as literal text.
+- Images are embedded as `data:` URLs from your adapter, and `assets` holds copies of their bytes. `styles` holds the print CSS on its own, which wraps long text and fits images to the page; adapt it to your paper and layout.
+
+Degraded content prints and adds a warning to `warnings`:
+
+| Warning code             | What prints                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| `diagram-unavailable`    | A diagram that can't render, or any diagram without Mermaid, as readable code |
+| `attachment-fallback`    | An audio, video, PDF or other file, as a description                          |
+| `attachment-unavailable` | A missing or failed file, as a description                                    |
+
+The export never returns partial content. It rejects with `image-unavailable` when an authored image has no adapter or its bytes don't decode, with `diagram-unavailable` when a diagram that rendered can't be turned into an image, and with `stale-document` when the document is edited, undone or reloaded during the export. Like `clipboardSnapshot`, it needs `blob:` image URLs.
+
+The [editor reference](/reference/editor#clipboard-and-print) has the exact signatures of `clipboardSnapshot`, `paste`, `pasteAsPlainText` and `printableSnapshot`, and [Errors](/reference/errors) lists every code.

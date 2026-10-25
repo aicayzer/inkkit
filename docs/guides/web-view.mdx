@@ -1,0 +1,295 @@
+---
+title: 'Embed in a web view'
+description: 'Bundle Inkkit into one offline page, load it in WKWebView, and connect native code through a JavaScript shim.'
+---
+
+Native code calls functions that your shim exposes on the page, and the shim posts events back.
+
+## Build a single offline page
+
+Bundle your shim, Inkkit and its stylesheet into one HTML file with no external requests. With Vite, the [`vite-plugin-singlefile`](https://github.com/richardtallent/vite-plugin-singlefile) plugin inlines every script and stylesheet into `index.html`:
+
+```ts
+import { defineConfig } from 'vite'
+import { viteSingleFile } from 'vite-plugin-singlefile'
+
+export default defineConfig({
+  base: './',
+  plugins: [viteSingleFile()],
+  build: { modulePreload: false, cssCodeSplit: false },
+})
+```
+
+Inkkit bundles all of its runtime dependencies except Mermaid. A single-file page inlines Mermaid whenever any module imports `@aicayzer/inkkit`, even if no diagram ever renders. Import from `@aicayzer/inkkit/core` throughout the page unless you need diagram previews. [Compatibility](/compatibility) has the page sizes for each entry.
+
+<Warning>
+Declare UTF-8 in the page, for example with `<meta charset="utf-8">`. The bundle contains non-ASCII text, and WebKit reads an undeclared single-file page as Latin-1, which stops the editor from loading.
+</Warning>
+
+If the page sets a Content Security Policy, it must allow the inline script and style that a single-file build produces, and `blob:` images. Inkkit decodes images and diagrams through `blob:` URLs for clipboard and print output. Without `img-src blob:`, `printableSnapshot()` rejects for documents with images or diagrams. Also allow any custom scheme your adapters use for display URLs.
+
+## Follow the bridge rules
+
+These rules apply to every call that crosses between native code and the page:
+
+- **Pass the generation your native model holds** as the expected generation on every call that takes one. A call meant for a document that has since been replaced then fails with `stale-document` instead of changing the new one. See [Documents and saving](/concepts/documents).
+- **Send JSON `null` for a missing value.** Inkkit treats `null` as omitted for optional parameters and option fields.
+- **Await promises in the shim.** `mount`, `printableSnapshot`, `clipboardSnapshot`, `paste` and `destroy` return promises. Every other member returns its result at once.
+- **Send `code` and `message` to native code, not the error object.** JSON serialization drops an error's `message`, and native code branches on `code`. See [Errors](/reference/errors).
+- **Encode bytes.** A `Uint8Array` has no useful JSON form. Encode image bytes, for example as base64, on both sides. This applies to `CapturedImage`, `PortableImage`, `ClipboardInput.images`, `ClipboardOutput` images and `PrintableDocument.assets`.
+- **Convert coordinates.** Points and rectangles, such as `ClientPoint` and `TextRect`, are CSS pixels in the web view's client area, not device pixels. Convert them in native code.
+- **Wait for the page.** `mount` is asynchronous. Have the shim post a ready message after `mount` resolves, and send no calls before it arrives.
+
+## Write the shim and the native side
+
+The shim mounts the editor, exposes a few functions on `window`, and posts events through `window.webkit.messageHandlers`. Each function returns a reply object, so a failure reaches native code as a `code` and `message` instead of a rejected promise. The native side calls the functions with `callAsyncJavaScript` and receives the messages in a `WKScriptMessageHandler`.
+
+<CodeGroup>
+
+```ts shim.ts
+import {
+  InkKitEditor,
+  InkKitError,
+  type DocumentFormat,
+} from '@aicayzer/inkkit/core'
+import '@aicayzer/inkkit/style.css'
+
+declare global {
+  interface Window {
+    webkit?: {
+      messageHandlers: Record<
+        string,
+        { postMessage(message: unknown): unknown } | undefined
+      >
+    }
+    editorBridge?: Bridge
+  }
+}
+
+type Reply<T> =
+  { ok: true; value: T } | { ok: false; code: string; message: string }
+
+async function reply<T>(work: () => T | Promise<T>): Promise<Reply<T>> {
+  try {
+    return { ok: true, value: await work() }
+  } catch (error) {
+    if (!(error instanceof InkKitError)) throw error
+    return { ok: false, code: error.code, message: error.message }
+  }
+}
+
+function post(message: Record<string, unknown>): void {
+  window.webkit?.messageHandlers.inkkit?.postMessage(message)
+}
+
+const editor = await InkKitEditor.mount(document.getElementById('editor')!, {
+  changed({ documentId, generation, revision, dirty }) {
+    post({ type: 'changed', documentId, generation, revision, dirty })
+  },
+  error({ code, message }) {
+    post({ type: 'error', code, message })
+  },
+  openLink(href) {
+    post({ type: 'openLink', href })
+  },
+})
+
+const bridge = {
+  load: (
+    documentId: string,
+    generation: number,
+    format: DocumentFormat,
+    text: string,
+  ) =>
+    reply(() => editor.loadDocument({ documentId, generation, format, text })),
+  snapshot: (generation: number) => reply(() => editor.snapshot(generation)),
+  setEditable: (editable: boolean) => reply(() => editor.setEditable(editable)),
+  focus: (generation: number) => reply(() => editor.focus(generation)),
+  blur: (generation: number) => reply(() => editor.blur(generation)),
+  destroy: () => reply(() => editor.destroy()),
+}
+type Bridge = typeof bridge
+
+window.editorBridge = bridge
+post({ type: 'ready' })
+```
+
+```swift EditorBridge.swift
+import WebKit
+
+struct EditorFailure: Error {
+    let code: String
+    let message: String
+}
+
+@MainActor
+final class EditorBridge: NSObject, WKScriptMessageHandler {
+    let webView: WKWebView
+    var onReady: (() -> Void)?
+    var onChanged: (() -> Void)?
+    private let contentController = WKUserContentController()
+    private var generation = 0
+
+    override init() {
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = contentController
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        super.init()
+        contentController.add(self, name: "inkkit")
+    }
+
+    func open(page: URL) {
+        webView.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
+    }
+
+    func load(documentId: String, text: String) async throws {
+        generation += 1
+        try await call(
+            "return await window.editorBridge.load(documentId, generation, 'md', text)",
+            ["documentId": documentId, "generation": generation, "text": text])
+    }
+
+    func snapshotText() async throws -> String {
+        let value = try await call(
+            "return await window.editorBridge.snapshot(generation)",
+            ["generation": generation])
+        guard let text = value["text"] as? String else {
+            throw EditorFailure(code: "bridge", message: "The snapshot has no text")
+        }
+        return text
+    }
+
+    func tearDown() async {
+        _ = try? await call("return await window.editorBridge.destroy()")
+        contentController.removeScriptMessageHandler(forName: "inkkit")
+    }
+
+    @discardableResult
+    private func call(_ body: String, _ arguments: [String: Any] = [:]) async throws -> [String: Any] {
+        let result = try await webView.callAsyncJavaScript(
+            body, arguments: arguments, contentWorld: .page)
+        guard let reply = result as? [String: Any] else {
+            throw EditorFailure(code: "bridge", message: "The page sent no reply")
+        }
+        if reply["ok"] as? Bool == true {
+            return reply["value"] as? [String: Any] ?? [:]
+        }
+        throw EditorFailure(
+            code: reply["code"] as? String ?? "",
+            message: reply["message"] as? String ?? "")
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        guard let body = message.body as? [String: Any] else { return }
+        switch body["type"] as? String {
+        case "ready": onReady?()
+        case "changed": onChanged?()
+        default: break
+        }
+    }
+}
+```
+
+</CodeGroup>
+
+The `changed` message carries only the document version. Take the text with `snapshot` at the save boundary. If `snapshotText()` throws, don't save and keep the document open: a failed snapshot is not an unchanged document. [Documents and saving](/concepts/documents) has the full save loop, and `reloadDocument` for files that change on disk.
+
+## Call native code from adapters
+
+An adapter is a set of JavaScript functions, so it lives in the shim. To keep images or files in native storage, have each asynchronous adapter function call native code and return its answer as a promise. Register the handler with `addScriptMessageHandler(_:contentWorld:name:)` and a `WKScriptMessageHandlerWithReply`, so that `postMessage` returns a promise that native code resolves or rejects.
+
+`ImageAdapter.presentation` and `WikiLinkAdapter.resolve` are synchronous. Answer them in the shim without waiting for native code. For images, return a display URL that the shim can build from the reference, such as one in a custom scheme that native code serves through a `WKURLSchemeHandler`:
+
+```ts
+import { InkKitEditor, type ImageAdapter } from '@aicayzer/inkkit/core'
+
+declare global {
+  interface Window {
+    webkit?: {
+      messageHandlers: Record<
+        string,
+        { postMessage(message: unknown): unknown } | undefined
+      >
+    }
+  }
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
+function fromBase64(base64: string): Uint8Array {
+  return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+}
+
+async function native(
+  message: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const handler = window.webkit?.messageHandlers.images
+  if (!handler) throw new Error('The image bridge is unavailable')
+  const answer = await handler.postMessage(message)
+  if (typeof answer !== 'object' || answer === null)
+    throw new Error('The image bridge sent no answer')
+  return answer as Record<string, unknown>
+}
+
+const images: ImageAdapter = {
+  presentation: (reference) => ({
+    url: `app-image:///${encodeURIComponent(reference)}`,
+  }),
+  async importImage(input, context) {
+    const { reference } = await native({
+      action: 'import',
+      bytes: toBase64(input.bytes),
+      mimeType: input.mimeType,
+      filename: input.filename ?? null,
+      documentId: context.documentId,
+      generation: context.generation,
+      operationId: context.operationId,
+    })
+    if (typeof reference !== 'string')
+      throw new Error('The image was not stored')
+    return { reference }
+  },
+  async exportImage(reference, context) {
+    const { bytes, mimeType } = await native({
+      action: 'export',
+      reference,
+      documentId: context.documentId,
+    })
+    if (typeof bytes !== 'string' || typeof mimeType !== 'string')
+      throw new Error(`No stored image for ${reference}`)
+    return { bytes: fromBase64(bytes), mimeType }
+  },
+}
+
+const editor = await InkKitEditor.mount(
+  document.getElementById('editor')!,
+  events,
+  {
+    images,
+  },
+)
+```
+
+Send the `DocumentContext` with each native request, and check it in native code before you act on the answer. [Images, files and wiki links](/guides/adapters) covers what each adapter call must do.
+
+## Pass native text input
+
+Most hosts let the web view receive keys and text as usual. When your native layer receives typed text or a key before the web view does, pass it on:
+
+- `insertText(text, generation)` inserts exactly that text, as typing would. It returns `false`, and inserts nothing, during composition.
+- `keyDown(input, generation)` runs a key press as if it reached the editor. It returns `true` when Inkkit handled the key; then don't also handle it natively.
+
+Both require the generation, so input meant for a replaced document fails instead of landing in the new one. See [Native input](/reference/editor#native-text-input) for the keys Inkkit handles.
+
+## Manage focus and disposal
+
+Loading a document doesn't focus the editor. Call `focus(generation)` when editing should start at once, and `blur(generation)` to take focus off the editor's text surfaces. Don't find Inkkit's elements to blur them.
+
+Before you close the document or tear down the web view, take a fresh snapshot and save it. Then await `destroy()`, and only after it resolves remove the root or release the web view. The content controller keeps a strong reference to its message handlers, so remove them with `removeScriptMessageHandler(forName:)` when you are done, as `tearDown()` does above.

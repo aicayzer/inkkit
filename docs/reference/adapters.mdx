@@ -1,0 +1,309 @@
+---
+title: 'Adapters'
+description: 'The exact contract of ImageAdapter, FileAdapter and WikiLinkAdapter: when Inkkit calls each member, what it passes, and what a result or failure does.'
+---
+
+An adapter is an object of functions that you pass to [`mount`](/reference/editor#mount) as `images`, `files` or `wikiLinks`. Inkkit calls it to show, import, export and open what your app stores. Adapters are fixed at mount. For when you need each one and working examples, see [Images, files and wiki links](/guides/adapters).
+
+## Rules for every adapter
+
+- **References are opaque.** Inkkit passes the reference as authored in the Markdown and writes back the reference you return. It never infers a storage path, fetches from the network or puts a display URL into exported output.
+- **Every call names its document.** Each call receives a [`DocumentContext`](#documentcontext). Before you store bytes, answer, or act on a call that reaches native code, check that `documentId` and `generation` match the document your app has open, and refuse the call when they don't.
+- **Late results are ignored.** When the document is replaced, the mode changes or the editor is destroyed, Inkkit discards results that arrive afterwards, whether or not you honor an abort signal.
+- **Synchronous members must answer at once.** `ImageAdapter.presentation` and `WikiLinkAdapter.resolve` return their result directly. Across a native bridge, build the answer in JavaScript, for example a URL in a custom scheme that native code serves.
+- **Failures become error codes.** An exception or rejection from your adapter reaches `events.error`, or the call that is waiting, as the `InkKitError` code shown for each member, with your error as `cause`. See [Errors](/reference/errors).
+- **Retention is yours.** Keep imported bytes available while an import is pending and after insertion, including before your app saves the document. A cleanup sweep based only on saved Markdown can miss an in-flight import or an unsaved edit.
+
+| Member                      | Timing       | Inkkit calls it                                                                     |
+| --------------------------- | ------------ | ----------------------------------------------------------------------------------- |
+| `ImageAdapter.presentation` | Synchronous  | When an image renders in formatted mode, and `files` isn't set.                     |
+| `ImageAdapter.importImage`  | Asynchronous | When a paste or drop brings image bytes.                                            |
+| `ImageAdapter.exportImage`  | Asynchronous | When clipboard or print output needs an image's bytes.                              |
+| `FileAdapter.resolve`       | Asynchronous | When a path image or `![[name]]` embed renders, and again for clipboard and print.  |
+| `FileAdapter.exportImage`   | Asynchronous | When clipboard or print output needs the bytes of a file that resolved as an image. |
+| `FileAdapter.open`          | Synchronous  | When the person activates a file card's Open button.                                |
+| `FileAdapter.contextMenu`   | Synchronous  | When the person opens the context menu on a file card.                              |
+| `WikiLinkAdapter.suggest`   | Asynchronous | When the text after a typed `[[` changes.                                           |
+| `WikiLinkAdapter.resolve`   | Synchronous  | When a wiki link renders in formatted mode.                                         |
+| `WikiLinkAdapter.open`      | Synchronous  | When the person Mod-clicks a wiki link, or presses Enter or Space on a focused one. |
+
+## ImageAdapter
+
+Shows, imports and exports images. Without `images` and `files`, image Markdown stays literal source. Image import always goes through `ImageAdapter.importImage`, also when `files` is set.
+
+<ResponseField name="presentation" type="(reference: string) => { url: string } | undefined" required>
+
+Returns the display URL for an image's authored reference. Inkkit calls it when the image renders, each time it renders, so keep it cheap. Return `undefined` when the image is unavailable: Inkkit shows the alt text, or the reference when there is none. The URL is used only for display.
+
+When `files` is set, Inkkit shows every image through `FileAdapter.resolve` and doesn't call `presentation`.
+
+</ResponseField>
+
+<ResponseField name="importImage" type="(input: CapturedImage, context: DocumentContext) => Promise<{ reference: string }>" required>
+
+Stores image bytes from a paste or a drop, from the web clipboard or from [`paste`](/reference/editor#paste), and returns the reference that Inkkit writes as the image's Markdown destination. Inkkit makes one call for each distinct image, one at a time. While imports run, `CommandState.pending` is `true` and editing calls throw `operation-pending`.
+
+- **A rejection** inserts a placeholder in place of that image and reports `image-unavailable` through `events.error`. The rest of the paste goes in.
+- **A result for a replaced document** is discarded: nothing from the paste is inserted, and `paste` rejects, or a DOM paste or drop reports, `stale-document`. Loading a document or entering read-only cancels pending imports the same way.
+
+Inkkit doesn't abort the call. A reference you return after the import was canceled is never written, so clean up its bytes if you keep none for it.
+
+</ResponseField>
+
+<ResponseField name="exportImage" type="(reference: string, context: DocumentContext) => Promise<PortableImage>" required>
+
+Returns the bytes and MIME type of a stored image, for [`clipboardSnapshot`](/reference/editor#clipboardsnapshot), a copy or cut that reaches `events.clipboard`, and [`printableSnapshot`](/reference/editor#printablesnapshot). Calls for one output can run concurrently. With `files` set and no `FileAdapter.exportImage`, Inkkit calls this for path images.
+
+`mimeType` must be `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/avif`, `image/bmp` or `image/tiff`.
+
+- **Clipboard output:** a rejection or another type leaves that image's `image` out and sets its `error`; the text and HTML carry a readable placeholder.
+- **Print:** the bytes must also match the declared type and decode. A rejection or bad bytes make `printableSnapshot` reject with `image-unavailable`.
+
+</ResponseField>
+
+## FileAdapter
+
+Resolves path images (`![alt](destination)`) and named embeds (`![[name]]`) into images, audio, video, PDFs and file cards. You decide what kind each file is; Inkkit never guesses from the extension. Resolution never changes the Markdown or the revision.
+
+<ResponseField name="resolve" type="(reference: FileReference, context: FileContext) => Promise<FilePresentation>" required>
+
+Returns how to show a file. Inkkit calls it when a file renders in formatted mode, again when its reference, kind or fragment changes, when the person presses the card's Retry button, and when formatted mode returns. [`clipboardSnapshot`](/reference/editor#clipboardsnapshot) and [`printableSnapshot`](/reference/editor#printablesnapshot) call it afresh.
+
+`context.signal` aborts when the request is obsolete: a newer request for the same view, a reload, source mode, a folded callout, a canceled output or `destroy`. Abandon the work when it aborts.
+
+The result must be a valid [`FilePresentation`](#filepresentation). An unknown `kind`, a missing `url` or `message`, a `javascript:` or `vbscript:` URL, a `mimeType` that doesn't match the kind, or a `data:` URL of another type makes it invalid.
+
+- **On screen,** a rejection or an invalid result shows an error card with a Retry button and reports `file-unavailable` through `events.error`. So does a resolved image, audio, video or PDF that then fails to load.
+- **In clipboard and print output,** a file that doesn't resolve as `image` is written as a readable description. A rejection counts as `error`. Print adds an `attachment-fallback` or `attachment-unavailable` warning.
+
+</ResponseField>
+
+<ResponseField name="exportImage" type="(reference: FileReference, context: FileContext) => Promise<PortableImage>">
+
+Returns portable bytes for a file that resolved as `image`, for clipboard and print output. It follows the same type and byte rules as [`ImageAdapter.exportImage`](#imageadapter). Without it, path images fall back to `ImageAdapter.exportImage` with the whole reference, and named images (`![[name]]`) have no portable bytes: clipboard output sets their `error`, and print rejects with `image-unavailable`.
+
+</ResponseField>
+
+<ResponseField name="open" type="(reference: FileReference, context: DocumentContext) => void">
+
+Setting it adds an Open button, named by the `fileOpen` label, to every file card. Inkkit calls it when the person activates the button, also in a read-only editor. A thrown exception reports `file-unavailable`. Inkkit doesn't await a returned value, so handle the failure of asynchronous native work yourself.
+
+</ResponseField>
+
+<ResponseField name="contextMenu" type="(reference: FileReference, point: ClientPoint, context: DocumentContext) => void">
+
+Called when the person opens the context menu on a file card. `point` is where, in CSS pixels of the web view's client area. When it is set, Inkkit suppresses the browser's own context menu on file cards, so show yours. A thrown exception reports `file-unavailable`.
+
+</ResponseField>
+
+## WikiLinkAdapter
+
+Resolves, opens and suggests `[[wiki links]]`. Without it, wiki links stay literal source and typed brackets stay text. Inkkit keeps no note index or backlinks; lookup, permissions and navigation are yours.
+
+<ResponseField name="suggest" type="(query: string, context: FileContext) => Promise<readonly string[]>">
+
+Offers note names after the person types `[[`, in the suggestion list. `query` is the text after the brackets, without them, and can be empty. Inkkit calls it each time the query changes, and aborts `context.signal` for the previous request when a newer query arrives or the list closes. Return names in display order; each becomes one row.
+
+Every name must be nonblank and a valid wiki-link target: no control characters, and no block reference starting with `^`. A rejection, a result that isn't an array, or any invalid name closes the list and reports `file-unavailable` through `events.error`. Choosing a name inserts `[[name]]`, escaping `\`, `[`, `]`, `|` and `#`.
+
+Suggestions don't open in a read-only editor, source or TXT mode, code, front matter, comments, literal Markdown blocks or during composition, or after `![[`.
+
+</ResponseField>
+
+<ResponseField name="resolve" type="(reference: WikiLinkReference, context: DocumentContext) => { missing?: boolean } | undefined">
+
+Tells Inkkit whether a link's target is missing, for presentation only. Inkkit calls it each time the link renders. `{ missing: true }` styles the link as missing and gives it the `wikiMissing` tooltip; `undefined` or `{}` shows it as present. It supplies no URL. A thrown exception reports `file-unavailable`.
+
+</ResponseField>
+
+<ResponseField name="open" type="(reference: WikiLinkReference, context: DocumentContext) => void" required>
+
+Called when the person clicks a wiki link with Mod held, or presses Enter or Space with the link focused, in formatted mode, also in a read-only editor. A thrown exception reports `file-unavailable`. Inkkit doesn't await a returned value.
+
+</ResponseField>
+
+## Types
+
+### DocumentContext
+
+A `DocumentContext` is what every adapter call receives.
+
+<ResponseField name="documentId" type="string">
+
+The `documentId` of the load that the call belongs to.
+
+</ResponseField>
+
+<ResponseField name="generation" type="number">
+
+The `generation` of that load.
+
+</ResponseField>
+
+<ResponseField name="operationId" type="string">
+
+An opaque name that differs for every adapter call from one editor. Use it to match a native callback to its call.
+
+</ResponseField>
+
+### FileContext
+
+A `FileContext` is a `DocumentContext` with one more field.
+
+<ResponseField name="signal" type="AbortSignal">
+
+Aborts when Inkkit no longer needs the result. Inkkit ignores a result that arrives after it aborts.
+
+</ResponseField>
+
+### CapturedImage
+
+A `CapturedImage` holds image bytes from a paste or drop, for `ImageAdapter.importImage`.
+
+<ResponseField name="bytes" type="Uint8Array" required>
+
+The image bytes.
+
+</ResponseField>
+
+<ResponseField name="mimeType" type="string" required>
+
+The type the clipboard or file reported.
+
+</ResponseField>
+
+<ResponseField name="filename" type="string">
+
+The file name, when there is one. It becomes the alt text of an image pasted as a file.
+
+</ResponseField>
+
+<ResponseField name="source" type="string">
+
+The `src` of the HTML image that the bytes belong to, when there is one.
+
+</ResponseField>
+
+### PortableImage
+
+A `PortableImage` holds image bytes that leave the editor, returned by both `exportImage` members.
+
+<ResponseField name="bytes" type="Uint8Array" required>
+
+The image bytes.
+
+</ResponseField>
+
+<ResponseField name="mimeType" type="string" required>
+
+One of the types listed under [`ImageAdapter.exportImage`](#imageadapter).
+
+</ResponseField>
+
+<ResponseField name="filename" type="string">
+
+A file name for the image.
+
+</ResponseField>
+
+### FileReference
+
+A `FileReference` describes a file as authored. Find the file by `target`.
+
+<ResponseField name="kind" type="'path' | 'wiki'">
+
+`path` for `![alt](destination)`, `wiki` for `![[name]]`.
+
+</ResponseField>
+
+<ResponseField name="reference" type="string">
+
+The whole reference, including any fragment. For `path`, the Markdown destination. For `wiki`, `target#fragment`, or `target` without a fragment.
+
+</ResponseField>
+
+<ResponseField name="target" type="string">
+
+The reference without its fragment.
+
+</ResponseField>
+
+<ResponseField name="fragment" type="string">
+
+Everything after the separating `#`, such as `t=10` or `page=3`. Absent when there is none, and then `target` equals `reference`. Mapping it to a media time or PDF page is yours.
+
+</ResponseField>
+
+<ResponseField name="label" type="string">
+
+The alt text of a path image without its width, or `target#fragment` for a named file.
+
+</ResponseField>
+
+<ResponseField name="width" type="number">
+
+The authored width in pixels, from `|400` in the alt text or the name.
+
+</ResponseField>
+
+| Markdown                           | `kind` | `reference`             | `target`         | `fragment`    |
+| ---------------------------------- | ------ | ----------------------- | ---------------- | ------------- |
+| `![](a/b.mp4#t=10)`                | `path` | `a/b.mp4#t=10`          | `a/b.mp4`        | `t=10`        |
+| `![](a.pdf?x=1#page=2#more)`       | `path` | `a.pdf?x=1#page=2#more` | `a.pdf?x=1`      | `page=2#more` |
+| `![](My%23Notes.pdf)`              | `path` | `My%23Notes.pdf`        | `My%23Notes.pdf` | absent        |
+| `![[My file.pdf#page=3]]`          | `wiki` | `My file.pdf#page=3`    | `My file.pdf`    | `page=3`      |
+| `![[ My file.pdf # page=3 \|200]]` | `wiki` | `My file.pdf#page=3`    | `My file.pdf`    | `page=3`      |
+| `![[My\#Notes.pdf#page=2]]`        | `wiki` | `My#Notes.pdf#page=2`   | `My#Notes.pdf`   | `page=2`      |
+
+In a path, the fragment starts at the first `#`, so write a `#` that belongs to a file name as `%23`. Inkkit doesn't decode it. In a named file, `\#` keeps a `#` in the name and `target` holds the name without the escape, so don't split `reference` at its first `#` yourself. Inkkit gives `?` no meaning. Named targets and fragments are trimmed.
+
+### FilePresentation
+
+A `FilePresentation` is what `FileAdapter.resolve` returns: one of these shapes, chosen by `kind`. Every shape takes an optional `label`, the name the card shows.
+
+| `kind`                           | Other fields                       | The card shows                                                                                                   |
+| -------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `image`, `audio`, `video`, `pdf` | `url: string`, `mimeType?: string` | The resource at `url`. Audio and video use native controls and never autoplay. A PDF shows in a sandboxed frame. |
+| `file`                           | None                               | A card with no preview.                                                                                          |
+| `missing`                        | None                               | A card with the `fileMissing` label.                                                                             |
+| `error`                          | `message: string`                  | A card whose status is `message`, a short reason for the person. An empty `message` shows the `fileError` label. |
+
+The `url` is for display only and must serve the declared kind offline in your page. Its lifetime, access checks and byte validation are yours. A `mimeType`, when given, must match the kind: `image/*`, `audio/*`, `video/*` or `application/pdf`.
+
+### WikiLinkReference
+
+A `WikiLinkReference` describes a wiki link as authored.
+
+<ResponseField name="target" type="string">
+
+The note name, with escapes removed. Empty for a link to a heading in the same note, such as `[[#Heading]]`.
+
+</ResponseField>
+
+<ResponseField name="fragment" type="string">
+
+The part after `#`, when there is one.
+
+</ResponseField>
+
+<ResponseField name="label" type="string">
+
+The text shown: the alias, or the target and fragment.
+
+</ResponseField>
+
+### ClientPoint
+
+A `ClientPoint` is a position in CSS pixels in the web view's client area, the same coordinates as DOM pointer events. Not device pixels, and not relative to the editor root.
+
+<ResponseField name="clientX" type="number">
+
+The horizontal position.
+
+</ResponseField>
+
+<ResponseField name="clientY" type="number">
+
+The vertical position.
+
+</ResponseField>

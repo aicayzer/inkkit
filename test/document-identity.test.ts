@@ -540,11 +540,11 @@ test('snapshot and heading IDs change with every load, edit and mode change', ()
     expect(ids()).toEqual(seen.at(-1))
   }))
 
-test('the API reference has a row for every event and no other', () => {
-  const api = readFileSync('docs/api.md', 'utf8')
+test('the API reference has a field for every event and no other', () => {
+  const api = readFileSync('docs/reference/options.mdx', 'utf8')
   const section = api.slice(api.indexOf('\n## Events\n'))
-  const table = section.slice(0, section.indexOf('\n## ', 1))
-  const documented = [...table.matchAll(/^\| `([a-zA-Z]+)` +\|/gm)].map(
+  const fields = section.slice(0, section.indexOf('\n## ', 1))
+  const documented = [...fields.matchAll(/^<ResponseField name="(\w+)"/gm)].map(
     (match) => match[1],
   )
   expect(documented).toEqual([...editorEvents])

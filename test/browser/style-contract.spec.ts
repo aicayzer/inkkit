@@ -317,7 +317,7 @@ test('source mode and the formatted surface share one writing column, which a ho
       #editors { display: block; }
       #editor, #column-header { box-sizing: border-box; width: 100%; border: 0; }
       body { --inkkit-reading-width: 30rem; --inkkit-padding-inline: 20px; }
-      /* The formula docs/api.md gives as the default of --inkkit-column-inset. */
+      /* The formula docs/reference/appearance.mdx gives as the default of --inkkit-column-inset. */
       #column-header {
         padding-inline: max(
           var(--inkkit-padding-inline),

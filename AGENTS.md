@@ -6,12 +6,12 @@ Inkkit is an MIT TypeScript Markdown editor for the web and for apps that host a
 
 Inkkit owns what happens to the document inside the editor root:
 
-- Markdown parsing, the supported dialect and source preservation ([preservation](docs/preservation.md), [supported syntax](docs/supported-syntax.md)).
+- Markdown parsing, the supported dialect and source preservation ([preservation](docs/concepts/preservation.mdx), [Markdown support](docs/concepts/markdown.mdx)).
 - Editing behavior in formatted, source and TXT modes: formatting, tables, footnotes, references, callouts, comments, image placement, find and replace, undo history, and the composition, generation and read-only guards.
 - Paste and drop import and its safety: web HTML, spreadsheets, plain text and link schemes.
 - What it draws: code highlighting, Mermaid validation and previews, file and media cards, and their labels, focus and keyboard access.
 - Portable output: clipboard text, HTML and Markdown, and printable HTML with embedded assets.
-- The public facade in `src/core.ts`: exports, events, adapter interfaces, `InkKitError` codes, labels and `--inkkit-*` tokens, each documented in [the API reference](docs/api.md).
+- The public facade in `src/core.ts`: exports, events, adapter interfaces, `InkKitError` codes, labels and `--inkkit-*` tokens, each documented in [the API reference](docs/reference/).
 
 The host owns everything outside the editor root, and anything that needs storage, the platform or a product decision:
 
@@ -53,10 +53,9 @@ pnpm test:built-playground  # opens the built page; needs the build first
 ## Conventions
 
 - Public-facing prose uses **Inkkit**. Keep package names and API identifiers such as `InkKitEditor` and `InkKitError` unchanged. Use the [brand assets and palette](docs/images/brand/README.md); retain Mintlify’s native component styling.
-
+- `docs/` is the Mintlify site, configured by `docs/docs.json`; preview it with `mint dev` in `docs/`. Maintainer guides live in `docs/maintainers/`, which `docs/.mintignore` keeps off the site. Give each fact one page and link to it from others.
 - A behavior change needs a regression test that fails without it, through the public facade, including failure and untidy input: CRLF, unusual list markers, Unicode, composition, stale generations.
-- During the Mintlify migration, maintain essential factual corrections in the existing guides. Replace each guide once; do not keep a second hand-maintained copy for the website. Development and release procedures remain repository documentation.
-- A public API change updates `docs/api.md`, and any of `integration.md`, `supported-syntax.md` and `preservation.md` that describe it, in the same pull request.
+- A public API change updates `docs/reference/`, and any concept or guide page that describes it, in the same pull request. `pnpm test:docs` fails when the reference leaves out an export, member, option, event or label.
 - A performance claim cites a measurement: command, machine, document and before and after medians. Record lasting results in `docs/maintainers/performance.md`.
 - Comments explain reasons or constraints the code cannot show.
 - Use feature branches and scoped Conventional Commits, and preserve unrelated changes. `main` takes squash-merged pull requests with passing CI and resolved conversations.
@@ -88,7 +87,7 @@ Report problems that a host or a person would meet: changed source, unsafe impor
 ### Boundary and public API
 
 - Flag host knowledge in `src/`: app names, Marfa, storage paths, network access, `window.webkit`, or a private display URL in exported output. Flag an import of the `mermaid` package reachable from `src/core.ts`.
-- Flag a change to the exports, options, adapter types, events, error codes, labels or tokens without the matching `docs/api.md` change, and a removal or rename without migration notes for current hosts.
+- Flag a change to the exports, options, adapter types, events, error codes, labels or tokens without the matching change in `docs/reference/`, and a removal or rename without migration notes for current hosts.
 - Flag a new failure reported to the host as a plain `Error` instead of an `InkKitError` code.
 
 ### Evidence

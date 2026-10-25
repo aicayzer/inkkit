@@ -1,0 +1,439 @@
+---
+title: 'Options and events'
+description: 'Every mount option and event handler, the command state that drives toolbars, format and table commands, text input preferences and the slash menu.'
+---
+
+You pass `EditorEvents` as the second argument and `EditorOptions` as the third argument to [`mount`](/reference/editor#mount). `mount` checks both: an unknown key, or a value of the wrong type, makes it reject with `invalid-argument`. A `null` value counts as omitted.
+
+```ts
+import { InkKitEditor, type EditorOptions } from '@aicayzer/inkkit'
+
+const options: EditorOptions = {
+  textInput: { spellcheck: true, smartPunctuation: true },
+  keymap: { bold: ['Mod-b'], italic: ['Mod-i'] },
+  slashMenu: { enabled: true },
+}
+
+const editor = await InkKitEditor.mount(root, events, options)
+```
+
+## Editor options
+
+Three options can change after mount, through a method. The rest are fixed at mount; to change one, destroy the editor and mount a new one.
+
+| Option                                                             | After mount                                                                                                  |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `editable`                                                         | [`setEditable`](/reference/editor#editable-and-seteditable)                                                  |
+| `textInput`                                                        | [`setTextInputPreferences`](/reference/editor#settextinputpreferences)                                       |
+| `keymap`                                                           | [`setKeymap`](/reference/editor#setkeymap)                                                                   |
+| `images`, `files`, `wikiLinks`, `labels`, `rendering`, `slashMenu` | Fixed. Whether `events.copy` is set is fixed too, because it decides whether code blocks draw a Copy button. |
+
+<ResponseField name="images" type="ImageAdapter">
+
+Shows, imports and exports the images your app stores. See [`ImageAdapter`](/reference/adapters#imageadapter). Without `images` and `files`, image Markdown stays literal source, and pasted or dropped images can't be imported.
+
+</ResponseField>
+
+<ResponseField name="files" type="FileAdapter">
+
+Resolves path images and `![[name]]` embeds into images, audio, video, PDFs and file cards. See [`FileAdapter`](/reference/adapters#fileadapter). With `files` set, every path image is shown through `FileAdapter.resolve`, not `ImageAdapter.presentation`.
+
+</ResponseField>
+
+<ResponseField name="wikiLinks" type="WikiLinkAdapter">
+
+Resolves, opens and suggests `[[wiki links]]`. See [`WikiLinkAdapter`](/reference/adapters#wikilinkadapter). Without it, wiki links stay literal source and typed brackets stay text.
+
+</ResponseField>
+
+<ResponseField name="editable" type="boolean" default="true">
+
+Whether the person can edit. `false` permits selection, copying, find, navigation, folding and mode switches, and makes every method that changes the document throw `read-only`. See [`setEditable`](/reference/editor#editable-and-seteditable).
+
+</ResponseField>
+
+<ResponseField name="textInput" type="TextInputPreferences" default="{}">
+
+A `TextInputPreferences` object: input hints for both editing surfaces, and smart punctuation. Every field is optional. `setTextInputPreferences` replaces the whole set, so a field you leave out returns to its default.
+
+<Expandable title="TextInputPreferences">
+
+<ResponseField name="spellcheck" type="boolean">
+
+Sets the `spellcheck` attribute. Omitted, the attribute is removed and the browser decides.
+
+</ResponseField>
+
+<ResponseField name="autocorrect" type="boolean">
+
+Sets the `autocorrect` attribute to `on` or `off`. Omitted, the attribute is removed.
+
+</ResponseField>
+
+<ResponseField name="autocapitalize" type="'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters'">
+
+Sets the `autocapitalize` attribute. Omitted, the attribute is removed.
+
+</ResponseField>
+
+<ResponseField name="smartPunctuation" type="boolean" default="false">
+
+Turns typed quotes and dashes into curly quotes and dashes in formatted mode. See [Smart punctuation](#smart-punctuation).
+
+</ResponseField>
+
+</Expandable>
+
+The three attributes are hints: the browser and the operating system decide whether they take effect.
+
+</ResponseField>
+
+<ResponseField name="labels" type="Partial<EditorLabels>" default="English defaults">
+
+A `Partial<EditorLabels>` that replaces built-in text and accessible names, key by key. Omitted keys keep their defaults. A value that isn't a string makes `mount` reject with `invalid-argument`. Inkkit inserts every label as text, never as markup. See [Labels](/reference/appearance#labels) for every key and its default.
+
+</ResponseField>
+
+<ResponseField name="keymap" type="Keymap" default="History, block moves and table exit">
+
+Shortcut bindings, by `ShortcutName`, in ProseMirror key notation. Formatting has no default bindings. See [Shortcuts](/reference/appearance#shortcuts) for every name, its default keys and how `setKeymap` replaces the map.
+
+</ResponseField>
+
+<ResponseField name="rendering" type="object" default="Both true">
+
+Turns presentation plugins off. Code and diagram source stay editable and keep their authored spelling either way.
+
+<Expandable title="rendering">
+
+<ResponseField name="codeHighlighting" type="boolean" default="true">
+
+Syntax highlighting in code blocks. Highlighting leaves a block longer than 5,000 characters plain, and once highlighting in one load or edit has taken 200 ms, the blocks it hasn't reached stay plain until they're edited.
+
+</ResponseField>
+
+<ResponseField name="diagramPreview" type="boolean" default="true">
+
+Mermaid previews below `mermaid` fences. `false` also removes the `diagram` slash command. Clipboard and print output still render diagrams on demand. With the `@aicayzer/inkkit/core` entry there is no renderer, so no preview is shown whatever this says.
+
+</ResponseField>
+
+</Expandable>
+
+</ResponseField>
+
+<ResponseField name="slashMenu" type="SlashMenuOptions" default="{ enabled: false }">
+
+A `SlashMenuOptions` object. It offers block commands when the person types `/` on an empty line. See [Slash menu](#slash-menu).
+
+<Expandable title="SlashMenuOptions">
+
+<ResponseField name="enabled" type="boolean" default="false">
+
+Turns the menu on.
+
+</ResponseField>
+
+<ResponseField name="commands" type="readonly SlashCommandName[]" default="All built-in commands">
+
+Which built-in commands appear. They always appear in the fixed order of the [built-in commands](#built-in-slash-commands) table, whatever order you list them in. An empty array hides every built-in command.
+
+</ResponseField>
+
+<ResponseField name="customCommands" type="readonly SlashCommand[]" default="None">
+
+Your own commands, shown after the built-in ones in the order you give. See [`SlashCommand`](#slashcommand).
+
+</ResponseField>
+
+</Expandable>
+
+</ResponseField>
+
+## Events
+
+Only `changed` is required. A handler that isn't a function, or a name that isn't listed here, makes `mount` reject with `invalid-argument`.
+
+During a method call, `changed` and `commandStateChanged` arrive before the call returns, and are dropped if it fails. An exception thrown by your handler stays yours: Inkkit passes it to the platform's `reportError()` and carries on. The exception is `clipboard`, whose failure is `clipboard-unavailable`.
+
+<ResponseField name="changed" type="(snapshot: DocumentSnapshot) => void" required>
+
+The document's text changed: an edit, undo, redo, paste, source replacement or typing in source mode. It doesn't fire for a load, a reload or a refused edit. A change that leaves the saved text as it was advances the revision without firing `changed`.
+
+It receives a `DocumentSnapshot` of the new text: `documentId`, `generation`, `revision`, `format`, `text` and `dirty`. Its `revision` is the revision of this change, the same one that output taken in the handler carries. Use it to schedule a save, and take a fresh [`snapshot`](/reference/editor#snapshot) when you write the file. See [Documents and saving](/concepts/documents).
+
+</ResponseField>
+
+<ResponseField name="commandStateChanged" type="(state: CommandState) => void">
+
+What the editor can do, or the caret, changed: the selection, the document, history, the editing mode, editability, input preferences, composition or a pending image import. It also fires once after each load or reload, without the intermediate states. It receives the current [`CommandState`](#command-state). This is the only event that reports the caret.
+
+</ResponseField>
+
+<ResponseField name="openLink" type="(href: string) => void">
+
+The person clicked a rendered Markdown link with Mod held (Command on Apple platforms, Control elsewhere) in formatted mode, whether or not the editor is editable. It receives the destination as authored; a relative address or fragment isn't resolved against the page. It doesn't fire for an empty address or for a scheme that Inkkit doesn't open; see [links](/concepts/clipboard). Without this handler, Markdown links don't open. Wiki links go to `WikiLinkAdapter.open` instead.
+
+</ResponseField>
+
+<ResponseField name="copy" type="(text: string) => void">
+
+The person clicked the Copy button on a code block. It receives the code block's text; your app writes the clipboard. Without this handler, Inkkit draws no Copy button. Whether it is set is fixed at mount.
+
+</ResponseField>
+
+<ResponseField name="error" type="(error: InkKitError) => void">
+
+A failure that no call is waiting for, such as an edit the person made that the preservation check refused, or a file that couldn't be resolved. It always receives an `InkKitError`. See [Errors](/reference/errors) for the sources and codes.
+
+</ResponseField>
+
+<ResponseField name="clipboard" type="(content: ClipboardOutput) => void | Promise<void>">
+
+The person copied or cut a selection that holds an image or a diagram. It receives a `ClipboardOutput` of the selection, with the version the copy started from. Write it to the native clipboard and resolve after the write succeeds: a cut removes the selection only then. With this handler, Inkkit writes nothing to the web clipboard for that copy.
+
+If the handler throws or rejects, Inkkit reports `clipboard-unavailable` and a cut removes nothing. Without the handler, such a copy puts readable text and HTML on the clipboard and reports `clipboard-unavailable`. See [Copy, paste and print](/concepts/clipboard).
+
+</ResponseField>
+
+## Command state
+
+[`commandState`](/reference/editor#commandstate) returns a `CommandState`, and `commandStateChanged` sends one. It describes the moment you ask; it doesn't promise that a later call succeeds, so handle the result and errors when the person acts. Reading it never dirties the document.
+
+<ResponseField name="documentId, generation, revision" type="DocumentVersion">
+
+The document this state describes.
+
+</ResponseField>
+
+<ResponseField name="format" type="'md' | 'txt'">
+
+The document format.
+
+</ResponseField>
+
+<ResponseField name="mode" type="EditingMode">
+
+An `EditingMode`: `'formatted'` or `'source'`. A TXT document is always `'source'`.
+
+</ResponseField>
+
+<ResponseField name="editable" type="boolean">
+
+The editing policy.
+
+</ResponseField>
+
+<ResponseField name="composing" type="boolean">
+
+Text composition (IME) is in progress.
+
+</ResponseField>
+
+<ResponseField name="pending" type="boolean">
+
+An image import is running.
+
+</ResponseField>
+
+<ResponseField name="caret" type="CaretState">
+
+A `CaretState`: the formatting at the selection. In source and TXT modes it is always `{ marks: [], block: { type: 'paragraph' }, quoted: false }`.
+
+<Expandable title="CaretState">
+
+<ResponseField name="marks" type="Mark[]">
+
+An array of `Mark` values, each one of `bold`, `italic`, `strikethrough`, `highlight`, `code` or `link`. At a caret, the marks the next typed text takes, including ones you toggled. For a range, every mark found anywhere in it.
+
+</ResponseField>
+
+<ResponseField name="block" type="Block">
+
+A `Block`: the innermost heading, code block or list item that holds the start of the selection. It is `{ type: 'heading', level }` with `level` from 1 to 6, `{ type: 'codeBlock' }`, `{ type: 'bulletList' }`, `{ type: 'orderedList' }` or `{ type: 'taskList' }`. Anything else, such as a paragraph, a table cell or a callout outside a list, is `{ type: 'paragraph' }`.
+
+</ResponseField>
+
+<ResponseField name="quoted" type="boolean">
+
+One block quote holds the whole selection; `block` is what sits inside it. Callouts don't count.
+
+</ResponseField>
+
+</Expandable>
+
+</ResponseField>
+
+<ResponseField name="table" type="object | undefined">
+
+Present only when the selection is in a table in formatted mode.
+
+<Expandable title="table">
+
+<ResponseField name="row, column" type="number">
+
+The zero-based position of the selected cell, or of the top-left cell of a cell selection. Row 0 is the header row.
+
+</ResponseField>
+
+<ResponseField name="rows, columns" type="number">
+
+The size of the whole table. `rows` includes the header row.
+
+</ResponseField>
+
+</Expandable>
+
+</ResponseField>
+
+<ResponseField name="commands" type="object">
+
+What each command can do now. Every entry is `false` while the editor is read-only, composing or has an image import pending.
+
+</ResponseField>
+
+| Entry                                                            | `true` when                                                                                                                                     |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `undo`, `redo`                                                   | There is a step to undo or redo, including steps taken in source mode.                                                                          |
+| `insertText`, `paste`, `replace`, `replaceSource`, `insertPaths` | The editor can change, in any mode. `paste` also covers `pasteAsPlainText`, and `replace` also covers `replaceAll`.                             |
+| `insertImages`                                                   | The editor can change, the mode is formatted, and `images` or `files` is set.                                                                   |
+| `insertFootnote`                                                 | The editor can change and the mode is formatted.                                                                                                |
+| `editReferenceDefinition`                                        | The editor can change, the mode is formatted, and the document has at least one reference definition.                                           |
+| `format`                                                         | A `Record<FormatCommand, boolean>`: each [format command](#format-commands) that applies to the selection. All `false` in source and TXT modes. |
+| `table`                                                          | A `Record<TableCommand, boolean>`: each [table command](#table-commands) that applies to the selection. All `false` in source and TXT modes.    |
+| `moveBlockUp`, `moveBlockDown`                                   | [`moveBlock`](/reference/editor#moveblock) would move the blocks at the selection. `false` in source and TXT modes and in a table.              |
+
+## Format commands
+
+[`format`](/reference/editor#format) takes a `FormatCommand` and optional `FormatOptions`. It works in formatted mode only.
+
+| `FormatCommand`                                        | Effect                                                                                                                                                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `heading1` to `heading6`                               | Makes the block a heading of that level. Applying the block's current level makes it a paragraph again.                                                            |
+| `paragraph`                                            | Makes the block a paragraph.                                                                                                                                       |
+| `bold`, `italic`, `strikethrough`, `highlight`, `code` | Toggles the mark on the selection. At a caret, it applies to the text typed next until toggled off or the caret moves. `code` inside a code span removes the span. |
+| `codeBlock`                                            | Makes the block a code block, with `options.language` as its info string, or makes a code block a paragraph again.                                                 |
+| `quote`                                                | Quotes the selected blocks, or the whole list when the selection is in a list item, or removes the quote that holds them.                                          |
+| `bulletList`, `orderedList`                            | Makes the blocks a list of that kind, converts a list of the other kind, or lifts the items out of a list of the same kind.                                        |
+| `taskList`                                             | Makes the selected list items tasks, making the blocks a bullet list first when they aren't in one, or makes them ordinary items when they're all tasks.           |
+| `link`                                                 | With `options.destination`, links the selection or sets the destination of the link at the caret. Without it, removes the link and keeps its text.                 |
+
+`FormatOptions` has two optional fields. Any other field, a field with another command, or an unknown command throws `invalid-argument`.
+
+<ResponseField name="destination" type="string">
+
+Only with `link`. It must be a relative address, a fragment, a query, or an `http`, `https`, `mailto` or `tel` address, with no control characters, and Markdown must be able to write it so that it reads back the same. Otherwise `format` throws `invalid-argument`. In a reference link, the shared definition changes, so every link that uses it changes.
+
+</ResponseField>
+
+<ResponseField name="language" type="string">
+
+Only with `codeBlock`. The info string of the new code block.
+
+</ResponseField>
+
+## Table commands
+
+[`table`](/reference/editor#table) takes a `TableCommand` and optional `TableOptions`. It works in formatted mode only. Every command except `insert` works on the table that holds the selection. Movement and sorting work only in a regular table of at most 100 rows and 100 columns.
+
+| `TableCommand`                                                     | Effect                                                                                                                        | `commands.table` entry is `true` when                                 |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `insert`                                                           | Inserts an empty table at the selection. A caret mid-paragraph splits the paragraph around it.                                | A table can be inserted at the selection.                             |
+| `addRowBefore`, `addRowAfter`, `addColumnBefore`, `addColumnAfter` | Adds an empty row or column next to the one that holds the selection.                                                         | The selection is in a table.                                          |
+| `deleteRow`, `deleteColumn`, `deleteTable`                         | Removes the selected rows or columns, or the whole table, with any hidden author comments in them.                            | The selection is in a table.                                          |
+| `alignLeft`, `alignCenter`, `alignRight`                           | Aligns the whole column of the selected cell.                                                                                 | The selection is in a table.                                          |
+| `moveRowUp`, `moveRowDown`                                         | Moves the selected rows one place. The header row stays first.                                                                | The selected rows are body rows with a body row on that side.         |
+| `moveColumnLeft`, `moveColumnRight`                                | Moves the selected columns one place, with their header cells and alignment.                                                  | There is a column on that side.                                       |
+| `sortRows`                                                         | Sorts the body rows. The header and the column alignments stay fixed. Equal keys keep their order, and empty cells come last. | An ascending text sort on the selected column would reorder the rows. |
+| `exit`                                                             | Adds an empty paragraph after the table and puts the caret in it.                                                             | The selection is in a table.                                          |
+
+Each `TableOptions` field belongs to one command. A field with another command, an unknown field, or a value outside its range throws `invalid-argument`.
+
+| Field        | Command    | Type                            | Default                     | Meaning                                                                                                                                                                                                                  |
+| ------------ | ---------- | ------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rows`       | `insert`   | integer                         | `3`                         | 1 to 100, counting the header row.                                                                                                                                                                                       |
+| `columns`    | `insert`   | integer                         | `2`                         | 1 to 100.                                                                                                                                                                                                                |
+| `column`     | `sortRows` | integer                         | The column of the selection | Zero-based. A column that isn't in the table throws `invalid-argument`.                                                                                                                                                  |
+| `order`      | `sortRows` | `'ascending'` or `'descending'` | `'ascending'`               | The sort direction.                                                                                                                                                                                                      |
+| `comparison` | `sortRows` | `'text'` or `'number'`          | `'text'`                    | `text` compares the readable text of each cell by UTF-16 code unit, case-sensitive. `number` compares finite decimal numbers; if the column holds any other nonblank value, `table` returns `false` and changes nothing. |
+
+## Smart punctuation
+
+With `textInput.smartPunctuation` set to `true`, typing in formatted mode changes only the character being typed. A change to the setting takes effect on the next key press.
+
+| You type                              | You get    | When                                                                                                                                              |
+| ------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"` or `'`                            | `“` or `‘` | At the start of a block, or after a line break, whitespace, `(`, `[`, `{`, `<`, an en or em dash, or an opening quote.                            |
+| `"` or `'`                            | `”` or `’` | Anywhere else. A `'` between letters is an apostrophe.                                                                                            |
+| `--`                                  | `–`        | After other text in the block, when both hyphens were typed in a row. At the start of a block, `--` stays as typed so that `---` makes a divider. |
+| `-` straight after an en dash it made | `—`        | So `---` after text gives an em dash.                                                                                                             |
+
+- **Nothing already in the note changes,** on open or on save. The curly character is saved as typed.
+- **Undo or Backspace straight after a rule** puts back what was typed. A second Undo removes the typing.
+- **The rules don't apply** in source and TXT modes, in code, front matter, comments, blocks kept as literal Markdown, or in Markdown syntax being typed: a code span, a link destination, a web address, an unclosed wiki link, footnote label, HTML tag or comment, a reference definition, and `--` in a line that starts with `|`.
+- **A dead-key quote,** as on US International, follows the rules when its composition commits exactly one `"` or `'` at the caret.
+
+## Slash menu
+
+With `slashMenu.enabled`, typing `/` at the end of an empty paragraph or heading, or after a line break that ends one, opens a menu of block commands. This includes empty paragraphs in list items, quotes and callouts. It doesn't open in a read-only editor, in source or TXT mode, in code blocks, table cells, front matter or literal Markdown blocks, or during composition. A slash anywhere else stays text.
+
+The text typed after the slash filters the menu. A command matches when its displayed name, or one of its additional words, starts with the filter, ignoring case. Choosing a command replaces the slash and filter in one edit; one Undo restores the line as it was before the slash. A refused edit changes nothing and reports `preservation` through `events.error`. The menu uses the `suggestions` and `suggestionsEmpty` labels and the `--inkkit-menu-*` [tokens](/reference/appearance#tokens).
+
+### Built-in slash commands
+
+| `SlashCommandName` | Default name (label)               | Additional words         |
+| ------------------ | ---------------------------------- | ------------------------ |
+| `heading1`         | Heading 1 (`slashHeading1`)        | `h1`, `title`            |
+| `heading2`         | Heading 2 (`slashHeading2`)        | `h2`, `subtitle`         |
+| `heading3`         | Heading 3 (`slashHeading3`)        | `h3`                     |
+| `bulletList`       | Bulleted List (`slashBulletList`)  | `bullet`, `ul`           |
+| `orderedList`      | Numbered List (`slashOrderedList`) | `number`, `ol`           |
+| `taskList`         | Checklist (`slashTaskList`)        | `task`, `todo`           |
+| `quote`            | Quote (`slashQuote`)               | `blockquote`             |
+| `codeBlock`        | Code Block (`slashCodeBlock`)      | `code`, `fence`          |
+| `table`            | Table (`slashTable`)               | `grid`                   |
+| `callout`          | Callout (`slashCallout`)           | `note`, `tip`, `warning` |
+| `divider`          | Divider (`slashDivider`)           | `line`, `rule`, `hr`     |
+| `diagram`          | Diagram (`slashDiagram`)           | `mermaid`, `chart`       |
+
+`callout` opens a second list: Note, Tip, Important, Warning and Caution (`slashNote`, `slashTip`, `slashImportant`, `slashWarning`, `slashCaution`). `diagram` appears only when previews are available: not with the `core` entry, and not when `rendering.diagramPreview` is `false`. Changing a name through `labels` changes what it matches; the additional words stay.
+
+### SlashCommand
+
+A `SlashCommand` is a command your app adds through `customCommands`. A blank `name`, keywords that aren't strings, a missing `action` or an unknown field makes `mount` reject with `invalid-argument`.
+
+```ts
+import type { SlashCommand } from '@aicayzer/inkkit'
+
+declare function pickSnippet(documentId: string): Promise<string | undefined>
+
+const snippet: SlashCommand = {
+  name: 'Snippet',
+  keywords: ['template'],
+  action: (context) => pickSnippet(context.documentId),
+}
+```
+
+<ResponseField name="name" type="string" required>
+
+The displayed name. It must not be blank.
+
+</ResponseField>
+
+<ResponseField name="keywords" type="readonly string[]">
+
+Additional words that match the filter, compared as for built-in commands.
+
+</ResponseField>
+
+<ResponseField name="action" type="(context: DocumentContext) => string | undefined | Promise<string | undefined>" required>
+
+Called when the person chooses the command, with the current `documentId`, `generation` and a new `operationId`. The menu closes when it is called, and a promise doesn't block typing.
+
+- **A string** is Markdown that Inkkit parses and inserts in place of the trigger line, through the same preservation checks and single undo step as a built-in command.
+- **`''`** removes the slash and filter and restores the line as it was before the slash.
+- **`undefined`** cancels and keeps the text as typed.
+
+If the document, revision, mode, editability, selection or presentation changed before the result arrives, Inkkit refuses it and reports `stale-document`. A result that isn't a string or `undefined` reports `invalid-argument`. A thrown or rejected error is reported through `events.error`: an `InkKitError` as it is, anything else as `internal` with the error as `cause`. A failed action keeps the trigger text. After `destroy`, late results and errors are ignored.
+
+</ResponseField>

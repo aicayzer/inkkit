@@ -1,0 +1,75 @@
+---
+title: 'Preservation'
+description: 'What Inkkit keeps byte for byte when you save, when it writes a block afresh, and every reason it refuses an edit with preservation.'
+---
+
+Inkkit saves the Markdown you loaded, not a fresh export of what the editor shows. An unedited document saves byte for byte, and an edit rewrites only the blocks it touches. When Inkkit can't save an edit so that it reopens exactly as shown, it refuses the edit with the `preservation` error code and changes nothing.
+
+## What Inkkit keeps
+
+- **An unedited document** comes back from `snapshot()` as the loaded text, byte for byte, including line endings, a byte order mark, trailing spaces and a missing final line ending.
+- **Blocks that an edit doesn't reach** keep their bytes, and so does the text between blocks, such as extra blank lines. Link and footnote definitions stay, whether or not anything uses them.
+- **An edited block** keeps the spelling of what the edit didn't change where it can: the other lines of a paragraph, `__bold__` next to typed text, a list's `*` or `+` markers, a setext underline, reference labels, and a code fence's characters and info string.
+- **Line endings** follow the document. In a CRLF document, the lines an edit writes use CRLF.
+- **Undo back to the loaded text** returns the loaded bytes, and `dirty` is `false` again.
+- **Presentation never changes the source.** Folding a callout, showing comments, Mermaid previews, code highlighting and automatic language detection change neither the text nor the revision.
+
+Markdown that Inkkit can't show formatted, such as raw HTML, front matter and unresolved references, stays in the document as editable literal source. [Markdown support](/concepts/markdown) lists what is kept that way.
+
+## When a block is written afresh
+
+Inkkit writes a block in canonical form when it can't keep the authored spelling: a new block, or an edited block whose own source can't express the change. Canonical form uses `-` for bullets, `*` for emphasis, `**` for strong, fenced code blocks and `---` for rules. You notice it in these cases:
+
+- **Indented code that you edit** is saved as a fenced code block.
+- **Moved blocks.** A block moved with `moveBlock` or its shortcuts keeps its source, and an ordered item takes the number written at its new place. A block moved by cut and paste, or by drag and drop, is written in canonical form.
+- **Repeated blocks.** When the same block appears more than once, Inkkit can't always tell which copy you edited or moved, and that copy can be written in canonical form.
+- **Neighboring lists.** Markdown reads two adjacent lists of one kind as one list unless their markers differ. A new, moved or rewritten list takes a bullet (`-`, `*` or `+`) or number delimiter (`.` or `)`) that the lists beside it don't use. An item added to an authored list takes that list's marker.
+- **Thematic breaks.** A `---` rule that comes to open the document while another `---` line follows it is written as `***`, because it would otherwise read as front matter. A new rule inside a list item, quote, callout or footnote is written as `___`.
+- **Spaces at the edge of a block or table cell** are written as `&#x20;`, because Markdown would otherwise drop them.
+- **A line break at the end of a paragraph** isn't saved until text follows it. See [Line breaks](/concepts/markdown#line-breaks).
+
+## How an edit is checked
+
+In formatted mode, Inkkit checks every change to the document before it appears: typing, commands, paste, drop, table operations, find and replace, undo and redo. It writes the Markdown for the edited document and reads it back. If the result doesn't read as the document the editor would show, Inkkit refuses the edit:
+
+- The document, selection, revision and undo history stay as they were.
+- No `changed` event fires.
+- The refusal is an `InkKitError` with the code `preservation`.
+
+Source mode doesn't parse as you type. Typing, paste and `replaceSource` take effect on the text exactly as written, and Inkkit reads the text when you switch back to formatted mode.
+
+Where a refusal arrives depends on what made the edit:
+
+| The edit came from                                                                                                                                                    | The refusal arrives as      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| A synchronous method, such as `insertText`, `format`, `table`, `moveBlock`, `insertImages`, `pasteAsPlainText`, `replace`, `replaceAll`, `replaceTextRange` or `undo` | An error thrown by the call |
+| `paste`                                                                                                                                                               | A rejected promise          |
+| The person: typing, a shortcut, or a paste, drop or cut in the editor                                                                                                 | A call to `events.error`    |
+
+A refusal that a call reports isn't also sent to `events.error`. [Errors](/reference/errors) describes how every failure arrives.
+
+## Why an edit is refused
+
+Each reason below reports `preservation`, and each leaves the document, revision and history unchanged and the editor usable. A refused edit or load needs no recovery. A failed snapshot does: don't save. Branch on the `code`, not the message, which is for logs.
+
+| Reason                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Arrives as                                                                                       | What to do                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| **The edit would save Markdown that reads differently.** See the common cases after this table.                                                                                                                                                                                                                                                                                                                                                         | Thrown, rejected or `events.error`, by who made the edit                                         | Nothing. The person can make the change as text in source mode.                                                   |
+| **Text would end an author comment early.** In an HTML comment: `-->` or `--!>` anywhere, or `>` or `->` at the start. In a `%%` comment: `%%` anywhere, or `%` at the end of an inline comment. A comment that already holds such text loads unchanged, and edits outside it are accepted.                                                                                                                                                             | Thrown, rejected or `events.error`                                                               | Nothing. Undo, redo, `replaceSource` and source mode supply text as written and aren't checked for this.          |
+| **An edit from the caret would remove a hidden comment**, such as an edit the browser makes itself. Backspace and Delete skip hidden comments on their own.                                                                                                                                                                                                                                                                                             | Thrown, rejected or `events.error`                                                               | To remove a comment on its own, reveal comments with `setCommentsVisible(true)` first.                            |
+| **The edit changes too many blocks to match.** An edit that adds or removes blocks and also changes many others in a long document can exceed the work Inkkit allows for matching blocks to their originals. Edits that rewrite blocks in place don't count against this limit.                                                                                                                                                                         | Thrown, rejected or `events.error`                                                               | Make the change in smaller steps, or replace the text with `replaceSource`.                                       |
+| **A spreadsheet paste can't be represented as table cells.** Into a table: an HTML table with merged cells, block content or other elements a cell can't hold; a table copied from Inkkit that holds references, footnotes or comments; or growth past 100 rows or 100 columns. Anywhere: plain tab-separated text with an unclosed quote, text after a closing quote, a quoted field that holds a tab or line break, or more than 100 rows or columns. | Rejected by `paste`, or `events.error`                                                           | Keep the captured clipboard. Offer [`pasteAsPlainText`](/reference/editor#clipboard-and-print) outside the table. |
+| **The loaded Markdown can't be shown.** `loadDocument` or `reloadDocument` gets Markdown that Inkkit can't show without losing part of it, even as literal source.                                                                                                                                                                                                                                                                                      | Thrown. The previously loaded document stays loaded.                                             | Don't overwrite the file. You can load the same text with `format: 'txt'` to edit it as literal text.             |
+| **The current content can't be written.** `snapshot()` can't write the document as Markdown that reopens as shown. The same check fails `replaceSource`, `setEditingMode('source')` and copying.                                                                                                                                                                                                                                                        | Thrown; rejected by `clipboardSnapshot`; `events.error` for a copy or cut the person makes       | Don't save, and keep the document open. See [Documents and saving](/concepts/documents).                          |
+| **The source can't be read.** Switching from source mode to formatted mode can't read the text typed in source mode.                                                                                                                                                                                                                                                                                                                                    | Thrown by `setEditingMode('formatted')`. The editor stays in source mode with the text as typed. | Keep the document in source mode. `snapshot()` still returns the text.                                            |
+| **The headings can't be located.** In source mode, `headings` or `navigateHeading` can't match the headings in the text to the document's headings.                                                                                                                                                                                                                                                                                                     | Thrown                                                                                           | Read the outline in formatted mode.                                                                               |
+
+Edits that would read differently are usually one of these:
+
+- Deleting the block between two lists that use the same marker, which would merge them.
+- Leaving an HTML comment at the start of a paragraph, or a paragraph that holds only an HTML comment. Markdown reads that line as an HTML block.
+- Leaving a space at the end of a line that a soft line break follows, in a paragraph, quote or callout of several lines.
+- Ending a literal block with a line break, or typing text into one that would change how other blocks read.
+- Turning text into a code block when the code can't be saved as the same text, such as two spaces before a line end.
+- Removing a code block's language when the rest of its info string would then read as the language.
+- Calling `editReferenceDefinition` with an empty `title`.

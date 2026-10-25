@@ -1,2 +1,3 @@
-# Existing guides remain in GitHub until reviewed and migrated to the site.
-**/*.md
+# Maintainer guides and release notes stay in the repository, off the site.
+maintainers/
+images/brand/README.md

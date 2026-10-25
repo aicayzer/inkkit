@@ -1,0 +1,209 @@
+---
+title: 'Images, files and wiki links'
+description: 'Connect your storage to Inkkit with image, file and wiki-link adapters, and keep bytes, display URLs and cleanup in your app.'
+---
+
+Inkkit never reads storage. To show, import or export images, embed files, or follow `[[wiki links]]`, pass an adapter at mount. Without one, that Markdown stays literal source and saves unchanged.
+
+| You want to                                                                         | Pass                             |
+| ----------------------------------------------------------------------------------- | -------------------------------- |
+| Show `![alt](path)` images, and store pasted or dropped images                      | `images`, an `ImageAdapter`      |
+| Show path images and `![[name]]` embeds as images, audio, video, PDFs or file cards | `files`, a `FileAdapter`         |
+| Follow `[[Note]]` links and suggest note names after `[[`                           | `wikiLinks`, a `WikiLinkAdapter` |
+
+Adapters are fixed at mount. The [adapters reference](/reference/adapters) has every member and type.
+
+## Images
+
+An `ImageAdapter` has three members:
+
+- `presentation(reference)` returns a display URL, or `undefined` when the image is unavailable, which shows the alt text. It is synchronous, so make it a lookup.
+- `importImage(input, context)` stores bytes that a paste or drop captured, and returns the reference to write into the Markdown.
+- `exportImage(reference, context)` returns the stored bytes for clipboard and print output.
+
+This adapter keeps images in memory and shows them through object URLs:
+
+```ts
+import {
+  InkKitEditor,
+  type ImageAdapter,
+  type PortableImage,
+} from '@aicayzer/inkkit'
+
+const stored = new Map<string, { image: PortableImage; url: string }>()
+let next = 1
+
+const images: ImageAdapter = {
+  presentation(reference) {
+    const entry = stored.get(reference)
+    return entry ? { url: entry.url } : undefined
+  },
+  async importImage(input) {
+    const reference = `pasted/image-${next++}`
+    const bytes = input.bytes.slice()
+    const url = URL.createObjectURL(new Blob([bytes], { type: input.mimeType }))
+    stored.set(reference, {
+      image: { bytes, mimeType: input.mimeType, filename: input.filename },
+      url,
+    })
+    return { reference }
+  },
+  async exportImage(reference) {
+    const entry = stored.get(reference)
+    if (!entry) throw new Error(`No stored image for ${reference}`)
+    return entry.image
+  },
+}
+
+const editor = await InkKitEditor.mount(root, events, { images })
+```
+
+When an import rejects, Inkkit inserts the text `[Name: image unavailable]` in place of the image and reports `image-unavailable` through `events.error`. Reject with an ordinary `Error`; Inkkit wraps it.
+
+`importImage` receives no abort signal, and Inkkit sets no time limit. While an import is pending, `snapshot()` and every edit throw `operation-pending`, so the document can't be saved. Settle the promise promptly, and give a store that can stall its own timeout. Cancellation is tracked in [#325](https://github.com/aicayzer/inkkit/issues/325).
+
+## Files
+
+A `FileAdapter` resolves path images and `![[name]]` embeds. `resolve(reference, context)` decides what the file is and returns a `FilePresentation`. Inkkit never guesses the kind from an extension. Look the file up by `reference.target`; `reference.fragment` holds what follows the `#`, such as `t=10` or `page=3`, which you map onto the display URL.
+
+```ts
+import {
+  InkKitEditor,
+  type FileAdapter,
+  type FilePresentation,
+} from '@aicayzer/inkkit'
+
+declare function readAttachment(
+  name: string,
+  signal: AbortSignal,
+): Promise<File | undefined>
+declare function revealAttachment(name: string): void
+
+const urls = new Map<string, string>()
+
+function displayURL(name: string, file: File): string {
+  let url = urls.get(name)
+  if (!url) {
+    url = URL.createObjectURL(file)
+    urls.set(name, url)
+  }
+  return url
+}
+
+const files: FileAdapter = {
+  async resolve(reference, { signal }): Promise<FilePresentation> {
+    const file = await readAttachment(reference.target, signal)
+    if (!file) return { kind: 'missing' }
+    const type = file.type
+    const kind = type.startsWith('image/')
+      ? 'image'
+      : type.startsWith('audio/')
+        ? 'audio'
+        : type.startsWith('video/')
+          ? 'video'
+          : type === 'application/pdf'
+            ? 'pdf'
+            : 'file'
+    if (kind === 'file') return { kind, label: file.name }
+    const url = displayURL(reference.target, file)
+    return {
+      kind,
+      url: reference.fragment ? `${url}#${reference.fragment}` : url,
+      mimeType: type,
+      label: file.name,
+    }
+  },
+  async exportImage(reference, { signal }) {
+    const file = await readAttachment(reference.target, signal)
+    if (!file?.type.startsWith('image/'))
+      throw new Error(`No image named ${reference.target}`)
+    return {
+      bytes: new Uint8Array(await file.arrayBuffer()),
+      mimeType: file.type,
+      filename: file.name,
+    }
+  },
+  open(reference) {
+    revealAttachment(reference.target)
+  },
+}
+
+const editor = await InkKitEditor.mount(root, events, { files })
+```
+
+How the result shows:
+
+- **`image`, `audio`, `video` or `pdf`** shows the resource at `url`. The `mimeType`, when given, must match the kind.
+- **`file`** shows a card with no preview.
+- **`missing`** shows a card with the `fileMissing` label.
+- **`error`** shows a card whose status is your `message`, a short reason written for the person.
+- **A rejected or invalid result** shows a card with the `fileError` label and reports `file-unavailable` through `events.error`.
+
+A card that is loading, failed, missing or in error has a Retry button, which calls `resolve` again. Setting `open` adds an Open button to every card, and `contextMenu` receives right-clicks with a `ClientPoint`. An exception they throw is reported as `file-unavailable`. Both return nothing, so handle failures of asynchronous work inside them.
+
+Abandon the work when `context.signal` aborts. Inkkit aborts a request when the reference changes, the person retries, the mode changes, the document reloads or the editor is destroyed, and it ignores late results even if you don't stop.
+
+When `files` is set, it presents every image, including path images, and `ImageAdapter.presentation` isn't called. Keep `images` as well if people paste or drop images: only `ImageAdapter.importImage` stores new bytes.
+
+## Wiki links
+
+A `WikiLinkAdapter` turns `[[Note]]`, `[[Note#Heading]]` and `[[Note|alias]]` into links. Only `open` is required.
+
+```ts
+import { InkKitEditor, type WikiLinkAdapter } from '@aicayzer/inkkit'
+
+declare const noteNames: ReadonlySet<string>
+declare function openNote(name: string, heading?: string): void
+declare function searchNotes(
+  query: string,
+  signal: AbortSignal,
+): Promise<string[]>
+
+const wikiLinks: WikiLinkAdapter = {
+  resolve(reference) {
+    return {
+      missing: reference.target !== '' && !noteNames.has(reference.target),
+    }
+  },
+  open(reference) {
+    openNote(reference.target, reference.fragment)
+  },
+  suggest(query, { signal }) {
+    return searchNotes(query, signal)
+  },
+}
+
+const editor = await InkKitEditor.mount(root, events, { wikiLinks })
+```
+
+- `open(reference, context)` runs on a Mod-click, or Enter or Space on the focused link, including in a read-only editor. `reference.target` is the note name with escapes removed. It is empty for a link to a heading in the same note, such as `[[#Heading]]`.
+- `resolve(reference, context)` is synchronous and only marks a link as missing, with the `wikiMissing` label as its tooltip. Answer from an index you already hold.
+- `suggest(query, context)` returns note names, in display order, for the text typed after `[[`. Inkkit inserts the chosen name, escaped. A newer query aborts the previous request, and Inkkit ignores late answers. Return only names that are valid link targets: one invalid name closes the list and reports `file-unavailable`.
+
+Suggestions work without the slash menu. When `wikiLinks` is set, typing the closing `]]` of a complete link also makes a link. See [Markdown support](/concepts/markdown#wiki-links-and-file-embeds) for the syntax.
+
+## References and display URLs
+
+References are opaque. Inkkit passes them to your adapter exactly as authored, writes the reference your `importImage` returns as the image's Markdown destination, and never infers a path, fetches from the network or rewrites a reference. A path reference is read like a URL: a `#` that belongs to a file name must be written `%23`, and Inkkit doesn't decode it.
+
+Display URLs are private to your app. Return a URL that works offline in your page, such as an object URL or a custom scheme your web view serves. Inkkit never writes a display URL into the document, the clipboard or printable output.
+
+## Portable output
+
+Copy and print carry image bytes, not display URLs, so they call your export function:
+
+- For path images without a file adapter, `ImageAdapter.exportImage`.
+- With a file adapter, `FileAdapter.exportImage`. If you leave it out, path images fall back to `ImageAdapter.exportImage`, and named images, `![[name]]`, have no portable bytes.
+
+Return the bytes of a PNG, JPEG, GIF, WebP, AVIF, BMP or TIFF image with a matching `mimeType`. Print checks the bytes against the type. Other formats, such as SVG, can't be exported. When export fails, clipboard output keeps a description and an `error` for that image, and `printableSnapshot()` rejects with `image-unavailable`. See [Copy, paste and print](/concepts/clipboard).
+
+## Retention and cleanup
+
+Your app owns stored bytes, their lifetime and their deletion. Inkkit never tells you when an image or file stops being used.
+
+- **Keep imported bytes** after insertion and before the document is saved. Undo can bring back a deleted image, and an unsaved edit can refer to bytes that no saved file mentions.
+- **Expect orphans.** Loading another document, `setEditable(false)` and `destroy()` cancel a pending import without telling the adapter, so bytes it stored late are never inserted.
+- **Sweep with care.** A sweep based only on saved Markdown can delete bytes that a pending import or an unsaved edit still needs.
+- **Revoke object URLs** when you delete the bytes, not when an image leaves the document.
+
+Each adapter call receives a `DocumentContext` with `documentId`, `generation` and an `operationId` unique to that call. Use it to tie stored bytes to the document and the request that made them.

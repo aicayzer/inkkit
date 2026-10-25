@@ -2,26 +2,11 @@
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
   "name": "Inkkit",
+  "description": "Inkkit is a Markdown editor for web pages and for apps that host a web view. It edits formatted text and saves Markdown as it was written.",
   "colors": {
     "primary": "#505050",
     "light": "#D4D4D4",
     "dark": "#404040"
-  },
-  "navigation": {
-    "groups": [
-      {
-        "group": "Getting started",
-        "pages": ["index"]
-      }
-    ]
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "GitHub",
-        "href": "https://github.com/aicayzer/inkkit"
-      }
-    ]
   },
   "logo": {
     "light": "/images/brand/logo-light.png",
@@ -36,5 +21,67 @@
   },
   "appearance": {
     "default": "system"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get started",
+        "pages": ["index", "quickstart", "compatibility"]
+      },
+      {
+        "group": "Concepts",
+        "pages": [
+          "concepts/documents",
+          "concepts/preservation",
+          "concepts/markdown",
+          "concepts/clipboard"
+        ]
+      },
+      {
+        "group": "Guides",
+        "pages": [
+          "guides/web-view",
+          "guides/adapters",
+          "guides/controls",
+          "guides/appearance"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/editor",
+          "reference/options",
+          "reference/adapters",
+          "reference/errors",
+          "reference/appearance"
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Releases",
+        "href": "https://github.com/aicayzer/inkkit/releases"
+      },
+      {
+        "label": "npm",
+        "href": "https://www.npmjs.com/package/@aicayzer/inkkit"
+      }
+    ],
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/aicayzer/inkkit"
+    }
+  },
+  "contextual": {
+    "options": ["copy", "view", "claude", "chatgpt", "mcp"]
+  },
+  "markdown": {
+    "instructions": [
+      "Import only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. Never import Milkdown or ProseMirror, and never rely on Inkkit's internal classes or markup.",
+      "Pass the current generation to every call that takes one. Handle failures by `InkKitError.code`, not by message.",
+      "Save only the text of a `snapshot()` call that succeeded. A failed snapshot is not an unchanged document."
+    ]
   }
 }
