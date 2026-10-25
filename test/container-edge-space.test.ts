@@ -19,7 +19,7 @@ const containers = [
 for (const [container, body] of containers)
   for (const method of ['replaceTextRange', 'replace'] as const)
     for (const edge of ['leading', 'trailing'] as const)
-      test(`${method} ${edge === 'trailing' && container.startsWith('multiline') ? 'refuses' : 'saves and reopens'} a ${edge} space in a ${container}`, async () => {
+      test(`${method} saves and reopens a ${edge} space in a ${container}`, async () => {
         const root = document.createElement('div')
         document.body.append(root)
         const editor = await InkKitEditor.mount(root, {
@@ -56,17 +56,6 @@ for (const [container, body] of containers)
               },
               '',
             )
-          }
-          if (edge === 'trailing' && container.startsWith('multiline')) {
-            // The reader trims decoded spaces before a soft break, including
-            // character references. Keep refusing content it cannot reopen.
-            const before = editor.snapshot()
-            expect(edit).toThrow(
-              expect.objectContaining({ code: 'preservation' }),
-            )
-            expect(editor.snapshot()).toEqual(before)
-            expect(editor.undo()).toBe(false)
-            return
           }
           expect(edit()).toBe(true)
           const saved = source.replace(

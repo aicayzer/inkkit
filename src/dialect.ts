@@ -11,6 +11,7 @@ import {
   imageSchema,
   paragraphSchema,
   remarkInlineLinkPlugin,
+  remarkLineBreak,
   syncHeadingIdPlugin,
   createCodeBlockInputRule,
 } from '@milkdown/kit/preset/commonmark'
@@ -483,6 +484,33 @@ function padShortRows(node: Nodes): void {
 
 export const remarkDialectPlugin = $remark('remarkDialect', () => remarkDialect)
 
+// Split only line endings: decoded character references beside a soft break
+// are document text, so the preset must not trim their spaces or tabs.
+const preservingSoftBreaks = $remark(
+  'preservingSoftBreaks',
+  () => () => (tree) => {
+    const walk = (parent: Parents) => {
+      parent.children = parent.children.flatMap((child) => {
+        if ('children' in child) walk(child)
+        if (child.type !== 'text' || !/[\r\n]/.test(child.value)) return [child]
+        return child.value.split(/(\r?\n|\r)/).flatMap((value) =>
+          !value
+            ? []
+            : /^(?:\r?\n|\r)$/.test(value)
+              ? [
+                  {
+                    type: 'break',
+                    data: { isInline: true },
+                  } as PhrasingContent,
+                ]
+              : [{ type: 'text', value } as PhrasingContent],
+        )
+      }) as typeof parent.children
+    }
+    walk(tree as Parents)
+  },
+)
+
 // Reference links retain their authored form instead of expanding to inline links. The preset's
 // heading ID plugin follows every heading edit with a second transaction that only rewrites the
 // ID attribute, so one edit would count as two revisions; the heading schema's own ID fallback
@@ -491,6 +519,7 @@ export const remarkDialectPlugin = $remark('remarkDialect', () => remarkDialect)
 const commonmarkWithLiteralReferences = commonmark.filter(
   (plugin) =>
     !remarkInlineLinkPlugin.includes(plugin) &&
+    !remarkLineBreak.includes(plugin) &&
     plugin !== hardbreakClearMarkPlugin &&
     !hardbreakKeymap.some((part) => part === plugin) &&
     plugin !== syncHeadingIdPlugin &&
@@ -903,6 +932,7 @@ export function createDialect(
     // Protect unsupported inline HTML before the empty-line plugin consumes break nodes.
     createLiteralPreservation(images || files),
     commonmarkWithLiteralReferences,
+    preservingSoftBreaks,
     $node('doc', () => ({
       ...docSchema.schema,
       attrs: {
