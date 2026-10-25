@@ -74,7 +74,7 @@ A paste the person makes and a call to `paste` with what your app read from the 
 
 1. **Into a code block:** the text is inserted as is.
 2. **Explicit Markdown:** `markdown`, which only `paste` can supply, is read as Markdown. HTML that comes with it is used only to find its images.
-3. **A spreadsheet:** HTML that is one table, or text that contains a tab, becomes a table. See [Spreadsheets](#spreadsheets).
+3. **A spreadsheet:** HTML that is one table, or plain text that reads as tab-separated cells, becomes a table. See [Spreadsheets](#spreadsheets).
 4. **HTML:** a web page, notes app or word processor imports as readable content. See [Web pages](#web-pages).
 5. **Images without HTML:** each image goes through your image adapter and becomes its own paragraph.
 6. **Plain text:** read as Markdown. A web address pasted over selected text links that text instead.
@@ -124,15 +124,15 @@ When HTML imports as nothing, the plain text that came with it is pasted instead
 
 Tab-separated text and simple HTML tables paste as table cells, without flattening them:
 
-- Rows can end in LF, CRLF or CR, and fields can use paired double quotes with doubled quotes inside. Short rows are padded with empty cells.
+- Rows can end in LF, CRLF or CR, and fields can use paired double quotes with doubled quotes inside. When filling an existing table, short rows are padded with empty cells.
 - Outside a table, the first row becomes the header of a new table. HTML column alignment carries over.
 - Inside a table, the paste fills and grows a rectangle from the selected cell. Header cells stay headers.
 - Tables are limited to 100 rows and 100 columns, including growth.
 - Cell text is literal: Markdown punctuation in it is escaped on save.
 
-Merged cells, block or multi-line cell content and other unsupported content stay outside this route. Pasted into a table, they're refused with `preservation` before any cell changes. Malformed tab-separated text without HTML is refused anywhere.
+Merged cells, block or multi-line cell content and other unsupported content stay outside this route. Pasted into a table, they're refused with `preservation` before any cell changes. Malformed tab-separated fields are refused when the input takes the spreadsheet route.
 
-Text that contains a tab becomes a table even when it isn't from a spreadsheet, such as tab-indented code copied as plain text. Use `pasteAsPlainText` to insert it literally ([#331](https://github.com/aicayzer/inkkit/issues/331)).
+Outside a table, plain text creates a table only when it has at least two rows, each with the same number of tabs and at least two columns, and at least one first-column value is not blank. One final line ending is ignored. Single rows, ragged rows and entirely tab-indented text follow the ordinary plain-text Markdown route instead. HTML without a table uses the HTML route even when its plain-text alternative contains tabs. Inside an existing table, tab-separated text can fill one row or a ragged rectangle. Use `pasteAsPlainText` to insert any text literally.
 
 ## Links that Inkkit keeps
 
