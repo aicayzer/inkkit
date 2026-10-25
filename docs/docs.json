@@ -61,10 +61,6 @@
   "navbar": {
     "links": [
       {
-        "label": "Try editor",
-        "href": "/editor"
-      },
-      {
         "label": "GitHub",
         "icon": "github",
         "href": "https://github.com/aicayzer/inkkit"
@@ -74,7 +70,12 @@
         "icon": "/images/npm-n.svg",
         "href": "https://www.npmjs.com/package/@aicayzer/inkkit"
       }
-    ]
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Try editor",
+      "href": "/editor"
+    }
   },
   "contextual": {
     "options": ["copy", "view", "claude", "chatgpt", "mcp"]

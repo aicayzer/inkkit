@@ -77,22 +77,54 @@
   filter: invert(1);
 }
 
+/* A writing surface, with a single reversible focus control. */
 .editor-page {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 28px 24px;
+  padding: 32px 24px 0;
 }
-.editor-page-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+.editor-focus-control {
+  position: fixed;
+  right: 24px;
+  top: 84px;
+  z-index: 40;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #737373;
+  background: light-dark(#fff, #0b0b0b);
 }
-.editor-page-heading h1 {
-  font-size: 24px;
-  font-weight: 600;
+.editor-focus-control:hover {
+  color: light-dark(#171717, #ededed);
 }
-.editor-page-heading a,
+.inkkit-demo-full {
+  height: calc(100dvh - 112px);
+  min-height: 560px;
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+}
+html.editor-focus #navbar {
+  display: none;
+}
+html.editor-focus .editor-page {
+  position: fixed;
+  inset: 0;
+  max-width: none;
+  z-index: 50;
+  padding-top: 32px;
+  background: light-dark(#fff, #0b0b0b);
+}
+html.editor-focus .editor-focus-control {
+  top: 12px;
+  z-index: 60;
+}
+html.editor-focus .inkkit-demo-full {
+  height: calc(100dvh - 32px);
+}
+.demo-open-link {
+  font-size: 14px;
+}
 .demo-open-link {
   font-size: 14px;
 }
@@ -105,4 +137,27 @@
   text-align: right;
   margin-top: -12px;
   border-bottom: 0;
+}
+
+/* Keep the primary action last and omit Mintlify's decorative arrow. */
+#topbar-cta-button {
+  order: 10;
+}
+#topbar-cta-button svg {
+  display: none;
+}
+#topbar-cta-button a {
+  padding-inline: 14px;
+}
+/* Make the floating question field distinct on dark backgrounds. */
+.dark
+  .chat-assistant-floating-input
+  div:has(> div > textarea.chat-assistant-input) {
+  border-color: #454545;
+  background-color: #141414;
+}
+.dark
+  .chat-assistant-floating-input
+  div:has(> div > textarea.chat-assistant-input):focus-within {
+  border-color: #888;
 }
