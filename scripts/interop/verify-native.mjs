@@ -2570,6 +2570,62 @@ if (releaseAtLeast('0.0.14')) {
     ],
   }
 }
+if (releaseAtLeast('0.0.14')) {
+  for (const html of [false, true]) {
+    scenarios[`integration-cancel-${html ? 'html' : 'file'}-import`] = {
+      source: 'Café\r\n',
+      operations: [
+        { op: 'startImagePaste', html },
+        { op: 'cancelPendingImports' },
+        assert('snapshot.text', 'Café\r\n'),
+        assert('snapshot.revision', 0),
+        assert('editable', true),
+        assert('commandState.pending', false),
+        assert('commandState.commands.undo', false),
+        assert('adapterEvents.1.phase', 'aborted'),
+        {
+          op: 'finishImagePaste',
+          release: false,
+          expectedError: 'stale-document',
+        },
+        { op: 'save' },
+        { op: 'releaseImageImport' },
+        assert('snapshot.text', 'Café\r\n'),
+        assert('snapshot.revision', 0),
+        { op: 'reopen' },
+        assert('snapshot.text', 'Café\r\n'),
+        { op: 'select', text: 'Café', from: 4, to: 4 },
+        { op: 'insertText', text: ' new text' },
+        contains('snapshot.text', 'Café new text'),
+      ],
+    }
+  }
+  scenarios['integration-html-image-unavailable'] = {
+    source: '',
+    operations: [
+      { op: 'imageImport', mode: 'reject-coded' },
+      {
+        op: 'paste',
+        input: {
+          text: 'Before after',
+          html: '<p>Before <img src="data:image/png;base64,AQ==" alt="Photo"> after</p>',
+        },
+      },
+      contains('snapshot.text', 'Before'),
+      contains('snapshot.text', 'Photo: image unavailable'),
+      contains('snapshot.text', 'after'),
+      assert('diagnostics.0.code', 'image-unavailable'),
+      {
+        op: 'acknowledgeError',
+        code: 'image-unavailable',
+        message: 'Fixture image unavailable',
+      },
+      { op: 'save' },
+      { op: 'reopen' },
+      contains('snapshot.text', 'Photo: image unavailable'),
+    ],
+  }
+}
 const names = Object.keys(scenarios)
 const groups = {
   core: [

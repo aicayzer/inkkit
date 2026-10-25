@@ -60,7 +60,7 @@ const editor = await InkKitEditor.mount(root, events, { images })
 
 When an import rejects, Inkkit inserts the text `[Name: image unavailable]` in place of the image and reports `image-unavailable` through `events.error`. Reject with an ordinary `Error` or `InkKitError` with code `image-unavailable`. Both HTML and image-file pastes keep the remaining content. Other `InkKitError` codes cancel the paste.
 
-`importImage` receives no abort signal, and Inkkit sets no time limit. While an import is pending, `snapshot()` and every edit throw `operation-pending`, so the document can't be saved. Settle the promise promptly, and give a store that can stall its own timeout. Cancellation is tracked in [#325](https://github.com/aicayzer/inkkit/issues/325).
+`importImage` receives an `ImageImportContext` with an abort signal. Stop work and clean up unused bytes when `context.signal` aborts. While an import is pending, `snapshot()` and every edit throw `operation-pending`. At a save boundary, wait for the paste or call `cancelPendingImports(generation)` to discard it before taking a fresh snapshot. Inkkit sets no time limit; the host decides when to cancel.
 
 ## Files
 
@@ -202,7 +202,7 @@ Return the bytes of a PNG, JPEG, GIF, WebP, AVIF, BMP or TIFF image with a match
 Your app owns stored bytes, their lifetime and their deletion. Inkkit never tells you when an image or file stops being used.
 
 - **Keep imported bytes** after insertion and before the document is saved. Undo can bring back a deleted image, and an unsaved edit can refer to bytes that no saved file mentions.
-- **Expect orphans.** Loading another document, `setEditable(false)` and `destroy()` cancel a pending import without telling the adapter, so bytes it stored late are never inserted.
+- **Expect orphans.** Loading another document, `cancelPendingImports`, `setEditable(false)` and `destroy()` abort the pending import signal. Bytes stored late are never inserted, even if the adapter ignores cancellation.
 - **Sweep with care.** A sweep based only on saved Markdown can delete bytes that a pending import or an unsaved edit still needs.
 - **Revoke object URLs** when you delete the bytes, not when an image leaves the document.
 

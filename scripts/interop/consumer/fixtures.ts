@@ -149,9 +149,13 @@ export const fixtures: Record<string, Fixture> = {
   },
 }
 export const configurations = ['minimal', 'rich'] as const
-export type AdapterMode = 'normal' | 'reject' | 'hold' | 'corrupt'
+export type AdapterMode =
+  'normal' | 'reject' | 'reject-coded' | 'hold' | 'corrupt'
 export type FixtureImage = { bytes: Uint8Array; mimeType: string }
 export class ControlledImages {
+  constructor(
+    private readonly unavailable = () => new Error('Fixture image unavailable'),
+  ) {}
   readonly imported = new Map<string, FixtureImage>()
   readonly events: { operation: string; phase: string; reference?: string }[] =
     []
@@ -193,6 +197,7 @@ export class ControlledImages {
     this.events.push({ operation, phase: 'started', reference })
     await this.waits.get(operation)
     if (epoch !== this.epoch) throw Error('Fixture resources disposed')
+    if (this.modes[operation] === 'reject-coded') throw this.unavailable()
     if (this.modes[operation] === 'reject') {
       this.events.push({ operation, phase: 'rejected', reference })
       throw Error('Fixture image unavailable')
@@ -208,7 +213,17 @@ export class ControlledImages {
           : `data:image/png;base64,${imageData}`,
       }
     },
-    importImage: async (input: FixtureImage) => {
+    importImage: async (
+      input: FixtureImage,
+      context: { signal: AbortSignal },
+    ) => {
+      context.signal.addEventListener(
+        'abort',
+        () => {
+          this.events.push({ operation: 'import', phase: 'aborted' })
+        },
+        { once: true },
+      )
       await this.wait('import')
       const reference = `images/imported-${this.imported.size}.png`
       this.imported.set(reference, {

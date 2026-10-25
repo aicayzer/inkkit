@@ -76,6 +76,8 @@ Saving has two parts: `changed` tells you the text changed, and `snapshot` gives
   </Card>
 </Columns>
 
+If a save fails with `operation-pending`, wait for the image paste to finish or let the person cancel it. Call `cancelPendingImports(generation)` before taking a fresh snapshot to discard the whole pending paste and keep the existing document saveable. Cancellation leaves document bytes, revision, history and editability unchanged and aborts the adapter signal. Handle the pending `paste` rejection (`stale-document`); it settles even when the adapter never answers.
+
 **Use `changed` to schedule a save.** It fires after each change to the saved text. During one of your calls, it arrives just before the call returns, and not at all if the call fails. It doesn't fire for a load, a reload or a refused edit. A change that leaves the saved text as it was increases the revision without sending `changed`. Its value is a `DocumentSnapshot`, and its revision is the one that a snapshot taken in the handler carries.
 
 ```ts

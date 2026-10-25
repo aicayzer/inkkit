@@ -2692,6 +2692,12 @@ export class InkKitEditor {
     return { ...version, ...result }
   }
 
+  /** Cancels the pending image paste without changing the document or editability. */
+  cancelPendingImports(expectedGeneration?: number): void {
+    this.assertReady(expectedGeneration)
+    this.pasteController.cancelPending()
+  }
+
   /** Pastes content the host read from the native clipboard. Capture it once; don't read the
    *  clipboard again while this runs. */
   async paste(
@@ -5188,6 +5194,7 @@ export class InkKitEditor {
       'printableSnapshot',
       'clipboardSnapshot',
       'paste',
+      'cancelPendingImports',
       'pasteAsPlainText',
       'commandState',
       'setEditable',
