@@ -28,7 +28,7 @@ Implementation and publication require explicit delivery authority. Record publi
 
 Pushing a later matching version tag starts npm publication. Complete the gate **before pushing the tag**, within an explicitly authorised release session.
 
-1. Confirm the milestone's acceptance criteria and review compatibility changes. Additive work can use the planned pre-1.0 `0.0.x` series; document public API changes and migration requirements rather than treating every increment as a bug fix.
+1. Confirm the milestone's acceptance criteria and review compatibility changes. Use the smallest version increment that reflects compatibility. Document public API changes and migration requirements; do not describe every pre-1.0 increment as a bug fix.
 2. Run the checks in [development](development.md), using the bounded browser/native selection policy and relevant changed-contract checks. Update API and supported-syntax documentation to match the implemented behaviour.
 3. Record the reviewed release commit, tested tarball SHA-256, npm integrity, decompressed tar SHA-256, offline bundle SHA-256 and verification results in the milestone publication checklist and release evidence. Retain the candidate and its evidence in `_local/release/<version>/`. Review the packed file allowlist and confirm version/tag agreement.
 4. Check the npm trusted-publisher configuration, then tag the reviewed commit `v<version>` and push that tag. Inspect the hosted workflow's validation and publication results.
@@ -45,6 +45,12 @@ Use the corresponding version and paths for each release. The command verifies r
 The command also installs the exact registry version in a fresh consumer with an isolated npm cache, verifies declarations and CSS, builds an offline single-file bundle, and opens the main and `core` pages in Chromium and WebKit with the same runtime checks as `pnpm test:package`. It records `registry-evidence.json` and the downloaded archive in `_local/release/<version>/`. These build checks do not replace selected runtime WKWebView checks when the native boundary changes. External-app clipboard checks are exceptional and need an identified changed contract or reproduced bug, as described in [development](development.md). A source-only documentation change does not require a native run. Reuse native evidence only when the tested package inputs and relevant contract are unchanged, and record the comparison.
 
 Do not repeat a publish after an unknown outcome without checking the registry. A published name/version cannot be replaced.
+
+## GitHub release notes
+
+After registry verification, create a GitHub Release for the existing tag using the approved notes in `docs/releases/<version>.md`. Use `gh release create v<version> --verify-tag --title "Inkkit <version>" --notes-file docs/releases/<version>.md`, then read the release back and check its tag and notes. If it already exists, inspect it instead of creating a duplicate. Mark the newest published version as latest; historical backfills must not replace it.
+
+`docs/releases/` holds the release-note source. The public site links to GitHub Releases, where readers see the published notes. Creating a GitHub Release does not publish or replace an npm package. Include the GitHub Release URL in the milestone before closing it.
 
 ## Trusted publishing for later releases
 
