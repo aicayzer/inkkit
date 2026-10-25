@@ -51,6 +51,12 @@ To start a table by typing, type a row and press Enter or Tab at the end of the 
 
 [Toolbars, shortcuts and search](/guides/controls) describes the `table` commands.
 
+## Typing beside links
+
+Letters and spaces typed at the end of an existing inline link, reference link or angle autolink stay outside the link. For example, typing `s` after `[docs](docs)` saves `[docs](docs)s`. Typing inside the link still edits its label or address. The displayed link matches the link after saving and reopening.
+
+Bare addresses such as `https://example.com` continue to grow while the typed text is part of the address. When `format('link', { destination })` starts a new link at a caret, subsequent typing belongs to that link until the first whitespace or a caret movement ends it.
+
 ## Footnotes and reference links
 
 Footnotes use `[^label]` references and `[^label]: text` definitions. Reference links can be full (`[text][id]`), collapsed (`[id][]`) or shortcut (`[id]`), with a definition such as `[id]: https://example.com "Title"`.
