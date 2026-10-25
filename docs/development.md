@@ -69,7 +69,7 @@ An intentional assertion failure can demonstrate reporting only when explicitly 
 
 App integrations and app releases follow package publication as a separate delivery phase. Temporary `file:` dependencies must not enter merged app lockfiles.
 
-Documentation-only changes to Markdown guides, the README or agent instructions skip the editor jobs. Mintlify pages, assets and configuration run `mint validate`. Unknown file types, mixed changes and release runs retain the full checks. The workflow still starts for every pull request so required checks resolve; it skips jobs rather than filtering out the workflow.
+Documentation-only changes to Markdown guides, the README or agent instructions run a formatting check and skip editor tests. Mintlify pages, assets and configuration run `mint validate`. Unknown file types, mixed changes and release runs retain the full checks. The workflow still starts for every pull request so required checks resolve; it skips expensive steps rather than filtering out the workflow.
 
 ## GitHub workflow
 

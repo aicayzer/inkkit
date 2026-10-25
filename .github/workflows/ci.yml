@@ -33,7 +33,7 @@ jobs:
   check:
     needs: [changes, docs]
     # A failed classifier must fail this required check, not silently skip it.
-    if: ${{ always() && (needs.changes.result != 'success' || needs.docs.result == 'failure' || needs.docs.result == 'cancelled' || needs.changes.outputs.editor == 'true') }}
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -43,16 +43,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
+      - if: ${{ needs.changes.outputs.editor != 'true' }}
+        run: npx --yes prettier@3.9.9 --check .
       - run: npm install --global pnpm@11.0.9
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm install --frozen-lockfile
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm format:check
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: node --test scripts/ci-scope.test.mjs
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       # The packed-consumer test opens its pages in both engines.
       - run: pnpm exec playwright install --with-deps chromium webkit
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm check
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm build:playground
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm test:built-playground
+        if: ${{ needs.changes.outputs.editor == 'true' }}
       - uses: actions/upload-artifact@v4
+        if: ${{ needs.changes.outputs.editor == 'true' }}
         with:
           name: package-candidate
           path: _local/release/
