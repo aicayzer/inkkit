@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index d52a5260a7b9924b2865053ea1e8c6484225277b..3892649dc4ce202eeee57c0fab7bcee6fbc587b0 100644
+index d52a5260a7b9924b2865053ea1e8c6484225277b..38c84e4ec276d8145dcfd1567d7b54957480c2cf 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -2961,6 +2961,7 @@ var InputState = _createClass(function InputState() {
@@ -18,7 +18,7 @@ index d52a5260a7b9924b2865053ea1e8c6484225277b..3892649dc4ce202eeee57c0fab7bcee6
    if (view.input.mouseDown) view.input.mouseDown.done();
    view.domObserver.stop();
    for (var type in view.input.eventHandlers) view.dom.removeEventListener(type, view.input.eventHandlers[type]);
-@@ -3027,6 +3029,10 @@ function _dispatchEvent(view, event) {
+@@ -3027,12 +3029,20 @@ function _dispatchEvent(view, event) {
  }
  editHandlers.keydown = function (view, _event) {
    var event = _event;
@@ -29,7 +29,17 @@ index d52a5260a7b9924b2865053ea1e8c6484225277b..3892649dc4ce202eeee57c0fab7bcee6
    view.input.shiftKey = event.keyCode == 16 || event.shiftKey;
    if (inOrNearComposition(view)) return;
    view.input.lastKeyCode = event.keyCode;
-@@ -3681,12 +3687,15 @@ handlers.focus = function (view) {
+   view.input.lastKeyCodeTime = Date.now();
+   if (android && chrome && event.keyCode == 13) return;
+   if (event.keyCode != 229) view.domObserver.forceFlush();
++  if (event.keyCode != 229 && ![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
++    view.domObserver.flush();
++    view.input.lastFocus = 0;
++  }
+   if (ios && event.keyCode == 13 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+     var now = Date.now();
+     view.input.lastIOSEnter = now;
+@@ -3681,12 +3691,15 @@ handlers.focus = function (view) {
      view.dom.classList.add("ProseMirror-focused");
      view.domObserver.start();
      view.focused = true;
@@ -47,7 +57,7 @@ index d52a5260a7b9924b2865053ea1e8c6484225277b..3892649dc4ce202eeee57c0fab7bcee6
    if (view.focused) {
      view.domObserver.stop();
 diff --git a/dist/index.js b/dist/index.js
-index dc0d117b85e1da3eae915b4d8ff8e5e604683861..0e74b42c0869cc362454f89397f002fd2f243221 100644
+index dc0d117b85e1da3eae915b4d8ff8e5e604683861..b9ac5a7d20501750f7c7b5ead6dc0d3f67d3f406 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -3132,6 +3132,7 @@ class InputState {
@@ -77,7 +87,18 @@ index dc0d117b85e1da3eae915b4d8ff8e5e604683861..0e74b42c0869cc362454f89397f002fd
      view.input.shiftKey = event.keyCode == 16 || event.shiftKey;
      if (inOrNearComposition(view))
          return;
-@@ -3927,13 +3933,16 @@ handlers.focus = view => {
+@@ -3220,6 +3226,10 @@ editHandlers.keydown = (view, _event) => {
+         return;
+     if (event.keyCode != 229)
+         view.domObserver.forceFlush();
++    if (event.keyCode != 229 && ![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
++      view.domObserver.flush();
++      view.input.lastFocus = 0;
++    }
+     // On iOS, if we preventDefault enter key presses, the virtual
+     // keyboard gets confused. So the hack here is to set a flag that
+     // makes the DOM change code recognize that what just happens should
+@@ -3927,13 +3937,16 @@ handlers.focus = view => {
          view.dom.classList.add("ProseMirror-focused");
          view.domObserver.start();
          view.focused = true;
@@ -96,7 +117,7 @@ index dc0d117b85e1da3eae915b4d8ff8e5e604683861..0e74b42c0869cc362454f89397f002fd
      if (view.focused) {
          view.domObserver.stop();
 diff --git a/src/input.ts b/src/input.ts
-index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..0bd1d6f87f11cb8ca0b993a66605cd6341224f3e 100644
+index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..ad561edc8edc67c4e80d1424a2cdcfe2c804890b 100644
 --- a/src/input.ts
 +++ b/src/input.ts
 @@ -27,6 +27,7 @@ export class InputState {
@@ -128,7 +149,18 @@ index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..0bd1d6f87f11cb8ca0b993a66605cd63
    view.input.shiftKey = event.keyCode == 16 || event.shiftKey
    if (inOrNearComposition(view, event)) return
    view.input.lastKeyCode = event.keyCode
-@@ -839,7 +847,8 @@ handlers.focus = view => {
+@@ -115,6 +123,10 @@ editHandlers.keydown = (view: EditorView, _event: Event) => {
+   // and handling them eagerly tends to corrupt the input.
+   if (browser.android && browser.chrome && event.keyCode == 13) return
+   if (event.keyCode != 229) view.domObserver.forceFlush()
++  if (event.keyCode != 229 && ![16, 17, 18, 91, 92, 93].includes(event.keyCode)) {
++    view.domObserver.flush()
++    view.input.lastFocus = 0
++  }
+ 
+   // On iOS, if we preventDefault enter key presses, the virtual
+   // keyboard gets confused. So the hack here is to set a flag that
+@@ -839,7 +851,8 @@ handlers.focus = view => {
      view.dom.classList.add("ProseMirror-focused")
      view.domObserver.start()
      view.focused = true
@@ -138,7 +170,7 @@ index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..0bd1d6f87f11cb8ca0b993a66605cd63
        if (view.docView && view.hasFocus() && !view.domObserver.currentSelection.eq(view.domSelectionRange()))
          selectionToDOM(view)
      }, 20)
-@@ -847,6 +856,8 @@ handlers.focus = view => {
+@@ -847,6 +860,8 @@ handlers.focus = view => {
  }
  
  handlers.blur = (view, _event) => {

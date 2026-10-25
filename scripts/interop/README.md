@@ -182,3 +182,11 @@ The bounded suite types after public `load` and `replaceSource` calls with termi
 The fixture's `nativeInput` operation accepts an explicit macOS `keyCode` (0–127), `characters`, and optional `metaKey`, `shiftKey`, `altKey` and `ctrlKey`. Supply a `keys` array (up to 32 keys) to queue a sequence without per-key waits; the completion wait follows the whole batch. The bridge uses public `NSEvent.keyEvent` and queues key-down/key-up events with `NSApplication.postEvent`, then yields to the AppKit event loop. It requires the key window and a WKWebView first responder. The consumer requires the actual DOM active editor, records trusted keyboard/input events and requires one trusted key-down per requested key. The runner also asserts the resulting document; posting an event alone is not a pass.
 
 These are constructed AppKit events with explicit US keyboard characters. They prove this disposable WKWebView path, not hardware keyboard delivery, IME composition or consumer-app behaviour.
+
+Run the bounded find/arrow/delete checks against the exact archive with:
+
+```sh
+node scripts/interop/verify-find-delete.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY
+```
+
+The runner primes native focus, then calls find and focus synchronously before posting an arrow/delete batch. `nativeInput` with `focus: false` skips native activation and its 100 ms delay, and rejects a window without WKWebView key focus. Optional `find` and `findCount` run within the same fixture operation, with no intervening settling wait. Results record elapsed milliseconds from find to each trusted DOM event, selection collapse before deletion, exact changed bytes, errors, undo and save/reopen. IPC and event-loop delivery still take time; use the recorded first-key timing when interpreting this evidence.

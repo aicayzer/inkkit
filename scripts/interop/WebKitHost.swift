@@ -193,11 +193,14 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
                 replyHandler(nil, "Invalid native key batch")
                 return
             }
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeFirstResponder(web)
+            let focus = request["focus"] as? Bool ?? true
+            if focus {
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeFirstResponder(web)
+            }
             Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(100))
+                if focus { try? await Task.sleep(for: .milliseconds(100)) }
                 guard self.window.isKeyWindow,
                       let responder = self.window.firstResponder as? NSView,
                       responder === self.web || responder.isDescendant(of: self.web) else {

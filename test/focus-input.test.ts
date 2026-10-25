@@ -128,3 +128,85 @@ test('a composition key does not restore a stale focus selection', async () => {
     new CompositionEvent('compositionend', { bubbles: true }),
   )
 })
+
+for (const text of [
+  'Before gamma after',
+  'Béfore 😀 gamma after\r\n\r\nUntouched é 中文.\r\n',
+]) {
+  test(`the next key reads a caret while selectionchange is held: ${JSON.stringify(text)}`, async () => {
+    const surface = await mount(text)
+    expect(editor!.find('gamma', 1)).toBe(true)
+    const walker = document.createTreeWalker(surface, NodeFilter.SHOW_TEXT)
+    let node = walker.nextNode()!
+    while (!node.textContent!.includes('gamma')) node = walker.nextNode()!
+    const caret = text.indexOf('gamma') + 2
+    window
+      .getSelection()!
+      .collapse(node, node.textContent!.indexOf('gamma') + 2)
+    expect(editor!.textSnapshot().selection).toMatchObject({
+      from: text.indexOf('gamma'),
+      to: text.indexOf('gamma') + 5,
+    })
+    surface.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'ArrowRight',
+        keyCode: 39,
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+    expect(editor!.textSnapshot().selection).toMatchObject({
+      from: caret,
+      to: caret,
+    })
+    editor!.insertText('q', 1)
+    const saved = text.slice(0, caret) + 'q' + text.slice(caret)
+    expect(editor!.snapshot().text).toBe(saved)
+    expect(editor!.undo(1)).toBe(true)
+    expect(editor!.snapshot().text).toBe(text)
+    editor!.loadDocument({
+      documentId: 'reopened',
+      generation: 2,
+      format: 'md',
+      text: saved,
+    })
+    expect(editor!.snapshot().text).toBe(saved)
+  })
+}
+
+test('modifier and composition keys leave an unreported caret pending', async () => {
+  const surface = await mount()
+  const node = surface.querySelector('p')!.firstChild!
+  const end = node.textContent!.length
+  window.getSelection()!.collapse(node, end)
+  surface.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Shift', keyCode: 16, bubbles: true }),
+  )
+  expect(editor!.textSnapshot().selection).toMatchObject({ from: 1, to: 1 })
+  surface.dispatchEvent(
+    new CompositionEvent('compositionstart', { bubbles: true }),
+  )
+  surface.dispatchEvent(
+    new KeyboardEvent('keydown', { keyCode: 229, bubbles: true }),
+  )
+  expect(window.getSelection()!.anchorOffset).toBe(end)
+  expect(() => editor!.snapshot()).toThrow('Text composition is in progress')
+  surface.dispatchEvent(
+    new CompositionEvent('compositionend', { bubbles: true }),
+  )
+})
+
+test('a 229 key before compositionstart leaves an unreported caret pending', async () => {
+  const surface = await mount()
+  const node = surface.querySelector('p')!.firstChild!
+  const end = node.textContent!.length
+  window.getSelection()!.collapse(node, end)
+  surface.dispatchEvent(
+    new KeyboardEvent('keydown', { keyCode: 229, bubbles: true }),
+  )
+  expect(editor!.textSnapshot().selection).toMatchObject({ from: 1, to: 1 })
+  expect(window.getSelection()!.anchorOffset).toBe(end)
+  vi.advanceTimersByTime(20)
+  expect(window.getSelection()!.anchorOffset).toBe(end)
+  expect(editor!.textSnapshot().selection).toMatchObject({ from: 1, to: 1 })
+})
