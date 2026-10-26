@@ -2819,6 +2819,30 @@ scenarios['container-list-move'] = {
     assert('snapshot.text', '__a__\n\n1) _b_\n2) c\n'),
   ],
 }
+scenarios['container-text-fidelity'] = {
+  source: 'Write\r\r```\rcode\r```\r',
+  operations: [
+    { op: 'select', text: 'Write', from: 5, to: 5 },
+    { op: 'insertText', text: ' &amp; x' },
+    contains('snapshot.text', 'Write &amp\\; x\r\r'),
+    { op: 'select', text: 'code', from: 4, to: 4 },
+    { op: 'insertText', text: 's' },
+    contains('snapshot.text', '```\rcodes\r```\r'),
+    { op: 'snapshot', name: 'edited' },
+    { op: 'undo' },
+    { op: 'undo' },
+    assert('snapshot.text', 'Write\r\r```\rcode\r```\r'),
+    { op: 'redo' },
+    { op: 'redo' },
+    { op: 'save' },
+    { op: 'reopen' },
+    {
+      op: 'assert',
+      path: 'snapshot.text',
+      equalsFrom: { name: 'edited', path: 'text' },
+    },
+  ],
+}
 const names = Object.keys(scenarios)
 const groups = {
   core: [
