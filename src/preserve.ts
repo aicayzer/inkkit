@@ -1076,8 +1076,13 @@ function retainText(
   written?: string,
   beside: readonly [boolean, boolean] = [false, false],
   // The gutter of the paragraph's lines, which a line added to the text takes.
-  gutters?: Gutters,
+  // Read only when a line is added, since finding it scans the line.
+  readGutters?: () => Gutters,
 ): string {
+  let found: Gutters | undefined
+  const gutters = () => (found ??= readGutters?.())
+  const guttered = (text: string) =>
+    text.includes('\n') ? regutter(text, gutters()) : text
   before = lf(before)
   after = lf(after)
   let prefix = 0
@@ -1112,12 +1117,11 @@ function retainText(
         prefix = lineStart
         return (
           raw.slice(0, offsets[prefix]) +
-          regutter(
+          guttered(
             written.slice(
               canonical.offsets[prefix],
               canonical.offsets[after.length - suffix],
             ),
-            gutters,
           ) +
           raw.slice(offsets[before.length - suffix])
         )
@@ -1134,12 +1138,11 @@ function retainText(
     if (writtenOffsets && writtenOffsets.decoded === after)
       return (
         raw.slice(0, offsets[prefix]) +
-        regutter(
+        guttered(
           written.slice(
             writtenOffsets.offsets[prefix],
             writtenOffsets.offsets[after.length - suffix],
           ),
-          gutters,
         ) +
         raw.slice(offsets[before.length - suffix])
       )
@@ -1157,7 +1160,7 @@ function retainText(
         (inTable && character === '|')
         ? `\\${character}`
         : character === '\n'
-          ? character + (gutters?.[0] ?? '')
+          ? character + (gutters()?.[0] ?? '')
           : character
     })
     .join('')
@@ -1885,7 +1888,7 @@ function retainSource(
           inTable,
           canonical.slice(newStart, newEnd),
           beside,
-          [gutterAt(source, start), gutterAt(canonical, newStart)],
+          () => [gutterAt(source, start), gutterAt(canonical, newStart)],
         ),
         lineEnding,
       ),
