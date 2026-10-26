@@ -76,8 +76,8 @@ test('a table draws with borders, padding and no controls until it is used', asy
   const style = await cell(page, 1, 0).evaluate((element) => {
     const computed = getComputedStyle(element)
     return {
-      border: computed.borderTopWidth,
-      style: computed.borderTopStyle,
+      border: computed.borderRightWidth,
+      style: computed.borderRightStyle,
       padding: parseFloat(computed.paddingLeft),
     }
   })

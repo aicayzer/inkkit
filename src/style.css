@@ -81,7 +81,10 @@
   overflow-x: auto;
 }
 .inkkit-root .ProseMirror table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--_inkkit-rule);
+  border-radius: var(--inkkit-table-radius, 4px);
   width: 100%;
 }
 .inkkit-root .ProseMirror td,
@@ -91,8 +94,38 @@
   min-width: calc(var(--inkkit-font-size, 15px) * 4);
   padding: calc(var(--inkkit-font-size, 15px) * 0.4)
     calc(var(--inkkit-font-size, 15px) * 0.6);
-  border: 1px solid var(--_inkkit-rule);
+  border: 0 solid var(--_inkkit-rule);
+  border-width: 0 1px 1px 0;
   vertical-align: top;
+}
+/* Round only the perimeter; keep controls and focus rings outside the table
+   unclipped, and leave every internal cell division square. */
+.inkkit-root .ProseMirror tr > :last-child {
+  border-right-width: 0;
+}
+.inkkit-root .ProseMirror tr:last-child > * {
+  border-bottom-width: 0;
+}
+.inkkit-root .ProseMirror tr:first-child > :first-child {
+  border-top-left-radius: max(0px, calc(var(--inkkit-table-radius, 4px) - 1px));
+}
+.inkkit-root .ProseMirror tr:first-child > :last-child {
+  border-top-right-radius: max(
+    0px,
+    calc(var(--inkkit-table-radius, 4px) - 1px)
+  );
+}
+.inkkit-root .ProseMirror tr:last-child > :first-child {
+  border-bottom-left-radius: max(
+    0px,
+    calc(var(--inkkit-table-radius, 4px) - 1px)
+  );
+}
+.inkkit-root .ProseMirror tr:last-child > :last-child {
+  border-bottom-right-radius: max(
+    0px,
+    calc(var(--inkkit-table-radius, 4px) - 1px)
+  );
 }
 .inkkit-root .ProseMirror th {
   background: var(--_inkkit-code-bg);
@@ -107,6 +140,7 @@
   position: absolute;
   inset: 0;
   z-index: 2;
+  border-radius: inherit;
   content: '';
   background: color-mix(in srgb, var(--_inkkit-accent) 25%, transparent);
   pointer-events: none;
@@ -665,7 +699,11 @@
   width: var(--_inkkit-task-size);
   height: var(--_inkkit-task-size);
   box-sizing: border-box;
-  border: 1.5px solid color-mix(in srgb, CanvasText 35%, transparent);
+  border: 1.5px solid
+    var(
+      --inkkit-checkbox-border-color,
+      color-mix(in srgb, CanvasText 35%, transparent)
+    );
   border-radius: 4px;
   cursor: pointer;
 }
@@ -808,7 +846,7 @@
 }
 
 .inkkit-root .inkkit-reference-definition {
-  font-family: ui-monospace, monospace;
+  font-family: var(--_inkkit-mono);
   font-size: calc(var(--inkkit-font-size, 15px) * 0.8);
   opacity: 0.7;
 }
@@ -963,11 +1001,13 @@
   background: var(--inkkit-menu-background, light-dark(#fff, #252529));
   color: var(--inkkit-menu-text, CanvasText);
   box-shadow: var(--inkkit-menu-shadow, 0 4px 18px #0003);
-  font: 14px / 24px var(--inkkit-font-family, system-ui, sans-serif);
+  font: calc(var(--inkkit-font-size, 15px) * 14 / 15) /
+    calc(var(--inkkit-font-size, 15px) * 1.6)
+    var(--inkkit-font-family, system-ui, sans-serif);
 }
 .inkkit-root .inkkit-suggestions [role='option'] {
   box-sizing: border-box;
-  height: 32px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1027,8 +1067,9 @@
 }
 .inkkit-root .inkkit-code-language:focus-visible,
 .inkkit-root .inkkit-copy:focus-visible {
-  outline: 2px solid var(--_inkkit-accent);
-  outline-offset: 1px;
+  outline: var(--inkkit-focus-width, 2px) solid
+    var(--inkkit-focus-color, var(--_inkkit-accent));
+  outline-offset: var(--inkkit-focus-offset, 1px);
 }
 .inkkit-root .inkkit-code-language-menu {
   position: fixed;
