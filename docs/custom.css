@@ -77,25 +77,11 @@
   filter: invert(1);
 }
 
-/* A writing surface, with a single reversible focus control. */
+/* A writing surface. The controls, including Focus, live inside the editor frame. */
 .editor-page {
   max-width: 1100px;
   margin: 0 auto;
   padding: 32px 24px 0;
-}
-.editor-focus-control {
-  position: fixed;
-  right: 24px;
-  top: 84px;
-  z-index: 40;
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
-  color: #737373;
-  background: light-dark(#fff, #0b0b0b);
-}
-.editor-focus-control:hover {
-  color: light-dark(#171717, #ededed);
 }
 .inkkit-demo-full {
   height: calc(100dvh - 112px);
@@ -112,15 +98,11 @@ html.editor-focus .editor-page {
   inset: 0;
   max-width: none;
   z-index: 50;
-  padding-top: 32px;
+  padding: 0;
   background: light-dark(#fff, #0b0b0b);
 }
-html.editor-focus .editor-focus-control {
-  top: 12px;
-  z-index: 60;
-}
 html.editor-focus .inkkit-demo-full {
-  height: calc(100dvh - 32px);
+  height: 100dvh;
 }
 .demo-open-link {
   font-size: 14px;
