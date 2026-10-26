@@ -199,6 +199,14 @@ test('each bad argument throws invalid-argument and changes nothing', () =>
         'insertImages old field',
         () => editor.insertImages([bad({ path: 'a.png', alt: '' })]),
       ],
+      [
+        'appendImages entry',
+        () => editor.appendImages([bad({ reference: 1, alt: '' })]),
+      ],
+      [
+        'appendImages generation',
+        () => editor.appendImages([{ reference: 'a.png', alt: '' }], bad('1')),
+      ],
       ['insertFootnote label', () => editor.insertFootnote('a b')],
       ['insertFootnote type', () => editor.insertFootnote(bad(1))],
       ['navigateFootnote target', () => editor.navigateFootnote(bad('next'))],

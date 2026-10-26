@@ -1,5 +1,5 @@
-import { afterEach, expect, test } from 'vitest'
-import { InkKitEditor, type EditorOptions } from '../src/index'
+import { afterEach, expect, test, vi } from 'vitest'
+import { InkKitEditor, InkKitError, type EditorOptions } from '../src/index'
 
 const editors: InkKitEditor[] = []
 afterEach(async () => {
@@ -269,3 +269,87 @@ for (const source of ['', '## TARGET\r\n\r\nAfter _kept_.\r\n']) {
     expect(errors).toEqual([])
   })
 }
+
+// A failure thrown or rejected by the host's action is reported as `slash-command-failed`, with the
+// original error as `cause`. An `InkKitError` of the host's own passes through unchanged.
+const hostFailures: [string, unknown][] = [
+  ['an Error', new RangeError('Host broke')],
+  ['a string', 'Host broke'],
+  ['an InkKitError', new InkKitError('file-unavailable', 'Host file')],
+]
+for (const [name, failure] of hostFailures) {
+  for (const timing of ['throws', 'rejects']) {
+    test(`a host action that ${timing} ${name} reports it and keeps the typed text`, async () => {
+      const { editor, errors } = await mount('', {
+        slashMenu: {
+          enabled: true,
+          commands: [],
+          customCommands: [
+            {
+              name: 'Host',
+              action: () => {
+                if (timing === 'throws') throw failure
+                return Promise.reject(failure)
+              },
+            },
+          ],
+        },
+      })
+      editor.insertText('/', 1)
+      editor.insertText('ho', 1)
+      const before = editor.snapshot()
+      editor.keyDown({ key: 'Enter' }, 1)
+      await new Promise((done) => setTimeout(done, 0))
+      if (failure instanceof InkKitError) expect(errors).toEqual([failure])
+      else {
+        expect(errors).toHaveLength(1)
+        expect(errors[0]).toBeInstanceOf(InkKitError)
+        expect(errors[0]).toMatchObject({
+          code: 'slash-command-failed',
+          cause: failure,
+        })
+      }
+      expect(editor.snapshot()).toEqual(before)
+      expect(editor.snapshot().text).toBe('/ho\n')
+      // The editor is still usable.
+      expect(editor.insertText('!', 1)).toBe(true)
+    })
+  }
+}
+
+test('a failure in Inkkit own insert is not blamed on the host action', async () => {
+  const { editor, errors } = await mount('', {
+    slashMenu: {
+      enabled: true,
+      commands: [],
+      customCommands: [{ name: 'Host', action: async () => 'Note' }],
+    },
+  })
+  const cause = new TypeError('Inkkit broke')
+  editor.insertText('/', 1)
+  vi.spyOn(
+    editor as unknown as { assertMutation(): void },
+    'assertMutation',
+  ).mockImplementation(() => {
+    throw cause
+  })
+  editor.keyDown({ key: 'Enter' }, 1)
+  await new Promise((done) => setTimeout(done, 0))
+  expect(errors).toHaveLength(1)
+  expect(errors[0]).toMatchObject({ code: 'internal', cause })
+})
+
+test('a host action that returns something other than text still reports invalid-argument', async () => {
+  const { editor, errors } = await mount('', {
+    slashMenu: {
+      enabled: true,
+      commands: [],
+      customCommands: [{ name: 'Host', action: (() => 5) as never }],
+    },
+  })
+  editor.insertText('/', 1)
+  editor.keyDown({ key: 'Enter' }, 1)
+  expect(errors).toEqual([
+    expect.objectContaining({ code: 'invalid-argument' }),
+  ])
+})

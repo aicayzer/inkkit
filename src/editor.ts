@@ -79,7 +79,7 @@ import {
 import { splitBlock } from '@milkdown/kit/prose/commands'
 import { keydownHandler, keymap } from '@milkdown/kit/prose/keymap'
 import { goToNextCell } from '@milkdown/kit/prose/tables'
-import { liftListItem } from '@milkdown/kit/prose/schema-list'
+import { liftListItem, sinkListItem } from '@milkdown/kit/prose/schema-list'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import {
   Mapping,
@@ -103,7 +103,11 @@ import { codeCopyPlugin, placeholderPlugin } from './decorations'
 import { codeControlCtx, codeControlsPlugin } from './code-controls'
 import { labelsCtx, defaultLabels } from './labels'
 import { createDialect, serialize, stringifyOptions } from './dialect'
-import { isSafeLinkTarget } from './link-safety'
+import {
+  extraLinkSchemes,
+  isSafeLinkTarget,
+  linkSchemesCtx,
+} from './link-safety'
 import { Preservation } from './preserve'
 import { modeSelectionMap } from './mode-selection'
 import {
@@ -379,14 +383,16 @@ function clientPoint(value: unknown, name: string): ClientPoint {
   }
 }
 
-/** A name in `Keymap`: every format command except `link`, history, block moves, and every table
- *  command. */
+/** A name in `Keymap`: every format command except `link`, history, block moves, list indentation,
+ *  and every table command. */
 export type ShortcutName =
   | Exclude<FormatCommand, 'link'>
   | 'undo'
   | 'redo'
   | 'moveBlockUp'
   | 'moveBlockDown'
+  | 'indent'
+  | 'outdent'
   | `table${Capitalize<TableCommand>}`
 
 /** Host bindings in ProseMirror key notation, by shortcut name. */
@@ -407,6 +413,8 @@ export const shortcutNames: readonly ShortcutName[] = [
   'redo',
   'moveBlockUp',
   'moveBlockDown',
+  'indent',
+  'outdent',
   ...tableCommands.map(tableShortcut),
 ]
 
@@ -474,7 +482,7 @@ function textInputPreferences(
   }
 }
 
-/** Mount options. Adapters, `labels` and `rendering` are fixed at mount; the rest can change. */
+/** Mount options. Adapters, `labels`, `linkSchemes` and `rendering` are fixed at mount; the rest can change. */
 export interface EditorOptions {
   /** Shows, imports and exports images. Without it and `files`, image Markdown stays literal. */
   images?: ImageAdapter
@@ -491,6 +499,9 @@ export interface EditorOptions {
   labels?: Partial<EditorLabels>
   /** See `setKeymap`. */
   keymap?: Keymap
+  /** Schemes beyond `http`, `https`, `mailto` and `tel` that links may use, such as `things`.
+   *  Fixed at mount. */
+  linkSchemes?: readonly string[]
   rendering?: {
     /** Defaults to true. */
     codeHighlighting?: boolean
@@ -510,6 +521,7 @@ function editorOptions(value: unknown): EditorOptions {
       'textInput',
       'labels',
       'keymap',
+      'linkSchemes',
       'rendering',
       'slashMenu',
     ]) ?? {}
@@ -523,6 +535,9 @@ function editorOptions(value: unknown): EditorOptions {
     textInputPreferences(options.textInput, 'options.textInput')
   if (!isOmitted(options.keymap))
     keymapBindings(options.keymap, 'options.keymap')
+  const linkSchemes = isOmitted(options.linkSchemes)
+    ? undefined
+    : extraLinkSchemes(options.linkSchemes, 'options.linkSchemes')
   const rendering = optionalRecord(options.rendering, 'options.rendering', [
     'codeHighlighting',
     'diagramPreview',
@@ -540,6 +555,7 @@ function editorOptions(value: unknown): EditorOptions {
   return {
     ...options,
     slashMenu: slashMenuOptions(options.slashMenu),
+    linkSchemes,
     labels:
       labels &&
       Object.fromEntries(
@@ -573,6 +589,7 @@ export interface CommandState extends DocumentVersion {
     replace: boolean
     replaceSource: boolean
     insertImages: boolean
+    appendImages: boolean
     insertPaths: boolean
     insertFootnote: boolean
     editReferenceDefinition: boolean
@@ -990,8 +1007,6 @@ const liftItem: Command = (state, dispatch) => {
   dispatch(lifted)
   return true
 }
-
-const listItemShiftTab = $prose(() => keymap({ 'Shift-Tab': liftItem }))
 
 // Backspace in the empty line left by ending a list in the middle removes it and joins the two
 // lists again, as they were before. In the empty item left by ending a nested list in the middle,
@@ -1415,6 +1430,8 @@ export class InkKitEditor {
   private literalKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
   private configuredKeys: Keymap = {}
+  private indentKeys: (view: EditorView, event: KeyboardEvent) => boolean =
+    () => false
   private readOnlyKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
   private suggestions?: Suggestions
@@ -1470,6 +1487,9 @@ export class InkKitEditor {
     false
 
   private readonly events: EditorEvents
+  /** The host's extra link schemes, in lower case. */
+  private readonly linkSchemes: ReadonlySet<string>
+
   /** How many of each state event the host has been sent. */
   private readonly sentEvents = new Map<string | symbol, number>()
 
@@ -1493,6 +1513,7 @@ export class InkKitEditor {
         }
       },
     })
+    this.linkSchemes = new Set(options.linkSchemes)
     this.writable = options.editable ?? true
     this.inputPreferences = textInputPreferences(
       options.textInput ?? {},
@@ -1923,6 +1944,7 @@ export class InkKitEditor {
         replace: mutable,
         replaceSource: mutable,
         insertImages: formatted && this.canInsertImages,
+        appendImages: formatted && this.canInsertImages,
         insertPaths: mutable,
         insertFootnote: formatted,
         editReferenceDefinition:
@@ -2672,6 +2694,7 @@ export class InkKitEditor {
         completeDiagrams,
         this.options.files,
         signal,
+        this.linkSchemes,
       ),
     )
     const metadata = referenceMetadata(
@@ -2874,6 +2897,14 @@ export class InkKitEditor {
       }),
   )
 
+  // Indent and outdent keys, replaced whole with the keymap. Milkdown's own key plugin comes last of
+  // the plugins that `use` adds, and it holds the keys that Tab must reach first: Tab in a list item
+  // that holds a typed row makes the table. So this plugin is appended after it, in the state options.
+  private indentPlugin = new Plugin({
+    key: new PluginKey('listIndent'),
+    props: { handleKeyDown: (view, event) => this.indentKeys(view, event) },
+  })
+
   private copySourceSelection(event: ClipboardEvent): void {
     event.preventDefault()
     event.stopPropagation()
@@ -2903,7 +2934,11 @@ export class InkKitEditor {
           })
           .catch((error) => this.report(error))
       } else {
-        const output = clipboardContent(parsed.content, parsed.type.schema)
+        const output = clipboardContent(
+          parsed.content,
+          parsed.type.schema,
+          this.linkSchemes,
+        )
         if (!event.clipboardData) return
         this.rememberCopy(
           output,
@@ -2992,6 +3027,7 @@ export class InkKitEditor {
           smartPunctuationCtx.key,
           () => instance.inputPreferences.smartPunctuation === true,
         )
+        ctx.set(linkSchemesCtx.key, instance.linkSchemes)
         ctx.update(labelsCtx.key, () => ({
           ...defaultLabels,
           ...options.labels,
@@ -3018,11 +3054,18 @@ export class InkKitEditor {
         )
         ctx.set(defaultValueCtx, '')
         ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
-        // The preset also binds Mod-[ and Mod-] here; the app uses those for back and forward.
-        // Shift-Tab is bound to liftItem instead.
+        ctx.update(editorStateOptionsCtx, (override) => (options) => {
+          const next = override(options)
+          return {
+            ...next,
+            plugins: [...(next.plugins ?? []), instance.indentPlugin],
+          }
+        })
+        // The preset binds Tab, Shift-Tab, Mod-[ and Mod-] to list indentation. The keymap's
+        // `indent` and `outdent` bind it instead.
         ctx.update(listItemKeymap.key, (keys) => ({
           ...keys,
-          SinkListItem: { shortcuts: 'Tab' },
+          SinkListItem: { shortcuts: [] },
           LiftListItem: { shortcuts: [] },
         }))
         // Formatting keys are the app's to set, through setKeymap; the presets' own go.
@@ -3120,6 +3163,7 @@ export class InkKitEditor {
         }))
       })
       .use(labelsCtx)
+      .use(linkSchemesCtx)
       .use(instance.pasteController.plugin)
       .use(visibleClipboard)
       .use($prose(() => instance.suggestions!.plugin()))
@@ -3146,7 +3190,6 @@ export class InkKitEditor {
       .use(literalEnter)
       .use(literalReread)
       .use(listItemBackspace)
-      .use(listItemShiftTab)
       .use(nestedItemEnter)
       .use(rejoinLists)
       .use(movedListItems)
@@ -3328,7 +3371,7 @@ export class InkKitEditor {
       event.preventDefault()
       if (event.button !== 0 || !modHeld(event)) return
       // The renderer leaves the address empty when it is not on the list in
-      // link-safety.ts.
+      // link-safety.ts or among the host's `linkSchemes`.
       const href = anchor.getAttribute('href')
       if (href) events.openLink?.(href)
     }
@@ -3373,7 +3416,11 @@ export class InkKitEditor {
             view.state.doc,
             valid,
           )
-          const output = clipboardContent(content, view.state.schema)
+          const output = clipboardContent(
+            content,
+            view.state.schema,
+            instance.linkSchemes,
+          )
           const metadata = referenceMetadata(
             instance.editor.ctx,
             view.state.doc,
@@ -4406,7 +4453,8 @@ export class InkKitEditor {
   /** Replaces every binding. Keys are in ProseMirror's notation. A key given to two shortcuts goes
    *  to the later one, in the order history, formatting, block moves, tables, so it lands the same
    *  way every time. A table binding passes a key it shares with a block move to the move outside
-   *  a table. */
+   *  a table. List indentation keys apply after all of these, and after the table keys the editor
+   *  keeps for itself. */
   setKeymap(keymap: Keymap): void {
     this.assertAlive()
     keymap = keymapBindings(keymap, 'keymap')
@@ -4416,6 +4464,8 @@ export class InkKitEditor {
       moveBlockUp: ['Alt-ArrowUp'],
       moveBlockDown: ['Alt-ArrowDown'],
       tableExit: ['Mod-Enter', 'Enter'],
+      indent: ['Tab'],
+      outdent: ['Shift-Tab'],
       ...keymap,
     }
     const bindings: Record<string, Command> = {}
@@ -4465,6 +4515,21 @@ export class InkKitEditor {
         }
       }
     }
+    // Not in `readOnlyKeys`: with nothing to edit, these keys do nothing and are not consumed, so
+    // Tab still moves focus.
+    const indents: Record<string, Command> = {}
+    const sink: Command = (state, dispatch) =>
+      sinkListItem(state.schema.nodes.list_item!)(state, dispatch)
+    for (const [name, command] of [
+      ['indent', sink],
+      ['outdent', liftItem],
+    ] as const) {
+      for (const key of this.configuredKeys[name] ?? [])
+        indents[key] = (state, dispatch, view) =>
+          this.ready && this.writable && !this.literalSurface
+            ? command(state, dispatch, view)
+            : false
+    }
     for (const command of tableCommands) {
       for (const key of this.configuredKeys[tableShortcut(command)] ?? [])
         bindings[key] = (state, dispatch, view) => {
@@ -4487,6 +4552,7 @@ export class InkKitEditor {
       ),
     )
     this.keys = keydownHandler(bindings)
+    this.indentKeys = keydownHandler(indents)
     this.literalKeys = keydownHandler(historyBindings)
   }
 
@@ -4532,23 +4598,12 @@ export class InkKitEditor {
     if (!images.length || !this.canInsertImages || this.literalSurface)
       return false
     const view = this.editor.ctx.get(editorViewCtx)
-    const { schema } = view.state
     const placement = point ? undefined : imagePlacement(view.state)
     if (placement?.kind === 'inline') {
       this.insertInline(images)
       return true
     }
-    // One paragraph per image: each is read back as a standalone image block where one fits.
-    const blocks = images.map((image) =>
-      schema.nodes.paragraph!.create(
-        null,
-        schema.nodes.image!.create({
-          src: image.reference,
-          alt: image.alt,
-          title: image.title ?? '',
-        }),
-      ),
-    )
+    const blocks = this.imageBlocks(images)
     if (point) {
       this.insertBlocks(blocks, point)
       return true
@@ -4569,6 +4624,43 @@ export class InkKitEditor {
     if (after != null) tr.setSelection(TextSelection.create(tr.doc, after))
     view.dispatch(tr.scrollIntoView())
     return true
+  }
+
+  /** Adds images as the last blocks of the document and leaves everything else as it is: no focus,
+   *  no scrolling, and the selection stays on the text it covered. For a host that attaches images
+   *  to a document the person is not editing at that moment. Returns false when it does nothing. */
+  appendImages(images: ImageInsertion[], expectedGeneration?: number): boolean {
+    this.assertAlive()
+    images = imageInsertions(images)
+    this.assertMutation(expectedGeneration)
+    if (!images.length || !this.canInsertImages || this.literalSurface)
+      return false
+    const view = this.editor.ctx.get(editorViewCtx)
+    const { doc, tr } = view.state
+    const blocks = this.imageBlocks(images)
+    // An empty document is one empty paragraph, which would save as `<br />` ahead of the images.
+    const empty = doc.childCount === 1 && doc.firstChild!.content.size === 0
+    if (empty) tr.replaceWith(0, doc.content.size, blocks)
+    else tr.insert(doc.content.size, blocks)
+    // A step of its own, so neither earlier nor later typing joins it.
+    view.dispatch(closeHistory(tr))
+    view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
+    return true
+  }
+
+  // One paragraph per image: each is read back as a standalone image block where one fits.
+  private imageBlocks(images: ImageInsertion[]): ProseNode[] {
+    const { schema } = this.editor.ctx.get(editorViewCtx).state
+    return images.map((image) =>
+      schema.nodes.paragraph!.create(
+        null,
+        schema.nodes.image!.create({
+          src: image.reference,
+          alt: image.alt,
+          title: image.title ?? '',
+        }),
+      ),
+    )
   }
 
   // A table cell holds one line, so the images sit side by side where the selection was, with no
@@ -4871,28 +4963,31 @@ export class InkKitEditor {
       commit(command)
       return
     }
-    try {
-      const result = command.action(this.context())
-      const insert = (markdown: string | undefined) => {
-        if (this.destroyed) return
-        if (markdown === undefined) return
-        if (typeof markdown !== 'string') {
-          this.report(
-            invalidArgument('A slash command must return Markdown text'),
-          )
-          return
-        }
-        commit({ markdown })
-      }
-      if (result instanceof Promise)
-        result.then(insert).catch((error) => {
-          if (this.destroyed) return
-          this.report(error)
-        })
-      else insert(result)
-    } catch (error) {
-      this.report(error)
+    // Only what the host's action throws or rejects with is its failure. Inkkit's own insert reports
+    // for itself, so it is not given to this handler.
+    const onHostError = (error: unknown) => {
+      if (!this.destroyed) this.report(coded(error, 'slash-command-failed'))
     }
+    const insert = (markdown: string | undefined) => {
+      if (this.destroyed) return
+      if (markdown === undefined) return
+      if (typeof markdown !== 'string') {
+        this.report(
+          invalidArgument('A slash command must return Markdown text'),
+        )
+        return
+      }
+      commit({ markdown })
+    }
+    let result: ReturnType<SlashCommand['action']>
+    try {
+      result = command.action(this.context())
+    } catch (error) {
+      onHostError(error)
+      return
+    }
+    if (result instanceof Promise) result.then(insert, onHostError)
+    else insert(result)
   }
 
   /** Returns whether the document or the marks the next typed text takes changed. */
@@ -4971,15 +5066,16 @@ export class InkKitEditor {
   }
 
   /**
-   * Refuses a link destination that is empty, that opens anything but a web, mail or phone address,
-   * or that the Markdown writer cannot save so that it reads back the same.
+   * Refuses a link destination that is empty, that opens anything but a web, mail or phone address
+   * or a scheme the host listed, or that the Markdown writer cannot save so that it reads back the
+   * same.
    */
   private checkDestination(destination: string, name: string): void {
     if (destination.trim() === '')
       throw invalidArgument(`${name} must not be empty`)
-    if (!isSafeLinkTarget(destination))
+    if (!isSafeLinkTarget(destination, this.linkSchemes))
       throw invalidArgument(
-        `${name} must be relative, or an http, https, mailto or tel address, with no control characters`,
+        `${name} must be relative, or an address with an allowed scheme (http, https, mailto, tel or one of linkSchemes), with no control characters`,
       )
     const { schema } = this.editor.ctx.get(editorViewCtx).state
     const written = serialize(
@@ -5235,6 +5331,7 @@ export class InkKitEditor {
       'keyDown',
       'insertPaths',
       'insertImages',
+      'appendImages',
       'insertFootnote',
       'navigateFootnote',
       'editReferenceDefinition',
