@@ -1119,3 +1119,7 @@
 .inkkit-root .inkkit-code-language-list button[aria-pressed='true'] {
   background: color-mix(in srgb, CanvasText 8%, transparent);
 }
+
+.inkkit-root .milkdown-drop-indicator {
+  background: var(--inkkit-drop-indicator-color, var(--_inkkit-accent));
+}

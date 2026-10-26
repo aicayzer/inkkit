@@ -1,0 +1,42 @@
+diff --git a/dist/index.js b/dist/index.js
+index bc512638f8e2dfc4184be7b8b0a61c635bb88af2..db31cbf71202463eb5874aee71c4191f6b05e325 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -158,6 +158,8 @@ function createDropIndicatorView(view, getTarget, options) {
+ 	let hasDragOverEvent = false;
+ 	const scheduleHide = () => {
+ 		if (hideId) clearTimeout(hideId);
++		prevX = void 0;
++		prevY = void 0;
+ 		hasDragOverEvent = false;
+ 		hideId = setTimeout(() => {
+ 			if (hasDragOverEvent) return;
+@@ -198,6 +200,7 @@ function createDropIndicatorView(view, getTarget, options) {
+ 	dom.addEventListener("drop", scheduleHide);
+ 	dom.addEventListener("dragleave", scheduleHide);
+ 	const destroy = () => {
++		if (hideId) clearTimeout(hideId);
+ 		dom.removeEventListener("dragover", handleDragOver);
+ 		dom.removeEventListener("dragend", scheduleHide);
+ 		dom.removeEventListener("drop", scheduleHide);
+diff --git a/src/drop-indicator-plugin.ts b/src/drop-indicator-plugin.ts
+index 6e2e875d337a6df00223e6c49e9d2d38ab2917aa..6df7f642e4f13ce18be88fe118380bbd960c3ae4 100644
+--- a/src/drop-indicator-plugin.ts
++++ b/src/drop-indicator-plugin.ts
+@@ -135,6 +135,8 @@ function createDropIndicatorView(
+       clearTimeout(hideId)
+     }
+ 
++    prevX = undefined
++    prevY = undefined
+     hasDragOverEvent = false
+     hideId = setTimeout(() => {
+       if (hasDragOverEvent) return
+@@ -170,6 +172,7 @@ function createDropIndicatorView(
+   dom.addEventListener('dragleave', scheduleHide)
+ 
+   const destroy = () => {
++    if (hideId) clearTimeout(hideId)
+     dom.removeEventListener('dragover', handleDragOver)
+     dom.removeEventListener('dragend', scheduleHide)
+     dom.removeEventListener('drop', scheduleHide)
