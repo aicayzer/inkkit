@@ -123,8 +123,9 @@ for (const block of [false, true]) {
         expect(call.reference).toBe('images/a.png')
         expect(call.documentId).toBe('menu')
         expect(call.generation).toBe(7)
-        expect(call.clientX).toBeCloseTo(box.x + 4, 0)
-        expect(call.clientY).toBeCloseTo(box.y + 4, 0)
+        // Some engines report whole-pixel pointer coordinates.
+        expect(Math.abs(call.clientX - (box.x + 4))).toBeLessThan(1.5)
+        expect(Math.abs(call.clientY - (box.y + 4))).toBeLessThan(1.5)
         expect(probe.selected).toBe(1)
       }
       expect(probe.errors).toEqual(
