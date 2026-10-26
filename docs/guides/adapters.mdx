@@ -15,11 +15,12 @@ Adapters are fixed at mount. The [adapters reference](/reference/adapters) has e
 
 ## Images
 
-An `ImageAdapter` has three members:
+An `ImageAdapter` has three members and an optional fourth:
 
 - `presentation(reference)` returns a display URL, or `undefined` when the image is unavailable, which shows the alt text. It is synchronous, so make it a lookup.
 - `importImage(input, context)` stores bytes that a paste or drop captured, and returns the reference to write into the Markdown.
 - `exportImage(reference, context)` returns the stored bytes for clipboard and print output.
+- `contextMenu(reference, point, context)` is optional. It receives right-clicks on an image so that your app can show its own menu, such as Save Image. Inkkit selects the image and suppresses the web view's own menu only when you set it.
 
 This adapter keeps images in memory and shows them through object URLs:
 
@@ -59,6 +60,8 @@ const editor = await InkKitEditor.mount(root, events, { images })
 ```
 
 When an import rejects, Inkkit inserts the text `[Name: image unavailable]` in place of the image and reports `image-unavailable` through `events.error`. Reject with an ordinary `Error` or `InkKitError` with code `image-unavailable`. Both HTML and image-file pastes keep the remaining content. Other `InkKitError` codes cancel the paste.
+
+A picture that the clipboard holds in more than one form, such as a screenshot as PNG and TIFF, is stored once; [How paste is imported](/concepts/clipboard#how-paste-is-imported) has the rule. `contextMenu` returns nothing and Inkkit doesn't await it, so start your menu or save panel and handle failures of asynchronous work inside it. With `files` set, use `FileAdapter.contextMenu` instead, which receives the same request for every image.
 
 `importImage` receives an `ImageImportContext` with an abort signal. Stop work and clean up unused bytes when `context.signal` aborts. While an import is pending, `snapshot()` and every edit throw `operation-pending`. At a save boundary, wait for the paste or call `cancelPendingImports(generation)` to discard it before taking a fresh snapshot. Inkkit sets no time limit; the host decides when to cancel.
 

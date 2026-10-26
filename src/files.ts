@@ -9,12 +9,16 @@ import type {
 } from './types'
 import type { EditorLabels } from './types'
 
-export interface FileViewRuntime {
-  adapter: FileAdapter
+/** What an image view needs from the editor to call a host adapter. */
+export interface AdapterHost {
   capture(): { context: DocumentContext; isCurrent(): boolean }
   active(): boolean
   labels: Readonly<EditorLabels>
   error?(error: InkKitError): void
+}
+
+export interface FileViewRuntime extends AdapterHost {
+  adapter: FileAdapter
 }
 
 function abort(signal: AbortSignal): void {

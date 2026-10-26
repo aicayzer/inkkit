@@ -4,13 +4,21 @@ import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import { $view } from '@milkdown/kit/utils'
 
-import { InkKitError, type FileReference, type ImageAdapter } from './types'
+import { NodeSelection } from '@milkdown/kit/prose/state'
+
+import {
+  InkKitError,
+  type FileAdapter,
+  type FileReference,
+  type ImageAdapter,
+} from './types'
 import { coded } from './errors'
 import {
   FileResolution,
   mediaPolicyEvent,
   refreshOf,
   refreshes,
+  type AdapterHost,
   type FileViewRuntime,
 } from './files'
 import { fileReference } from './linked-syntax'
@@ -41,17 +49,23 @@ class ImageView implements NodeView {
   private stopResize?: () => void
   private resolution?: FileResolution
   private previewFailed = false
+  /** Present when the host sets `files`, which then shows every image. */
+  private readonly runtime?: FileViewRuntime
 
   constructor(
     private node: ProseNode,
     private readonly view: EditorView,
     private readonly getPos: () => number | undefined,
     private readonly adapter: ImageAdapter | undefined,
-    private readonly runtime?: FileViewRuntime,
+    private readonly host: AdapterHost | undefined,
+    files: FileAdapter | undefined,
     private readonly canMutate: () => boolean = () => true,
   ) {
+    const runtime = files && host && { ...host, adapter: files }
+    this.runtime = runtime
     this.element = document.createElement('span')
     this.element.className = 'inkkit-image'
+    this.element.addEventListener('contextmenu', this.contextMenu)
     if (node.isBlock) {
       this.dom = document.createElement('div')
       this.dom.className = 'inkkit-image-block'
@@ -183,6 +197,46 @@ class ImageView implements NodeView {
     this.runtime?.error?.(coded(error, 'file-unavailable'))
   }
 
+  /** Hands the request to the host's hook, which replaces the web view's own menu. A file card
+   *  uses `FileAdapter.contextMenu`; any other image selects itself and uses
+   *  `ImageAdapter.contextMenu`. */
+  private contextMenu = (event: MouseEvent): void => {
+    const { host, runtime, adapter } = this
+    if (
+      !host?.active() ||
+      !(runtime ? runtime.adapter.contextMenu : adapter?.contextMenu)
+    )
+      return
+    const captured = host.capture()
+    if (!captured.isCurrent()) return
+    event.preventDefault()
+    const point = { clientX: event.clientX, clientY: event.clientY }
+    try {
+      if (runtime)
+        runtime.adapter.contextMenu?.(this.reference(), point, captured.context)
+      else {
+        this.select()
+        adapter?.contextMenu?.(
+          String(this.node.attrs.src ?? ''),
+          point,
+          captured.context,
+        )
+      }
+    } catch (error) {
+      if (runtime) this.report(error)
+      else host.error?.(coded(error, 'image-unavailable'))
+    }
+  }
+
+  private select(): void {
+    const pos = this.getPos()
+    if (pos == null || this.view.composing) return
+    const { state } = this.view
+    const selection = NodeSelection.create(state.doc, pos)
+    if (!state.selection.eq(selection))
+      this.view.dispatch(state.tr.setSelection(selection))
+  }
+
   private card(label: string, status?: string, retry = false): void {
     const footer = document.createElement('span')
     footer.className = 'inkkit-file-footer'
@@ -245,21 +299,6 @@ class ImageView implements NodeView {
     this.image = undefined
     if (this.runtime) {
       this.element.classList.add('inkkit-file')
-      this.element.oncontextmenu = (event) => {
-        if (!this.runtime?.adapter.contextMenu || !this.active()) return
-        const captured = this.runtime.capture()
-        if (!captured.isCurrent()) return
-        event.preventDefault()
-        try {
-          this.runtime.adapter.contextMenu(
-            this.reference(),
-            { clientX: event.clientX, clientY: event.clientY },
-            captured.context,
-          )
-        } catch (error) {
-          this.report(error)
-        }
-      }
       const state = this.resolution!.state
       const label =
         state.status === 'resolved'
@@ -448,14 +487,15 @@ function openArrow(): SVGElement {
 
 export function imageView(
   adapter?: ImageAdapter,
-  runtime?: FileViewRuntime,
+  host?: AdapterHost,
+  files?: FileAdapter,
   canMutate: () => boolean = () => true,
 ) {
   const view = (schema: { node: unknown }) =>
     $view(
       schema.node as typeof imageSchema.node,
       () => (node, view, getPos) =>
-        new ImageView(node, view, getPos, adapter, runtime, canMutate),
+        new ImageView(node, view, getPos, adapter, host, files, canMutate),
     )
   return [view(imageSchema), view(imageBlockSchema)]
 }
