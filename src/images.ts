@@ -6,7 +6,13 @@ import { $view } from '@milkdown/kit/utils'
 
 import { InkKitError, type FileReference, type ImageAdapter } from './types'
 import { coded } from './errors'
-import { FileResolution, type FileViewRuntime } from './files'
+import {
+  FileResolution,
+  mediaPolicyEvent,
+  refreshOf,
+  refreshes,
+  type FileViewRuntime,
+} from './files'
 import { fileReference } from './linked-syntax'
 import { imageBlockSchema } from './image-blocks'
 
@@ -52,7 +58,7 @@ class ImageView implements NodeView {
       this.dom.append(this.element)
     } else this.dom = this.element
     this.view.dom.addEventListener('inkkit-cancel-resize', this.cancelResize)
-    this.view.dom.addEventListener('inkkit-media-policy', this.mediaPolicy)
+    this.view.dom.addEventListener(mediaPolicyEvent, this.mediaPolicy)
     if (runtime) {
       this.resolution = new FileResolution(
         { ...runtime, active: () => this.active() },
@@ -103,8 +109,16 @@ class ImageView implements NodeView {
     return true
   }
 
-  private mediaPolicy = (): void => {
+  private mediaPolicy = (event: Event): void => {
     if (!this.runtime) return
+    const refresh = refreshOf(event)
+    if (refresh) {
+      if (!this.active() || !refreshes(refresh, this.reference().target)) return
+      // A card whose preview failed has nothing to keep, and a new answer may load.
+      if (this.previewFailed) this.resolution?.retry()
+      else this.resolution?.refresh()
+      return
+    }
     if (!this.active()) {
       this.stopResize?.()
       this.stopResize = undefined
@@ -135,7 +149,7 @@ class ImageView implements NodeView {
 
   destroy(): void {
     this.view.dom.removeEventListener('inkkit-cancel-resize', this.cancelResize)
-    this.view.dom.removeEventListener('inkkit-media-policy', this.mediaPolicy)
+    this.view.dom.removeEventListener(mediaPolicyEvent, this.mediaPolicy)
     this.stopResize?.()
     this.stopResize = undefined
     this.resolution?.destroy()

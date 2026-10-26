@@ -1,7 +1,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitError, type TextRect } from './types'
-import { fileReference } from './linked-syntax'
+import { fileFields } from './linked-syntax'
 import { imageBlockName } from './image-blocks'
 
 export interface TextSpan {
@@ -55,7 +55,7 @@ export function readableProjection(doc: ProseNode): TextProjection {
     if (name === imageBlockName) {
       block(position)
       append(
-        fileReference(node).label || 'Image',
+        fileFields(node).label || 'Image',
         position,
         position + node.nodeSize,
         'embed',
@@ -82,7 +82,7 @@ export function readableProjection(doc: ProseNode): TextProjection {
     ) {
       append(
         name === 'image'
-          ? fileReference(node).label || 'Image'
+          ? fileFields(node).label || 'Image'
           : name === 'inkkit_wiki_link'
             ? String(node.attrs.label || node.attrs.target || 'Link')
             : `[${node.attrs.label}]`,
