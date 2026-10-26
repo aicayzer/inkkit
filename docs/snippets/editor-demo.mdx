@@ -79,7 +79,7 @@ ${tool('reset', 'reset', 'Reset')}
 <p class="hint"><span>Type / for commands. Paste an image.</span><span id="status" role="status">Loading editor…</span></p></div>`
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.3.0/dist/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.3.1/dist/style.css">
 <style>
 :root { color-scheme: light dark; --line: light-dark(#e5e5e5,#292929); --hover: light-dark(#f0f0f0,#252525); --muted: light-dark(#6b6b6b,#a3a3a3); --ring: light-dark(#2563eb,#60a5fa); }
 * { box-sizing: border-box; }
@@ -159,7 +159,7 @@ addEventListener('message', (event) => {
   }
 });
 try {
-  const { InkKitEditor } = await import('https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.3.0/dist/core.js');
+  const { InkKitEditor } = await import('https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.3.1/dist/core.js');
   editor = await InkKitEditor.mount(root, {
     openLink() {},
     changed() { say(idle); },
