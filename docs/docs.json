@@ -73,7 +73,7 @@
     ],
     "primary": {
       "type": "button",
-      "label": "Try editor",
+      "label": "Editor playground",
       "href": "/editor"
     }
   },

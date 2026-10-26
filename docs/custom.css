@@ -124,18 +124,29 @@ html.editor-focus .inkkit-demo-full {
 }
 .demo-open-link {
   font-size: 14px;
-}
-.demo-open-link {
   display: block;
   text-align: right;
   margin-top: -12px;
   border-bottom: 0;
 }
 
-/* Keep the primary action last and omit Mintlify's decorative arrow. */
-#topbar-cta-button {
-  order: 10;
+/* The theme control sits outside Main; place Main last as a group. */
+@media (min-width: 1024px) {
+  #navbar div:has(> nav[aria-label='Main'] #topbar-cta-button) {
+    gap: 16px;
+  }
+  #navbar div:has(> nav[aria-label='Main'] #topbar-cta-button) > * {
+    margin-inline: 0;
+  }
+  #navbar nav[aria-label='Main']:has(#topbar-cta-button) {
+    order: 1;
+  }
+  .chat-assistant-floating-input {
+    max-width: 30rem;
+    margin-inline: auto;
+  }
 }
+/* Omit Mintlify's decorative arrow. */
 #topbar-cta-button svg {
   display: none;
 }
