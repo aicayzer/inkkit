@@ -2146,6 +2146,7 @@ export function semanticSignature(doc: ProseNode): string {
         'authoredFence',
         'form',
         'inkkitFileRaw',
+        'inkkitFileSource',
         'inkkitFileWidth',
         'inkkitFileInTable',
       ].includes(key)

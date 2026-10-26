@@ -112,6 +112,40 @@ export type FileResolutionState =
   | { status: 'resolved'; presentation: FilePresentation }
   | { status: 'failed'; error: InkKitError }
 
+/** The event every reference view hears when the editor's media policy or references change. */
+export const mediaPolicyEvent = 'inkkit-media-policy'
+
+/** What `refreshReferences` asks of the views: the targets to resolve again, or every one. */
+export interface ReferenceRefresh {
+  targets?: ReadonlySet<string>
+}
+
+export function requestRefresh(dom: Element, refresh: ReferenceRefresh): void {
+  dom.dispatchEvent(new CustomEvent(mediaPolicyEvent, { detail: { refresh } }))
+}
+
+/** The refresh a policy event carries. A plain event, such as a host's, carries none. */
+export function refreshOf(event: Event): ReferenceRefresh | undefined {
+  const detail: unknown = event instanceof CustomEvent ? event.detail : null
+  return detail && typeof detail === 'object' && 'refresh' in detail
+    ? (detail.refresh as ReferenceRefresh)
+    : undefined
+}
+
+export function refreshes(refresh: ReferenceRefresh, target: string): boolean {
+  return !refresh.targets || refresh.targets.has(target)
+}
+
+function samePresentation(a: FilePresentation, b: FilePresentation): boolean {
+  const left = a as unknown as Record<string, unknown>
+  const right = b as unknown as Record<string, unknown>
+  const keys = Object.keys(left)
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every((key) => left[key] === right[key])
+  )
+}
+
 export class FileResolution {
   state: FileResolutionState = { status: 'idle' }
   private reference?: FileReference
@@ -126,6 +160,7 @@ export class FileResolution {
 
   update(reference: FileReference): void {
     const key = JSON.stringify([
+      reference.raw,
       reference.reference,
       reference.kind,
       reference.fragment,
@@ -136,8 +171,25 @@ export class FileResolution {
     this.retry()
   }
 
+  /** Resolves again from a blank loading card. */
   retry(): void {
     this.cancel()
+    this.start(true)
+  }
+
+  /**
+   * Resolves again behind the current card, which stays until the answer differs, so a card that
+   * the host's change doesn't affect neither blanks nor moves.
+   */
+  refresh(): void {
+    if (this.dead || !this.runtime.active()) return
+    if (this.state.status === 'idle') this.retry()
+    else this.start(false)
+  }
+
+  private start(blank: boolean): void {
+    this.request?.controller.abort()
+    this.request = undefined
     if (this.dead || !this.reference || !this.runtime.active()) return
     const captured = this.runtime.capture()
     const request = {
@@ -145,16 +197,23 @@ export class FileResolution {
       isCurrent: captured.isCurrent,
     }
     this.request = request
-    this.state = { status: 'loading' }
-    this.changed()
+    if (blank) {
+      this.state = { status: 'loading' }
+      this.changed()
+    }
     void resolveFile(this.runtime.adapter, this.reference, {
       ...captured.context,
       signal: request.controller.signal,
     }).then(
       (presentation) => {
         if (!this.current(request)) return
+        const before = this.state
         this.state = { status: 'resolved', presentation }
-        this.changed()
+        if (
+          before.status !== 'resolved' ||
+          !samePresentation(before.presentation, presentation)
+        )
+          this.changed()
       },
       (failure: unknown) => {
         if (!this.current(request)) return

@@ -29,7 +29,7 @@ Each member first throws `destroyed` if the editor was destroyed, then `invalid-
 | `loadDocument`                                                                                                                                                                                    | None.                                                  | `invalid-argument` when the generation isn't greater than the loaded one, then `preservation` when the Markdown can't be loaded.                                                          |
 | `setEditable`, `setTextInputPreferences`                                                                                                                                                          | None.                                                  | `composition`.                                                                                                                                                                            |
 | `reloadDocument`                                                                                                                                                                                  | Optional, the last parameter. Checked only when given. | `not-ready` and `stale-document`, only when the generation is given. Then the same errors as `loadDocument`.                                                                              |
-| `commandState`, `focus`, `blur`, `cancelPendingImports`                                                                                                                                           | Optional, the last parameter.                          | `not-ready`, `stale-document`.                                                                                                                                                            |
+| `commandState`, `focus`, `blur`, `cancelPendingImports`, `refreshReferences`                                                                                                                      | Optional, the last parameter.                          | `not-ready`, `stale-document`.                                                                                                                                                            |
 | `snapshot`, `printableSnapshot`, `clipboardSnapshot`, `setEditingMode`, `find`, `navigateFootnote`, `textSnapshot`, `headings`                                                                    | Optional, the last parameter.                          | `not-ready`, `stale-document`, `composition`, `operation-pending`.                                                                                                                        |
 | `navigateHeading`                                                                                                                                                                                 | None. The heading entry names a version.               | `not-ready`, `stale-document` for another generation, `composition`, `operation-pending`, then `stale-document` for an older revision or mode.                                            |
 | `selectTextRange`, `revealTextRange`, `textRangesRects`, `visibleTextRanges`                                                                                                                      | None. The range's `snapshotId` names a version.        | `not-ready`, `composition`, `operation-pending`, `stale-document` for a `snapshotId` that isn't current, then `invalid-range`.                                                            |
@@ -297,6 +297,22 @@ interface ImageInsertion {
 `insertPaths(paths: string[], at: ClientPoint, expectedGeneration?: number): boolean`
 
 Inserts dropped file paths as literal text. In formatted mode each path becomes a paragraph at the drop point: in place of an empty block, or after the top-level block there. In source and TXT modes `at` is ignored and the paths go at the selection, separated by blank lines. It returns `false` only for an empty list.
+
+## Files and wiki links
+
+### refreshReferences
+
+`refreshReferences(targets?: readonly string[], expectedGeneration?: number): void`
+
+Resolves wiki links and file embeds again, after something they point to changed: a note was created, renamed or deleted, or a file arrived. With no `targets`, every reference resolves again. With `targets`, only those whose `target` equals one of the strings do, compared exactly, with escapes removed as in [`FileReference.target`](/reference/adapters#filereference) and [`WikiLinkReference.target`](/reference/adapters#wikilinkreference). An empty list refreshes nothing, and a name that matches nothing is ignored.
+
+- **Wiki links:** [`WikiLinkAdapter.resolve`](/reference/adapters#wikilinkadapter) runs again for each match, and the link shows its new missing state.
+- **File embeds:** [`FileAdapter.resolve`](/reference/adapters#fileadapter) runs again for each match that is on screen. The card stays as it is until the new answer differs from it, so it neither blanks nor moves, and an answer with the same fields leaves it untouched. A card that is still loading starts over. An error card from a rejected resolve stays until the new answer arrives, and a card whose preview failed to load shows its loading state while it tries again. A rejection or an invalid result shows an error card and reports `file-unavailable`, as for any other resolve.
+- **Not covered:** images shown only through `ImageAdapter.presentation`, which has no separate resolve step.
+
+It changes no document, revision, history, selection or scroll position, so it also works in a read-only editor, during composition and while an image import is pending. In source and TXT modes there are no references to draw, so it does nothing, and they resolve afresh when formatted mode returns. A result that arrives after a reload, a mode change or `destroy` is ignored.
+
+Throws `invalid-argument` for `targets` that isn't a list of strings, then `not-ready` before a document is loaded, and `stale-document` for a different `expectedGeneration`. See [files and wiki links](/guides/adapters).
 
 ## Clipboard and print
 

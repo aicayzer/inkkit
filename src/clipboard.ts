@@ -9,7 +9,7 @@ import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { shareableFragment } from './comments'
 import { diagramImage } from './mermaid'
-import { fileReference } from './linked-syntax'
+import { fileFields } from './linked-syntax'
 import { definitionText } from './references'
 import { isSafeLinkTarget } from './link-safety'
 import { portableFile, portableFileImage } from './portable-files'
@@ -116,7 +116,7 @@ function nodeText(
   if (node.type.name === 'image') {
     const description = fileDescriptions.get(node.attrs)
     if (description != null) return description
-    const alt = fileReference(node).label || 'Image'
+    const alt = fileFields(node).label || 'Image'
     return missingImages.has(String(node.attrs.src ?? ''))
       ? `[${alt}: image unavailable]`
       : alt
@@ -258,7 +258,7 @@ export async function portableClipboard(
     (element, index) => {
       const node = references[index]!
       const reference = String(node?.attrs.src ?? '')
-      const { label: authoredAlt, width } = fileReference(node)
+      const { label: authoredAlt, width } = fileFields(node)
       const alt = authoredAlt || 'Image'
       if (width != null && width > 0)
         element.setAttribute('width', String(Math.min(4096, width)))

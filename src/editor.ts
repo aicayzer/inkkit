@@ -131,7 +131,7 @@ import { imageView } from './images'
 import { imagePlacement, isImage, isImageBlock } from './image-blocks'
 import { GapCursor } from '@milkdown/kit/prose/gapcursor'
 import { wikiLinkView } from './wiki-view'
-import { withFileSignal } from './files'
+import { mediaPolicyEvent, requestRefresh, withFileSignal } from './files'
 import {
   tablePlugins,
   tableCommand,
@@ -1583,7 +1583,7 @@ export class InkKitEditor {
     if (this.editor && this.root)
       this.editor.ctx
         .get(editorViewCtx)
-        .dom.dispatchEvent(new Event('inkkit-media-policy'))
+        .dom.dispatchEvent(new Event(mediaPolicyEvent))
   }
 
   private assertAlive(): void {
@@ -4379,6 +4379,30 @@ export class InkKitEditor {
     this.releaseFocus()
   }
 
+  /**
+   * Resolves wiki links and file embeds again, all of them or those whose `target` is named, after
+   * something they point to changed. A file keeps its card until the new answer differs. Changes no
+   * document state, so it works in a read-only editor and during composition. Source and TXT modes
+   * draw no references, and they resolve afresh when formatted mode returns.
+   */
+  refreshReferences(
+    targets?: readonly string[],
+    expectedGeneration?: number,
+  ): void {
+    this.assertAlive()
+    const names = isOmitted(targets)
+      ? undefined
+      : new Set(
+          expectArray(targets, 'targets').map((target) =>
+            expectString(target, 'targets entry'),
+          ),
+        )
+    this.assertReady(expectedGeneration)
+    requestRefresh(this.editor.ctx.get(editorViewCtx).dom, {
+      ...(names && { targets: names }),
+    })
+  }
+
   /** Replaces every binding. Keys are in ProseMirror's notation. A key given to two shortcuts goes
    *  to the later one, in the order history, formatting, block moves, tables, so it lands the same
    *  way every time. A table binding passes a key it shares with a block move to the move outside
@@ -5217,6 +5241,7 @@ export class InkKitEditor {
       'setCommentsVisible',
       'focus',
       'blur',
+      'refreshReferences',
       'setKeymap',
       'textSnapshot',
       'selectTextRange',

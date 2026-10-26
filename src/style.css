@@ -552,14 +552,27 @@
   font-weight: 700;
 }
 
-.inkkit-root .ProseMirror a {
+.inkkit-root .ProseMirror a,
+.inkkit-root .inkkit-wiki-link {
   color: var(--_inkkit-accent);
   text-decoration: none;
   text-underline-offset: 2px;
 }
 
-.inkkit-root .ProseMirror a:hover {
+.inkkit-root .ProseMirror a:hover,
+.inkkit-root .inkkit-wiki-link:hover {
   text-decoration: underline;
+}
+
+/* A missing target differs by its line, not only its color, which forced colors replace. */
+.inkkit-root .inkkit-wiki-link[data-missing] {
+  text-decoration: underline dashed;
+}
+
+@media (forced-colors: active) {
+  .inkkit-root .inkkit-wiki-link {
+    color: LinkText;
+  }
 }
 
 /* Held Mod opens a link on click; an empty address opens nothing. */

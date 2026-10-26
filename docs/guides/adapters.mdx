@@ -142,6 +142,8 @@ How the result shows:
 - **`error`** shows a card whose status is your `message`, a short reason written for the person.
 - **A rejected or invalid result** shows a card with the `fileError` label and reports `file-unavailable` through `events.error`.
 
+`reference.raw` is the embed's Markdown as the document holds it, such as `![a|120](a\_b.png "T")` or `![[photo.png|400]]`: use it to match the embed to the text you saved. Escapes, the alias and the width stay as written, and a table cell's `\|` escapes are included. Find the file by `target`, never by `raw`. The [reference](/reference/adapters#filereference) says exactly what it holds.
+
 A card that is loading, failed, missing or in error has a Retry button, which calls `resolve` again. Setting `open` adds an Open button to every card, and `contextMenu` receives right-clicks with a `ClientPoint`. An exception they throw is reported as `file-unavailable`. Both return nothing, so handle failures of asynchronous work inside them.
 
 Abandon the work when `context.signal` aborts. Inkkit aborts a request when the reference changes, the person retries, the mode changes, the document reloads or the editor is destroyed, and it ignores late results even if you don't stop.
@@ -180,10 +182,23 @@ const editor = await InkKitEditor.mount(root, events, { wikiLinks })
 ```
 
 - `open(reference, context)` runs on a Mod-click, or Enter or Space on the focused link, including in a read-only editor. `reference.target` is the note name with escapes removed. It is empty for a link to a heading in the same note, such as `[[#Heading]]`.
-- `resolve(reference, context)` is synchronous and only marks a link as missing, with the `wikiMissing` label as its tooltip. Answer from an index you already hold.
+- `reference.raw` is the link as written, such as `[[Plan|Plan]]`, so a host can tell `[[Plan]]` from `[[Plan|Plan]]`. See the [reference](/reference/adapters#wikilinkreference).
+- `resolve(reference, context)` is synchronous and only marks a link as missing: the link gets a dashed underline, and the `wikiMissing` label as its tooltip and accessible description. A missing link still opens, so you can offer to create the note. Answer from an index you already hold.
 - `suggest(query, context)` returns note names, in display order, for the text typed after `[[`. Inkkit inserts the chosen name, escaped. A newer query aborts the previous request, and Inkkit ignores late answers. Return only names that are valid link targets: one invalid name closes the list and reports `file-unavailable`.
 
 Suggestions work without the slash menu. When `wikiLinks` is set, typing the closing `]]` of a complete link also makes a link. See [Markdown support](/concepts/markdown#wiki-links-and-file-embeds) for the syntax.
+
+## Refresh after a change
+
+A link or card shows the answer from its last `resolve`. When what it points to changes while the note is open, such as a note that was just created or a file that arrived, call `refreshReferences` with the affected names, or with none for every reference:
+
+```ts
+// A note named "Plan" was created.
+noteNames.add('Plan')
+editor.refreshReferences(['Plan'])
+```
+
+Names are compared with each reference's `target`. A file card stays as it is until the new answer differs, so a card that didn't change doesn't flicker or move. The call changes no document state and works in a read-only editor and during composition. The [editor reference](/reference/editor#refreshreferences) has the details.
 
 ## References and display URLs
 
