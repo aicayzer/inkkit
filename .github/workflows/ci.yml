@@ -53,11 +53,15 @@ jobs:
         if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: node --test scripts/ci-scope.test.mjs scripts/install-browsers.test.mjs
         if: ${{ needs.changes.outputs.editor == 'true' }}
-      # The packed-consumer test opens its pages in both engines.
-      - run: node scripts/install-browsers.mjs chromium webkit
+      # The packed-consumer test opens its pages in both engines on main and
+      # releases. Pull requests use Chromium only, like the browser shards, and
+      # skip the system packages whose mirror stalls.
+      - run: node scripts/install-browsers.mjs ${{ github.event_name == 'pull_request' && '--no-deps chromium' || 'chromium webkit' }}
         timeout-minutes: 17
         if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm check
+        env:
+          INKKIT_PACKAGE_ENGINES: ${{ github.event_name == 'pull_request' && 'chromium' || 'chromium,webkit' }}
         if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm build:playground
         if: ${{ needs.changes.outputs.editor == 'true' }}
