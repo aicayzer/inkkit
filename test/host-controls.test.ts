@@ -60,6 +60,7 @@ test('read-only blocks every facade mutation family while retaining navigation a
       () => editor.replaceAll('Text', 'new'),
       () => editor.insertPaths(['new'], { clientX: 0, clientY: 0 }),
       () => editor.insertImages([{ reference: 'opaque', alt: 'x' }]),
+      () => editor.appendImages([{ reference: 'opaque', alt: 'x' }]),
     ]
     for (const mutate of mutations)
       expect(mutate).toThrow(expect.objectContaining({ code: 'read-only' }))

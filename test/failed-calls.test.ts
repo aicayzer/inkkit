@@ -163,6 +163,15 @@ const scenarios: Scenario[] = [
       ]),
   },
   {
+    name: 'appendImages',
+    setup: words('world'),
+    call: (editor) =>
+      editor.appendImages([
+        { reference: 'a.png', alt: 'A' },
+        { reference: 'b.png', alt: 'B' },
+      ]),
+  },
+  {
     name: 'insertPaths',
     call: (editor) =>
       editor.insertPaths(['a.txt', 'b.txt'], { clientX: 0, clientY: 0 }),

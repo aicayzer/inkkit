@@ -158,6 +158,16 @@ A link with any other scheme, such as `javascript:`, `data:`, `file:` or an app'
 - is refused by `format('link')` with `invalid-argument`;
 - is copied, imported from HTML and printed as its text.
 
+### Extra schemes
+
+An app that opens links into other apps, such as `things:` or `message:`, names those schemes in [`linkSchemes`](/reference/options#editor-options) at mount. For that editor, a link with a listed scheme:
+
+- shows its address, and a Mod-click passes it to `events.openLink`;
+- is accepted by `format('link')`;
+- keeps its address in the HTML that a copy or [`clipboardSnapshot`](/reference/editor#clipboardsnapshot) produces.
+
+It still becomes its text when HTML is pasted or dropped into the editor, and in [print](#print), because HTML from outside, and a printed page, can't be trusted to open another app. Copied HTML that holds such a link therefore pastes back as the link's text, in this editor and elsewhere. `javascript:`, `data:`, `vbscript:` and `file:` can't be listed. Pasted Markdown keeps its addresses as written, as before, and the Markdown source never changes.
+
 The Markdown source keeps every address as written. Pasted Markdown and typed text aren't filtered. Letting a host allow more schemes is tracked in [issue #324](https://github.com/aicayzer/inkkit/issues/324).
 
 ## Print

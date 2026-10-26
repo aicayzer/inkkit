@@ -580,7 +580,7 @@ test('a failed host command keeps document bytes, revision and undo history', as
     await page.evaluate(
       () => (window as unknown as SuggestionWindow).suggestionErrors,
     ),
-  ).toContain('internal')
+  ).toContain('slash-command-failed')
   await page.keyboard.press('ControlOrMeta+z')
   await expectSaved(page, '')
 })
