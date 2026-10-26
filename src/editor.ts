@@ -34,7 +34,7 @@ import {
   redo as redoHistory,
 } from '@milkdown/kit/prose/history'
 import { cursor } from './cursor'
-import { insertTextChunk } from './text-input'
+import { replacementMarks, textInputPlugin } from './text-input'
 import { blockDropRange } from './drop-placement'
 import {
   blockquoteKeymap,
@@ -1228,20 +1228,7 @@ const movedListItems = $prose(
     }),
 )
 
-// A control chord that nothing handles reaches the page as its ASCII control character
-// (Control-N as U+000E), which the web view would insert as text.
-const controlCharacters = /^[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]+$/
-const textInputPolicy = $prose(
-  () =>
-    new Plugin({
-      key: new PluginKey('inkkitTextInput'),
-      props: {
-        handleTextInput: (view, from, to, text, deflt) =>
-          controlCharacters.test(text) ||
-          insertTextChunk(view, from, to, text, deflt),
-      },
-    }),
-)
+const textInputPolicy = $prose(() => textInputPlugin())
 
 function outermostListDepth($pos: ResolvedPos): number | null {
   for (let depth = 1; depth <= $pos.depth; depth++) {
@@ -2807,14 +2794,8 @@ export class InkKitEditor {
         )
       } else {
         const { schema } = view.state
-        const marks =
-          view.state.storedMarks ??
-          (view.state.selection.empty
-            ? view.state.selection.$from.marks()
-            : view.state.selection.$from.marksAcross(
-                view.state.selection.$to,
-              )) ??
-          []
+        const { from, to } = view.state.selection
+        const marks = replacementMarks(view.state, from, to)
         const isHTML =
           !inHiddenComment && htmlBreakAt(view.state.selection.$from)
         const lines = text.replace(/\r\n?/g, '\n').split('\n')
@@ -5142,8 +5123,15 @@ export class InkKitEditor {
     const { selection, storedMarks } = state
     const { from, to, empty } = selection
     const stored = empty ? type.isInSet(storedMarks ?? []) : undefined
+    // Links end at their edges, so a caret at a link's end, where typing
+    // continues or leaves it, is still at that link.
+    const beside = empty ? (selection.$from.nodeBefore?.marks ?? []) : []
     // A stored link that the caret already sits in is that link, kept when another mark was toggled.
-    if (stored && !stored.isInSet(selection.$from.marks())) {
+    if (
+      stored &&
+      !stored.isInSet(selection.$from.marks()) &&
+      !stored.isInSet(beside)
+    ) {
       const tr = state.tr.removeStoredMark(type)
       if (destination !== undefined)
         tr.addStoredMark(type.create({ href: destination }))
@@ -5152,7 +5140,11 @@ export class InkKitEditor {
     }
     const mark = type.isInSet(
       empty
-        ? [...selection.$from.marks(), ...(state.doc.nodeAt(from)?.marks ?? [])]
+        ? [
+            ...selection.$from.marks(),
+            ...beside,
+            ...(state.doc.nodeAt(from)?.marks ?? []),
+          ]
         : (state.doc.nodeAt(from)?.marks ?? []),
     )
     const extent = mark && markRun(state.doc, mark, from, to)

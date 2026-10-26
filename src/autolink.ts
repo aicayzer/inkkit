@@ -10,7 +10,6 @@ import {
   TextSelection,
   type Transaction,
 } from '@milkdown/kit/prose/state'
-import { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { serialize } from './dialect'
 import { semanticSignature } from './preserve'
@@ -255,34 +254,6 @@ function completedAngle(
       tr.doc.type.schema.marks.link!.create({ href, form: 'angle' }),
     )
     .removeStoredMark(tr.doc.type.schema.marks.link!)
-}
-
-// Angle delimiters close a link. ProseMirror's shared link mark is inclusive
-// for explicit links, so remove an inherited angle mark from boundary input.
-function closeAngleEnds(tr: Transaction, transactions: readonly Transaction[]) {
-  const steps = transactions.flatMap((transaction) =>
-    transaction.steps.map((step, index) => ({
-      doc: transaction.docs[index]!,
-      map: step.getMap(),
-    })),
-  )
-  steps.forEach(({ doc, map }, index) => {
-    const remaining = new Mapping(steps.slice(index + 1).map(({ map }) => map))
-    map.forEach((from, to, start, end) => {
-      if (from !== to || start === end) return
-      const at = doc.resolve(from)
-      const before = at.nodeBefore?.marks.find(
-        (mark) => mark.attrs.form === 'angle',
-      )
-      const after = at.nodeAfter?.marks.find(
-        (mark) => mark.attrs.form === 'angle',
-      )
-      if (before && after && before.eq(after)) return
-      for (const mark of [before, after])
-        if (mark)
-          tr.removeMark(remaining.map(start, 1), remaining.map(end, -1), mark)
-    })
-  })
 }
 
 // A code input rule can wrap a completed angle link. Restore its literal
@@ -617,10 +588,7 @@ export const autolinkLiterals = $prose(
         if (!transactions.some((tr) => tr.docChanged)) return null
         const base = newState.tr
         const written = transactions.every(isWrittenEdit)
-        if (written) {
-          closeAngleEnds(base, transactions)
-          codeAngles(base, editedBlocks(oldState.doc, base.doc))
-        }
+        if (written) codeAngles(base, editedBlocks(oldState.doc, base.doc))
         let edited = editedBlocks(oldState.doc, base.doc)
         if (written && edited.length === 1) {
           const { pos, block, from, to } = edited[0]!

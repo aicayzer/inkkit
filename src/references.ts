@@ -226,6 +226,9 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
   const schema = base(ctx)
   return {
     ...schema,
+    // Text typed at a link's end stays outside it; `replacementMarks` in
+    // text-input.ts keeps text that replaces a link's text in the link.
+    inclusive: false,
     // Label formatting belongs inside a reference, where its source determines the identifier.
     priority: 40,
     attrs: {

@@ -128,10 +128,10 @@ test('it leaves code and existing text alone, and works in link text', async ({
   await page.keyboard.type(` "a" it's -- ---`)
   await caretAfterMatch(page, 'cod')
   await page.keyboard.type(`"'--`)
-  await caretAfterMatch(page, 'link')
+  await caretAfterMatch(page, 'lin')
   await page.keyboard.type(' "x"')
   await saved(page).toBe(
-    'He said "hi" -- and `cod"\'--e` and [link “x”](https://example.com/a--b)\n\n```\nblock "a" it\'s -- ---\n```\n',
+    'He said "hi" -- and `cod"\'--e` and [lin “x”k](https://example.com/a--b)\n\n```\nblock "a" it\'s -- ---\n```\n',
   )
   expect((await observe(page)).diagnostics).toEqual([])
 })

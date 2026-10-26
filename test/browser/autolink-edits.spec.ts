@@ -204,10 +204,10 @@ const typing: [string, string, string, boolean, string, string][] = [
   [
     'into a written link whose label is its destination',
     'See [docs](docs) now.\n',
-    'docs',
+    'doc',
     true,
     'x',
-    'See [docsx](docs) now.\n',
+    'See [docxs](docs) now.\n',
   ],
 ]
 

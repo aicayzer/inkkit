@@ -177,10 +177,43 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         savedPasteboard = nil
     }
 
+    // Composes text as an input method does, through the web view's text input client: each
+    // string but the last is marked text, and the last is committed.
+    func compose_(_ steps: [String], replyHandler: @escaping (Any?, String?) -> Void) {
+        guard steps.count >= 2, steps.count <= 32 else {
+            replyHandler(nil, "Invalid native composition")
+            return
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeFirstResponder(web)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard self.window.isKeyWindow, let client = self.web.inputContext?.client else {
+                replyHandler(nil, "WKWebView has no key text input client")
+                return
+            }
+            let none = NSRange(location: NSNotFound, length: 0)
+            for marked in steps.dropLast() {
+                client.setMarkedText(marked, selectedRange: NSRange(location: (marked as NSString).length, length: 0),
+                                     replacementRange: none)
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            client.insertText(steps.last!, replacementRange: none)
+            try? await Task.sleep(for: .milliseconds(200))
+            replyHandler(["keyWindow": self.window.isKeyWindow,
+                          "client": String(describing: type(of: client))], nil)
+        }
+    }
+
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
         if message.name == "nativeInput" {
             guard let request = message.body as? [String: Any] else {
                 replyHandler(nil, "Invalid native key request")
+                return
+            }
+            if let compose = request["compose"] as? [String] {
+                compose_(compose, replyHandler: replyHandler)
                 return
             }
             let keys = request["keys"] as? [[String: Any]] ?? [request]

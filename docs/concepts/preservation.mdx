@@ -30,7 +30,7 @@ Markdown that Inkkit can't show formatted, such as raw HTML, front matter and un
 
 ## When a block is written afresh
 
-Inkkit writes a block in canonical form when it can't keep the authored spelling: a new block, or an edited block whose own source can't express the change. Canonical form uses `-` for bullets, `*` for emphasis, `**` for strong, fenced code blocks and `---` for rules. You notice it in these cases:
+Inkkit writes a block in canonical form when it can't keep the authored spelling: a new block, or an edited block whose own source can't express the change. Canonical form uses `-` for bullets, `*` for emphasis, `**` for strong, fenced code blocks and `---` for rules. Formatting that covers a link and the text beside it is written once around both, as `**[docs](https://example.com) now**`. You notice it in these cases:
 
 - **Indented code that you edit** is saved as a fenced code block.
 - **Moved blocks.** A block moved with `moveBlock` or its shortcuts keeps its source, and an ordered item takes the number written at its new place. A block moved by cut and paste, or by drag and drop, is written in canonical form.

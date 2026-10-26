@@ -221,6 +221,59 @@ function writesBare(node: Link, index: number, ancestors: Parents[]): boolean {
 // what runs into an address can sit outside the formatting around it.
 let bareLinks = new WeakSet<Link>()
 
+type Wrapper = PhrasingContent & { children: PhrasingContent[] }
+
+// The formatting a link written with brackets wraps as its only child. A
+// collapsed or shortcut reference is left alone, since its label names its
+// definition.
+function linkFormatting(node: PhrasingContent): Wrapper | undefined {
+  const plain =
+    (node.type === 'link' && !formOf(node)) ||
+    (node.type === 'linkReference' && node.referenceType === 'full')
+  const [inner] = plain ? (node as Wrapper).children : []
+  return plain &&
+    (node as Wrapper).children.length === 1 &&
+    inner &&
+    wrappers.has(inner.type)
+    ? (inner as Wrapper)
+    : undefined
+}
+
+// The writer opens a link outside the formatting in it, so formatting that
+// runs on past a link would close and reopen at the link's end, as in
+// `[**a**](u)**b**`. Formatting that a link shares with the text beside it is
+// written once around both instead, as `**[a](u)b**`.
+function shareFormatting(children: PhrasingContent[]): void {
+  const same = (left: PhrasingContent, right: PhrasingContent) => {
+    const { children: _left, position: _a, ...leftRest } = left as Wrapper
+    const { children: _right, position: _b, ...rightRest } = right as Wrapper
+    return JSON.stringify(leftRest) === JSON.stringify(rightRest)
+  }
+  for (let index = 0; index < children.length; index++) {
+    const child = children[index]!
+    const formatting = linkFormatting(child)
+    if (!formatting) continue
+    const link = { ...child, children: formatting.children } as PhrasingContent
+    const previous = children[index - 1]
+    const next = children[index + 1]
+    const before = previous && same(previous, formatting)
+    const after = next && same(next, formatting)
+    if (!before && !after) continue
+    const merged = {
+      ...formatting,
+      children: [
+        ...(before ? (previous as Wrapper).children : []),
+        link,
+        ...(after ? (next as Wrapper).children : []),
+      ],
+    } as PhrasingContent
+    const from = before ? index - 1 : index
+    children.splice(from, 1 + Number(before) + Number(after), merged)
+    // The merged formatting can meet another link that shares it.
+    index = from - 1
+  }
+}
+
 const root: (typeof defaultHandlers)['root'] = (node, parent, state, info) => {
   bareLinks = new WeakSet()
   // Moving spaces out of formatting can leave empty text, and formatting
@@ -237,6 +290,7 @@ const root: (typeof defaultHandlers)['root'] = (node, parent, state, info) => {
         (child) => !empty(child as PhrasingContent),
       ) as typeof current.children
     const children = current.children as PhrasingContent[]
+    shareFormatting(children)
     children.forEach((child, index) => {
       if (child.type === 'link' && formOf(child)) {
         const outside = formattedOutside(child)

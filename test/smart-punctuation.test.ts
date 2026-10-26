@@ -365,9 +365,9 @@ describe('where it never applies', () => {
 
   test('in the text of a link', () =>
     smart('[a link](http://example.com/)', (s) => {
-      s.caret('a link')
+      s.caret('a')
       s.type(` "x"`)
-      expect(s.save()).toBe('[a link “x”](http://example.com/)')
+      expect(s.save()).toBe('[a “x” link](http://example.com/)')
     }))
 
   test('in a web address being typed', () =>

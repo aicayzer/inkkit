@@ -81,7 +81,8 @@ test.each(wrappers)(
     const source = `See ${mark}[a b](u)${mark} now\n`
     for (const [offset, expected] of [
       [1, `See ${mark}[aX b](u)${mark} now\n`],
-      [3, `See ${mark}[a bX](u)${mark} now\n`],
+      // Text typed at the link's end stays outside it, inside the formatting.
+      [3, `See ${mark}[a b](u)X${mark} now\n`],
     ] as const) {
       const at = load(source)
       caret('a b', offset)
@@ -132,7 +133,7 @@ test('CRLF and Unicode labels keep their formatting and line endings', () => {
   caret('ü', 1)
   expect(editor.insertText('文字', at)).toBe(true)
   expect(saved()).toBe(
-    'Před ~~[café ñ🎉 b](u "T")~~ po\r\n\r\nNext __[ü文字](v)__\r\n',
+    'Před ~~[café ñ🎉 b](u "T")~~ po\r\n\r\nNext __[ü](v)文字__\r\n',
   )
   expect(editor.undo(at)).toBe(true)
   expect(editor.undo(at)).toBe(true)
