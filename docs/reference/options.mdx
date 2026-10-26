@@ -434,6 +434,6 @@ Called when the person chooses the command, with the current `documentId`, `gene
 - **`''`** removes the slash and filter and restores the line as it was before the slash.
 - **`undefined`** cancels and keeps the text as typed.
 
-If the document, revision, mode, editability, selection or presentation changed before the result arrives, Inkkit refuses it and reports `stale-document`. A result that isn't a string or `undefined` reports `invalid-argument`. A thrown or rejected error is reported through `events.error`: an `InkKitError` as it is, anything else as `internal` with the error as `cause`. A failed action keeps the trigger text. After `destroy`, late results and errors are ignored.
+If the document, revision, mode, editability, selection or presentation changed before the result arrives, Inkkit refuses it and reports `stale-document`. A result that isn't a string or `undefined` reports `invalid-argument`. A thrown or rejected error is reported through `events.error`: an `InkKitError` as it is, anything else as `slash-command-failed` with the error as `cause`. A failed action keeps the trigger text. After `destroy`, late results and errors are ignored.
 
 </ResponseField>

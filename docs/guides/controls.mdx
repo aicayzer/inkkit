@@ -143,7 +143,7 @@ const editor = await InkKitEditor.mount(root, events, {
 })
 ```
 
-Here `chooseNoteLink` is your own picker, which returns a Markdown link such as `[Plans](notes/plans.md)`. A custom `action` returns Markdown, which replaces the line that holds the slash as one undo step, after the same preservation checks as any edit. Return `undefined` to cancel and keep the typed text. The action can be slow without blocking typing. If the document, selection or mode changes before it settles, Inkkit refuses the result and reports `stale-document` through `events.error`. See [Slash menu](/reference/options#slash-menu) for filtering, keys and every built-in command.
+Here `chooseNoteLink` is your own picker, which returns a Markdown link such as `[Plans](notes/plans.md)`. A custom `action` returns Markdown, which replaces the line that holds the slash as one undo step, after the same preservation checks as any edit. Return `undefined` to cancel and keep the typed text. The action can be slow without blocking typing. If the document, selection or mode changes before it settles, Inkkit refuses the result and reports `stale-document` through `events.error`. An action that throws or rejects is reported as `slash-command-failed`, with your error as `cause`, and the typed text stays. See [Slash menu](/reference/options#slash-menu) for filtering, keys and every built-in command.
 
 ## Build your own find
 

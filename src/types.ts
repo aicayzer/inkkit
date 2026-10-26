@@ -40,6 +40,7 @@ export const editorErrorCodes = [
   'diagram-unavailable',
   'file-unavailable',
   'clipboard-unavailable',
+  'slash-command-failed',
   'internal',
 ] as const
 export type EditorErrorCode = (typeof editorErrorCodes)[number]

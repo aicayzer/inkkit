@@ -4899,28 +4899,31 @@ export class InkKitEditor {
       commit(command)
       return
     }
-    try {
-      const result = command.action(this.context())
-      const insert = (markdown: string | undefined) => {
-        if (this.destroyed) return
-        if (markdown === undefined) return
-        if (typeof markdown !== 'string') {
-          this.report(
-            invalidArgument('A slash command must return Markdown text'),
-          )
-          return
-        }
-        commit({ markdown })
-      }
-      if (result instanceof Promise)
-        result.then(insert).catch((error) => {
-          if (this.destroyed) return
-          this.report(error)
-        })
-      else insert(result)
-    } catch (error) {
-      this.report(error)
+    // Only what the host's action throws or rejects with is its failure. Inkkit's own insert reports
+    // for itself, so it is not given to this handler.
+    const onHostError = (error: unknown) => {
+      if (!this.destroyed) this.report(coded(error, 'slash-command-failed'))
     }
+    const insert = (markdown: string | undefined) => {
+      if (this.destroyed) return
+      if (markdown === undefined) return
+      if (typeof markdown !== 'string') {
+        this.report(
+          invalidArgument('A slash command must return Markdown text'),
+        )
+        return
+      }
+      commit({ markdown })
+    }
+    let result: ReturnType<SlashCommand['action']>
+    try {
+      result = command.action(this.context())
+    } catch (error) {
+      onHostError(error)
+      return
+    }
+    if (result instanceof Promise) result.then(insert, onHostError)
+    else insert(result)
   }
 
   /** Returns whether the document or the marks the next typed text takes changed. */
