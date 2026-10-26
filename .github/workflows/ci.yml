@@ -51,10 +51,11 @@ jobs:
         if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm format:check
         if: ${{ needs.changes.outputs.editor == 'true' }}
-      - run: node --test scripts/ci-scope.test.mjs
+      - run: node --test scripts/ci-scope.test.mjs scripts/install-browsers.test.mjs
         if: ${{ needs.changes.outputs.editor == 'true' }}
       # The packed-consumer test opens its pages in both engines.
-      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: node scripts/install-browsers.mjs chromium webkit
+        timeout-minutes: 17
         if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm check
         if: ${{ needs.changes.outputs.editor == 'true' }}
@@ -68,44 +69,101 @@ jobs:
           name: package-candidate
           path: _local/release/
 
-  browser:
+  # The suite takes 15 to 25 minutes serially, so each engine runs in three
+  # shards. The aggregating jobs keep the check names that branch protection
+  # uses; the engines have separate shard jobs so one cannot fail the other.
+  browser-chromium:
     needs: changes
-    name: browser (${{ matrix.engine }})
+    # A skipped shard job reports success through its aggregator below.
+    if: ${{ needs.changes.outputs.editor == 'true' }}
+    name: browser shard (chromium ${{ matrix.shard }}/3)
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - engine: chromium
-            os: ubuntu-latest
-          # Every current host embeds WebKit on Apple platforms.
-          - engine: webkit
-            os: macos-latest
-    runs-on: ${{ matrix.os }}
-    # The serial suite takes 20 to 30 minutes and grows with each fix.
-    timeout-minutes: 60
-    # Keep both required check names present even for documentation-only changes.
+        shard: [1, 2, 3]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-        if: ${{ needs.changes.outputs.editor == 'true' }}
       - uses: actions/setup-node@v4
-        if: ${{ needs.changes.outputs.editor == 'true' }}
         with:
           node-version: '26'
       - run: npm install --global pnpm@11.0.9
-        if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm install --frozen-lockfile
-        if: ${{ needs.changes.outputs.editor == 'true' }}
-      - run: pnpm exec playwright install --with-deps ${{ matrix.engine }}
-        if: ${{ needs.changes.outputs.editor == 'true' }}
+      - run: node scripts/install-browsers.mjs chromium
+        timeout-minutes: 17
       - run: node --test scripts/test-browser.test.mjs
-        if: ${{ needs.changes.outputs.editor == 'true' }}
-      - run: node scripts/test-browser.mjs --project=${{ matrix.engine }}
-        if: ${{ needs.changes.outputs.editor == 'true' }}
+      - run: node scripts/test-browser.mjs --project=chromium --shard=${{ matrix.shard }}/3
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:
-          name: browser-${{ matrix.engine }}
+          name: browser-chromium-${{ matrix.shard }}
           path: _local/playwright/
+
+  # Every current host embeds WebKit on Apple platforms.
+  browser-webkit:
+    needs: changes
+    # A skipped shard job reports success through its aggregator below.
+    if: ${{ needs.changes.outputs.editor == 'true' }}
+    name: browser shard (webkit ${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      - run: npm install --global pnpm@11.0.9
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/install-browsers.mjs webkit
+        timeout-minutes: 17
+      - run: node --test scripts/test-browser.test.mjs
+      - run: node scripts/test-browser.mjs --project=webkit --shard=${{ matrix.shard }}/3
+      - uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: browser-webkit-${{ matrix.shard }}
+          path: _local/playwright/
+
+  browser-chromium-result:
+    needs: [changes, browser-chromium]
+    name: browser (chromium)
+    # A failed or cancelled shard must fail this check, and a documentation-only
+    # change, which skips the shards, must pass it.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          echo "changes: $CHANGES, shards: $SHARDS, editor: $EDITOR"
+          test "$CHANGES" = success
+          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$EDITOR" != true; }
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          SHARDS: ${{ needs.browser-chromium.result }}
+          EDITOR: ${{ needs.changes.outputs.editor }}
+
+  browser-webkit-result:
+    needs: [changes, browser-webkit]
+    name: browser (webkit)
+    # A failed or cancelled shard must fail this check, and a documentation-only
+    # change, which skips the shards, must pass it.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          echo "changes: $CHANGES, shards: $SHARDS, editor: $EDITOR"
+          test "$CHANGES" = success
+          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$EDITOR" != true; }
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          SHARDS: ${{ needs.browser-webkit.result }}
+          EDITOR: ${{ needs.changes.outputs.editor }}
 
   docs:
     needs: changes
