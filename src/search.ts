@@ -1,5 +1,6 @@
 import { literalTextNodes } from './literal-text'
 import { htmlBreakAt } from './hard-break'
+import { replacementMarks } from './text-input'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Fragment, Slice } from '@milkdown/kit/prose/model'
 import { closeHistory } from '@milkdown/kit/prose/history'
@@ -141,9 +142,8 @@ function replacementSlice(
   to: number,
   value: string,
 ): Slice {
-  const start = state.doc.resolve(from),
-    end = state.doc.resolve(to)
-  const marks = start.marksAcross(end) ?? start.marks()
+  const start = state.doc.resolve(from)
+  const marks = replacementMarks(state, from, to)
   const nodes: ProseNode[] = []
   if (start.parent.type.spec.code) {
     if (value) nodes.push(state.schema.text(value, marks))

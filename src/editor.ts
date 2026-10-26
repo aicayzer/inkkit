@@ -34,7 +34,7 @@ import {
   redo as redoHistory,
 } from '@milkdown/kit/prose/history'
 import { cursor } from './cursor'
-import { insertTextChunk } from './text-input'
+import { replacementMarks, textInputPlugin } from './text-input'
 import { blockDropRange } from './drop-placement'
 import {
   blockquoteKeymap,
@@ -77,6 +77,7 @@ import {
   type ResolvedPos,
 } from '@milkdown/kit/prose/model'
 import { splitBlock } from '@milkdown/kit/prose/commands'
+import { undoInputRule } from '@milkdown/kit/prose/inputrules'
 import { keydownHandler, keymap } from '@milkdown/kit/prose/keymap'
 import { goToNextCell } from '@milkdown/kit/prose/tables'
 import { liftListItem, sinkListItem } from '@milkdown/kit/prose/schema-list'
@@ -892,6 +893,36 @@ function blockAt(
 
 const quotes = new Set(['blockquote', 'inkkit_callout'])
 
+// A list item that opens with a quote holds an empty first paragraph, because the schema needs
+// one. Once a paragraph has left the quote, the empty one would be written as a `<br />` line, so
+// it goes. A `<br />` line an author wrote reads as the same paragraph, and stays while the quote
+// does.
+function liftQuote(
+  state: EditorState,
+  range: NodeRange,
+  target: number,
+): Transaction {
+  const tr = state.tr.lift(range, target)
+  const { depth } = range
+  const item = range.$from.node(depth - 1)
+  const spacer = item.firstChild
+  if (
+    item.type.name === 'list_item' &&
+    range.$from.index(depth - 1) === 1 &&
+    spacer?.type.name === 'paragraph' &&
+    spacer.content.size === 0
+  ) {
+    const from = range.$from.start(depth - 1)
+    if (tr.doc.nodeAt(from + spacer.nodeSize)?.type === spacer.type)
+      tr.delete(from, from + spacer.nodeSize)
+  }
+  return tr
+}
+
+// Backspace right after an input rule, such as a typed code fence, takes it back. The handlers for
+// quotes and list items below would otherwise lift or join the block the rule made.
+const undoTypedRule = $prose(() => keymap({ Backspace: undoInputRule }))
+
 // Backspace at the start of a quote's or callout's first block is left alone
 // by the preset, or joins the block to the one above; leaving the quote is what
 // a Backspace there means. A callout's only block stays while it holds text,
@@ -915,7 +946,7 @@ const quoteBackspace = $prose(() =>
       )
       const target = range && liftTarget(range)
       if (!range || target == null) return false
-      dispatch?.(state.tr.lift(range, target).scrollIntoView())
+      dispatch?.(liftQuote(state, range, target).scrollIntoView())
       return true
     },
   }),
@@ -1197,20 +1228,7 @@ const movedListItems = $prose(
     }),
 )
 
-// A control chord that nothing handles reaches the page as its ASCII control character
-// (Control-N as U+000E), which the web view would insert as text.
-const controlCharacters = /^[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]+$/
-const textInputPolicy = $prose(
-  () =>
-    new Plugin({
-      key: new PluginKey('inkkitTextInput'),
-      props: {
-        handleTextInput: (view, from, to, text, deflt) =>
-          controlCharacters.test(text) ||
-          insertTextChunk(view, from, to, text, deflt),
-      },
-    }),
-)
+const textInputPolicy = $prose(() => textInputPlugin())
 
 function outermostListDepth($pos: ResolvedPos): number | null {
   for (let depth = 1; depth <= $pos.depth; depth++) {
@@ -2776,14 +2794,8 @@ export class InkKitEditor {
         )
       } else {
         const { schema } = view.state
-        const marks =
-          view.state.storedMarks ??
-          (view.state.selection.empty
-            ? view.state.selection.$from.marks()
-            : view.state.selection.$from.marksAcross(
-                view.state.selection.$to,
-              )) ??
-          []
+        const { from, to } = view.state.selection
+        const marks = replacementMarks(view.state, from, to)
         const isHTML =
           !inHiddenComment && htmlBreakAt(view.state.selection.$from)
         const lines = text.replace(/\r\n?/g, '\n').split('\n')
@@ -3185,6 +3197,7 @@ export class InkKitEditor {
       .use(clipboard)
       .use(cursor)
       .use(taskListPlugin)
+      .use(undoTypedRule)
       .use(quoteBackspace)
       .use(calloutEnter)
       .use(literalEnter)
@@ -4816,7 +4829,7 @@ export class InkKitEditor {
     if (!range) return
     const target = liftTarget(range)
     if (target == null) return
-    view.dispatch(view.state.tr.lift(range, target))
+    view.dispatch(liftQuote(view.state, range, target))
   }
 
   /** Changes the selected textblocks' type, keeping everything they hold. */
@@ -5110,8 +5123,15 @@ export class InkKitEditor {
     const { selection, storedMarks } = state
     const { from, to, empty } = selection
     const stored = empty ? type.isInSet(storedMarks ?? []) : undefined
+    // Links end at their edges, so a caret at a link's end, where typing
+    // continues or leaves it, is still at that link.
+    const beside = empty ? (selection.$from.nodeBefore?.marks ?? []) : []
     // A stored link that the caret already sits in is that link, kept when another mark was toggled.
-    if (stored && !stored.isInSet(selection.$from.marks())) {
+    if (
+      stored &&
+      !stored.isInSet(selection.$from.marks()) &&
+      !stored.isInSet(beside)
+    ) {
       const tr = state.tr.removeStoredMark(type)
       if (destination !== undefined)
         tr.addStoredMark(type.create({ href: destination }))
@@ -5120,7 +5140,11 @@ export class InkKitEditor {
     }
     const mark = type.isInSet(
       empty
-        ? [...selection.$from.marks(), ...(state.doc.nodeAt(from)?.marks ?? [])]
+        ? [
+            ...selection.$from.marks(),
+            ...beside,
+            ...(state.doc.nodeAt(from)?.marks ?? []),
+          ]
         : (state.doc.nodeAt(from)?.marks ?? []),
     )
     const extent = mark && markRun(state.doc, mark, from, to)

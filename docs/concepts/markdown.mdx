@@ -130,6 +130,16 @@ The `@aicayzer/inkkit/core` entry leaves Mermaid out: diagram fences stay editab
 - **Code:** an address inside inline code isn't linked.
 - **Spaces:** a bare URL followed by a space at the end of a block is saved as `<https://example.com>&#x20;`, because a bare URL would take in the encoded space.
 
+### Typing at a link's edges
+
+What the editor shows while you type is what reopens. The same rules apply to keys, text that arrives in one piece through `insertText`, and composed text from an input method.
+
+- **At the start or end of a link**, typed letters and spaces stay outside it, for inline links, reference links and angle autolinks. Typing `s` after `[docs](https://example.com)` saves `[docs](https://example.com)s`. Formatting around the link continues, so typing `s` at the end of `**[docs](https://example.com)**` saves `**[docs](https://example.com)s**`.
+- **Inside a link**, typed text joins its label and keeps its destination.
+- **Over part or all of a link's text**, text you type, paste as plain text, or replace with find and replace stays in the link. Selecting `docs` in `[docs](https://example.com)` and typing `user guide` saves `[user guide](https://example.com)`. Typing continues the link until the caret moves. A Markdown or HTML paste brings its own formatting and doesn't take the link.
+- **A link started at the caret** with `format('link', { destination })` takes the text typed next until the first space or other whitespace, or until the caret moves.
+- **Bare addresses** grow while the typed text is still part of the address, so typing `/path` after `https://example.com` links `https://example.com/path`.
+
 A primary click with Mod (Command on Apple platforms, Control elsewhere) calls `events.openLink` with the destination. Links with a scheme other than `http`, `https`, `mailto`, `tel` or one the host lists in `linkSchemes` don't open; see [Links that Inkkit keeps](/concepts/clipboard#links-that-inkkit-keeps).
 
 ## Line breaks

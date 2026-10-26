@@ -6,6 +6,7 @@ import {
   normaliseLabel,
   referenceDefinitions,
 } from '../src/references'
+import { InkKitEditor } from '../src/index'
 import { withEditor } from './harness'
 
 test('reference styles and shared definitions remain authored references', async () => {
@@ -43,7 +44,7 @@ test('footnotes retain repeated references and editable multi-block definitions'
   })
 })
 
-test('definition edits refresh all resolved links and implicit text edits keep their target', async () => {
+test('definition edits refresh all resolved links', async () => {
   await withEditor('[Label][] and [Label]\n\n[Label]: /old\n', (editor) => {
     const view = editor.ctx.get(editorViewCtx)
     const definition = referenceDefinitions(view.state.doc).get('label')!
@@ -59,9 +60,29 @@ test('definition edits refresh all resolved links and implicit text edits keep t
         if (mark.type.name === 'link') hrefs.push(mark.attrs.href)
     })
     expect(hrefs).toEqual(['/new', '/new'])
-    view.dispatch(view.state.tr.insertText('Changed', 1, 6))
-    expect(serialize(editor.ctx)).toContain('[Changed][Label]')
   })
+})
+
+test('typing over implicit reference text keeps its target', async () => {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const editor = await InkKitEditor.mount(root, { changed() {} })
+  try {
+    editor.loadDocument({
+      documentId: 'references',
+      generation: 1,
+      format: 'md',
+      text: '[Label][] and [Label]\n\n[Label]: /old\n',
+    })
+    expect(editor.find('Label', 1)).toBe(true)
+    expect(editor.insertText('Changed', 1)).toBe(true)
+    expect(editor.snapshot().text).toBe(
+      '[Changed][Label] and [Label]\n\n[Label]: /old\n',
+    )
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
 })
 
 test('unresolved and escaped references and code stay source-safe', async () => {

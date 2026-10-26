@@ -711,7 +711,7 @@ describe('blocks that change places beside other edits', () => {
         const markdown = '8. a\n9. c\n   more c\n10. b'
         return note.editor.paste({ text: markdown, markdown })
       },
-      '8. a\n9. c\nmore c\n10. b\n',
+      '8. a\n9. c\n   more c\n10. b\n',
     )
   })
 

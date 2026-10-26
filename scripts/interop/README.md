@@ -104,7 +104,7 @@ node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8
 node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --scenario host-delayed-import-editability-epoch
 ```
 
-Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls`, `native-search`, `layout`, `linked-files`, `media`, `portable-files`, `integration` and `legacy`. Versions from 0.0.8 default to bounded `core`; previous versions retain their historical complete suite when no selector is supplied. `legacy` retains every prior scenario available for the version. No group includes `intentional-assertion-failure`; it requires explicit selection.
+Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls`, `native-search`, `layout`, `linked-files`, `media`, `portable-files`, `integration`, `containers` and `legacy`. Versions from 0.0.8 default to bounded `core`; previous versions retain their historical complete suite when no selector is supplied. `legacy` retains every prior scenario available for the version. No group includes `intentional-assertion-failure`; it requires explicit selection.
 
 The core covers reference preservation and shared source/formatted history. Host controls cover source focus/input preferences, read-only transitions and preserved history, bridge command state and stale generations, synthetic composition guards, and cancellation of manually delayed image imports after editability changes. Synthetic composition events verify guards; they do not prove complete IME interoperability.
 
@@ -182,6 +182,14 @@ The bounded suite types after public `load` and `replaceSource` calls with termi
 The fixture's `nativeInput` operation accepts an explicit macOS `keyCode` (0–127), `characters`, and optional `metaKey`, `shiftKey`, `altKey` and `ctrlKey`. Supply a `keys` array (up to 32 keys) to queue a sequence without per-key waits; the completion wait follows the whole batch. The bridge uses public `NSEvent.keyEvent` and queues key-down/key-up events with `NSApplication.postEvent`, then yields to the AppKit event loop. It requires the key window and a WKWebView first responder. The consumer requires the actual DOM active editor, records trusted keyboard/input events and requires one trusted key-down per requested key. The runner also asserts the resulting document; posting an event alone is not a pass.
 
 These are constructed AppKit events with explicit US keyboard characters. They prove this disposable WKWebView path, not hardware keyboard delivery, IME composition or consumer-app behaviour.
+
+Run the link typing checks against the exact archive with:
+
+```sh
+node scripts/interop/verify-link-typing.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY
+```
+
+The cases type at the end of, inside and over inline, reference, angle and bare links, and after `format('link')` at a caret, in a CRLF and Unicode document. They check the saved bytes, the rendered link text, undo, redo and reopening. `nativeInput` with a `compose` array of strings composes text as an input method does, through the web view's `NSTextInputContext` client: each string but the last is set as marked text and the last is committed. The consumer requires a trusted `compositionend`. This exercises WebKit's composition path, not a particular input method's candidate window or keyboard layout.
 
 Run the bounded find/arrow/delete checks against the exact archive with:
 

@@ -1,3 +1,4 @@
+import { gutterAt } from './gutter'
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { editorLabels } from './labels'
 import { singleLine } from './references'
@@ -89,7 +90,21 @@ function remarkCallouts(this: Processor) {
       if (node.type === 'blockquote') {
         const start = node.position?.start.offset,
           end = node.position?.end.offset
-        const raw = start == null || end == null ? '' : source.slice(start, end)
+        // The lines after the first repeat the gutter of the quote or list
+        // item that holds this one, which the writer adds again.
+        const gutter = start == null ? '' : gutterAt(source, start)
+        const raw =
+          start == null || end == null
+            ? ''
+            : source
+                .slice(start, end)
+                .replace(
+                  /(\r?\n)([^\r\n]*)/g,
+                  (line, eol: string, text: string) =>
+                    gutter && text.startsWith(gutter)
+                      ? eol + text.slice(gutter.length)
+                      : line,
+                )
         const header = /^>[ \t]*([\s\S]*?)(?:\r?\n|$)/.exec(raw)?.[1] ?? ''
         if (header.startsWith('[!')) {
           const match = /^(\[!([A-Za-z]+)\])([+-]?)(?:[ \t]+([^\r\n]*))?$/.exec(
