@@ -211,3 +211,13 @@ node scripts/interop/verify-reference-raw.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DI
 ```
 
 It records the archive, bundle, host and fixture hashes beside each scenario's result. It exercises the facade and DOM events in a real WKWebView, not a consumer app's use of `raw`.
+
+## Native selection and gap cursor
+
+The selection probe opens two editors in a visible `WKWebView` window with a native text field and a second window. For formatted, source and TXT modes it records the selection's state after the editor has focus, after a native field takes focus, after another window becomes key, after the window returns, after the host calls `blur()` and after a second editor takes the selection. It checks the active and inactive colors in snapshot pixels, that one page paints one selection, and that the first editor stops painting when the second takes over. Snapshots omit a native textarea's selection, so source and TXT modes record their pixels without asserting them. WebKit also collapses a textarea's selection when a native field takes focus, with or without Inkkit, so that one case does not require a selection. Run it on a logged-in Mac with a fresh output directory:
+
+```sh
+node scripts/interop/verify-selection-appearance.mjs CANDIDATE_ARCHIVE OUTPUT_DIRECTORY [formatted,source,txt]
+```
+
+The `layout` group includes `native-layout-gap-cursor`, which checks that the gap cursor after a final image is a vertical caret one line tall.

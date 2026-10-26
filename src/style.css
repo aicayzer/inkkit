@@ -498,23 +498,25 @@
   pointer-events: none;
 }
 
-/* The selection plugin draws the selection over the text alone; the engine's own fills the margins too. */
+/* The selection plugin draws the selection over the text alone; the engine's own fills the margins too.
+   The surface needs its own rule: the descendant selector does not reach the surface itself, and WebKit paints that as full-width bars. */
+.inkkit-root .ProseMirror.inkkit-painted-selection::selection,
 .inkkit-root .ProseMirror.inkkit-painted-selection ::selection {
   background: transparent;
 }
 
-.inkkit-root.inkkit-selection-active ::highlight(inkkit-selection),
-.inkkit-root.inkkit-selection-active ::selection {
-  background: var(
-    --inkkit-selection-background,
-    color-mix(in srgb, var(--_inkkit-accent) 30%, transparent)
-  );
-}
 .inkkit-root ::highlight(inkkit-selection),
 .inkkit-root ::selection {
   background: var(
     --inkkit-inactive-selection-background,
     light-dark(#d4d4d4, #555)
+  );
+}
+.inkkit-root.inkkit-selection-active ::highlight(inkkit-selection),
+.inkkit-root.inkkit-selection-active ::selection {
+  background: var(
+    --inkkit-selection-background,
+    color-mix(in srgb, var(--_inkkit-accent) 30%, transparent)
   );
 }
 

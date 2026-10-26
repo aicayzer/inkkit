@@ -89,6 +89,9 @@ const capture = async () => {
     mode,
     documents: current,
     selections,
+    painted: Array.from(CSS.highlights.get('inkkit-selection') ?? [], (range) =>
+      (range as Range).toString(),
+    ),
     browserFocus: document.hasFocus(),
     activeElement: document.activeElement?.tagName,
   }
@@ -115,6 +118,7 @@ const capture = async () => {
     select(0)
   },
   select,
+  blur: (index: number) => editors[index].blur(),
   capture,
 }
 ;(window as any).selectionReady = true

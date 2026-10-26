@@ -29,7 +29,9 @@ final class SelectionHost: NSObject, NSApplicationDelegate {
                 "webFirstResponder": webFocus, "nativeFieldFirstResponder": field.currentEditor() === responder,
                 "firstResponderClass": responder.map { String(describing: type(of: $0)) } ?? "nil"]
     }
-    func capture(_ name: String, expected: String, selectedIndex: Int) async throws {
+    // WebKit collapses a textarea's selection when a native field takes focus, with or without Inkkit,
+    // so that one case records the state without requiring a selection.
+    func capture(_ name: String, expected: String, selectedIndex: Int, requireSelection: Bool = true) async throws {
         await pause()
         let focus = focusState()
         guard (focus["keyWindow"] as? Bool == (expected != "other")),
@@ -40,7 +42,7 @@ final class SelectionHost: NSObject, NSApplicationDelegate {
         let debugData = try JSONSerialization.data(withJSONObject: ["native": focus, "fixture": state], options: [.prettyPrinted, .sortedKeys])
         try debugData.write(to: URL(fileURLWithPath: arguments[2]).appendingPathComponent(name + ".json"))
         guard let selections = state["selections"] as? [[String: Any]],
-              let selected = selections[selectedIndex]["selected"] as? String, !selected.isEmpty,
+              let selected = selections[selectedIndex]["selected"] as? String, !requireSelection || !selected.isEmpty,
               let geometry = selections[selectedIndex]["geometry"] as? [String: Any],
               let width = geometry["width"] as? Double, width > 0,
               let height = geometry["height"] as? Double, height > 0 else { throw fail("Empty selection or geometry: \(name)") }
@@ -96,7 +98,7 @@ final class SelectionHost: NSObject, NSApplicationDelegate {
             }
             try await capture(mode + "-active", expected: "web", selectedIndex: 0)
             window.makeFirstResponder(field)
-            try await capture(mode + "-native-field", expected: "field", selectedIndex: 0)
+            try await capture(mode + "-native-field", expected: "field", selectedIndex: 0, requireSelection: mode == "formatted")
             // Isolate window deactivation from the native text-field blur above.
             window.makeFirstResponder(web)
             _ = try await js("selectionFixture.select(0)")
@@ -106,6 +108,10 @@ final class SelectionHost: NSObject, NSApplicationDelegate {
             window.makeKeyAndOrderFront(nil); window.makeFirstResponder(web)
             _ = try await js("selectionFixture.select(0)")
             try await capture(mode + "-returned", expected: "web", selectedIndex: 0)
+            // A host blurs the editor when its window resigns: the engine drops its own selection, the state keeps it.
+            _ = try await js("selectionFixture.blur(0)")
+            try await capture(mode + "-host-blur", expected: "web", selectedIndex: 0)
+            window.makeFirstResponder(web)
             _ = try await js("selectionFixture.select(1)")
             try await capture(mode + "-second-editor", expected: "web", selectedIndex: 1)
         }

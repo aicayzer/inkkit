@@ -67,6 +67,23 @@ Footnote references and wiki links draw their ring outside the text, in the curr
 
 Links and wiki links take `--inkkit-accent-color` and gain an underline on hover. A wiki link that `WikiLinkAdapter.resolve` reports as missing keeps a dashed underline, so people who can't tell its color apart still see it, and it also shows in forced-colors mode. Assistive technology receives the `wikiMissing` label as the link's description. The underline has no token of its own. Light-mode contrast of the default accent is a known gap, listed under accessibility below.
 
+## Style the selection
+
+Inkkit paints the selected text itself, so the selection covers the text and not the margins or the gaps between blocks. Two tokens set its color: `--inkkit-selection-background` while the editor has focus in an active window, and `--inkkit-inactive-selection-background` otherwise.
+
+A page has one selection, so only one editor paints it. The editor that last took the selection keeps it painted in the inactive color when focus moves to a host field, when you call [`blur`](/reference/editor#focus-and-blur), and when the window resigns. Selecting text anywhere else on the page, or in another editor, clears it. Source and TXT modes use the browser's own selection, with the same two colors. The painted selection never changes the document, the revision or the saved bytes.
+
+```css
+.document-editor {
+  --inkkit-selection-background: color-mix(in srgb, gold 45%, transparent);
+  --inkkit-inactive-selection-background: color-mix(
+    in srgb,
+    gray 30%,
+    transparent
+  );
+}
+```
+
 ## Localize labels
 
 Inkkit draws some text of its own: accessible names for the editing surfaces, the placeholder, table and file card controls, menu items and status messages. Pass `labels` at mount with strings from your localization catalog. Omitted labels keep their English defaults.
