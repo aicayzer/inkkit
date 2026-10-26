@@ -100,11 +100,15 @@ jobs:
           name: browser-chromium-${{ matrix.shard }}
           path: _local/playwright/
 
-  # Every current host embeds WebKit on Apple platforms.
+  # Every current host embeds WebKit on Apple platforms. Pull requests run
+  # Chromium only: macOS runners are scarce, so three WebKit shards per pull
+  # request queue behind each other, and WebKit has not failed alone in CI
+  # history. Pushes to main and release tags run it, and changes to selection,
+  # input, clipboard or layout run WebKit specs on atlas before pushing.
   browser-webkit:
     needs: changes
     # A skipped shard job reports success through its aggregator below.
-    if: ${{ needs.changes.outputs.editor == 'true' }}
+    if: ${{ needs.changes.outputs.editor == 'true' && github.event_name != 'pull_request' }}
     name: browser shard (webkit ${{ matrix.shard }}/3)
     strategy:
       fail-fast: false
@@ -159,11 +163,12 @@ jobs:
       - run: |
           echo "changes: $CHANGES, shards: $SHARDS, editor: $EDITOR"
           test "$CHANGES" = success
-          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$EDITOR" != true; }
+          test "$SHARDS" = success || { test "$SHARDS" = skipped && { test "$EDITOR" != true || test "$EVENT" = pull_request; }; }
         env:
           CHANGES: ${{ needs.changes.result }}
           SHARDS: ${{ needs.browser-webkit.result }}
           EDITOR: ${{ needs.changes.outputs.editor }}
+          EVENT: ${{ github.event_name }}
 
   docs:
     needs: changes
