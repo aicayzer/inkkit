@@ -288,7 +288,9 @@ function childGutters(
   if (inlineParents.has(before.type) || before.type === 'table')
     return undefined
   const [first, now] = [before, after].map((node) =>
-    fromStart ? node.position?.start.offset : node.children?.[0]?.position?.start.offset,
+    fromStart
+      ? node.position?.start.offset
+      : node.children?.[0]?.position?.start.offset,
   )
   return first == null || now == null
     ? undefined
@@ -303,7 +305,11 @@ function regutter(text: string, gutters?: Gutters, open = false): string {
   const [authored, canonical] = gutters
   const bare = canonical.trimEnd()
   return text.replace(/(\r?\n)([^\r\n]*)/g, (match, ending, line, at) => {
-    if (open && at + match.length === text.length && (line === bare || line === canonical))
+    if (
+      open &&
+      at + match.length === text.length &&
+      (line === bare || line === canonical)
+    )
       return ending + authored
     if (line === bare) return ending + authored.trimEnd()
     return line.startsWith(canonical)
@@ -326,6 +332,9 @@ function canonicalSlice(
   next?: Neighbour,
   gutters?: Gutters,
   open = false,
+  // The marker of the list item that holds `children`, which a list opened in
+  // it takes when it is written afresh.
+  inherited?: string,
 ): string {
   let text = canonical.slice(from, to)
   const offsets = (list: SourceNode) =>
@@ -353,6 +362,9 @@ function canonicalSlice(
       child.children![0]!.position!.start.offset!,
     )?.marker
     const choice = [
+      inherited && /[.)]/.test(inherited) === !!child.ordered
+        ? inherited
+        : undefined,
       own,
       ...(child.ordered ? ['.', ')'] : ['-', '*', '+']),
     ].find((candidate) => candidate && !avoid.includes(candidate))
@@ -361,6 +373,12 @@ function canonicalSlice(
   })
   return regutter(text, gutters, open)
 }
+
+// The marker an authored list item is written with.
+const itemMarker = (item: SourceNode, source: string): string | undefined =>
+  item.type === 'listItem'
+    ? markerAt(source, item.position!.start.offset!)?.marker
+    : undefined
 
 // The authored list a child is, as a neighbour of canonical Markdown.
 function authoredNeighbour(
@@ -526,6 +544,73 @@ function retainSplit(
   }
 }
 
+// The source of a block that an edit lifted out of a list item or quote in
+// `blocks`, which keeps the way it was written. Only a block that reads the
+// same as exactly one of theirs is taken, since two would leave it unknown which
+// one it was.
+function liftedSource(
+  blocks: readonly SourceNode[],
+  after: SourceNode,
+  source: string,
+): string | undefined {
+  if (after.type === 'list' || after.type === 'blockquote') return undefined
+  const wanted = signature(after)
+  const found: SourceNode[] = []
+  // A task's paragraph is written after its box, so it is not taken.
+  const visit = (node: SourceNode) => {
+    for (const child of node.children ?? []) {
+      if (
+        child.type === 'list' ||
+        child.type === 'listItem' ||
+        child.type === 'blockquote'
+      )
+        visit(child)
+      else if (
+        (node.type === 'blockquote' ||
+          (node.type === 'listItem' && node.checked == null)) &&
+        signature(child) === wanted
+      )
+        found.push(child)
+    }
+  }
+  blocks.forEach(visit)
+  if (found.length !== 1) return undefined
+  const start = found[0]!.position?.start.offset
+  const end = found[0]!.position?.end.offset
+  if (start == null || end == null) return undefined
+  return regutter(source.slice(start, end), ['', gutterAt(source, start)])
+}
+
+// The items, in the order a list's children read, that sit one after the
+// other in the source and open as those children do.
+function strayRun(
+  strays: readonly SourceNode[],
+  wanted: readonly SourceNode[],
+  source: string,
+  opening: (item: SourceNode) => string | undefined,
+): SourceNode[] {
+  const keys = wanted.map(opening)
+  for (const [at, stray] of strays.entries()) {
+    if (opening(stray) !== keys[0]) continue
+    const run = [stray]
+    for (const next of strays.slice(at + 1)) {
+      if (
+        opening(next) !== keys[run.length] ||
+        !/^[ \t>]*(\r?\n[ \t>]*)+$/.test(
+          source.slice(
+            run.at(-1)!.position!.end.offset,
+            next.position!.start.offset,
+          ),
+        )
+      )
+        break
+      run.push(next)
+    }
+    return run
+  }
+  return []
+}
+
 // Children written afresh between authored ones, each read against the
 // original it continues: a list or quote split from an original keeps that
 // run of its children, and an item that keeps its first line is the original
@@ -545,14 +630,54 @@ function retainParts(
   gutters?: Gutters,
   // Whether `to` is where more of its line follows.
   open = false,
+  inherited?: string,
 ): string | undefined {
-  let items: Map<string, SourceNode[]> | undefined
   const taken = new Set<SourceNode>()
   const opening = (item: SourceNode) =>
     item.children?.length
       ? matchShape(item) + signature(item.children[0]!)
       : undefined
-  const pieces = after.map((child): string | undefined => {
+  // The items the originals hold, those in sublists after those at the level
+  // of the edit, so an item moved a level in either direction is found.
+  const items = new Map<string, SourceNode[]>()
+  for (let row = before; row.length;) {
+    const deeper: SourceNode[] = []
+    for (const node of row) {
+      if (node.type !== 'listItem') continue
+      const key = opening(node)
+      if (key) {
+        const same = items.get(key)
+        if (same) same.push(node)
+        else items.set(key, [node])
+      }
+      for (const child of node.children ?? [])
+        if (child.type === 'list') deeper.push(...(child.children ?? []))
+    }
+    row = deeper
+  }
+  // An item moved into a list of the other kind, bullets or numbers, is
+  // written afresh, since its marker would change the width of its lines.
+  const isNumbered = (item: SourceNode) =>
+    /[.)]/.test(itemMarker(item, source) ?? '')
+  const originals = after.map((child) => {
+    const original =
+      child.type === 'listItem'
+        ? items.get(opening(child) ?? '')?.shift()
+        : undefined
+    return original && marker && isNumbered(original) !== /[.)]/.test(marker)
+      ? undefined
+      : original
+  })
+  const ownLevel = new Set(before)
+  // Items no child continues, which an edit can have moved into one: an item
+  // sunk below its sibling, or a sibling an item took along as its sublist.
+  const strays = [...items.values()]
+    .flat()
+    .sort(
+      (left, right) =>
+        left.position!.start.offset! - right.position!.start.offset!,
+    )
+  const pieces = after.map((child, index): string | undefined => {
     const end = child.position!.end.offset!
     if (child.type === 'list' || child.type === 'blockquote') {
       const part = retainSplit(
@@ -575,6 +700,31 @@ function retainParts(
       const lists = before.filter(
         (node) => node.type === 'list' && node.ordered === child.ordered,
       )
+      // A list made of items from other levels keeps their source.
+      if (child.type === 'list' && !lists.length) {
+        const run = strayRun(strays, child.children!, source, opening)
+        if (!run.length) return undefined
+        const first = run[0]!.position!.start.offset!
+        const opened: SourceNode = {
+          type: 'list',
+          ordered: child.ordered,
+          start: child.ordered
+            ? Number(/^\d+/.exec(source.slice(first))![0])
+            : null,
+          spread: false,
+          children: run,
+          position: {
+            start: { offset: first },
+            end: { offset: run.at(-1)!.position!.end.offset },
+          },
+        }
+        return (
+          regutter(
+            retainSource(opened, child, source, canonical, lineEnding),
+            gutters && [gutters[0], gutterAt(source, first)],
+          ) + canonical.slice(child.children!.at(-1)!.position!.end.offset, end)
+        )
+      }
       return child.type === 'list' && lists.length
         ? retainParts(
             authoredMarker(lists[0]!, source),
@@ -592,19 +742,25 @@ function retainParts(
         : undefined
     }
     if (child.type !== 'listItem') return undefined
-    if (!items) {
-      items = new Map()
-      for (const node of before) {
-        const key = node.type === 'listItem' ? opening(node) : undefined
-        if (!key) continue
-        const same = items.get(key)
-        if (same) same.push(node)
-        else items.set(key, [node])
-      }
-    }
-    const original = items.get(opening(child) ?? '')?.shift()
+    const original = originals[index]
     const text = original
-      ? retainSource(original, child, source, canonical, lineEnding)
+      ? regutter(
+          retainSource(
+            original,
+            child,
+            source,
+            canonical,
+            lineEnding,
+            false,
+            undefined,
+            undefined,
+            strays,
+          ),
+          gutters && [
+            gutters[0],
+            gutterAt(source, original.position!.start.offset!),
+          ],
+        )
       : child.children?.some(
             (node) => node.type === 'list' || node.type === 'blockquote',
           )
@@ -633,7 +789,8 @@ function retainParts(
   })
   if (pieces.every((piece) => piece === undefined)) return undefined
   let text = '',
-    at = from
+    at = from,
+    lastNumber: number | undefined
   after.forEach((child, index) => {
     const childStart = child.position!.start.offset!
     const childEnd = child.position!.end.offset!
@@ -649,6 +806,19 @@ function retainParts(
       )
     )
       piece = undefined
+    // An item that came from another level of an ordered list is numbered
+    // after the item before it.
+    const number = /^\d+/.exec(piece ?? '')?.[0]
+    if (
+      piece &&
+      number &&
+      marker &&
+      lastNumber !== undefined &&
+      originals[index] &&
+      !ownLevel.has(originals[index]!) &&
+      String(lastNumber + 1).length === number.length
+    )
+      piece = String(lastNumber + 1) + piece.slice(number.length)
     piece ??= canonicalSlice(
       marker,
       [child],
@@ -658,7 +828,13 @@ function retainParts(
       previous,
       following,
       gutters,
+      false,
+      inherited,
     )
+    lastNumber =
+      child.type === 'listItem' && /^\d/.test(piece)
+        ? Number(/^\d+/.exec(piece)![0])
+        : undefined
     previous =
       child.type === 'list'
         ? {
@@ -1726,6 +1902,11 @@ function retainSource(
     !reorderedWithin(before, reorder)
   )
     return raw
+  // A block lifted out of a list or quote keeps its source.
+  if (before.type !== after.type) {
+    const lifted = liftedSource([before], after, source)
+    if (lifted !== undefined) return lifted
+  }
   const marker = sameList(before, after)
     ? authoredMarker(before, source)
     : undefined
@@ -1831,7 +2012,7 @@ function retainSource(
                 after.children![index - 1]?.type === 'link',
                 after.children![index + 1]?.type === 'link',
               ],
-              [],
+              joined,
               reorder,
               after.children![index - 1]?.type === 'break',
             )
@@ -2012,6 +2193,7 @@ function retainSource(
         source,
       )
       const gutters = childGutters(before, after, source, canonical, !prefix)
+      const inherited = itemMarker(before, source)
       return (
         source.slice(start, first) +
         retainBoundaryText(
@@ -2039,6 +2221,7 @@ function retainSource(
                     next,
                     gutters,
                     suffix > 0,
+                    inherited,
                   )) ??
                 canonicalSlice(
                   marker,
@@ -2050,6 +2233,7 @@ function retainSource(
                   next,
                   gutters,
                   suffix > 0,
+                  inherited,
                 ),
               lineEnding,
             ) +
@@ -2090,6 +2274,8 @@ function retainSource(
         undefined,
         undefined,
         childGutters(before, after, source, canonical, true),
+        false,
+        itemMarker(before, source),
       ),
       lineEnding,
     ) + (trailing ? source.slice(lastBefore, end) : '')
@@ -2825,6 +3011,20 @@ export class Preservation {
       part.from,
     )
     return (/^[ \t]*$/.test(indent) ? indent : '') + part.text
+  }
+
+  // A block lifted out of a list item or quote, between the blocks paired
+  // around it, keeps the source it was written in.
+  private retainLifted(
+    positions: Array<number | undefined>,
+    index: number,
+    after: SourceNode,
+  ): string | undefined {
+    return liftedSource(
+      this.around(positions, index).map((block) => block.ast),
+      after,
+      this.source.slice(this.source.startsWith('\uFEFF') ? 1 : 0),
+    )
   }
 
   private localEdits(doc: ProseNode): string | undefined {
@@ -3619,7 +3819,8 @@ export class Preservation {
                 ),
               )
             : ((node &&
-                this.retainPart(positions, index, node, canonical, taken)) ??
+                (this.retainPart(positions, index, node, canonical, taken) ??
+                  this.retainLifted(positions, index, node))) ??
               restoreCodeEndings(
                 this.ctx,
                 doc.type.create(null, [doc.child(index)]),

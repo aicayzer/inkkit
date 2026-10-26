@@ -248,14 +248,14 @@ test.each([
     '1) __a__\n2) _b_\n3) c\n',
     'b',
     ['Tab'],
-    '1) __a__\n   1. *b*\n3) c\n',
+    '1) __a__\n   1) _b_\n3) c\n',
   ],
   [
     'Shift-Tab on a nested ordered item in an ordered list',
     '1. __a__\n   1) b\n   2) _c_\n   3) d\n2. e\n',
     'c',
     ['Shift-Tab'],
-    '1. __a__\n   1) b\n2. *c*\n   1) d\n2. e\n',
+    '1. __a__\n   1) b\n2. _c_\n   1) d\n2. e\n',
   ],
   [
     'a nested ordered list in an ordered list ended in the middle',
@@ -276,14 +276,14 @@ test.each([
     '1. __a__ one\n2. _b_ two\n',
     'a one',
     ['Shift-Tab'],
-    '**a** one\n\n1. _b_ two\n',
+    '__a__ one\n\n1. _b_ two\n',
   ],
   [
     'Shift-Tab on the first item of an ordered list from 3',
     '3. __a__ one\n4. _b_ two\n',
     'a one',
     ['Shift-Tab'],
-    '**a** one\n\n3. _b_ two\n',
+    '__a__ one\n\n3. _b_ two\n',
   ],
   [
     'a list numbered 1. throughout, ended after its first item',

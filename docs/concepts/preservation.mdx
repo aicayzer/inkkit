@@ -22,6 +22,7 @@ Inkkit saves the Markdown you loaded, not a fresh export of what the editor show
 - **Blocks that an edit doesn't reach** keep their bytes, and so does the text between blocks, such as extra blank lines. Link and footnote definitions stay, whether or not anything uses them.
 - **An edited block** keeps the spelling of what the edit didn't change where it can: the other lines of a paragraph, `__bold__` next to typed text, a list's `*` or `+` markers, a setext underline, reference labels, and a code fence's characters and info string.
 - **Line endings** follow the document. In a CRLF document, the lines an edit writes use CRLF.
+- **Quote markers and indentation** follow the document. A line or item an edit adds to a quote, callout or list takes the `>` markers and indentation of the lines beside it, such as a list indented by two spaces or a quote written as `>  text`.
 - **Undo back to the loaded text** returns the loaded bytes, and `dirty` is `false` again.
 - **Presentation never changes the source.** Folding a callout, showing comments, Mermaid previews, code highlighting and automatic language detection change neither the text nor the revision.
 
@@ -33,6 +34,7 @@ Inkkit writes a block in canonical form when it can't keep the authored spelling
 
 - **Indented code that you edit** is saved as a fenced code block.
 - **Moved blocks.** A block moved with `moveBlock` or its shortcuts keeps its source, and an ordered item takes the number written at its new place. A block moved by cut and paste, or by drag and drop, is written in canonical form.
+- **Indented and outdented items.** Tab and Shift+Tab keep the source of the item they move and of the paragraph an item becomes when it leaves its list. Only its marker, number and indentation change, and a new sublist takes the marker of the list that holds it. An item that moves into a list of the other kind, from bullets to numbers or back, is written in canonical form.
 - **Repeated blocks.** When the same block appears more than once, Inkkit can't always tell which copy you edited or moved, and that copy can be written in canonical form.
 - **Neighboring lists.** Markdown reads two adjacent lists of one kind as one list unless their markers differ. A new, moved or rewritten list takes a bullet (`-`, `*` or `+`) or number delimiter (`.` or `)`) that the lists beside it don't use. An item added to an authored list takes that list's marker.
 - **Thematic breaks.** A `---` rule that comes to open the document while another `---` line follows it is written as `***`, because it would otherwise read as front matter. A new rule inside a list item, quote, callout or footnote is written as `___`.
