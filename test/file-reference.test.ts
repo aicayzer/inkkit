@@ -5,8 +5,9 @@ import {
   type FileReference,
 } from '../src/index'
 
-// Each syntax form, with the FileReference the host receives for it.
-const forms: [string, FileReference][] = [
+// Each syntax form, with the FileReference the host receives for it besides
+// `raw`, which is the form itself.
+const forms: [string, Omit<FileReference, 'raw'>][] = [
   [
     '![](a/b.mp4#t=10)',
     {
@@ -134,7 +135,8 @@ test('FileReference gives the target without its fragment for every syntax form'
       text,
     })
     await vi.waitFor(() => expect(resolved).toHaveLength(forms.length))
-    expect(resolved).toEqual(forms.map(([, reference]) => reference))
+    const expected = forms.map(([raw, reference]) => ({ ...reference, raw }))
+    expect(resolved).toEqual(expected)
     for (const reference of resolved)
       expect(reference.target === reference.reference).toBe(
         reference.fragment === undefined,
@@ -148,8 +150,8 @@ test('FileReference gives the target without its fragment for every syntax form'
     cards[8]!.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, clientX: 4, clientY: 8 }),
     )
-    expect(opened).toEqual([forms[0]![1]])
-    expect(menus).toEqual([forms[8]![1]])
+    expect(opened).toEqual([expected[0]])
+    expect(menus).toEqual([expected[8]])
     expect(editor.snapshot().text).toBe(text)
   } finally {
     await editor.destroy()

@@ -20,6 +20,7 @@ import {
 import type { ParserState } from '@milkdown/kit/transformer'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import { $nodeSchema, $prose } from '@milkdown/kit/utils'
+import type { AuthoredImage } from './linked-syntax'
 
 export const imageBlockName = 'image_block'
 
@@ -29,6 +30,7 @@ export const imageAttrs = {
   alt: { default: '', validate: 'string' },
   title: { default: '', validate: 'string' },
   inkkitFileRaw: { default: null },
+  inkkitFileSource: { default: null },
   inkkitFileTarget: { default: null },
   inkkitFileFragment: { default: null },
   inkkitFileWidth: { default: null },
@@ -46,6 +48,7 @@ interface MarkdownImage {
   alt?: unknown
   title?: unknown
   inkkitFileRaw?: unknown
+  inkkitFileSource?: unknown
   inkkitFileTarget?: unknown
   inkkitFileFragment?: unknown
   inkkitFileWidth?: unknown
@@ -54,11 +57,19 @@ interface MarkdownImage {
 
 // Remark represents a missing title as null; the image schema accepts strings.
 export function markdownImageAttrs(node: MarkdownImage) {
+  const src = String(node.url ?? '')
+  const alt = String(node.alt ?? '')
+  const title = String(node.title ?? '')
+  const source: AuthoredImage | null =
+    typeof node.inkkitFileSource === 'string'
+      ? { text: node.inkkitFileSource, src, alt, title }
+      : null
   return {
-    src: String(node.url ?? ''),
-    alt: String(node.alt ?? ''),
-    title: String(node.title ?? ''),
+    src,
+    alt,
+    title,
     inkkitFileRaw: node.inkkitFileRaw ?? null,
+    inkkitFileSource: source,
     inkkitFileTarget: node.inkkitFileTarget ?? null,
     inkkitFileFragment: node.inkkitFileFragment ?? null,
     inkkitFileWidth: node.inkkitFileWidth ?? null,

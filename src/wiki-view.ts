@@ -1,7 +1,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 import { $view } from '@milkdown/kit/utils'
-import { wikiLinkSchema } from './linked-syntax'
+import { wikiLinkSchema, wikiReference } from './linked-syntax'
 import { modHeld } from './modifier'
 import type {
   DocumentContext,
@@ -26,13 +26,7 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
     dom.className = 'inkkit-wiki-link'
     dom.setAttribute('role', 'link')
     dom.tabIndex = 0
-    const reference = (): WikiLinkReference => ({
-      target: String(current.attrs.target),
-      ...(current.attrs.fragment
-        ? { fragment: String(current.attrs.fragment) }
-        : {}),
-      label: String(current.attrs.label),
-    })
+    const reference = (): WikiLinkReference => wikiReference(current)
     const report = (error: unknown) =>
       runtime.error?.(coded(error, 'file-unavailable'))
     const render = () => {

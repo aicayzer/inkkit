@@ -102,7 +102,14 @@ test('a typed wiki link is the reference the host resolves and opens', async () 
   link.dispatchEvent(
     new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
   )
-  expect(opened).toEqual([{ target: 'Gone', fragment: 'Part', label: 'text' }])
+  expect(opened).toEqual([
+    {
+      raw: '[[Gone#Part|text]]',
+      target: 'Gone',
+      fragment: 'Part',
+      label: 'text',
+    },
+  ])
 })
 
 test('typing the closing brackets after a suggestion list opened closes it and keeps the link', async () => {

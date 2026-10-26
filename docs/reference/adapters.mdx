@@ -219,6 +219,18 @@ A file name for the image.
 
 A `FileReference` describes a file as authored. Find the file by `target`.
 
+<ResponseField name="raw" type="string" required>
+
+The embed's Markdown as the document holds it, from its `!` to its last `]]` or `)`, nothing around it. Use it to match an embed to the text you read from [`snapshot()`](/reference/editor#snapshot). Unlike the other fields, it keeps every escape, the alias, width, title and spacing as written, and, for an embed in a table, the `\|` escapes.
+
+- **Unchanged embed:** the exact text of the source, so a title that runs over a line keeps its CRLF, and a byte order mark at the start of the document is never part of it.
+- **Changed embed:** the text Inkkit saves for it once it's inserted, resized or moved, so `raw` always appears in the next snapshot. A paste or move between a table and a paragraph changes only the `\|` escapes.
+- **Never included:** marks around the embed, such as `**![a](b.png)**`, or the link around `[![a](b.png)](c)`.
+
+A host's test double for `FileReference` must supply it.
+
+</ResponseField>
+
 <ResponseField name="kind" type="'path' | 'wiki'">
 
 `path` for `![alt](destination)`, `wiki` for `![[name]]`.
@@ -264,6 +276,11 @@ The authored width in pixels, from `|400` in the alt text or the name.
 | `![[ My file.pdf # page=3 \|200]]` | `wiki` | `My file.pdf#page=3`    | `My file.pdf`    | `page=3`      |
 | `![[My\#Notes.pdf#page=2]]`        | `wiki` | `My#Notes.pdf#page=2`   | `My#Notes.pdf`   | `page=2`      |
 
+`raw` keeps what `target` drops: escapes, the width and spacing as written, and, in a table cell, the `\|` escapes.
+
+- A path image `![a b|120](a\_b.png "T")` in a paragraph has that text as `raw` and `a_b.png` as `target`. In a table cell, it is saved and reported as `![a b\|120](a\_b.png "T")`.
+- A named embed `![[ x\#y.png # page=2 |300]]` has that text as `raw`, `x#y.png` as `target` and `page=2` as `fragment`. In a table cell, its alias is `\|300`.
+
 In a path, the fragment starts at the first `#`, so write a `#` that belongs to a file name as `%23`. Inkkit doesn't decode it. In a named file, `\#` keeps a `#` in the name and `target` holds the name without the escape, so don't split `reference` at its first `#` yourself. Inkkit gives `?` no meaning. Named targets and fragments are trimmed.
 
 ### FilePresentation
@@ -282,6 +299,16 @@ The `url` is for display only and must serve the declared kind offline in your p
 ### WikiLinkReference
 
 A `WikiLinkReference` describes a wiki link as authored.
+
+<ResponseField name="raw" type="string" required>
+
+The link's Markdown as the document holds it, from `[[` to `]]`, with its escapes, alias and spacing as written. Use it to tell links apart that `target` and `label` don't: `[[Plan]]` and `[[Plan|Plan]]` have the same `target` and `label`, but different `raw`. It always appears in the next [`snapshot()`](/reference/editor#snapshot) as it is.
+
+In a table cell, the pipes are escaped as the table needs them: `[[Plan|Plan]]` is `[[Plan\|Plan]]` there. A link pasted or moved between a table and a paragraph takes the spelling of where it lands. A link inserted from `suggest` has `[[name]]`, with `\`, `[`, `]`, `|` and `#` escaped.
+
+A host's test double for `WikiLinkReference` must supply it.
+
+</ResponseField>
 
 <ResponseField name="target" type="string">
 
