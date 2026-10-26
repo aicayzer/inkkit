@@ -41,7 +41,7 @@ When `files` is set, Inkkit shows every image through `FileAdapter.resolve` and 
 
 <ResponseField name="importImage" type="(input: CapturedImage, context: ImageImportContext) => Promise<{ reference: string }>" required>
 
-Stores image bytes from a paste or a drop, from the web clipboard or from [`paste`](/reference/editor#paste), and returns the reference that Inkkit writes as the image's Markdown destination. Inkkit makes one call for each distinct image, one at a time. While imports run, `CommandState.pending` is `true` and editing calls throw `operation-pending`.
+Stores image bytes from a paste or a drop, from the web clipboard or from [`paste`](/reference/editor#paste), and returns the reference that Inkkit writes as the image's Markdown destination. Inkkit makes one call for each distinct image, one at a time. A picture that arrives in more than one representation, such as a screenshot as PNG and TIFF, counts as one image; see [How paste is imported](/concepts/clipboard#how-paste-is-imported) for the rule. While imports run, `CommandState.pending` is `true` and editing calls throw `operation-pending`.
 
 - **A rejection** inserts a placeholder in place of that image and reports `image-unavailable` through `events.error`. The rest of the paste goes in.
 - **A result for a replaced document** is discarded: nothing from the paste is inserted, and `paste` rejects, or a DOM paste or drop reports, `stale-document`. Loading a document or entering read-only cancels pending imports the same way.

@@ -106,6 +106,20 @@ async function pasteFromHost(
 }
 ```
 
+A clipboard can hold one picture more than once. A screenshot, for example, can arrive as a PNG and as a TIFF. Inkkit imports one image for each picture in a single paste or drop, in `paste`'s `images`, in the files of a web paste and in the files of a drop. It treats two images as one picture when:
+
+- **Their bytes are identical.** The first one is kept.
+- **One is a PNG and the other a TIFF** with the same pixel size, and their file names are the same apart from the extension, or one has no name. Inkkit reads the size from the file headers and decodes nothing. The PNG is kept, because every web view can show it.
+
+Anything else imports as separate images, so two different images always insert two. Inkkit can't tell that two images are one picture when:
+
+- the copies have different sizes or file names, such as a downscaled preview or a file URL with another name;
+- the copies are in other formats, such as a JPEG and a PNG, or the TIFF can't be read.
+
+Two files with identical bytes in one paste insert once, even if you meant two copies. Paste again for a second copy.
+
+An image tied to an `<img>` in the pasted HTML through `source` stays with that image. If your app builds `images` itself from several pasteboard types, choose one representation for each item, as that is more reliable than this rule.
+
 Dropping HTML from outside the editor imports it the same way as a paste, as whole blocks: in place of an empty paragraph at the drop point, or after the block under the pointer. Moves within the editor and drops of plain text keep the browser's behavior. To place dropped files, call `insertImages` or `insertPaths` with the drop point; see [Images, files and wiki links](/guides/adapters).
 
 ## Web pages

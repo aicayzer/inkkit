@@ -47,6 +47,7 @@ import { commentProvenance, isComment, literalCommentSpans } from './comments'
 import { showsWikiTarget } from './linked-syntax'
 import { showsFenceInfo } from './code-fences'
 import { coded } from './errors'
+import { distinctImages } from './image-identity'
 import {
   InkKitError,
   type ClipboardInput,
@@ -322,13 +323,20 @@ export class PasteController {
     this.active = operation
     this.options.onPendingChanged?.()
     try {
-      const images = [...(input.images ?? [])]
-      for (const file of files)
-        images.push({
-          bytes: new Uint8Array(await file.arrayBuffer()),
-          mimeType: file.type,
-          filename: file.name,
-        })
+      // One pasted picture can arrive in several representations, such as PNG and TIFF.
+      // Only a file read waits, so a host call without files keeps its timing.
+      const fromFiles = files.length
+        ? distinctImages(
+            await Promise.all(
+              files.map(async (file): Promise<CapturedImage> => ({
+                bytes: new Uint8Array(await file.arrayBuffer()),
+                mimeType: file.type,
+                filename: file.name,
+              })),
+            ),
+          )
+        : []
+      const images = distinctImages([...(input.images ?? []), ...fromFiles])
       this.assertContext(context, operation)
       const schema = view.state.schema
       let slice: Slice
@@ -391,7 +399,8 @@ export class PasteController {
         // preview order. A browser FileList has no such association, except the
         // unambiguous single-file/single-source case.
         const positional = (
-          files.length === 0 || (files.length === 1 && uniqueSources.size === 1)
+          fromFiles.length === 0 ||
+          (fromFiles.length === 1 && uniqueSources.size === 1)
             ? images
             : (input.images ?? [])
         ).filter((image) => !image.source)
