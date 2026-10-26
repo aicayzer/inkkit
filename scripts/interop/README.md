@@ -190,3 +190,14 @@ node scripts/interop/verify-find-delete.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRE
 ```
 
 The runner primes native focus, then calls find and focus synchronously before posting an arrow/delete batch. `nativeInput` with `focus: false` skips native activation and its 100 ms delay, and rejects a window without WKWebView key focus. Optional `find` and `findCount` run within the same fixture operation, with no intervening settling wait. Results record elapsed milliseconds from find to each trusted DOM event, selection collapse before deletion, exact changed bytes, errors, undo and save/reopen. IPC and event-loop delivery still take time; use the recorded first-key timing when interpreting this evidence.
+
+## Native drop indicator
+
+The dedicated probe drags disposable HTML from a page element into the packed editor, leaves the web view, returns and drops after the second paragraph. It records trusted drag and keyboard events, rendered indicator states, snapshots and exact insertion, undo, redo and reopen bytes. It uses native mouse events through the window server; the host must have permission to post those events. It reads only the drag pasteboard and does not touch the general clipboard.
+
+```sh
+swiftc -target arm64-apple-macos27.0 scripts/interop/DropIndicatorHost.swift -o _local/interop/drop-host
+node scripts/interop/verify-drop-indicator.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY _local/interop/drop-host
+```
+
+A missing accepted drop or trusted event fails the probe. This fixture verifies the package in WKWebView, not a consumer app's native file handling.
