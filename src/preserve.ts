@@ -66,6 +66,7 @@ function signature(node: SourceNode): string {
 }
 
 const formatting = new Set(['emphasis', 'strong', 'delete', 'highlight'])
+const linkTypes = new Set(['link', 'linkReference'])
 
 // Formatting around a whole link and a link around whole formatting read the
 // same, so both are compared with the formatting outside.
@@ -73,7 +74,7 @@ function ordered(node: SourceNode): SourceNode {
   let current = node
   const inner = current.children?.[0]
   if (
-    current.type === 'link' &&
+    linkTypes.has(current.type) &&
     current.children!.length === 1 &&
     formatting.has(inner!.type)
   )
@@ -84,6 +85,59 @@ function ordered(node: SourceNode): SourceNode {
   return current.children
     ? { ...current, children: current.children.map(ordered) }
     : current
+}
+
+// A link and the formatting that each wrap the one node inside, outermost
+// first, down to the first node that wraps more than one.
+function wrappers(node: SourceNode): SourceNode[] {
+  const chain: SourceNode[] = []
+  for (
+    let at: SourceNode | undefined = node;
+    at && (linkTypes.has(at.type) || formatting.has(at.type));
+    at = at.children?.length === 1 ? at.children[0] : undefined
+  )
+    chain.push(at)
+  return chain
+}
+
+// The writer puts a link outside the formatting that covers the same text,
+// which reads the same as formatting outside the link. An edited node written
+// the other way round is nested as authored, so its source keeps the
+// delimiters where they were. Each level then has one child on both sides
+// and keeps its source around that child.
+function authoredNesting(before: SourceNode, after: SourceNode): SourceNode {
+  if (before.type === after.type || !formatting.has(before.type)) return after
+  const authored = wrappers(before)
+  const written = wrappers(after)
+  const types = (chain: SourceNode[]) =>
+    chain
+      .map((node) => node.type)
+      .sort()
+      .join()
+  const linksIn = (chain: SourceNode[]) =>
+    chain.filter((node) => linkTypes.has(node.type))
+  const shape = (node: SourceNode) => ownShape({ ...node, children: [] })
+  const [authoredLink] = linksIn(authored)
+  const [writtenLink] = linksIn(written)
+  if (
+    linksIn(authored).length !== 1 ||
+    linksIn(written).length !== 1 ||
+    types(authored) !== types(written) ||
+    shape(authoredLink!) !== shape(writtenLink!) ||
+    authored.at(-1)!.children?.length !== written.at(-1)!.children?.length
+  )
+    return after
+  const inner = written.at(-1)!.children!
+  const byType = new Map(written.map((node) => [node.type, node]))
+  return authored.reduceRight<SourceNode | undefined>(
+    (child, node, level) => ({
+      ...byType.get(node.type)!,
+      // The outermost takes the whole written range.
+      ...(level === 0 && { position: after.position }),
+      children: child ? [child] : inner,
+    }),
+    undefined,
+  )!
 }
 
 /** Where the delimiter row ends, given where the header row before it ends. */
@@ -1300,6 +1354,7 @@ function retainSource(
   reorder?: Reorder,
   afterBreak = false,
 ): string {
+  after = authoredNesting(before, after)
   if (literals.has(after))
     return withEnding(
       retainLiteral(
