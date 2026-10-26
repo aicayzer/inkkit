@@ -454,6 +454,7 @@ test('commands with an expected generation refuse a stale one and change nothing
         () => editor.insertPaths(['a'], { clientX: 0, clientY: 0 }, 3),
         () =>
           editor.insertImages([{ reference: 'a.png', alt: '' }], undefined, 3),
+        () => editor.appendImages([{ reference: 'a.png', alt: '' }], 3),
       ]) {
         expect(call).toThrow(code('stale-document'))
         expect(view.state).toBe(state)

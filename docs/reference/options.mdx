@@ -21,12 +21,12 @@ const editor = await InkKitEditor.mount(root, events, options)
 
 Three options can change after mount, through a method. The rest are fixed at mount; to change one, destroy the editor and mount a new one.
 
-| Option                                                             | After mount                                                                                                  |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `editable`                                                         | [`setEditable`](/reference/editor#editable-and-seteditable)                                                  |
-| `textInput`                                                        | [`setTextInputPreferences`](/reference/editor#settextinputpreferences)                                       |
-| `keymap`                                                           | [`setKeymap`](/reference/editor#setkeymap)                                                                   |
-| `images`, `files`, `wikiLinks`, `labels`, `rendering`, `slashMenu` | Fixed. Whether `events.copy` is set is fixed too, because it decides whether code blocks draw a Copy button. |
+| Option                                                                            | After mount                                                                                                  |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `editable`                                                                        | [`setEditable`](/reference/editor#editable-and-seteditable)                                                  |
+| `textInput`                                                                       | [`setTextInputPreferences`](/reference/editor#settextinputpreferences)                                       |
+| `keymap`                                                                          | [`setKeymap`](/reference/editor#setkeymap)                                                                   |
+| `images`, `files`, `wikiLinks`, `labels`, `linkSchemes`, `rendering`, `slashMenu` | Fixed. Whether `events.copy` is set is fixed too, because it decides whether code blocks draw a Copy button. |
 
 <ResponseField name="images" type="ImageAdapter">
 
@@ -94,9 +94,22 @@ A `Partial<EditorLabels>` that replaces built-in text and accessible names, key 
 
 </ResponseField>
 
-<ResponseField name="keymap" type="Keymap" default="History, block moves and table exit">
+<ResponseField name="keymap" type="Keymap" default="History, block moves, list indent and outdent, and table exit">
 
 Shortcut bindings, by `ShortcutName`, in ProseMirror key notation. Formatting has no default bindings. See [Shortcuts](/reference/appearance#shortcuts) for every name, its default keys and how `setKeymap` replaces the map.
+
+</ResponseField>
+
+<ResponseField name="linkSchemes" type="readonly string[]" default="[]">
+
+Extra link schemes for this editor, such as `['things', 'message', 'x-devonthink-item']`. Links that use one are shown with their address, open through [`events.openLink`](#openlink) on a Mod-click, are accepted by `format('link')` and keep their address in copied HTML. Without the option, only addresses with no scheme and `http`, `https`, `mailto` and `tel` addresses do.
+
+- **Entries:** each is a scheme name of letters, digits, `+`, `-` and `.`, starting with a letter. Letter case doesn't matter, and Inkkit stores the name in lower case. An entry that already has a built-in meaning is harmless.
+- **Refused entries:** `javascript`, `data`, `vbscript` and `file`, in any letter case, can never be allowed. Any other entry that doesn't fit the pattern, an entry that isn't text, and a value that isn't a list make `mount` reject with `invalid-argument`. `null` counts as omitted.
+- **One editor:** the list belongs to the editor it was mounted with, so two editors on a page can allow different schemes.
+- **Not changed:** pasted and dropped HTML and printable HTML keep only the built-in schemes, so a link with a listed scheme becomes its text there. The Markdown source is never changed.
+
+See [links that Inkkit keeps](/concepts/clipboard#links-that-inkkit-keeps). Inkkit does not decide what a scheme does: your `openLink` handler receives the address and chooses whether to open it.
 
 </ResponseField>
 
@@ -172,7 +185,7 @@ What the editor can do, or the caret, changed: the selection, the document, hist
 
 <ResponseField name="openLink" type="(href: string) => void">
 
-The person clicked a rendered Markdown link with Mod held (Command on Apple platforms, Control elsewhere) in formatted mode, whether or not the editor is editable. It receives the destination as authored; a relative address or fragment isn't resolved against the page. It doesn't fire for an empty address or for a scheme that Inkkit doesn't open; see [links](/concepts/clipboard). Without this handler, Markdown links don't open. Wiki links go to `WikiLinkAdapter.open` instead.
+The person clicked a rendered Markdown link with Mod held (Command on Apple platforms, Control elsewhere) in formatted mode, whether or not the editor is editable. It receives the destination as authored; a relative address or fragment isn't resolved against the page. It doesn't fire for an empty address or for a scheme that Inkkit doesn't open, which includes any scheme not in [`linkSchemes`](#editor-options); see [links](/concepts/clipboard). Without this handler, Markdown links don't open. Wiki links go to `WikiLinkAdapter.open` instead.
 
 </ResponseField>
 
@@ -296,7 +309,7 @@ What each command can do now. Every entry is `false` while the editor is read-on
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `undo`, `redo`                                                   | There is a step to undo or redo, including steps taken in source mode.                                                                          |
 | `insertText`, `paste`, `replace`, `replaceSource`, `insertPaths` | The editor can change, in any mode. `paste` also covers `pasteAsPlainText`, and `replace` also covers `replaceAll`.                             |
-| `insertImages`                                                   | The editor can change, the mode is formatted, and `images` or `files` is set.                                                                   |
+| `insertImages`, `appendImages`                                   | The editor can change, the mode is formatted, and `images` or `files` is set.                                                                   |
 | `insertFootnote`                                                 | The editor can change and the mode is formatted.                                                                                                |
 | `editReferenceDefinition`                                        | The editor can change, the mode is formatted, and the document has at least one reference definition.                                           |
 | `format`                                                         | A `Record<FormatCommand, boolean>`: each [format command](#format-commands) that applies to the selection. All `false` in source and TXT modes. |
@@ -322,7 +335,7 @@ What each command can do now. Every entry is `false` while the editor is read-on
 
 <ResponseField name="destination" type="string">
 
-Only with `link`. It must be a relative address, a fragment, a query, or an `http`, `https`, `mailto` or `tel` address, with no control characters, and Markdown must be able to write it so that it reads back the same. Otherwise `format` throws `invalid-argument`. In a reference link, the shared definition changes, so every link that uses it changes.
+Only with `link`. It must be a relative address, a fragment, a query, or an `http`, `https`, `mailto` or `tel` address, or one whose scheme is in [`linkSchemes`](#editor-options), with no control characters, and Markdown must be able to write it so that it reads back the same. Otherwise `format` throws `invalid-argument`. In a reference link, the shared definition changes, so every link that uses it changes.
 
 </ResponseField>
 
@@ -434,6 +447,6 @@ Called when the person chooses the command, with the current `documentId`, `gene
 - **`''`** removes the slash and filter and restores the line as it was before the slash.
 - **`undefined`** cancels and keeps the text as typed.
 
-If the document, revision, mode, editability, selection or presentation changed before the result arrives, Inkkit refuses it and reports `stale-document`. A result that isn't a string or `undefined` reports `invalid-argument`. A thrown or rejected error is reported through `events.error`: an `InkKitError` as it is, anything else as `internal` with the error as `cause`. A failed action keeps the trigger text. After `destroy`, late results and errors are ignored.
+If the document, revision, mode, editability, selection or presentation changed before the result arrives, Inkkit refuses it and reports `stale-document`. A result that isn't a string or `undefined` reports `invalid-argument`. A thrown or rejected error is reported through `events.error`: an `InkKitError` as it is, anything else as `slash-command-failed` with the error as `cause`. A failed action keeps the trigger text. After `destroy`, late results and errors are ignored.
 
 </ResponseField>

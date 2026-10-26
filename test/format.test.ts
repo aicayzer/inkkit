@@ -6,7 +6,7 @@ import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { splitBlock } from '@milkdown/kit/prose/commands'
 import { Slice } from '@milkdown/kit/prose/model'
 import { serialize } from '../src/dialect'
-import { InkKitEditor, type CaretState } from '../src/editor'
+import { InkKitEditor, type CaretState, type KeyInput } from '../src/editor'
 
 async function withInkKitEditor<T>(
   markdown: string,
@@ -349,14 +349,7 @@ test('lifting a list item that holds a nested list leaves one list, not two', as
     [
       'Shift-Tab',
       (editor) => {
-        const view = ctxOf(editor).get(editorViewCtx)
-        const event = new KeyboardEvent('keydown', {
-          key: 'Tab',
-          shiftKey: true,
-        })
-        expect(
-          view.someProp('handleKeyDown', (handler) => handler(view, event)),
-        ).toBe(true)
+        expect(editor.keyDown({ key: 'Tab', shiftKey: true }, 1)).toBe(true)
       },
     ],
     [
@@ -419,18 +412,15 @@ test('control characters typed into the document are dropped', async () => {
   })
 })
 
-test('list items indent with Tab alone, leaving Mod-[ and Mod-] to the app', async () => {
+test('list items indent with Tab and outdent with Shift-Tab, leaving Mod-[ and Mod-] unbound', async () => {
   await withInkKitEditor('- one\n- two\n', (editor) => {
     placeCaret(editor, 9)
-    const view = ctxOf(editor).get(editorViewCtx)
-    const press = (key: string, init: KeyboardEventInit = {}) =>
-      view.someProp('handleKeyDown', (f) =>
-        f(view, new KeyboardEvent('keydown', { key, ...init })),
-      )
-    expect(press(']', { metaKey: true })).toBeFalsy()
+    const press = (key: string, init: Omit<KeyInput, 'key'> = {}) =>
+      editor.keyDown({ ...init, key }, 1)
+    expect(press(']', { metaKey: true })).toBe(false)
     expect(press('Tab')).toBe(true)
     expect(serialize(ctxOf(editor))).toBe('- one\n  - two\n')
-    expect(press('[', { metaKey: true })).toBeFalsy()
+    expect(press('[', { metaKey: true })).toBe(false)
     expect(press('Tab', { shiftKey: true })).toBe(true)
     expect(serialize(ctxOf(editor))).toBe('- one\n- two\n')
   })

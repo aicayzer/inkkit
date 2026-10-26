@@ -1,229 +1,265 @@
-import { expect, test } from 'vitest'
-import { edit, type Session } from './edit-source'
+import { describe, expect, test } from 'vitest'
+import { editorViewCtx } from '@milkdown/kit/core'
+import type { Ctx } from '@milkdown/kit/ctx'
+import { TextSelection } from '@milkdown/kit/prose/state'
+import { InkKitEditor, type KeyInput } from '../src/index'
 
-// Tab and Shift+Tab move a list item between levels. The item keeps the
-// Markdown it was written in; only its marker and indentation change, and a
-// new sublist takes the marker of the list it opens in.
+// `indent` and `outdent` are keymap names that default to Tab and Shift-Tab. They act only on a
+// list item in formatted mode that can be edited, and they run after the table keys.
 
-const tab = (session: Session) => expect(session.key('Tab')).toBe(true)
-const outdent = (session: Session) =>
-  expect(session.key('Tab', { shiftKey: true })).toBe(true)
+interface Session {
+  editor: InkKitEditor
+  errors: Error[]
+  /** Puts the caret `offset` characters into the first text block that holds `text`. */
+  caret(text: string, offset?: number): void
+  /** A key through the facade, under generation 1. */
+  key(key: string, init?: Omit<KeyInput, 'key'>): boolean
+  /** A real DOM key event on the editor, as the platform sends it. */
+  dom(key: string, init?: KeyboardEventInit): boolean
+  text(): string
+}
 
-for (const [name, source, item, saved] of [
-  [
-    'an ordered list with brackets',
-    '1) __a__\n2) _b_\n3) c\n',
-    'b',
-    '1) __a__\n   1) _b_\n3) c\n',
-  ],
-  [
-    'an ordered list with periods',
-    '1. __a__\n2. _b_\n3. c\n',
-    'b',
-    '1. __a__\n   1. _b_\n3. c\n',
-  ],
-  ['a list with asterisks', '* __a__\n* _b_\n', 'b', '* __a__\n  * _b_\n'],
-  ['a list with plus signs', '+ __a__\n+ _b_\n', 'b', '+ __a__\n  + _b_\n'],
-  ['a list with hyphens', '- __a__\n- _b_\n', 'b', '- __a__\n  - _b_\n'],
-  ['a task list', '- [ ] a\n- [x] _b_\n', 'b', '- [ ] a\n  - [x] _b_\n'],
-  ['a CRLF document', '* a\r\n* _b_\r\n', 'b', '* a\r\n  * _b_\r\n'],
-  ['Unicode items', '* é😀\n* _😀 b_\n', 'b', '* é😀\n  * _😀 b_\n'],
-  ['a list indented two spaces', '  * a\n  * _b_\n', 'b', '  * a\n    * _b_\n'],
-  [
-    'a list indented by an item',
-    '- x\n  - a\n  - _b_\n',
-    'b',
-    '- x\n  - a\n    - _b_\n',
-  ],
-  [
-    'an item of two paragraphs',
-    '* a\n* _b_\n\n  more\n',
-    'b',
-    '* a\n  * _b_\n\n    more\n',
-  ],
-  [
-    'an item numbered with two digits',
-    '10. a\n11. _b_\n12. c\n',
-    'b',
-    '10. a\n    1. _b_\n12. c\n',
-  ],
-  ['a loose list', '* a\n\n* _b_\n\n* c\n', 'b', '* a\n  * _b_\n\n* c\n'],
-  [
-    'an item with a code block',
-    '* a\n* _b_\n\n  ```\n  code\n  ```\n',
-    'b',
-    '* a\n  * _b_\n\n    ```\n    code\n    ```\n',
-  ],
-  ['a list in a quote', '> * a\n> * _b_\n', 'b', '> * a\n>   * _b_\n'],
-  [
-    'a list in an item',
-    '- x\n\n  * a\n  * _b_\n',
-    'b',
-    '- x\n\n  * a\n    * _b_\n',
-  ],
-  [
-    'an item that follows an item with a sublist',
-    '* a\n  * x\n* _b_\n',
-    'b',
-    '* a\n  * x\n  * _b_\n',
-  ],
-] as const)
-  test(`Tab on an item of ${name} keeps its source and takes the list's marker`, async () => {
-    expect(
-      await edit(source, (session) => {
-        session.caret(item)
-        tab(session)
-      }),
-    ).toBe(saved)
-  })
+async function withNote(
+  source: string,
+  run: (session: Session) => void | Promise<void>,
+  options: {
+    keymap?: InkKitEditor['setKeymap'] extends (k: infer K) => void ? K : never
+  } = {},
+) {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const errors: Error[] = []
+  const editor = await InkKitEditor.mount(
+    root,
+    { changed() {}, copy() {}, openLink() {}, error: (e) => errors.push(e) },
+    options,
+  )
+  try {
+    editor.loadDocument({
+      documentId: 'indent',
+      generation: 1,
+      format: 'md',
+      text: source,
+    })
+    const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
+      editorViewCtx,
+    )
+    await run({
+      editor,
+      errors,
+      caret(text, offset = text.length) {
+        let found = -1
+        view.state.doc.descendants((node, pos) => {
+          if (found < 0 && node.isText && node.text!.includes(text))
+            found = pos + node.text!.indexOf(text) + offset
+        })
+        expect(found).toBeGreaterThanOrEqual(0)
+        view.dispatch(
+          view.state.tr.setSelection(
+            TextSelection.create(view.state.doc, found),
+          ),
+        )
+      },
+      key: (key, init = {}) => editor.keyDown({ ...init, key }, 1),
+      dom(key, init = {}) {
+        const event = new KeyboardEvent('keydown', {
+          key,
+          bubbles: true,
+          cancelable: true,
+          ...init,
+        })
+        view.dom.dispatchEvent(event)
+        return event.defaultPrevented
+      },
+      text: () => editor.snapshot().text,
+    })
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+}
 
-for (const [name, source, item, saved] of [
-  ['plus signs', '+ a\n  + __b__\n', 'b', '+ a\n+ __b__\n'],
-  [
-    'asterisks in a CRLF document',
-    '* a\r\n  * _b_\r\n',
-    'b',
-    '* a\r\n* _b_\r\n',
-  ],
-  ['a task list', '- [ ] a\n  - [x] _b_\n', 'b', '- [ ] a\n- [x] _b_\n'],
-  [
-    'an ordered list with brackets',
-    '1) a\n   1) __b__\n2) c\n',
-    'b',
-    '1) a\n2) __b__\n2) c\n',
-  ],
-  [
-    'an item followed by a sibling',
-    '* a\n  * _b_\n  * c\n',
-    'b',
-    '* a\n* _b_\n  * c\n',
-  ],
-  [
-    'an item of two paragraphs',
-    '* a\n  * _b_\n\n    more\n',
-    'b',
-    '* a\n* _b_\n\n  more\n',
-  ],
-  ['Unicode items', '* é😀\n  * _😀 b_\n', 'b', '* é😀\n* _😀 b_\n'],
-  ['a list indented two spaces', '  * a\n    * _b_\n', 'b', '  * a\n  * _b_\n'],
-  [
-    'a third level',
-    '* a\n  * _b_\n    * _c_\n',
-    'c',
-    '* a\n  * _b_\n  * _c_\n',
-  ],
-  [
-    'a sublist numbered differently',
-    '1. a\n   1. _b_\n   2. _c_\n2. d\n',
-    'b',
-    '1. a\n2. _b_\n   1. _c_\n2. d\n',
-  ],
-  [
-    'an item with a code block',
-    '* a\n  * _b_\n\n    ```\n    code\n    ```\n',
-    'b',
-    '* a\n* _b_\n\n  ```\n  code\n  ```\n',
-  ],
-  ['a list in a quote', '> * a\n>   * _b_\n', 'b', '> * a\n> * _b_\n'],
-] as const)
-  test(`Shift+Tab on an item of ${name} keeps its source`, async () => {
-    expect(
-      await edit(source, (session) => {
-        session.caret(item)
-        outdent(session)
-      }),
-    ).toBe(saved)
-  })
+describe('the default keys', () => {
+  test('Tab indents a list item and Shift-Tab outdents it, by keyDown and by a DOM event', () =>
+    withNote('- one\n- two\n', ({ caret, key, dom, text, errors }) => {
+      caret('two')
+      expect(key('Tab')).toBe(true)
+      expect(text()).toBe('- one\n  - two\n')
+      expect(key('Tab', { shiftKey: true })).toBe(true)
+      expect(text()).toBe('- one\n- two\n')
+      expect(dom('Tab')).toBe(true)
+      expect(text()).toBe('- one\n  - two\n')
+      expect(dom('Tab', { shiftKey: true })).toBe(true)
+      expect(text()).toBe('- one\n- two\n')
+      expect(errors).toEqual([])
+    }))
 
-for (const [name, source, saved] of [
-  ['an ordered list', '1) __a__\n2) _b_\n3) c\n', '__a__\n\n1) _b_\n2) c\n'],
-  ['a bullet list', '* __a__\n* _b_\n', '__a__\n\n* _b_\n'],
-  ['a list of one item', '- __a__\n', '__a__\n'],
-] as const)
-  test(`Shift+Tab on the first item of ${name} makes a paragraph that keeps its source`, async () => {
-    expect(
-      await edit(source, (session) => {
-        session.caret('a')
-        outdent(session)
-      }),
-    ).toBe(saved)
-  })
-
-test('Tab, then Shift+Tab, then Undo return to the authored source', async () => {
-  const source = '1) __a__\n2) _b_\n3) c\n'
-  expect(
-    await edit(source, (session) => {
-      session.caret('b')
-      tab(session)
-      outdent(session)
+  test.each([
+    ['an ordered list', '1. one\n2. two\n', '1. one\n   1. two\n'],
+    ['a task list', '- [ ] one\n- [x] two\n', '- [ ] one\n  - [x] two\n'],
+    ['a list with CRLF', '* one\r\n* two\r\n', '* one\r\n  - two\r\n'],
+    ['a list in a quote', '> - one\n> - two\n', '> - one\n>   - two\n'],
+    [
+      'Unicode text',
+      '- café\n- \u{1F600} two\n',
+      '- café\n  - \u{1F600} two\n',
+    ],
+  ])('Tab and Shift-Tab work in %s', (_name, source, indented) =>
+    withNote(source, ({ caret, key, text }) => {
+      caret('two', 3)
+      expect(key('Tab')).toBe(true)
+      expect(text()).toBe(indented)
+      expect(key('Tab', { shiftKey: true })).toBe(true)
+      expect(text()).toBe(source)
     }),
-  ).toBe('1) __a__\n2) _b_\n3) c\n')
+  )
+
+  test('the first item cannot be indented and Tab outside a list is not consumed', () =>
+    withNote('- one\n- two\n\nPlain\n', ({ caret, key, dom, text }) => {
+      caret('one')
+      expect(key('Tab')).toBe(false)
+      expect(dom('Tab')).toBe(false)
+      caret('Plain')
+      expect(key('Tab')).toBe(false)
+      expect(key('Tab', { shiftKey: true })).toBe(false)
+      expect(text()).toBe('- one\n- two\n\nPlain\n')
+    }))
+
+  test('Mod-[ and Mod-] are left alone', () =>
+    withNote('- one\n- two\n', ({ caret, key, dom, text }) => {
+      caret('two')
+      for (const mark of ['[', ']'])
+        for (const mod of [{ metaKey: true }, { ctrlKey: true }]) {
+          expect(key(mark, mod)).toBe(false)
+          expect(dom(mark, mod)).toBe(false)
+        }
+      expect(text()).toBe('- one\n- two\n')
+    }))
 })
 
-test('Tab on an item edited just before takes the marker of its list', async () => {
-  expect(
-    await edit('* a\n* _b_\n', (session) => {
-      session.caret('b')
-      session.type('X')
-      tab(session)
-    }),
-  ).toBe('* a\n  * *bX*\n')
-  expect(
-    await edit('1) a\n2) _b_\n', (session) => {
-      session.caret('b')
-      session.type('X')
-      tab(session)
-    }),
-  ).toBe('1) a\n   1) *bX*\n')
+describe('with the table keys', () => {
+  test('Tab in a list item that holds a typed table row still makes the table', () =>
+    withNote('- | a | b |\n', ({ caret, key, text }) => {
+      caret('b |')
+      expect(key('Tab')).toBe(true)
+      expect(text()).toBe('- | a | b |\n  | - | - |\n  |   |   |\n')
+    }))
+
+  test('Tab in a table cell inside a list item moves to the next cell', () =>
+    withNote(
+      '- item\n\n  | a | b |\n  | - | - |\n  | c | d |\n',
+      ({ caret, key, text, editor }) => {
+        const before = text()
+        caret('a', 1)
+        expect(key('Tab')).toBe(true)
+        expect(editor.commandState().table).toMatchObject({ row: 0, column: 1 })
+        expect(text()).toBe(before)
+      },
+    ))
 })
 
-test('Tab on the last of three items, then on the first item of its sublist, keeps the items', async () => {
-  expect(
-    await edit('* a\n* _b_\n* _c_\n', (session) => {
-      session.caret('c')
-      tab(session)
-      session.key('Tab')
-    }),
-  ).toBe('* a\n* _b_\n  * _c_\n')
-})
+describe('a changed keymap', () => {
+  test('a host key indents and outdents, and the new key replaces Tab', () =>
+    withNote('- one\n- two\n', ({ editor, caret, key, text }) => {
+      caret('two')
+      editor.setKeymap({ indent: ['Mod-]'], outdent: ['Mod-['] })
+      expect(key('Tab')).toBe(false)
+      expect(key(']', { metaKey: true })).toBe(true)
+      expect(text()).toBe('- one\n  - two\n')
+      expect(key('[', { metaKey: true })).toBe(true)
+      expect(text()).toBe('- one\n- two\n')
+    }))
 
-test('Tab on the first item changes nothing', async () => {
-  const source = '* __a__\n* _b_\n'
-  expect(
-    await edit(source, (session) => {
-      session.caret('a')
-      session.key('Tab')
-    }),
-  ).toBe(source)
-})
+  test('an empty list disables a key and leaves the other', () =>
+    withNote('- one\n- two\n', ({ editor, caret, key, text }) => {
+      caret('two')
+      editor.setKeymap({ indent: [] })
+      expect(key('Tab')).toBe(false)
+      expect(text()).toBe('- one\n- two\n')
+      editor.setKeymap({ outdent: [], indent: ['Tab'] })
+      expect(key('Tab')).toBe(true)
+      expect(key('Tab', { shiftKey: true })).toBe(false)
+      expect(text()).toBe('- one\n  - two\n')
+    }))
 
-test('Tab with a stale generation changes nothing', async () => {
-  const source = '* a\n* _b_\n'
-  expect(
-    await edit(source, (session) => {
-      session.caret('b')
-      expect(() =>
-        session.editor.keyDown({ key: 'Tab', code: 'Tab' }, 2),
-      ).toThrow('Document changed')
-      expect(session.text()).toBe(source)
-    }),
-  ).toBe(source)
-})
+  test('a keymap given at mount applies, and a null entry keeps the default', () =>
+    withNote(
+      '- one\n- two\n',
+      ({ caret, key, text }) => {
+        caret('two')
+        expect(key('Tab')).toBe(false)
+        expect(key(']', { metaKey: true })).toBe(true)
+        expect(text()).toBe('- one\n  - two\n')
+        expect(key('Tab', { shiftKey: true })).toBe(true)
+        expect(text()).toBe('- one\n- two\n')
+      },
+      { keymap: { indent: ['Mod-]'], outdent: null as never } },
+    ))
 
-test('Tab during composition is left to the input method', async () => {
-  const source = '* a\n* _b_\n'
-  expect(
-    await edit(source, async (session) => {
-      session.caret('b')
-      session.view.dom.dispatchEvent(
-        new CompositionEvent('compositionstart', { bubbles: true }),
+  test('a key that another name already binds goes to that name', () =>
+    withNote('- one\n- two\n', ({ editor, caret, key, text }) => {
+      caret('two')
+      editor.setKeymap({ bold: ['Tab'] })
+      expect(key('Tab')).toBe(true)
+      expect(text()).toBe('- one\n- two\n')
+    }))
+
+  test('names and keys are checked', () =>
+    withNote('- one\n', ({ editor }) => {
+      expect(() => editor.setKeymap({ indent: 'Tab' } as never)).toThrow(
+        expect.objectContaining({ code: 'invalid-argument' }),
       )
-      expect(session.key('Tab')).toBe(false)
-      session.view.dom.dispatchEvent(
-        new CompositionEvent('compositionend', { bubbles: true }),
+      expect(() => editor.setKeymap({ indent: [3] } as never)).toThrow(
+        expect.objectContaining({ code: 'invalid-argument' }),
       )
-      await new Promise((resolve) => setTimeout(resolve, 30))
-      expect(session.text()).toBe(source)
-    }),
-  ).toBe(source)
+      expect(() => editor.setKeymap({ outdent: undefined })).not.toThrow()
+    }))
+})
+
+describe('where nothing can be indented', () => {
+  test('a read-only editor leaves the list alone and keyDown does not throw for the bound key', () =>
+    withNote('- one\n- two\n', ({ editor, caret, key, dom, text }) => {
+      caret('two')
+      editor.setEditable(false)
+      expect(dom('Tab')).toBe(false)
+      expect(dom('Tab', { shiftKey: true })).toBe(false)
+      expect(text()).toBe('- one\n- two\n')
+      editor.setKeymap({ indent: ['Mod-]'] })
+      expect(key(']', { metaKey: true })).toBe(false)
+      expect(text()).toBe('- one\n- two\n')
+      editor.setEditable(true)
+      expect(key(']', { metaKey: true })).toBe(true)
+      expect(text()).toBe('- one\n  - two\n')
+    }))
+
+  test('source mode types a tab and does not indent the list', () =>
+    withNote('- one\n- two\n', ({ editor, key, text }) => {
+      editor.setEditingMode('source')
+      editor.setKeymap({ indent: ['Mod-]'] })
+      const before = text()
+      expect(key(']', { metaKey: true })).toBe(false)
+      expect(text()).toBe(before)
+      expect(key('Tab')).toBe(true)
+      expect(text()).toContain('\t')
+      expect(text().replace('\t', '')).toBe(before)
+    }))
+
+  test('nothing indents before a document is loaded or during a refused edit', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const editor = await InkKitEditor.mount(
+      root,
+      { changed() {}, copy() {}, openLink() {} },
+      {},
+    )
+    try {
+      expect(() => editor.setKeymap({ indent: ['Tab'] })).not.toThrow()
+      expect(() => editor.keyDown({ key: 'Tab' }, 1)).toThrow(
+        expect.objectContaining({ code: 'not-ready' }),
+      )
+    } finally {
+      await editor.destroy()
+      root.remove()
+    }
+  })
 })

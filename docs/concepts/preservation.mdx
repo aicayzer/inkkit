@@ -53,11 +53,11 @@ Source mode doesn't parse as you type. Typing, paste and `replaceSource` take ef
 
 Where a refusal arrives depends on what made the edit:
 
-| The edit came from                                                                                                                                                    | The refusal arrives as      |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| A synchronous method, such as `insertText`, `format`, `table`, `moveBlock`, `insertImages`, `pasteAsPlainText`, `replace`, `replaceAll`, `replaceTextRange` or `undo` | An error thrown by the call |
-| `paste`                                                                                                                                                               | A rejected promise          |
-| The person: typing, a shortcut, or a paste, drop or cut in the editor                                                                                                 | A call to `events.error`    |
+| The edit came from                                                                                                                                                                    | The refusal arrives as      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| A synchronous method, such as `insertText`, `format`, `table`, `moveBlock`, `insertImages`, `appendImages`, `pasteAsPlainText`, `replace`, `replaceAll`, `replaceTextRange` or `undo` | An error thrown by the call |
+| `paste`                                                                                                                                                                               | A rejected promise          |
+| The person: typing, a shortcut, or a paste, drop or cut in the editor                                                                                                                 | A call to `events.error`    |
 
 A refusal that a call reports isn't also sent to `events.error`. [Errors](/reference/errors) describes how every failure arrives.
 

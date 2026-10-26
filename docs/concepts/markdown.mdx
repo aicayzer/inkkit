@@ -130,7 +130,7 @@ The `@aicayzer/inkkit/core` entry leaves Mermaid out: diagram fences stay editab
 - **Code:** an address inside inline code isn't linked.
 - **Spaces:** a bare URL followed by a space at the end of a block is saved as `<https://example.com>&#x20;`, because a bare URL would take in the encoded space.
 
-A primary click with Mod (Command on Apple platforms, Control elsewhere) calls `events.openLink` with the destination. Links with a scheme other than `http`, `https`, `mailto` or `tel` don't open; see [Links that Inkkit keeps](/concepts/clipboard#links-that-inkkit-keeps).
+A primary click with Mod (Command on Apple platforms, Control elsewhere) calls `events.openLink` with the destination. Links with a scheme other than `http`, `https`, `mailto`, `tel` or one the host lists in `linkSchemes` don't open; see [Links that Inkkit keeps](/concepts/clipboard#links-that-inkkit-keeps).
 
 ## Line breaks
 

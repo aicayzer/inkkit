@@ -11,7 +11,7 @@ import { shareableFragment } from './comments'
 import { diagramImage } from './mermaid'
 import { fileFields } from './linked-syntax'
 import { definitionText } from './references'
-import { isSafeLinkTarget } from './link-safety'
+import { editorLinkSchemes, isSafeLinkTarget } from './link-safety'
 import { portableFile, portableFileImage } from './portable-files'
 import { withFileSignal } from './files'
 import type {
@@ -137,7 +137,13 @@ function nodeText(
   return clipboardText(node.content, missingImages, fileDescriptions)
 }
 
-function clipboardDOM(content: Fragment, schema: Schema): HTMLElement {
+/** `linkSchemes` are the schemes beyond the built-in ones that a copied link keeps. Print and paste
+ *  leave it out, so they keep only the built-in ones. */
+function clipboardDOM(
+  content: Fragment,
+  schema: Schema,
+  linkSchemes?: ReadonlySet<string>,
+): HTMLElement {
   content = shareableFragment(content)
   const container = document.createElement('div')
   const serializer = DOMSerializer.fromSchema(schema)
@@ -163,7 +169,7 @@ function clipboardDOM(content: Fragment, schema: Schema): HTMLElement {
       // The editor shows such a link without an address; as an element it
       // would paste back as a link to nothing, so it copies as its text.
       link: (mark, inline) =>
-        isSafeLinkTarget(String(mark.attrs.href ?? ''))
+        isSafeLinkTarget(String(mark.attrs.href ?? ''), linkSchemes)
           ? serializer.marks.link!(mark, inline)
           : ['span', 0],
     },
@@ -200,14 +206,18 @@ function clipboardDOM(content: Fragment, schema: Schema): HTMLElement {
 export function clipboardContent(
   content: Fragment,
   schema: Schema,
+  linkSchemes?: ReadonlySet<string>,
 ): ClipboardContent {
   return {
     text: clipboardText(content),
-    html: clipboardDOM(content, schema).innerHTML,
+    html: clipboardDOM(content, schema, linkSchemes).innerHTML,
   }
 }
 
-function clipboardSerializer(schema: Schema): DOMSerializer {
+function clipboardSerializer(
+  schema: Schema,
+  linkSchemes: ReadonlySet<string>,
+): DOMSerializer {
   const serializer = DOMSerializer.fromSchema(schema)
   const safe = new DOMSerializer(serializer.nodes, serializer.marks)
   // Drag transport shares the clipboard policy. Keep the original slice for
@@ -215,7 +225,7 @@ function clipboardSerializer(schema: Schema): DOMSerializer {
   safe.serializeFragment = (content, options = {}, target) => {
     const output =
       target ?? (options.document ?? document).createDocumentFragment()
-    output.append(...clipboardDOM(content, schema).childNodes)
+    output.append(...clipboardDOM(content, schema, linkSchemes).childNodes)
     return output
   }
   return safe
@@ -226,7 +236,10 @@ export const visibleClipboard = $prose(
     new Plugin({
       key: new PluginKey('visibleClipboard'),
       props: {
-        clipboardSerializer: clipboardSerializer(ctx.get(schemaCtx)),
+        clipboardSerializer: clipboardSerializer(
+          ctx.get(schemaCtx),
+          editorLinkSchemes(ctx),
+        ),
         clipboardTextSerializer: (slice) => clipboardText(slice.content),
       },
     }),
@@ -242,10 +255,11 @@ export async function portableClipboard(
   completeDiagrams?: ReadonlySet<string>,
   files?: FileAdapter,
   signal: AbortSignal = new AbortController().signal,
+  linkSchemes?: ReadonlySet<string>,
 ): Promise<Omit<ClipboardOutput, keyof DocumentVersion>> {
   signal.throwIfAborted()
   content = shareableFragment(content)
-  const base = clipboardContent(content, schema)
+  const base = clipboardContent(content, schema, linkSchemes)
   const container = document.createElement('div')
   container.innerHTML = base.html
   const images: ClipboardImage[] = []
