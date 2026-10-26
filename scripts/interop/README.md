@@ -104,7 +104,7 @@ node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8
 node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --scenario host-delayed-import-editability-epoch
 ```
 
-Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls`, `native-search`, `layout`, `linked-files`, `media`, `portable-files`, `integration` and `legacy`. Versions from 0.0.8 default to bounded `core`; previous versions retain their historical complete suite when no selector is supplied. `legacy` retains every prior scenario available for the version. No group includes `intentional-assertion-failure`; it requires explicit selection.
+Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls`, `native-search`, `layout`, `linked-files`, `media`, `portable-files`, `integration`, `containers` and `legacy`. Versions from 0.0.8 default to bounded `core`; previous versions retain their historical complete suite when no selector is supplied. `legacy` retains every prior scenario available for the version. No group includes `intentional-assertion-failure`; it requires explicit selection.
 
 The core covers reference preservation and shared source/formatted history. Host controls cover source focus/input preferences, read-only transitions and preserved history, bridge command state and stale generations, synthetic composition guards, and cancellation of manually delayed image imports after editability changes. Synthetic composition events verify guards; they do not prove complete IME interoperability.
 
