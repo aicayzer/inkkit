@@ -12,7 +12,6 @@ mkdirSync(output, { recursive: true })
 const hash = (path) =>
   createHash('sha256').update(readFileSync(path)).digest('hex')
 const evidence = {
-  provisional: true,
   head: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   surface:
     'Packed consumer in real WKWebView; programmatic facade and DOM events',

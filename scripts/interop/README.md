@@ -201,3 +201,13 @@ node scripts/interop/verify-drop-indicator.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_D
 ```
 
 A missing accepted drop or trusted event fails the probe. This fixture verifies the package in WKWebView, not a consumer app's native file handling.
+
+## Authored reference text
+
+`FileReference.raw` and `WikiLinkReference.raw` hold a reference's Markdown as the document holds it. The dedicated check loads CRLF Unicode wiki links, named embeds and path images, in paragraphs and table cells, in the packed consumer and compares what every adapter callback receives with the saved bytes, including after undo, redo, reopening, resizing and a table paste. Build the host and consumer as above, then run it against the exact archive:
+
+```sh
+node scripts/interop/verify-reference-raw.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY
+```
+
+It records the archive, bundle, host and fixture hashes beside each scenario's result. It exercises the facade and DOM events in a real WKWebView, not a consumer app's use of `raw`.
