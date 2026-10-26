@@ -112,7 +112,7 @@ Suggestions don't open in a read-only editor, source or TXT mode, code, front ma
 
 <ResponseField name="resolve" type="(reference: WikiLinkReference, context: DocumentContext) => { missing?: boolean } | undefined">
 
-Tells Inkkit whether a link's target is missing, for presentation only. Inkkit calls it each time the link renders, and when [`refreshReferences`](/reference/editor#refreshreferences) names the link or names no target. `{ missing: true }` styles the link as missing and gives it the `wikiMissing` tooltip; `undefined` or `{}` shows it as present. It supplies no URL. A thrown exception reports `file-unavailable`.
+Tells Inkkit whether a link's target is missing, for presentation only. Inkkit calls it each time the link renders, and when [`refreshReferences`](/reference/editor#refreshreferences) names the link or names no target. `{ missing: true }` draws the link with a dashed underline and gives it the `wikiMissing` label as its tooltip and accessible description; the link stays focusable and `open` still runs; `undefined` or `{}` shows it as present. It supplies no URL. A thrown exception reports `file-unavailable`.
 
 </ResponseField>
 

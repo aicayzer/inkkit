@@ -33,18 +33,25 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
     const render = () => {
       const { label } = reference()
       if (dom.textContent !== label) dom.textContent = label
-      dom.removeAttribute('title')
-      dom.removeAttribute('data-missing')
-      if (!runtime.active()) return
-      const captured = runtime.capture()
-      try {
-        const result = adapter.resolve?.(reference(), captured.context)
-        if (captured.isCurrent() && result?.missing) {
-          dom.dataset.missing = 'true'
-          dom.title = runtime.labels.wikiMissing
+      let missing = false
+      if (runtime.active()) {
+        const captured = runtime.capture()
+        try {
+          const result = adapter.resolve?.(reference(), captured.context)
+          missing = captured.isCurrent() && Boolean(result?.missing)
+        } catch (error) {
+          report(error)
         }
-      } catch (error) {
-        report(error)
+      }
+      // The link is still activatable, so it is described rather than disabled.
+      if (missing) {
+        dom.dataset.missing = 'true'
+        dom.title = runtime.labels.wikiMissing
+        dom.setAttribute('aria-description', runtime.labels.wikiMissing)
+      } else {
+        dom.removeAttribute('data-missing')
+        dom.removeAttribute('title')
+        dom.removeAttribute('aria-description')
       }
     }
     const open = (event: Event) => {

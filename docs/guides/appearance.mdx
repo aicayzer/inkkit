@@ -63,6 +63,10 @@ To draw no ring around the text while keeping the controls' rings:
 
 Footnote references and wiki links draw their ring outside the text, in the current text color. The Copy and language buttons on code blocks keep a fixed accent ring that the focus tokens don't change.
 
+## Links
+
+Links and wiki links take `--inkkit-accent-color` and gain an underline on hover. A wiki link that `WikiLinkAdapter.resolve` reports as missing keeps a dashed underline, so people who can't tell its color apart still see it, and it also shows in forced-colors mode. Assistive technology receives the `wikiMissing` label as the link's description. The underline has no token of its own. Light-mode contrast of the default accent is a known gap, listed under accessibility below.
+
 ## Localize labels
 
 Inkkit draws some text of its own: accessible names for the editing surfaces, the placeholder, table and file card controls, menu items and status messages. Pass `labels` at mount with strings from your localization catalog. Omitted labels keep their English defaults.

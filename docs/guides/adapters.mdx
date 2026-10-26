@@ -180,7 +180,7 @@ const editor = await InkKitEditor.mount(root, events, { wikiLinks })
 
 - `open(reference, context)` runs on a Mod-click, or Enter or Space on the focused link, including in a read-only editor. `reference.target` is the note name with escapes removed. It is empty for a link to a heading in the same note, such as `[[#Heading]]`.
 - `reference.raw` is the link as written, such as `[[Plan|Plan]]`, so a host can tell `[[Plan]]` from `[[Plan|Plan]]`. See the [reference](/reference/adapters#wikilinkreference).
-- `resolve(reference, context)` is synchronous and only marks a link as missing, with the `wikiMissing` label as its tooltip. Answer from an index you already hold.
+- `resolve(reference, context)` is synchronous and only marks a link as missing: the link gets a dashed underline, and the `wikiMissing` label as its tooltip and accessible description. A missing link still opens, so you can offer to create the note. Answer from an index you already hold.
 - `suggest(query, context)` returns note names, in display order, for the text typed after `[[`. Inkkit inserts the chosen name, escaped. A newer query aborts the previous request, and Inkkit ignores late answers. Return only names that are valid link targets: one invalid name closes the list and reports `file-unavailable`.
 
 Suggestions work without the slash menu. When `wikiLinks` is set, typing the closing `]]` of a complete link also makes a link. See [Markdown support](/concepts/markdown#wiki-links-and-file-embeds) for the syntax.
