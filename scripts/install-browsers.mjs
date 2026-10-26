@@ -1,9 +1,22 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 
 // A stalled package mirror can hang `playwright install --with-deps` for
 // 30 minutes, so each attempt is bounded and the whole process group is killed.
+// Playwright runs apt through sudo, so that apt-get belongs to root, survives the
+// kill and keeps the dpkg lock, and every later attempt fails at once with
+// "Could not get lock". Stop it and let dpkg recover before the next attempt.
+export function releasePackageLock() {
+  if (process.platform !== 'linux') return
+  for (const command of [
+    ['pkill', '-KILL', '-x', 'apt-get'],
+    ['pkill', '-KILL', '-x', 'dpkg'],
+    ['dpkg', '--configure', '-a'],
+  ])
+    spawnSync('sudo', ['-n', ...command], { stdio: 'ignore', timeout: 60_000 })
+}
+
 export async function installBrowsers({
   engines,
   command = [
@@ -15,6 +28,7 @@ export async function installBrowsers({
   ],
   attempts = 3,
   timeoutMs = 300_000,
+  recover = releasePackageLock,
   log = (message) => process.stderr.write(`${message}\n`),
 } = {}) {
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -42,6 +56,7 @@ export async function installBrowsers({
     })
     if (outcome === 'ok') return 0
     log(`Browser install attempt ${attempt}/${attempts} ${outcome}.`)
+    if (attempt < attempts) await recover()
   }
   return 1
 }
