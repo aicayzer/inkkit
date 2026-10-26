@@ -107,6 +107,8 @@ Inkkit inserts labels as text, never as markup. An unknown key makes `mount` rej
 
 Classes and markup inside the editor are not an API. Don't write rules for `.ProseMirror`, `.inkkit-*` classes or the elements inside the root: they can change in any release, and copied and printed output doesn't carry them. Style your own root element for layout, such as its height and scrolling, and use tokens for everything inside it.
 
+A root element with a fixed height or its own scrolling clips the printed page at that height. Let it grow when the page prints, for example `@media print { html, body, #editor { height: auto; overflow: visible } }` for a root element with the id `editor`.
+
 If a change you need has no token, [open an issue](https://github.com/aicayzer/inkkit/issues) rather than overriding an internal selector.
 
 ## Accessibility
