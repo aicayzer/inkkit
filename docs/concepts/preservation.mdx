@@ -21,7 +21,7 @@ Inkkit saves the Markdown you loaded, not a fresh export of what the editor show
 - **An unedited document** comes back from `snapshot()` as the loaded text, byte for byte, including line endings, a byte order mark, trailing spaces and a missing final line ending.
 - **Blocks that an edit doesn't reach** keep their bytes, and so does the text between blocks, such as extra blank lines. Link and footnote definitions stay, whether or not anything uses them.
 - **An edited block** keeps the spelling of what the edit didn't change where it can: the other lines of a paragraph, `__bold__` next to typed text, a list's `*` or `+` markers, a setext underline, reference labels, and a code fence's characters and info string.
-- **Line endings** follow the document. In a CRLF document, the lines an edit writes use CRLF.
+- **Line endings** follow the document. In a CRLF document, the lines an edit writes use CRLF, and in a document whose lines end with a lone CR, they use CR. A document that mixes endings is written with LF unless every line ending is CRLF.
 - **Quote markers and indentation** follow the document. A line or item an edit adds to a quote, callout or list takes the `>` markers and indentation of the lines beside it, such as a list indented by two spaces or a quote written as `>  text`.
 - **Undo back to the loaded text** returns the loaded bytes, and `dirty` is `false` again.
 - **Presentation never changes the source.** Folding a callout, showing comments, Mermaid previews, code highlighting and automatic language detection change neither the text nor the revision.
@@ -39,6 +39,9 @@ Inkkit writes a block in canonical form when it can't keep the authored spelling
 - **Neighboring lists.** Markdown reads two adjacent lists of one kind as one list unless their markers differ. A new, moved or rewritten list takes a bullet (`-`, `*` or `+`) or number delimiter (`.` or `)`) that the lists beside it don't use. An item added to an authored list takes that list's marker.
 - **Thematic breaks.** A `---` rule that comes to open the document while another `---` line follows it is written as `***`, because it would otherwise read as front matter. A new rule inside a list item, quote, callout or footnote is written as `___`.
 - **Spaces at the edge of a block or table cell, or beside a soft line break** are written as `&#x20;`, because Markdown would otherwise drop them. For example, pressing Enter before the space in `See example today` saves `See example` and `&#x20;today` as two paragraphs. Pressing Backspace joins them again as `See example today`.
+- **Text that reads as a character reference.** Typing `&amp;` saves the text `&amp;`, not the `&` it would stand for, so the semicolon is written as `\;`: `&amp\;`. The text you typed reopens as the characters you typed.
+- **Block comments.** An Obsidian comment alone on its line, `%%note%%`, stays on one line. A `%%` comment written over three lines stays on three, and a comment that gains a line break is written on three.
+- **Callouts of an unsupported type** stay as written inside quotes and list items, and an edit beside one keeps the blank lines, or the lack of them, around it.
 - **A line break at the end of a paragraph** isn't saved until text follows it. See [Line breaks](/concepts/markdown#line-breaks).
 
 ## How an edit is checked

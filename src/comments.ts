@@ -205,11 +205,17 @@ const from: FromExtension = {
   },
 }
 
+// A block comment is written on three lines unless it was alone on one line,
+// and then only while it holds no line ending. An inline comment is written
+// on three when it was marked so.
+const onThreeLines = (isBlock: boolean, block: unknown, value: string) =>
+  isBlock ? block !== false || /[\r\n]/.test(value) : Boolean(block)
+
 export function commentSource(node: ProseNode): string {
   const body = node.textContent
   return node.attrs.syntax === 'html'
     ? `<!--${body}-->`
-    : node.type.name === 'comment_block' || node.attrs.block
+    : onThreeLines(node.type.name === 'comment_block', node.attrs.block, body)
       ? `%%\n${body}\n%%`
       : `%%${body}%%`
 }
@@ -218,7 +224,7 @@ const handler: Handle = (node) => {
   const value = comment.value ?? ''
   return comment.syntax === 'html'
     ? `<!--${value}-->`
-    : comment.type === 'inkkitCommentBlock' || comment.block
+    : onThreeLines(comment.type === 'inkkitCommentBlock', comment.block, value)
       ? `%%\n${value}\n%%`
       : `%%${value}%%`
 }
@@ -348,6 +354,8 @@ function remarkComments(this: Processor) {
         return {
           ...node.children[0],
           type: 'inkkitCommentBlock',
+          // The line it was written on stays one line.
+          block: false,
           position: node.position,
         }
       return node
@@ -396,7 +404,10 @@ function commentNode(inline: boolean) {
       runner: (state, node, type) => {
         state.addNode(
           type,
-          { syntax: node.syntax, block: inline ? Boolean(node.block) : true },
+          {
+            syntax: node.syntax,
+            block: inline ? Boolean(node.block) : node.block !== false,
+          },
           node.value ? [state.schema.text(String(node.value))] : undefined,
         )
       },

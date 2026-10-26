@@ -3,6 +3,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import type { Mark, Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { serialize } from './dialect'
+import { gutterAt } from './gutter'
 import { linkForm } from './link-form'
 import { restoreCodeEndings, finalCodeEnding } from './code-fences'
 import { lineBreakHTML, sourceFrontmatter } from './literals'
@@ -149,13 +150,34 @@ function delimiterRowEnd(text: string, headerEnd: number): number {
   return ending.exec(text)?.index ?? text.length
 }
 
-function ownShape(node: SourceNode): string {
+function ownShape(node: SourceNode, spreadless = false): string {
   return JSON.stringify(ordered(node), (key, value) =>
-    ['position', 'data', 'children', 'value', 'marker'].includes(key)
+    ['position', 'data', 'children', 'value', 'marker'].includes(key) ||
+    (spreadless && key === 'spread')
       ? undefined
       : value,
   )
 }
+
+// A list or item that holds a literal block, which is written as HTML, is
+// separated by blank lines as the canonical writer decides: it writes one
+// where HTML could not follow a paragraph without it, even before a quote.
+// That says nothing of how the list was spelled, so the blank lines the
+// author wrote or left out stay.
+const holdsLiteralBlock = (node: SourceNode): boolean =>
+  (node.type === 'listItem' || node.type === 'list') &&
+  !!node.children?.some(
+    (child) =>
+      child.type === 'inkkitLiteral' ||
+      literals.has(child) ||
+      holdsLiteralBlock(child),
+  )
+
+// Whether two nodes are the same kind of node with the same own properties.
+const sameShape = (before: SourceNode, after: SourceNode): boolean =>
+  ownShape(before) === ownShape(after) ||
+  ((holdsLiteralBlock(before) || holdsLiteralBlock(after)) &&
+    ownShape(before, true) === ownShape(after, true))
 
 // The shape two nodes must share to be the same child of a list or quote. A
 // task ticked since is still the same item.
@@ -262,18 +284,6 @@ interface Neighbour {
 
 /** The prefix each line of a block repeats, as authored and as the canonical writer writes it. */
 type Gutters = readonly [authored: string, canonical: string]
-
-const listMarker = /(?:[-*+]|\d{1,9}[.)])(?=[ \t])/g
-
-// What a line repeats before a block or a line of text that starts at `offset`: the quote markers
-// and indentation that open the line, with a list marker as the spaces it takes, which is what
-// the item's later lines are indented by. Anything else before `offset` on its line is content,
-// not gutter.
-function gutterAt(text: string, offset: number): string {
-  const line = text.slice(text.lastIndexOf('\n', offset - 1) + 1, offset)
-  const leading = /^(?:[ \t]|>|(?:[-*+]|\d{1,9}[.)])(?=[ \t]))*/.exec(line)![0]
-  return leading.replace(listMarker, (marker) => ' '.repeat(marker.length))
-}
 
 // The gutters of the lines a block's children are written on, in the source and in the canonical
 // text. A slice written from the start of the block carries its own markers, whose width the
@@ -869,7 +879,7 @@ export function decodedOffsets(
       /[ \t]/.test(raw[index - 1] ?? '') && /[ \t]/.test(raw[index]!)
         ? undefined
         : /^[ \t]*(?:\r\n?|\n)(?:[ \t]*>)*[ \t]*/.exec(rest)?.[0]
-    const token =
+    let token =
       line ??
       /^\\[!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~]/.exec(rest)?.[0] ??
       /^&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);/.exec(rest)?.[0]
@@ -881,7 +891,10 @@ export function decodedOffsets(
     else if (token) {
       const element = document.createElement('textarea')
       element.innerHTML = token
-      value = element.value
+      // A name that is no reference, such as `&am;`, is the characters it is
+      // spelled with.
+      if (element.value === token) token = undefined
+      else value = element.value
     }
     index += token?.length ?? 1
     decoded += value
@@ -1164,11 +1177,44 @@ function retainText(
           : character
     })
     .join('')
-  return (
-    raw.slice(0, offsets[prefix]) +
-    inserted +
-    raw.slice(offsets[before.length - suffix])
+  return escapeReferences(
+    raw.slice(0, offsets[prefix]),
+    inserted,
+    raw.slice(offsets[before.length - suffix]),
   )
+}
+
+const characterReference = /&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]*);/g
+
+// Text typed beside other text can complete a character reference, such as
+// `&amp` and `;`, which would read back as the character it stands for. The
+// semicolon of a reference that the typed text takes part in is escaped, so
+// the text stays the characters typed and the text before it is left alone.
+function escapeReferences(
+  head: string,
+  inserted: string,
+  tail: string,
+): string {
+  const text = head + inserted + tail
+  const from = head.length
+  const to = from + inserted.length
+  let output = '',
+    at = 0
+  for (const match of text.matchAll(characterReference)) {
+    const start = match.index
+    const end = start + match[0].length
+    // A reference the typed text is not part of keeps its spelling, and so
+    // does one whose `&` is escaped.
+    if (
+      start >= to ||
+      end <= from ||
+      (/\\*$/.exec(text.slice(0, start))![0].length & 1) === 1
+    )
+      continue
+    output += text.slice(at, end - 1) + '\\'
+    at = end - 1
+  }
+  return output + text.slice(at)
 }
 
 function retainBoundaryText(
@@ -1919,7 +1965,7 @@ function retainSource(
     nodes.every((node) => node.position?.start.offset != null)
   if (
     before.type === after.type &&
-    ownShape(before) === ownShape(after) &&
+    sameShape(before, after) &&
     before.children &&
     after.children &&
     before.children.length === after.children.length &&
@@ -2071,7 +2117,7 @@ function retainSource(
   }
   if (
     before.type === after.type &&
-    ownShape(before) === ownShape(after) &&
+    sameShape(before, after) &&
     before.children &&
     after.children
   ) {
@@ -2435,6 +2481,11 @@ export function semanticSignature(doc: ProseNode): string {
         inTable: _inTable,
         ...attrs
       } = value.attrs as Record<string, unknown>
+      value = { ...value, attrs }
+    }
+    // Whether a block comment sits on one line or three is its spelling.
+    if (value.type === 'comment_block' && value.attrs) {
+      const { block: _block, ...attrs } = value.attrs as Record<string, unknown>
       value = { ...value, attrs }
     }
     const content = value.content as Record<string, unknown>[] | undefined
@@ -2830,8 +2881,12 @@ export class Preservation {
     try {
       const parse = (text: string) => parseDoc(ctx, text)
       this.baseline = parse(source)
-      this.lineEnding =
-        source.includes('\r\n') && !source.replaceAll('\r\n', '').includes('\n')
+      this.lineEnding = !source.includes('\n')
+        ? source.includes('\r')
+          ? '\r'
+          : '\n'
+        : source.includes('\r\n') &&
+            !source.replaceAll('\r\n', '').includes('\n')
           ? '\r\n'
           : '\n'
       const processor = ctx.get(remarkCtx)
