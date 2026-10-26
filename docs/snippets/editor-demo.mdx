@@ -19,7 +19,7 @@ export const EditorDemo = ({ fullPage = false }) => {
   }, [])
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.2.0/dist/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.3.0/dist/style.css">
 <style>
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -52,7 +52,7 @@ addEventListener('message', event => {
   root.style.setProperty('--inkkit-color-scheme', scheme);
 });
 try {
-  const { InkKitEditor } = await import('https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.2.0/dist/core.js');
+  const { InkKitEditor } = await import('https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.3.0/dist/core.js');
   const editor = await InkKitEditor.mount(root, {
     openLink() {},
     changed() { status.textContent = ${fullPage ? "''" : "'Your changes stay in this demo and are not saved.'"}; },
