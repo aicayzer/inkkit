@@ -228,6 +228,27 @@ const inspectDOM = (selector) => {
             }
           })()
         : {}),
+      ...(node.matches('.ProseMirror-gapcursor')
+        ? (() => {
+            const caret = getComputedStyle(node, '::after')
+            const line = view()
+              .querySelector('p')
+              .getBoundingClientRect().height
+            const width = Number.parseFloat(caret.width)
+            const height = Number.parseFloat(caret.height)
+            return {
+              verticalCaret:
+                width >= 1.5 &&
+                width <= 2 &&
+                Math.abs(height - line) <= 1.5 &&
+                caret.borderTopWidth === '0px' &&
+                caret.backgroundColor !== 'rgba(0, 0, 0, 0)',
+              width,
+              height,
+              line,
+            }
+          })()
+        : {}),
     })),
   }
 }
@@ -385,6 +406,10 @@ window.interop = {
             break
           case 'viewportState':
             result = viewportState()
+            break
+          case 'focus':
+            editor.focus()
+            result = true
             break
           case 'hostFocus': {
             const host = document.querySelector('#host-search')

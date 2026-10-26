@@ -115,11 +115,6 @@ test('a gap beside a table hides the native text caret and typing restores it', 
     'display',
     'block',
   )
-  expect(
-    await page
-      .locator('.ProseMirror-gapcursor')
-      .evaluate((e) => getComputedStyle(e, '::after').borderTopWidth),
-  ).toBe('2px')
   await expect(editor).toHaveCSS('caret-color', 'rgba(0, 0, 0, 0)')
   await page.keyboard.type('After')
   await expect(editor).not.toHaveClass(/ProseMirror-hideselection/)

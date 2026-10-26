@@ -2099,6 +2099,17 @@ if (releaseAtLeast('0.0.9')) {
       assert('snapshot.text', 'A😀B é 中文.\r\nSecond line\r\n'),
     ],
   }
+  // A document that ends in an image holds a gap cursor, drawn as a caret one line tall.
+  scenarios['native-layout-gap-cursor'] = {
+    source: 'Intro line\n\n![Example](asset:example)\n',
+    operations: [
+      { op: 'focus' },
+      { op: 'dom', selector: '.ProseMirror-gapcursor', name: 'gap' },
+      assert('count', 1, 'gap'),
+      assert('nodes.0.display', 'block', 'gap'),
+      assert('nodes.0.verticalCaret', true, 'gap'),
+    ],
+  }
   const wrappedText =
     'Wrapped match spans several visual lines so its first and final character must both fit below the host search header and above the bottom inset.'
   const layoutSource =
