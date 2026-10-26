@@ -97,7 +97,7 @@ describe('the default keys', () => {
   test.each([
     ['an ordered list', '1. one\n2. two\n', '1. one\n   1. two\n'],
     ['a task list', '- [ ] one\n- [x] two\n', '- [ ] one\n  - [x] two\n'],
-    ['a list with CRLF', '* one\r\n* two\r\n', '* one\r\n  - two\r\n'],
+    ['a list with CRLF', '* one\r\n* two\r\n', '* one\r\n  * two\r\n'],
     ['a list in a quote', '> - one\n> - two\n', '> - one\n>   - two\n'],
     [
       'Unicode text',
