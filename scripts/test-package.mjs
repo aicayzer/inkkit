@@ -28,7 +28,16 @@ export const sha256 = (bytes) =>
 const mermaidMarker = 'Syntax error in text'
 
 // Every current host embeds WebKit; Chromium covers the web.
-const engines = { chromium, webkit }
+// Pull requests set INKKIT_PACKAGE_ENGINES=chromium, because WebKit's system
+// packages need an apt mirror that stalls; main and releases run both.
+const available = { chromium, webkit }
+const requested = (process.env.INKKIT_PACKAGE_ENGINES ?? 'chromium,webkit')
+  .split(',')
+  .map((name) => name.trim())
+  .filter(Boolean)
+const engines = Object.fromEntries(
+  Object.entries(available).filter(([name]) => requested.includes(name)),
+)
 
 // Untidy Markdown that InkKit keeps byte for byte: a setext heading, `+` list
 // markers, an aligned table, Unicode and a missing final newline.
