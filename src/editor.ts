@@ -77,6 +77,7 @@ import {
   type ResolvedPos,
 } from '@milkdown/kit/prose/model'
 import { splitBlock } from '@milkdown/kit/prose/commands'
+import { undoInputRule } from '@milkdown/kit/prose/inputrules'
 import { keydownHandler, keymap } from '@milkdown/kit/prose/keymap'
 import { goToNextCell } from '@milkdown/kit/prose/tables'
 import { liftListItem } from '@milkdown/kit/prose/schema-list'
@@ -874,6 +875,10 @@ function blockAt(
 }
 
 const quotes = new Set(['blockquote', 'inkkit_callout'])
+
+// Backspace right after an input rule, such as a typed code fence, takes it back. The handlers for
+// quotes and list items below would otherwise lift or join the block the rule made.
+const undoTypedRule = $prose(() => keymap({ Backspace: undoInputRule }))
 
 // Backspace at the start of a quote's or callout's first block is left alone
 // by the preset, or joins the block to the one above; leaving the quote is what
@@ -3141,6 +3146,7 @@ export class InkKitEditor {
       .use(clipboard)
       .use(cursor)
       .use(taskListPlugin)
+      .use(undoTypedRule)
       .use(quoteBackspace)
       .use(calloutEnter)
       .use(literalEnter)
