@@ -37,6 +37,7 @@ const versions = [
   '0.0.13',
   '0.0.14',
   '0.2.0',
+  '0.3.0',
 ]
 if (!versions.includes(version))
   throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
@@ -1145,12 +1146,24 @@ if (releaseAtLeast('0.0.6')) {
             html: '<p>Before</p><table><!--PRIVATE_TABLE_COMMENT--><tr><th>head</th></tr><tr><td>cell</td></tr></table><p>After</p>',
           },
         },
-        contains('snapshot.text', '<table><!--PRIVATE_TABLE_COMMENT-->'),
-        contains('snapshot.text', '<td>cell</td>'),
+        ...(releaseAtLeast('0.2.0')
+          ? [
+              contains('snapshot.text', '| head |'),
+              contains('snapshot.text', '| cell |'),
+              excludes('snapshot.text', 'PRIVATE_TABLE_COMMENT'),
+            ]
+          : [
+              contains('snapshot.text', '<table><!--PRIVATE_TABLE_COMMENT-->'),
+              contains('snapshot.text', '<td>cell</td>'),
+            ]),
         contains('snapshot.text', 'Before'),
         contains('snapshot.text', 'After'),
         { op: 'export', name: 'copied' },
-        contains('markdown', '<!--PRIVATE_TABLE_COMMENT-->', 'copied'),
+        (releaseAtLeast('0.2.0') ? excludes : contains)(
+          'markdown',
+          'PRIVATE_TABLE_COMMENT',
+          'copied',
+        ),
         excludes('text', 'PRIVATE_TABLE_COMMENT', 'copied'),
         excludes('html', 'PRIVATE_TABLE_COMMENT', 'copied'),
         contains('text', 'head', 'copied'),
@@ -1174,7 +1187,13 @@ if (releaseAtLeast('0.0.6')) {
           name: 'event',
         },
         assert('prevented', true, 'event'),
-        contains('snapshot.text', '<!--PRIVATE_TABLE_COMMENT-->'),
+        ...(releaseAtLeast('0.2.0')
+          ? [
+              excludes('snapshot.text', 'PRIVATE_TABLE_COMMENT'),
+              contains('snapshot.text', '| head |'),
+              contains('snapshot.text', '| cell |'),
+            ]
+          : [contains('snapshot.text', '<!--PRIVATE_TABLE_COMMENT-->')]),
         undo,
         assert('snapshot.text', ''),
       ],
@@ -1188,9 +1207,16 @@ if (releaseAtLeast('0.0.6')) {
           op: 'table',
           command: 'sortRows',
           options: { column: 1, comparison: 'number' },
-          expectedError: 'finite decimal',
+          ...(releaseAtLeast('0.2.0')
+            ? { name: 'invalid' }
+            : { expectedError: 'finite decimal' }),
         },
+        ...(releaseAtLeast('0.2.0') ? [assert('', false, 'invalid')] : []),
         same('snapshot.text', 'original', 'text'),
+        same('snapshot.revision', 'original', 'revision'),
+        same('snapshot.dirty', 'original', 'dirty'),
+        { op: 'commandState', name: 'unchanged' },
+        assert('commands.undo', false, 'unchanged'),
       ],
     },
     'table-outside-and-txt': {
@@ -2668,6 +2694,80 @@ if (releaseAtLeast('0.0.14')) {
       { op: 'save' },
       { op: 'reopen' },
       contains('snapshot.text', 'Photo: image unavailable'),
+    ],
+  }
+}
+// Continuation typing and tight-list paste use the same packed facade as hosts.
+for (const [index, marker] of [
+  '# ',
+  '- ',
+  '+ ',
+  '* ',
+  '1. ',
+  '> ',
+  '```',
+  '1) ',
+].entries()) {
+  const source =
+    '__Before__ &amp;\r\n\r\n+ two\r\n  more α\r\n\r\nAfter&#33;\r\n'
+  scenarios[`source-continuation-marker-${index}`] = {
+    source,
+    operations: [
+      { op: 'select', text: 'more', from: 0, to: 0 },
+      { op: 'insertText', text: marker },
+      { op: 'textSnapshot', name: 'readable' },
+      {
+        op: 'assert',
+        name: 'readable',
+        path: 'text',
+        includes: marker + 'more α',
+      },
+      { op: 'snapshot', name: 'edited' },
+      { op: 'undo' },
+      assert('snapshot.text', source),
+      { op: 'redo' },
+      { op: 'save' },
+      { op: 'reopen' },
+      {
+        op: 'assert',
+        path: 'snapshot.text',
+        equalsFrom: { name: 'edited', path: 'text' },
+      },
+    ],
+  }
+}
+for (const [index, markdown] of [
+  'x\n\n<!-- c -->',
+  '<!-- c -->',
+  'x\n\n---',
+  'x\n\ny α',
+].entries()) {
+  const source =
+    '__Before__ &amp;\r\n\r\n+ a\r\n+ more\r\n+ c\r\n\r\nAfter&#33;\r\n'
+  scenarios[`source-tight-list-paste-${index}`] = {
+    source,
+    operations: [
+      { op: 'select', text: 'more' },
+      { op: 'paste', input: { text: markdown, markdown } },
+      contains(
+        'snapshot.text',
+        markdown.includes('<!--')
+          ? '<!-- c -->'
+          : markdown.includes('---')
+            ? '___'
+            : 'y α',
+      ),
+      { op: 'snapshot', name: 'edited' },
+      { op: 'undo' },
+      assert('snapshot.text', source),
+      { op: 'redo' },
+      { op: 'save' },
+      { op: 'reopen' },
+      {
+        op: 'assert',
+        path: 'snapshot.text',
+        equalsFrom: { name: 'edited', path: 'text' },
+      },
     ],
   }
 }

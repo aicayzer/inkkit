@@ -312,12 +312,6 @@ function remarkComments(this: Processor) {
       inline: boolean,
       parentType?: string,
     ): Nodes => {
-      if (parentType === 'listItem' && node.type === 'inkkitCommentBlock')
-        return {
-          type: 'paragraph',
-          children: [{ ...node, type: 'inkkitCommentInline', block: true }],
-          position: node.position,
-        }
       if (node.type === 'html') {
         const spans = htmlSpans(node.value)
         if (
@@ -325,25 +319,12 @@ function remarkComments(this: Processor) {
           spans[0]!.start === 0 &&
           spans[0]!.end === node.value.length
         )
-          return parentType === 'listItem'
-            ? {
-                type: 'paragraph',
-                children: [
-                  {
-                    type: 'inkkitCommentInline',
-                    syntax: 'html',
-                    value: spans[0]!.value,
-                    position: node.position,
-                  },
-                ],
-                position: node.position,
-              }
-            : {
-                type: inline ? 'inkkitCommentInline' : 'inkkitCommentBlock',
-                syntax: 'html',
-                value: spans[0]!.value,
-                position: node.position,
-              }
+          return {
+            type: inline ? 'inkkitCommentInline' : 'inkkitCommentBlock',
+            syntax: 'html',
+            value: spans[0]!.value,
+            position: node.position,
+          }
       }
       if ('children' in node)
         node.children = node.children.map((child) =>
