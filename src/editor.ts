@@ -573,6 +573,7 @@ export interface CommandState extends DocumentVersion {
     replace: boolean
     replaceSource: boolean
     insertImages: boolean
+    appendImages: boolean
     insertPaths: boolean
     insertFootnote: boolean
     editReferenceDefinition: boolean
@@ -1923,6 +1924,7 @@ export class InkKitEditor {
         replace: mutable,
         replaceSource: mutable,
         insertImages: formatted && this.canInsertImages,
+        appendImages: formatted && this.canInsertImages,
         insertPaths: mutable,
         insertFootnote: formatted,
         editReferenceDefinition:
@@ -4532,23 +4534,12 @@ export class InkKitEditor {
     if (!images.length || !this.canInsertImages || this.literalSurface)
       return false
     const view = this.editor.ctx.get(editorViewCtx)
-    const { schema } = view.state
     const placement = point ? undefined : imagePlacement(view.state)
     if (placement?.kind === 'inline') {
       this.insertInline(images)
       return true
     }
-    // One paragraph per image: each is read back as a standalone image block where one fits.
-    const blocks = images.map((image) =>
-      schema.nodes.paragraph!.create(
-        null,
-        schema.nodes.image!.create({
-          src: image.reference,
-          alt: image.alt,
-          title: image.title ?? '',
-        }),
-      ),
-    )
+    const blocks = this.imageBlocks(images)
     if (point) {
       this.insertBlocks(blocks, point)
       return true
@@ -4569,6 +4560,43 @@ export class InkKitEditor {
     if (after != null) tr.setSelection(TextSelection.create(tr.doc, after))
     view.dispatch(tr.scrollIntoView())
     return true
+  }
+
+  /** Adds images as the last blocks of the document and leaves everything else as it is: no focus,
+   *  no scrolling, and the selection stays on the text it covered. For a host that attaches images
+   *  to a document the person is not editing at that moment. Returns false when it does nothing. */
+  appendImages(images: ImageInsertion[], expectedGeneration?: number): boolean {
+    this.assertAlive()
+    images = imageInsertions(images)
+    this.assertMutation(expectedGeneration)
+    if (!images.length || !this.canInsertImages || this.literalSurface)
+      return false
+    const view = this.editor.ctx.get(editorViewCtx)
+    const { doc, tr } = view.state
+    const blocks = this.imageBlocks(images)
+    // An empty document is one empty paragraph, which would save as `<br />` ahead of the images.
+    const empty = doc.childCount === 1 && doc.firstChild!.content.size === 0
+    if (empty) tr.replaceWith(0, doc.content.size, blocks)
+    else tr.insert(doc.content.size, blocks)
+    // A step of its own, so neither earlier nor later typing joins it.
+    view.dispatch(closeHistory(tr))
+    view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
+    return true
+  }
+
+  // One paragraph per image: each is read back as a standalone image block where one fits.
+  private imageBlocks(images: ImageInsertion[]): ProseNode[] {
+    const { schema } = this.editor.ctx.get(editorViewCtx).state
+    return images.map((image) =>
+      schema.nodes.paragraph!.create(
+        null,
+        schema.nodes.image!.create({
+          src: image.reference,
+          alt: image.alt,
+          title: image.title ?? '',
+        }),
+      ),
+    )
   }
 
   // A table cell holds one line, so the images sit side by side where the selection was, with no
@@ -5235,6 +5263,7 @@ export class InkKitEditor {
       'keyDown',
       'insertPaths',
       'insertImages',
+      'appendImages',
       'insertFootnote',
       'navigateFootnote',
       'editReferenceDefinition',
