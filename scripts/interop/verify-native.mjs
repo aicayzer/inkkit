@@ -1146,12 +1146,24 @@ if (releaseAtLeast('0.0.6')) {
             html: '<p>Before</p><table><!--PRIVATE_TABLE_COMMENT--><tr><th>head</th></tr><tr><td>cell</td></tr></table><p>After</p>',
           },
         },
-        contains('snapshot.text', '<table><!--PRIVATE_TABLE_COMMENT-->'),
-        contains('snapshot.text', '<td>cell</td>'),
+        ...(releaseAtLeast('0.2.0')
+          ? [
+              contains('snapshot.text', '| head |'),
+              contains('snapshot.text', '| cell |'),
+              excludes('snapshot.text', 'PRIVATE_TABLE_COMMENT'),
+            ]
+          : [
+              contains('snapshot.text', '<table><!--PRIVATE_TABLE_COMMENT-->'),
+              contains('snapshot.text', '<td>cell</td>'),
+            ]),
         contains('snapshot.text', 'Before'),
         contains('snapshot.text', 'After'),
         { op: 'export', name: 'copied' },
-        contains('markdown', '<!--PRIVATE_TABLE_COMMENT-->', 'copied'),
+        (releaseAtLeast('0.2.0') ? excludes : contains)(
+          'markdown',
+          'PRIVATE_TABLE_COMMENT',
+          'copied',
+        ),
         excludes('text', 'PRIVATE_TABLE_COMMENT', 'copied'),
         excludes('html', 'PRIVATE_TABLE_COMMENT', 'copied'),
         contains('text', 'head', 'copied'),
@@ -1175,7 +1187,13 @@ if (releaseAtLeast('0.0.6')) {
           name: 'event',
         },
         assert('prevented', true, 'event'),
-        contains('snapshot.text', '<!--PRIVATE_TABLE_COMMENT-->'),
+        ...(releaseAtLeast('0.2.0')
+          ? [
+              excludes('snapshot.text', 'PRIVATE_TABLE_COMMENT'),
+              contains('snapshot.text', '| head |'),
+              contains('snapshot.text', '| cell |'),
+            ]
+          : [contains('snapshot.text', '<!--PRIVATE_TABLE_COMMENT-->')]),
         undo,
         assert('snapshot.text', ''),
       ],
@@ -1189,9 +1207,16 @@ if (releaseAtLeast('0.0.6')) {
           op: 'table',
           command: 'sortRows',
           options: { column: 1, comparison: 'number' },
-          expectedError: 'finite decimal',
+          ...(releaseAtLeast('0.2.0')
+            ? { name: 'invalid' }
+            : { expectedError: 'finite decimal' }),
         },
+        ...(releaseAtLeast('0.2.0') ? [assert('', false, 'invalid')] : []),
         same('snapshot.text', 'original', 'text'),
+        same('snapshot.revision', 'original', 'revision'),
+        same('snapshot.dirty', 'original', 'dirty'),
+        { op: 'commandState', name: 'unchanged' },
+        assert('commands.undo', false, 'unchanged'),
       ],
     },
     'table-outside-and-txt': {
