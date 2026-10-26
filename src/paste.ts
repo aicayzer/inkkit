@@ -1,5 +1,6 @@
 import { literalTextNodes } from './literal-text'
 import { htmlBreakAt } from './hard-break'
+import { replacementMarks } from './text-input'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
@@ -370,13 +371,7 @@ export class PasteController {
         }
         const anchor = this.anchor(operation)
         const start = view.state.doc.resolve(anchor.from)
-        const end = view.state.doc.resolve(anchor.to)
-        const marks =
-          view.state.storedMarks ??
-          (anchor.from === anchor.to
-            ? start.marks()
-            : start.marksAcross(end)) ??
-          []
+        const marks = replacementMarks(view.state, anchor.from, anchor.to)
         const nodes = literalTextNodes(
           schema,
           input.text,

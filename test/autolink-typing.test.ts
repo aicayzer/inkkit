@@ -147,32 +147,32 @@ for (const [name, source, anchor, edited] of [
   [
     'a relative link',
     'See [docs](docs) now.\n',
-    'docs',
-    'See [docsx](docs) now.\n',
+    'doc',
+    'See [docxs](docs) now.\n',
   ],
   [
     'a file link',
     'See [README.md](README.md) now.\n',
-    'README.md',
-    'See [README.mdx](README.md) now.\n',
+    'README',
+    'See [READMEx.md](README.md) now.\n',
   ],
   [
     'a fragment link',
     'See [#top](#top) now.\n',
-    '#top',
-    'See [#topx](#top) now.\n',
+    '#to',
+    'See [#toxp](#top) now.\n',
   ],
   [
     'an address written as a link',
     'See [https://example.com](https://example.com) now.\n',
-    'example.com',
-    'See [https://example.comx](https://example.com) now.\n',
+    'example',
+    'See [https://examplex.com](https://example.com) now.\n',
   ],
   [
     'a reference link',
     'See [https://example.com][site] now.\n\n[site]: https://example.com\n',
-    'example.com',
-    'See [https://example.comx][site] now.\n\n[site]: https://example.com\n',
+    'example',
+    'See [https://examplex.com][site] now.\n\n[site]: https://example.com\n',
   ],
 ] as const)
   test(`editing the label of ${name} keeps its form and destination`, () =>
@@ -785,11 +785,11 @@ for (const source of [
     }))
 
 test('an angle address typed into an explicit link label keeps its destination', () =>
-  session('[x](docs)\n', async (s) => {
+  session('[xy](docs)\n', async (s) => {
     place(s.view, at(s.view, 'x'))
     type(s.view, '<https://x.com>')
     await expectSaves(s)
-    expect(s.view.state.doc.textContent).toBe('x<https://x.com>')
+    expect(s.view.state.doc.textContent).toBe('x<https://x.com>y')
     expect(s.view.dom.querySelector('a')?.getAttribute('href')).toBe('docs')
   }))
 

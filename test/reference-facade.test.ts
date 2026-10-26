@@ -85,8 +85,11 @@ test('editing collapsed link text promotes only that occurrence and preserves ne
         start = pos
     })
     view.dispatch(
-      view.state.tr.insertText('Changed', start, start + 'Label'.length),
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, start, start + 'Label'.length),
+      ),
     )
+    expect(editor.insertText('Changed', 1)).toBe(true)
     expect(editor.snapshot().text).toBe(
       source.replace('[Label][]', '[Changed][Label]'),
     )
@@ -406,7 +409,10 @@ test('changing implicit reference text casing keeps its collapsed form and share
   run((editor, ctx) => {
     editor.loadDocument({ ...input, text: '[Label][]\n\n[Label]: /target\n' })
     const view = ctx.get(editorViewCtx)
-    view.dispatch(view.state.tr.insertText('LABEL', 1, 6))
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 6)),
+    )
+    expect(editor.insertText('LABEL', 1)).toBe(true)
     const saved = editor.snapshot().text
     expect(saved).toContain('[LABEL][]')
     editor.loadDocument({ ...input, generation: 2, text: saved })

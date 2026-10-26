@@ -173,23 +173,23 @@ for (const [name, source, anchor, change, links] of cases)
 
 test('editing the label of a written link keeps its destination', async () => {
   const result = await edit(`See [the page](${url}) now.\n`, 'page', (text) => [
-    text.indexOf('page') + 4,
-    text.indexOf('page') + 4,
-    's',
+    text.indexOf('page'),
+    text.indexOf('page'),
+    'new ',
   ])
-  expect(result.saved).toBe(`See [the pages](${url}) now.\n`)
-  expect(result.links).toEqual([`the pages -> ${url}`])
+  expect(result.saved).toBe(`See [the new page](${url}) now.\n`)
+  expect(result.links).toEqual([`the new page -> ${url}`])
 })
 
 test('editing a written link whose label is another URL keeps its destination', async () => {
   const result = await edit(
     `See [${url}](https://other.example) now.\n`,
     'https',
-    (text) => [text.indexOf('path') + 4, text.indexOf('path') + 4, 's'],
+    (text) => [text.indexOf('path'), text.indexOf('path'), 's'],
   )
   expect(result.errors).toEqual([])
   expect(result.links).toEqual([
-    'https://example.com/paths -> https://other.example',
+    'https://example.com/spath -> https://other.example',
   ])
   expect(result.reopened).toEqual(result.edited)
 })
