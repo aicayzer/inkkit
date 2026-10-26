@@ -659,18 +659,32 @@ window.interop = {
                 collapsed: getSelection()?.isCollapsed ?? null,
                 anchorOffset: getSelection()?.anchorOffset ?? null,
               })
-            for (const type of ['keydown', 'keyup', 'beforeinput', 'input'])
-              target.addEventListener(type, observe)
+            const types = [
+              'keydown',
+              'keyup',
+              'beforeinput',
+              'input',
+              'compositionstart',
+              'compositionend',
+            ]
+            for (const type of types) target.addEventListener(type, observe)
             try {
               const native = await bridge.postMessage(operation)
               await settle()
               if (
-                events.filter(
-                  (event) => event.type === 'keydown' && event.trusted,
-                ).length !== (operation.keys?.length ?? 1)
+                operation.compose
+                  ? !events.some(
+                      (event) =>
+                        event.type === 'compositionend' && event.trusted,
+                    )
+                  : events.filter(
+                      (event) => event.type === 'keydown' && event.trusted,
+                    ).length !== (operation.keys?.length ?? 1)
               )
                 throw Error(
-                  'Trusted DOM keydown count does not match AppKit key batch',
+                  operation.compose
+                    ? 'No trusted compositionend for the native composition'
+                    : 'Trusted DOM keydown count does not match AppKit key batch',
                 )
               result = {
                 ...native,
@@ -678,7 +692,7 @@ window.interop = {
                 active: document.activeElement === target,
               }
             } finally {
-              for (const type of ['keydown', 'keyup', 'beforeinput', 'input'])
+              for (const type of types)
                 target.removeEventListener(type, observe)
             }
             break
