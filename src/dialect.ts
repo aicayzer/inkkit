@@ -836,22 +836,6 @@ const listItems = extendListItemSchemaForTask.extendSchema(
             second.type.name !== imageBlockName
           )
             node = node.copy(node.content.cut(first.nodeSize))
-          // Tight items can contain nested lists without blank lines, but
-          // separate paragraphs and other blocks need a loose representation.
-          if (
-            node.childCount > 1 &&
-            Array.from({ length: node.childCount - 1 }, (_, index) =>
-              node.child(index + 1),
-            ).some(
-              (child) =>
-                !['bullet_list', 'ordered_list'].includes(child.type.name),
-            )
-          )
-            node = node.type.create(
-              { ...node.attrs, spread: true },
-              node.content,
-              node.marks,
-            )
           schema.toMarkdown.runner(state, node)
         },
       },
