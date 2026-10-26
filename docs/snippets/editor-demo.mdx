@@ -1,14 +1,16 @@
-export const EditorDemo = ({ fullPage = false }) => {
+export const EditorDemo = ({
+  fullPage = false,
+  focused = false,
+  onFocusChange,
+}) => {
   const frame = useRef(null)
-  const sendTheme = () => {
-    frame.current?.contentWindow?.postMessage(
-      {
-        type: 'inkkit-demo-theme',
-        dark: document.documentElement.classList.contains('dark'),
-      },
-      '*',
-    )
-  }
+  const post = (message) =>
+    frame.current?.contentWindow?.postMessage(message, '*')
+  const sendTheme = () =>
+    post({
+      type: 'inkkit-demo-theme',
+      dark: document.documentElement.classList.contains('dark'),
+    })
   useEffect(() => {
     const observer = new MutationObserver(sendTheme)
     observer.observe(document.documentElement, {
@@ -17,66 +19,252 @@ export const EditorDemo = ({ fullPage = false }) => {
     })
     return () => observer.disconnect()
   }, [])
+  useEffect(() => {
+    post({ type: 'inkkit-demo-state', focused })
+  }, [focused])
+  useEffect(() => {
+    const onMessage = (event) => {
+      if (
+        event.source !== frame.current?.contentWindow ||
+        event.data?.type !== 'inkkit-demo-focus'
+      )
+        return
+      onFocusChange?.(event.data.focused === true)
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [onFocusChange])
+  const icon = (paths) =>
+    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`
+  const icons = {
+    find: icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
+    undo: icon(
+      '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    ),
+    redo: icon(
+      '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+    ),
+    copy: icon(
+      '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+    ),
+    done: icon('<path d="M20 6 9 17l-5-5"/>'),
+    reset: icon('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
+    focus: icon(
+      '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+    ),
+    unfocus: icon(
+      '<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>',
+    ),
+  }
+  const tool = (id, name, label) =>
+    `<button type="button" id="${id}" class="tool" aria-label="${label}" title="${label}" disabled>${icons[name]}<span class="label">${label}</span></button>`
+  const compactHeader = `<header><span>Try editing this note</span><nav aria-label="Demo controls"><button id="mode" disabled aria-pressed="false">Source</button><button id="reset" disabled>Reset</button></nav></header>`
+  const bar = `<div class="top"><div class="top-in">
+<div class="bar" role="toolbar" aria-label="Editor controls">
+<div class="switch" role="group" aria-label="View"><button type="button" id="formatted" aria-pressed="true" disabled>Formatted</button><button type="button" id="source" aria-pressed="false" disabled>Source</button></div>
+<div class="tools">
+<button type="button" id="find" class="tool" aria-label="Find" title="Find" aria-expanded="false" aria-controls="findbar" disabled>${icons.find}<span class="label">Find</span></button>
+${tool('undo', 'undo', 'Undo')}${tool('redo', 'redo', 'Redo')}
+<button type="button" id="copy" class="tool" aria-label="Copy Markdown" title="Copy Markdown" disabled><span class="glyph">${icons.copy}</span><span class="glyph glyph-done">${icons.done}</span><span class="label">Copy Markdown</span></button>
+${tool('reset', 'reset', 'Reset')}
+</div>
+<button type="button" id="focus" class="tool" aria-label="Focus" title="Focus" disabled>${icons.focus}</button>
+</div>
+<div id="findbar" class="findbar" role="search" aria-label="Find in note" hidden>
+<input id="query" type="search" aria-label="Find" placeholder="Find in note" autocomplete="off" spellcheck="false">
+<button type="button" id="next" class="tool" title="Find next (F3)"><span class="label-always">Find next</span></button>
+<button type="button" id="closefind" class="tool" aria-label="Close find" title="Close find"><span class="label-always">Close</span></button>
+</div>
+</div>
+<p class="hint"><span>Type / for commands. Paste an image.</span><span id="status" role="status">Loading editor…</span></p></div>`
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.3.0/dist/style.css">
 <style>
-:root { color-scheme: light dark; }
+:root { color-scheme: light dark; --line: light-dark(#e5e5e5,#292929); --hover: light-dark(#f0f0f0,#252525); --muted: light-dark(#6b6b6b,#a3a3a3); --ring: light-dark(#2563eb,#60a5fa); }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; font: 13px/1.5 system-ui,sans-serif; color: CanvasText; background: ${fullPage ? 'transparent' : 'light-dark(#fff,#0b0b0b)'}; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; border-bottom: 1px solid light-dark(#e5e5e5,#292929); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
 header span { opacity: .6; }
 nav { display: flex; gap: 4px; }
 button { font: inherit; color: inherit; border: 0; background: transparent; border-radius: 5px; padding: 4px 8px; cursor: pointer; }
-button:hover,button[aria-pressed=true] { background: light-dark(#f0f0f0,#252525); }
+button:hover,button[aria-pressed=true] { background: var(--hover); }
 button:disabled { opacity: .4; cursor: default; }
-#editor { --inkkit-font-family: system-ui,sans-serif; --inkkit-font-size: 15px; --inkkit-line-height: 1.55; --inkkit-reading-width: ${fullPage ? '48rem' : '100%'}; --inkkit-padding-inline: 24px; --inkkit-surface-focus-width: 0; min-height: 410px; padding-block: 18px; }
+button:focus-visible,input:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.top { max-width: 48rem; margin-inline: auto; padding-inline: 24px; }
+.top-in { border-bottom: 1px solid var(--line); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding-block: 8px; }
+.switch { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid var(--line); border-radius: 7px; }
+.switch button { padding: 3px 10px; }
+.switch button[aria-pressed=true] { background: light-dark(#e8e8e8,#2e2e2e); font-weight: 600; }
+.tools { display: flex; align-items: center; gap: 2px; }
+.tool { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; }
+.tool svg { display: block; flex: none; }
+.glyph-done,.done .glyph:not(.glyph-done) { display: none; }
+.done .glyph-done { display: inline-flex; }
+.findbar { display: flex; align-items: center; gap: 4px; padding-bottom: 8px; }
+.findbar input { flex: 1; min-width: 0; font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+.hint { display: flex; flex-wrap: wrap; gap: 0 12px; margin-block: 8px 0; color: var(--muted); font-size: 12px; }
+#status { color: var(--muted); }
 #status:empty { display: none; }
-#status { font-size: 12px; opacity: .65; padding: 0 24px 12px; margin: 0; }
+#editor { --inkkit-font-family: system-ui,sans-serif; --inkkit-font-size: 15px; --inkkit-line-height: 1.55; --inkkit-reading-width: ${fullPage ? '48rem' : '100%'}; --inkkit-padding-inline: 24px; --inkkit-surface-focus-width: 0; min-height: 410px; padding-block: 18px; }
+.compact-status:empty { display: none; }
+.compact-status { font-size: 12px; opacity: .65; padding: 0 24px 12px; margin: 0; }
+@media(max-width:520px) { .tool .label { display: none; } .tool { padding: 7px 9px; } #focus { order: 2; } .tools { order: 3; flex-basis: 100%; justify-content: space-between; } .top { padding-inline: 16px; } }
 @media(max-width:440px) { header { padding-inline: 12px; } header span { max-width: 110px; } #editor { --inkkit-padding-inline: 16px; } }
 </style></head><body>
-<header style="${fullPage ? 'display:none' : ''}"><span>Try editing this note</span><nav aria-label="Demo controls"><button id="mode" disabled aria-pressed="false">Source</button><button id="reset" disabled>Reset</button></nav></header>
-<div id="editor"></div><p id="status" role="status">Loading editor…</p>
+${fullPage ? bar : compactHeader}
+<div id="editor"></div>${fullPage ? '' : '<p id="status" class="compact-status" role="status">Loading editor…</p>'}
 <script type="module">
-const status = document.getElementById('status');
-const root = document.getElementById('editor');
-const mode = document.getElementById('mode');
-const reset = document.getElementById('reset');
+const full = ${fullPage};
+const $ = (id) => document.getElementById(id);
+const status = $('status');
+const root = $('editor');
 const initial = '# Design review\\n\\nWe tried the new note view with a few longer documents. The **quieter toolbar** leaves more room for writing.\\n\\n## What we learned\\n\\n- Keep the title visible when opening a note.\\n- Put less-used commands in the menu.\\n- Give attachments clear names.\\n\\n## Next steps\\n\\n- [x] Compare light and dark appearances\\n- [ ] Try a note with several tables\\n\\n| Area | Next step |\\n| --- | --- |\\n| Navigation | Check keyboard shortcuts |\\n| Writing | Review paste and undo |\\n';
+const idle = full ? '' : 'Your changes stay in this demo and are not saved.';
+const say = (text) => { status.textContent = text; };
+const icons = ${JSON.stringify({ focus: icons.focus, unfocus: icons.unfocus })};
+let editor;
 let generation = 0;
-let source = false;
-addEventListener('message', event => {
-  if(event.source !== parent || event.data?.type !== 'inkkit-demo-theme') return;
-  const scheme = event.data.dark ? 'dark' : 'light';
-  document.documentElement.style.colorScheme = scheme;
-  root.style.setProperty('--inkkit-color-scheme', scheme);
+let mode = 'formatted';
+let focused = false;
+const renderFocus = () => {
+  const button = $('focus');
+  if (!button) return;
+  const label = focused ? 'Exit focus' : 'Focus';
+  button.innerHTML = icons[focused ? 'unfocus' : 'focus'];
+  button.setAttribute('aria-label', label);
+  button.title = focused ? 'Exit focus (Esc)' : 'Focus';
+};
+const renderState = (state) => {
+  mode = state.mode;
+  if (full) {
+    $('formatted').setAttribute('aria-pressed', String(mode === 'formatted'));
+    $('source').setAttribute('aria-pressed', String(mode === 'source'));
+    $('undo').disabled = !state.commands.undo;
+    $('redo').disabled = !state.commands.redo;
+  } else $('mode').setAttribute('aria-pressed', String(mode === 'source'));
+};
+addEventListener('message', (event) => {
+  if (event.source !== parent) return;
+  const data = event.data;
+  if (data?.type === 'inkkit-demo-theme') {
+    const scheme = data.dark ? 'dark' : 'light';
+    document.documentElement.style.colorScheme = scheme;
+    root.style.setProperty('--inkkit-color-scheme', scheme);
+  } else if (data?.type === 'inkkit-demo-state') {
+    focused = data.focused === true;
+    renderFocus();
+  }
 });
 try {
   const { InkKitEditor } = await import('https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.3.0/dist/core.js');
-  const editor = await InkKitEditor.mount(root, {
+  editor = await InkKitEditor.mount(root, {
     openLink() {},
-    changed() { status.textContent = ${fullPage ? "''" : "'Your changes stay in this demo and are not saved.'"}; },
-    error(error) { status.textContent = 'That edit could not be applied (' + error.code + '). You can keep editing.'; }
-  }, { keymap: { bold: ['Mod-b'], italic: ['Mod-i'] } });
+    changed() { say(idle); },
+    commandStateChanged: renderState,
+    error(error) { say('That edit could not be applied (' + error.code + '). You can keep editing.'); }
+  }, { keymap: { bold: ['Mod-b'], italic: ['Mod-i'] }, ...(full ? { slashMenu: { enabled: true } } : {}) });
   const load = () => {
-    editor.loadDocument({ documentId: 'demo', generation: ++generation, format: 'md', text: initial });
-    source = false;
-    mode.setAttribute('aria-pressed', 'false');
-    status.textContent = ${fullPage ? "''" : "'Your changes stay in this demo and are not saved.'"};
+    const next = generation + 1;
+    editor.loadDocument({ documentId: 'demo', generation: next, format: 'md', text: initial });
+    generation = next;
+    say(idle);
   };
+  const attempt = (action, failure) => {
+    say('');
+    try { return action(); } catch { say(failure); }
+  };
+  const setMode = (next) => attempt(() => editor.setEditingMode(next, generation), 'Could not switch views. Your text is still here.');
+  const reset = () => attempt(load, 'Could not reset yet. Finish the current edit and try again.');
   load();
-  mode.disabled = reset.disabled = false;
-  mode.onclick = () => {
-    try {
-      editor.setEditingMode(source ? 'formatted' : 'source', generation);
-      source = !source;
-      mode.setAttribute('aria-pressed', String(source));
-    } catch { status.textContent = 'Could not switch views. Your text is still here.'; }
-  };
-  reset.onclick = () => { try { load(); } catch { status.textContent = 'Could not reset yet. Finish the current edit and try again.'; } };
+  renderState(editor.commandState(generation));
+  if (!full) {
+    $('mode').disabled = $('reset').disabled = false;
+    $('mode').onclick = () => setMode(mode === 'source' ? 'formatted' : 'source');
+    $('reset').onclick = reset;
+  } else {
+    const bar = document.querySelector('[role=toolbar]');
+    const findbar = $('findbar');
+    const query = $('query');
+    const copy = $('copy');
+    for (const button of bar.querySelectorAll('button')) if (button.id !== 'undo' && button.id !== 'redo') button.disabled = false;
+    renderFocus();
+    $('formatted').onclick = () => setMode('formatted');
+    $('source').onclick = () => setMode('source');
+    $('undo').onclick = () => attempt(() => editor.undo(generation), 'Could not undo yet. Finish the current edit and try again.');
+    $('redo').onclick = () => attempt(() => editor.redo(generation), 'Could not redo yet. Finish the current edit and try again.');
+    $('reset').onclick = reset;
+    const openFind = (open) => {
+      findbar.hidden = !open;
+      $('find').setAttribute('aria-expanded', String(open));
+      if (open) { query.focus(); query.select(); } else $('find').focus();
+    };
+    const findNext = () => {
+      const text = query.value;
+      if (!text) return openFind(true);
+      // A selection is only painted in a focused editor, so a match moves focus there.
+      const found = attempt(() => editor.find(text, generation), 'Could not search yet. Finish the current edit and try again.');
+      if (found === true) editor.focus(generation);
+      else if (found === false) say('No matches for "' + text + '".');
+    };
+    $('find').onclick = () => openFind(findbar.hidden);
+    $('closefind').onclick = () => openFind(false);
+    $('next').onclick = findNext;
+    query.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); openFind(false); }
+      else if (event.key === 'Enter') { event.preventDefault(); findNext(); }
+    });
+    const copyText = async (text) => {
+      try { await navigator.clipboard.writeText(text); return true; } catch {}
+      const previous = document.activeElement;
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.cssText = 'position:fixed;top:0;opacity:0';
+      document.body.append(area);
+      area.select();
+      try { return document.execCommand('copy'); } catch { return false; } finally { area.remove(); previous?.focus(); }
+    };
+    let copied;
+    copy.onclick = async () => {
+      say('');
+      let text;
+      try { text = editor.snapshot(generation).text; } catch { say('Could not copy yet. Finish the current edit and try again.'); return; }
+      if (!(await copyText(text))) { say('Your browser blocked copying. Switch to Source, select the text and copy it.'); return; }
+      copy.classList.add('done');
+      copy.querySelector('.label').textContent = 'Copied';
+      say('Copied the Markdown to the clipboard.');
+      clearTimeout(copied);
+      copied = setTimeout(() => { copy.classList.remove('done'); copy.querySelector('.label').textContent = 'Copy Markdown'; }, 2000);
+    };
+    $('focus').onclick = () => parent.postMessage({ type: 'inkkit-demo-focus', focused: !focused }, '*');
+    // ProseMirror always cancels Esc inside the text, so a cancelled Esc only counts as handled
+    // outside it (table and code controls). The slash menu is the one in-text case, read from its
+    // open state before it closes.
+    let slashOpen = false;
+    document.addEventListener('keydown', () => { slashOpen = root.querySelector('[role=combobox][aria-expanded=true]') !== null; }, true);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        const handled = slashOpen || (event.defaultPrevented && !event.target.isContentEditable);
+        if (focused && !handled && !event.isComposing) parent.postMessage({ type: 'inkkit-demo-focus', focused: false }, '*');
+      } else if ((event.key === 'F3' || (event.key === 'g' && (event.metaKey || event.ctrlKey))) && query.value) { event.preventDefault(); findNext(); }
+    });
+    bar.addEventListener('keydown', (event) => {
+      const keys = { ArrowLeft: -1, ArrowRight: 1, Home: 'first', End: 'last' };
+      if (!(event.key in keys) || event.target.tagName !== 'BUTTON') return;
+      const items = [...bar.querySelectorAll('button:not(:disabled)')];
+      const at = items.indexOf(event.target);
+      const step = keys[event.key];
+      const next = step === 'first' ? 0 : step === 'last' ? items.length - 1 : (at + step + items.length) % items.length;
+      event.preventDefault();
+      items[next].focus();
+    });
+  }
 } catch (error) {
   console.error(error);
-  status.textContent = 'The demo could not load. Refresh the page to try again.';
+  say('The demo could not load. Refresh the page to try again.');
 }
 </script></body></html>`
   return (
@@ -85,7 +273,11 @@ try {
       title="Try the Inkkit editor"
       srcDoc={html}
       sandbox="allow-scripts"
-      onLoad={sendTheme}
+      allow="clipboard-write"
+      onLoad={() => {
+        sendTheme()
+        post({ type: 'inkkit-demo-state', focused })
+      }}
       className={fullPage ? 'inkkit-demo inkkit-demo-full' : 'inkkit-demo'}
     />
   )
@@ -97,16 +289,17 @@ export const EditorPage = () => {
     document.documentElement.classList.toggle('editor-focus', focused)
     return () => document.documentElement.classList.remove('editor-focus')
   }, [focused])
+  useEffect(() => {
+    if (!focused) return
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) setFocused(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [focused])
   return (
     <div className="editor-page">
-      <button
-        className="editor-focus-control"
-        aria-pressed={focused}
-        onClick={() => setFocused(!focused)}
-      >
-        {focused ? 'Exit focus' : 'Focus'}
-      </button>
-      <EditorDemo fullPage />
+      <EditorDemo fullPage focused={focused} onFocusChange={setFocused} />
     </div>
   )
 }
