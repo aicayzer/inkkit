@@ -32,17 +32,18 @@ export function configureApt() {
 
 export async function installBrowsers({
   engines,
+  withDeps = true,
   command = [
     process.execPath,
     'node_modules/@playwright/test/cli.js',
     'install',
-    '--with-deps',
+    ...(withDeps ? ['--with-deps'] : []),
     ...engines,
   ],
   attempts = 3,
   timeoutMs = 300_000,
   recover = releasePackageLock,
-  prepare = configureApt,
+  prepare = withDeps ? configureApt : () => {},
   log = (message) => process.stderr.write(`${message}\n`),
 } = {}) {
   await prepare()
@@ -80,7 +81,11 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  const engines = process.argv.slice(2)
+  // `--no-deps` skips the system packages. The GitHub Ubuntu image already has
+  // what Chromium needs, and the package mirror is the part that stalls.
+  const args = process.argv.slice(2)
+  const withDeps = !args.includes('--no-deps')
+  const engines = args.filter((arg) => arg !== '--no-deps')
   if (engines.length === 0) throw Error('Name at least one engine to install.')
-  process.exitCode = await installBrowsers({ engines })
+  process.exitCode = await installBrowsers({ engines, withDeps })
 }

@@ -90,7 +90,8 @@ jobs:
           node-version: '26'
       - run: npm install --global pnpm@11.0.9
       - run: pnpm install --frozen-lockfile
-      - run: node scripts/install-browsers.mjs chromium
+      # The Ubuntu image already has Chromium's libraries; skipping apt avoids a mirror that stalls.
+      - run: node scripts/install-browsers.mjs --no-deps chromium
         timeout-minutes: 17
       - run: node --test scripts/test-browser.test.mjs
       - run: node scripts/test-browser.mjs --project=chromium --shard=${{ matrix.shard }}/3
