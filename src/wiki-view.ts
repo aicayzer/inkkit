@@ -2,6 +2,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 import { $view } from '@milkdown/kit/utils'
 import { wikiLinkSchema, wikiReference } from './linked-syntax'
+import { mediaPolicyEvent, refreshOf, refreshes } from './files'
 import { modHeld } from './modifier'
 import type {
   DocumentContext,
@@ -30,7 +31,8 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
     const report = (error: unknown) =>
       runtime.error?.(coded(error, 'file-unavailable'))
     const render = () => {
-      dom.textContent = reference().label
+      const { label } = reference()
+      if (dom.textContent !== label) dom.textContent = label
       dom.removeAttribute('title')
       dom.removeAttribute('data-missing')
       if (!runtime.active()) return
@@ -61,7 +63,11 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
     dom.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') open(event)
     })
-    view.dom.addEventListener('inkkit-media-policy', render)
+    const policy = (event: Event) => {
+      const refresh = refreshOf(event)
+      if (!refresh || refreshes(refresh, String(current.attrs.target))) render()
+    }
+    view.dom.addEventListener(mediaPolicyEvent, policy)
     render()
     return {
       dom,
@@ -79,7 +85,7 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
       },
       ignoreMutation: () => true,
       destroy() {
-        view.dom.removeEventListener('inkkit-media-policy', render)
+        view.dom.removeEventListener(mediaPolicyEvent, policy)
       },
     } satisfies NodeView
   })

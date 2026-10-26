@@ -185,6 +185,18 @@ const editor = await InkKitEditor.mount(root, events, { wikiLinks })
 
 Suggestions work without the slash menu. When `wikiLinks` is set, typing the closing `]]` of a complete link also makes a link. See [Markdown support](/concepts/markdown#wiki-links-and-file-embeds) for the syntax.
 
+## Refresh after a change
+
+A link or card shows the answer from its last `resolve`. When what it points to changes while the note is open, such as a note that was just created or a file that arrived, call `refreshReferences` with the affected names, or with none for every reference:
+
+```ts
+// A note named "Plan" was created.
+noteNames.add('Plan')
+editor.refreshReferences(['Plan'])
+```
+
+Names are compared with each reference's `target`. A file card stays as it is until the new answer differs, so a card that didn't change doesn't flicker or move. The call changes no document state and works in a read-only editor and during composition. The [editor reference](/reference/editor#refreshreferences) has the details.
+
 ## References and display URLs
 
 References are opaque. Inkkit passes them to your adapter exactly as authored, writes the reference your `importImage` returns as the image's Markdown destination, and never infers a path, fetches from the network or rewrites a reference. A path reference is read like a URL: a `#` that belongs to a file name must be written `%23`, and Inkkit doesn't decode it.

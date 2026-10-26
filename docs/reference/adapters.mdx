@@ -67,7 +67,7 @@ Resolves path images (`![alt](destination)`) and named embeds (`![[name]]`) into
 
 <ResponseField name="resolve" type="(reference: FileReference, context: FileContext) => Promise<FilePresentation>" required>
 
-Returns how to show a file. Inkkit calls it when a file renders in formatted mode, again when its reference, kind or fragment changes, when the person presses the card's Retry button, and when formatted mode returns. [`clipboardSnapshot`](/reference/editor#clipboardsnapshot) and [`printableSnapshot`](/reference/editor#printablesnapshot) call it afresh.
+Returns how to show a file. Inkkit calls it when a file renders in formatted mode, again when its reference, kind or fragment changes, when the person presses the card's Retry button, when formatted mode returns, and when [`refreshReferences`](/reference/editor#refreshreferences) names the file or names no target. [`clipboardSnapshot`](/reference/editor#clipboardsnapshot) and [`printableSnapshot`](/reference/editor#printablesnapshot) call it afresh.
 
 `context.signal` aborts when the request is obsolete: a newer request for the same view, a reload, source mode, a folded callout, a canceled output or `destroy`. Abandon the work when it aborts.
 
@@ -112,7 +112,7 @@ Suggestions don't open in a read-only editor, source or TXT mode, code, front ma
 
 <ResponseField name="resolve" type="(reference: WikiLinkReference, context: DocumentContext) => { missing?: boolean } | undefined">
 
-Tells Inkkit whether a link's target is missing, for presentation only. Inkkit calls it each time the link renders. `{ missing: true }` styles the link as missing and gives it the `wikiMissing` tooltip; `undefined` or `{}` shows it as present. It supplies no URL. A thrown exception reports `file-unavailable`.
+Tells Inkkit whether a link's target is missing, for presentation only. Inkkit calls it each time the link renders, and when [`refreshReferences`](/reference/editor#refreshreferences) names the link or names no target. `{ missing: true }` styles the link as missing and gives it the `wikiMissing` tooltip; `undefined` or `{}` shows it as present. It supplies no URL. A thrown exception reports `file-unavailable`.
 
 </ResponseField>
 
