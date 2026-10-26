@@ -65,3 +65,13 @@ test('prepares once before the first attempt', async () => {
   })
   assert.deepEqual([result, runs, prepared], [0, 2, 1])
 })
+
+test('does not prepare apt when system packages are skipped', async () => {
+  let prepared = 0
+  const { result } = await scenario('process.exit(0)', {
+    withDeps: false,
+    prepare: undefined,
+  })
+  assert.equal(result, 0)
+  assert.equal(prepared, 0)
+})
