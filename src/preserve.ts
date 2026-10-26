@@ -792,6 +792,30 @@ function retainText(
   const read = decodedOffsets(raw, true)
   if (read?.decoded !== before) return after
   const { offsets } = read
+  // A marker becomes structural only when the following space arrives. Its
+  // required escape can therefore fall in the unchanged prefix of this edit.
+  const lineStart = after.lastIndexOf('\n', prefix - 1) + 1
+  if (lineStart > 0 && written !== undefined) {
+    const canonical = decodedOffsets(written, true)
+    if (canonical?.decoded === after) {
+      const opening = written.slice(canonical.offsets[lineStart])
+      const marker = /^(?:\d+)?\\[#+.\->)]/.exec(opening)?.[0]
+      if (
+        marker &&
+        prefix - lineStart <= decodedOffsets(marker)!.decoded.length
+      ) {
+        prefix = lineStart
+        return (
+          raw.slice(0, offsets[prefix]) +
+          written.slice(
+            canonical.offsets[prefix],
+            canonical.offsets[after.length - suffix],
+          ) +
+          raw.slice(offsets[before.length - suffix])
+        )
+      }
+    }
+  }
   // Text written against a link is written as the canonical writer writes
   // it, which knows what a bare address would run into.
   if (
