@@ -876,6 +876,32 @@ function blockAt(
 
 const quotes = new Set(['blockquote', 'inkkit_callout'])
 
+// A list item that opens with a quote holds an empty first paragraph, because the schema needs
+// one. Once a paragraph has left the quote, the empty one would be written as a `<br />` line, so
+// it goes. A `<br />` line an author wrote reads as the same paragraph, and stays while the quote
+// does.
+function liftQuote(
+  state: EditorState,
+  range: NodeRange,
+  target: number,
+): Transaction {
+  const tr = state.tr.lift(range, target)
+  const { depth } = range
+  const item = range.$from.node(depth - 1)
+  const spacer = item.firstChild
+  if (
+    item.type.name === 'list_item' &&
+    range.$from.index(depth - 1) === 1 &&
+    spacer?.type.name === 'paragraph' &&
+    spacer.content.size === 0
+  ) {
+    const from = range.$from.start(depth - 1)
+    if (tr.doc.nodeAt(from + spacer.nodeSize)?.type === spacer.type)
+      tr.delete(from, from + spacer.nodeSize)
+  }
+  return tr
+}
+
 // Backspace right after an input rule, such as a typed code fence, takes it back. The handlers for
 // quotes and list items below would otherwise lift or join the block the rule made.
 const undoTypedRule = $prose(() => keymap({ Backspace: undoInputRule }))
@@ -903,7 +929,7 @@ const quoteBackspace = $prose(() =>
       )
       const target = range && liftTarget(range)
       if (!range || target == null) return false
-      dispatch?.(state.tr.lift(range, target).scrollIntoView())
+      dispatch?.(liftQuote(state, range, target).scrollIntoView())
       return true
     },
   }),
@@ -4730,7 +4756,7 @@ export class InkKitEditor {
     if (!range) return
     const target = liftTarget(range)
     if (target == null) return
-    view.dispatch(view.state.tr.lift(range, target))
+    view.dispatch(liftQuote(view.state, range, target))
   }
 
   /** Changes the selected textblocks' type, keeping everything they hold. */
