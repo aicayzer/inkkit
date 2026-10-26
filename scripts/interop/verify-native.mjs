@@ -38,6 +38,7 @@ const versions = [
   '0.0.14',
   '0.2.0',
   '0.3.0',
+  '0.3.1',
 ]
 if (!versions.includes(version))
   throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
