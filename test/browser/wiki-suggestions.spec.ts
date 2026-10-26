@@ -573,3 +573,32 @@ test('slash and wiki providers reuse one popup and restore editor semantics on c
   ).toBeVisible()
   await expect(root(page).getByRole('combobox')).toHaveCount(0)
 })
+
+test('suggestion text and row height scale with the host font size', async ({
+  page,
+}) => {
+  await mount(page)
+  await page.addStyleTag({
+    content:
+      '#wiki-suggestion-editor { --inkkit-font-size: 30px; --inkkit-font-family: Courier; }',
+  })
+  await root(page).locator('.ProseMirror').click()
+  await page.keyboard.type('[[Al')
+  await expect(menu(page)).toBeVisible()
+  const style = await menu(page).evaluate((el) => {
+    const style = getComputedStyle(el)
+    const option = el.querySelector('[role="option"]')!
+    return {
+      font: style.fontFamily,
+      size: parseFloat(style.fontSize),
+      line: parseFloat(style.lineHeight),
+      height: option.getBoundingClientRect().height,
+    }
+  })
+  expect(style.font).toContain('Courier')
+  expect(style.size).toBe(28)
+  expect(style.line).toBeCloseTo(48, 2)
+  expect(style.height).toBeGreaterThanOrEqual(56)
+  await page.keyboard.press('Enter')
+  await expectSaved(page, '[[Alpha]]\n')
+})
