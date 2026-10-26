@@ -260,6 +260,58 @@ interface Neighbour {
   marker: string
 }
 
+/** The prefix each line of a block repeats, as authored and as the canonical writer writes it. */
+type Gutters = readonly [authored: string, canonical: string]
+
+const listMarker = /(?:[-*+]|\d{1,9}[.)])(?=[ \t])/g
+
+// What a line repeats before a block or a line of text that starts at `offset`: the quote markers
+// and indentation that open the line, with a list marker as the spaces it takes, which is what
+// the item's later lines are indented by. Anything else before `offset` on its line is content,
+// not gutter.
+function gutterAt(text: string, offset: number): string {
+  const line = text.slice(text.lastIndexOf('\n', offset - 1) + 1, offset)
+  const leading = /^(?:[ \t]|>|(?:[-*+]|\d{1,9}[.)])(?=[ \t]))*/.exec(line)![0]
+  return leading.replace(listMarker, (marker) => ' '.repeat(marker.length))
+}
+
+// The gutters of the lines a block's children are written on, in the source and in the canonical
+// text. A slice written from the start of the block carries its own markers, whose width the
+// canonical text sets, so only the gutter that holds the block is exchanged there.
+function childGutters(
+  before: SourceNode,
+  after: SourceNode,
+  source: string,
+  canonical: string,
+  fromStart = false,
+): Gutters | undefined {
+  if (inlineParents.has(before.type) || before.type === 'table')
+    return undefined
+  const [first, now] = [before, after].map((node) =>
+    fromStart ? node.position?.start.offset : node.children?.[0]?.position?.start.offset,
+  )
+  return first == null || now == null
+    ? undefined
+    : [gutterAt(source, first), gutterAt(canonical, now)]
+}
+
+// Canonical text written into authored source, with the gutter of its lines changed from the one
+// the canonical writer uses to the one the source does. The first line keeps what it has. A text
+// that is `open` ends where more of the line follows, so its last line is only a gutter.
+function regutter(text: string, gutters?: Gutters, open = false): string {
+  if (!gutters || gutters[0] === gutters[1]) return text
+  const [authored, canonical] = gutters
+  const bare = canonical.trimEnd()
+  return text.replace(/(\r?\n)([^\r\n]*)/g, (match, ending, line, at) => {
+    if (open && at + match.length === text.length && (line === bare || line === canonical))
+      return ending + authored
+    if (line === bare) return ending + authored.trimEnd()
+    return line.startsWith(canonical)
+      ? ending + authored + line.slice(canonical.length)
+      : match
+  })
+}
+
 // Canonical Markdown written into authored source. Items written into an
 // authored list take its marker, which they would otherwise split away from.
 // A list written beside an authored list takes a marker that list does not
@@ -272,15 +324,21 @@ function canonicalSlice(
   to: number,
   previous?: Neighbour,
   next?: Neighbour,
+  gutters?: Gutters,
+  open = false,
 ): string {
   let text = canonical.slice(from, to)
   const offsets = (list: SourceNode) =>
     (list.children ?? []).map((item) => item.position!.start.offset! - from)
   if (marker)
-    return relabel(
-      text,
-      children.map((item) => item.position!.start.offset! - from),
-      marker,
+    return regutter(
+      relabel(
+        text,
+        children.map((item) => item.position!.start.offset! - from),
+        marker,
+      ),
+      gutters,
+      open,
     )
   children.forEach((child, index) => {
     if (child.type !== 'list') {
@@ -301,7 +359,7 @@ function canonicalSlice(
     if (choice) text = relabel(text, offsets(child), choice)
     previous = { ordered: child.ordered, marker: choice ?? own ?? '' }
   })
-  return text
+  return regutter(text, gutters, open)
 }
 
 // The authored list a child is, as a neighbour of canonical Markdown.
@@ -484,6 +542,9 @@ function retainParts(
   lineEnding: string,
   previous?: Neighbour,
   next?: Neighbour,
+  gutters?: Gutters,
+  // Whether `to` is where more of its line follows.
+  open = false,
 ): string | undefined {
   let items: Map<string, SourceNode[]> | undefined
   const taken = new Set<SourceNode>()
@@ -524,6 +585,9 @@ function retainParts(
             child.position!.start.offset!,
             end,
             lineEnding,
+            undefined,
+            undefined,
+            childGutters(lists[0]!, child, source, canonical),
           )
         : undefined
     }
@@ -555,6 +619,14 @@ function retainParts(
             child.position!.start.offset!,
             end,
             lineEnding,
+            undefined,
+            undefined,
+            childGutters(
+              before.find((node) => node.type === 'listItem')!,
+              child,
+              source,
+              canonical,
+            ),
           )
         : undefined
     return text !== undefined && marker ? relabel(text, [0], marker) : text
@@ -585,6 +657,7 @@ function retainParts(
       childEnd,
       previous,
       following,
+      gutters,
     )
     previous =
       child.type === 'list'
@@ -594,10 +667,10 @@ function retainParts(
               markerAt(piece, /^[ \t]*/.exec(piece)![0].length)?.marker ?? '',
           }
         : undefined
-    text += canonical.slice(at, childStart) + piece
+    text += regutter(canonical.slice(at, childStart), gutters, true) + piece
     at = childEnd
   })
-  return text + canonical.slice(at, to)
+  return text + regutter(canonical.slice(at, to), gutters, open)
 }
 
 // The text Markdown inline source reads as, with the source offset of each of
@@ -826,6 +899,8 @@ function retainText(
   // link sits before and after this text.
   written?: string,
   beside: readonly [boolean, boolean] = [false, false],
+  // The gutter of the paragraph's lines, which a line added to the text takes.
+  gutters?: Gutters,
 ): string {
   before = lf(before)
   after = lf(after)
@@ -861,9 +936,12 @@ function retainText(
         prefix = lineStart
         return (
           raw.slice(0, offsets[prefix]) +
-          written.slice(
-            canonical.offsets[prefix],
-            canonical.offsets[after.length - suffix],
+          regutter(
+            written.slice(
+              canonical.offsets[prefix],
+              canonical.offsets[after.length - suffix],
+            ),
+            gutters,
           ) +
           raw.slice(offsets[before.length - suffix])
         )
@@ -880,9 +958,12 @@ function retainText(
     if (writtenOffsets && writtenOffsets.decoded === after)
       return (
         raw.slice(0, offsets[prefix]) +
-        written.slice(
-          writtenOffsets.offsets[prefix],
-          writtenOffsets.offsets[after.length - suffix],
+        regutter(
+          written.slice(
+            writtenOffsets.offsets[prefix],
+            writtenOffsets.offsets[after.length - suffix],
+          ),
+          gutters,
         ) +
         raw.slice(offsets[before.length - suffix])
       )
@@ -899,7 +980,9 @@ function retainText(
         /[\\`*_[\]<>]/.test(character) ||
         (inTable && character === '|')
         ? `\\${character}`
-        : character
+        : character === '\n'
+          ? character + (gutters?.[0] ?? '')
+          : character
     })
     .join('')
   return (
@@ -1626,6 +1709,7 @@ function retainSource(
           inTable,
           canonical.slice(newStart, newEnd),
           beside,
+          [gutterAt(source, start), gutterAt(canonical, newStart)],
         ),
         lineEnding,
       ),
@@ -1665,6 +1749,7 @@ function retainSource(
       signature(candidate) === signature(incoming) &&
       ownShape(candidate) === ownShape(incoming)
     const reorderable = before.type === 'table' || before.type === 'tableRow'
+    const gutters = childGutters(before, after, source, canonical)
     const moves = reorder?.get(parentKey(before))
     // Equal rows or cells can differ in spelling, so each one that stayed in
     // place keeps its own source before any moved one is matched.
@@ -1707,9 +1792,12 @@ function retainSource(
         source,
         canonical,
       )
-        ? canonical.slice(
-            incoming.position!.start.offset!,
-            incoming.position!.end.offset!,
+        ? regutter(
+            canonical.slice(
+              incoming.position!.start.offset!,
+              incoming.position!.end.offset!,
+            ),
+            gutters,
           )
         : incoming.type === 'list' && !sameList(original, incoming)
           ? withEnding(
@@ -1725,6 +1813,7 @@ function retainSource(
                   after.children![index + 1],
                   source,
                 ),
+                gutters,
               ),
               lineEnding,
             )
@@ -1922,6 +2011,7 @@ function retainSource(
         after.children[after.children.length - suffix],
         source,
       )
+      const gutters = childGutters(before, after, source, canonical, !prefix)
       return (
         source.slice(start, first) +
         retainBoundaryText(
@@ -1947,6 +2037,8 @@ function retainSource(
                     lineEnding,
                     previous,
                     next,
+                    gutters,
+                    suffix > 0,
                   )) ??
                 canonicalSlice(
                   marker,
@@ -1956,6 +2048,8 @@ function retainSource(
                   newTo,
                   previous,
                   next,
+                  gutters,
+                  suffix > 0,
                 ),
               lineEnding,
             ) +
@@ -1993,6 +2087,9 @@ function retainSource(
         canonical,
         newStart,
         trailing ? lastAfter : newEnd,
+        undefined,
+        undefined,
+        childGutters(before, after, source, canonical, true),
       ),
       lineEnding,
     ) + (trailing ? source.slice(lastBefore, end) : '')
