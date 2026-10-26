@@ -89,6 +89,23 @@ editor.table(
 
 Both return `false`, and change nothing, when the command doesn't apply here. [Format commands](/reference/options#format-commands) and [Table commands](/reference/options#table-commands) list every command and option.
 
+## Open links into other apps
+
+A Mod-click on a link calls `events.openLink` with its address, but only for addresses with no scheme and `http`, `https`, `mailto` and `tel` addresses. To open links such as `things:` or `message:`, list their schemes in [`linkSchemes`](/reference/options#editor-options) at mount. The handler still decides what each one does:
+
+```ts
+const editor = await InkKitEditor.mount(
+  root,
+  {
+    changed,
+    openLink: (href) => host.open(href), // Your app checks the address and opens it.
+  },
+  { linkSchemes: ['things', 'message'] },
+)
+```
+
+`format('link')` then accepts those addresses, and a copy keeps them. `javascript`, `data`, `vbscript` and `file` can't be listed, and pasted HTML and print keep only the built-in schemes. [Links that Inkkit keeps](/concepts/clipboard#links-that-inkkit-keeps) lists the rules.
+
 ## Bind shortcuts
 
 Inkkit binds undo, redo, block moves, list indent and outdent (`Tab` and `Shift-Tab`) and table exit by default. It binds no formatting keys. To use other keys for indenting, such as `Mod-]` and `Mod-[`, set `indent` and `outdent`; the defaults then no longer apply. Pass a `keymap` at mount, by the same names as the `format` and `table` commands, in [ProseMirror key notation](https://prosemirror.net/docs/ref/#keymap), where `Mod` is Command on Apple platforms and Control elsewhere:

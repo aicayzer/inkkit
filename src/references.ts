@@ -1,5 +1,5 @@
 import { editorLabels } from './labels'
-import { isSafeLinkTarget } from './link-safety'
+import { editorLinkSchemes, isSafeLinkTarget } from './link-safety'
 import { followsText, type LinkForm } from './link-form'
 import { $node, $remark, $prose } from '@milkdown/kit/utils'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
@@ -266,9 +266,12 @@ export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
         Record<string, unknown>,
       ]
       const attrs = { ...dom[1] }
-      // Milkdown's own list also allows `ftp:`; the address follows the same
-      // list as HTML import and print, so Mod-click opens nothing else.
-      if (!isSafeLinkTarget(String(mark.attrs.href ?? ''))) attrs.href = ''
+      // Milkdown's own list leaves out the schemes a host added and allows `ftp:`. The address
+      // follows the list in link-safety.ts and the host's `linkSchemes` instead, so Mod-click
+      // opens nothing else.
+      const href = String(mark.attrs.href ?? '')
+      if (!isSafeLinkTarget(href, editorLinkSchemes(ctx))) attrs.href = ''
+      else if (!attrs.href) attrs.href = href.trim()
       delete attrs.label
       delete attrs.identifier
       delete attrs.referenceType

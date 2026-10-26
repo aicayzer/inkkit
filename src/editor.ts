@@ -103,7 +103,11 @@ import { codeCopyPlugin, placeholderPlugin } from './decorations'
 import { codeControlCtx, codeControlsPlugin } from './code-controls'
 import { labelsCtx, defaultLabels } from './labels'
 import { createDialect, serialize, stringifyOptions } from './dialect'
-import { isSafeLinkTarget } from './link-safety'
+import {
+  extraLinkSchemes,
+  isSafeLinkTarget,
+  linkSchemesCtx,
+} from './link-safety'
 import { Preservation } from './preserve'
 import { modeSelectionMap } from './mode-selection'
 import {
@@ -478,7 +482,7 @@ function textInputPreferences(
   }
 }
 
-/** Mount options. Adapters, `labels` and `rendering` are fixed at mount; the rest can change. */
+/** Mount options. Adapters, `labels`, `linkSchemes` and `rendering` are fixed at mount; the rest can change. */
 export interface EditorOptions {
   /** Shows, imports and exports images. Without it and `files`, image Markdown stays literal. */
   images?: ImageAdapter
@@ -495,6 +499,9 @@ export interface EditorOptions {
   labels?: Partial<EditorLabels>
   /** See `setKeymap`. */
   keymap?: Keymap
+  /** Schemes beyond `http`, `https`, `mailto` and `tel` that links may use, such as `things`.
+   *  Fixed at mount. */
+  linkSchemes?: readonly string[]
   rendering?: {
     /** Defaults to true. */
     codeHighlighting?: boolean
@@ -514,6 +521,7 @@ function editorOptions(value: unknown): EditorOptions {
       'textInput',
       'labels',
       'keymap',
+      'linkSchemes',
       'rendering',
       'slashMenu',
     ]) ?? {}
@@ -527,6 +535,9 @@ function editorOptions(value: unknown): EditorOptions {
     textInputPreferences(options.textInput, 'options.textInput')
   if (!isOmitted(options.keymap))
     keymapBindings(options.keymap, 'options.keymap')
+  const linkSchemes = isOmitted(options.linkSchemes)
+    ? undefined
+    : extraLinkSchemes(options.linkSchemes, 'options.linkSchemes')
   const rendering = optionalRecord(options.rendering, 'options.rendering', [
     'codeHighlighting',
     'diagramPreview',
@@ -544,6 +555,7 @@ function editorOptions(value: unknown): EditorOptions {
   return {
     ...options,
     slashMenu: slashMenuOptions(options.slashMenu),
+    linkSchemes,
     labels:
       labels &&
       Object.fromEntries(
@@ -1475,6 +1487,9 @@ export class InkKitEditor {
     false
 
   private readonly events: EditorEvents
+  /** The host's extra link schemes, in lower case. */
+  private readonly linkSchemes: ReadonlySet<string>
+
   /** How many of each state event the host has been sent. */
   private readonly sentEvents = new Map<string | symbol, number>()
 
@@ -1498,6 +1513,7 @@ export class InkKitEditor {
         }
       },
     })
+    this.linkSchemes = new Set(options.linkSchemes)
     this.writable = options.editable ?? true
     this.inputPreferences = textInputPreferences(
       options.textInput ?? {},
@@ -2678,6 +2694,7 @@ export class InkKitEditor {
         completeDiagrams,
         this.options.files,
         signal,
+        this.linkSchemes,
       ),
     )
     const metadata = referenceMetadata(
@@ -2917,7 +2934,11 @@ export class InkKitEditor {
           })
           .catch((error) => this.report(error))
       } else {
-        const output = clipboardContent(parsed.content, parsed.type.schema)
+        const output = clipboardContent(
+          parsed.content,
+          parsed.type.schema,
+          this.linkSchemes,
+        )
         if (!event.clipboardData) return
         this.rememberCopy(
           output,
@@ -3006,6 +3027,7 @@ export class InkKitEditor {
           smartPunctuationCtx.key,
           () => instance.inputPreferences.smartPunctuation === true,
         )
+        ctx.set(linkSchemesCtx.key, instance.linkSchemes)
         ctx.update(labelsCtx.key, () => ({
           ...defaultLabels,
           ...options.labels,
@@ -3141,6 +3163,7 @@ export class InkKitEditor {
         }))
       })
       .use(labelsCtx)
+      .use(linkSchemesCtx)
       .use(instance.pasteController.plugin)
       .use(visibleClipboard)
       .use($prose(() => instance.suggestions!.plugin()))
@@ -3348,7 +3371,7 @@ export class InkKitEditor {
       event.preventDefault()
       if (event.button !== 0 || !modHeld(event)) return
       // The renderer leaves the address empty when it is not on the list in
-      // link-safety.ts.
+      // link-safety.ts or among the host's `linkSchemes`.
       const href = anchor.getAttribute('href')
       if (href) events.openLink?.(href)
     }
@@ -3393,7 +3416,11 @@ export class InkKitEditor {
             view.state.doc,
             valid,
           )
-          const output = clipboardContent(content, view.state.schema)
+          const output = clipboardContent(
+            content,
+            view.state.schema,
+            instance.linkSchemes,
+          )
           const metadata = referenceMetadata(
             instance.editor.ctx,
             view.state.doc,
@@ -5039,15 +5066,16 @@ export class InkKitEditor {
   }
 
   /**
-   * Refuses a link destination that is empty, that opens anything but a web, mail or phone address,
-   * or that the Markdown writer cannot save so that it reads back the same.
+   * Refuses a link destination that is empty, that opens anything but a web, mail or phone address
+   * or a scheme the host listed, or that the Markdown writer cannot save so that it reads back the
+   * same.
    */
   private checkDestination(destination: string, name: string): void {
     if (destination.trim() === '')
       throw invalidArgument(`${name} must not be empty`)
-    if (!isSafeLinkTarget(destination))
+    if (!isSafeLinkTarget(destination, this.linkSchemes))
       throw invalidArgument(
-        `${name} must be relative, or an http, https, mailto or tel address, with no control characters`,
+        `${name} must be relative, or an address with an allowed scheme (http, https, mailto, tel or one of linkSchemes), with no control characters`,
       )
     const { schema } = this.editor.ctx.get(editorViewCtx).state
     const written = serialize(
