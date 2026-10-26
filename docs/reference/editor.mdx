@@ -552,9 +552,9 @@ interface KeyInput {
 }
 ```
 
-It handles the keymap bindings and, in formatted mode, Alt+Enter and Alt+Shift+Enter for footnotes and the editor's own keys such as Enter, Tab and Backspace in lists and tables. In source and TXT modes it handles Enter, Tab, Backspace and Delete with no Command, Control or Alt held, and returns `false` for other keys. It returns `false` during composition.
+It handles the keymap bindings and, in formatted mode, Alt+Enter and Alt+Shift+Enter for footnotes and the editor's own keys such as Enter, Tab and Backspace in lists and tables. Tab and Shift+Tab indent and outdent a list item through the default `indent` and `outdent` bindings. In source and TXT modes it handles Enter, Tab, Backspace and Delete with no Command, Control or Alt held, and returns `false` for other keys. It returns `false` during composition.
 
-In a read-only editor, a bound key and Enter, Tab, Backspace and Delete throw `read-only`. Tab and Shift+Tab still move between table cells in formatted mode, and a block move key returns `false` so the native caret movement applies.
+In a read-only editor, a bound key and Enter, Tab, Backspace and Delete throw `read-only`. Tab and Shift+Tab still move between table cells in formatted mode. A block move key, and a key bound to `indent` or `outdent`, returns `false` so the native behaviour applies.
 
 ## Focus
 

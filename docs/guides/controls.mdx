@@ -91,7 +91,7 @@ Both return `false`, and change nothing, when the command doesn't apply here. [F
 
 ## Bind shortcuts
 
-Inkkit binds undo, redo, block moves and table exit by default. It binds no formatting keys. Pass a `keymap` at mount, by the same names as the `format` and `table` commands, in [ProseMirror key notation](https://prosemirror.net/docs/ref/#keymap), where `Mod` is Command on Apple platforms and Control elsewhere:
+Inkkit binds undo, redo, block moves, list indent and outdent (`Tab` and `Shift-Tab`) and table exit by default. It binds no formatting keys. To use other keys for indenting, such as `Mod-]` and `Mod-[`, set `indent` and `outdent`; the defaults then no longer apply. Pass a `keymap` at mount, by the same names as the `format` and `table` commands, in [ProseMirror key notation](https://prosemirror.net/docs/ref/#keymap), where `Mod` is Command on Apple platforms and Control elsewhere:
 
 ```ts
 import { InkKitEditor, type Keymap } from '@aicayzer/inkkit'

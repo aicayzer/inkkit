@@ -79,7 +79,7 @@ import {
 import { splitBlock } from '@milkdown/kit/prose/commands'
 import { keydownHandler, keymap } from '@milkdown/kit/prose/keymap'
 import { goToNextCell } from '@milkdown/kit/prose/tables'
-import { liftListItem } from '@milkdown/kit/prose/schema-list'
+import { liftListItem, sinkListItem } from '@milkdown/kit/prose/schema-list'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import {
   Mapping,
@@ -379,14 +379,16 @@ function clientPoint(value: unknown, name: string): ClientPoint {
   }
 }
 
-/** A name in `Keymap`: every format command except `link`, history, block moves, and every table
- *  command. */
+/** A name in `Keymap`: every format command except `link`, history, block moves, list indentation,
+ *  and every table command. */
 export type ShortcutName =
   | Exclude<FormatCommand, 'link'>
   | 'undo'
   | 'redo'
   | 'moveBlockUp'
   | 'moveBlockDown'
+  | 'indent'
+  | 'outdent'
   | `table${Capitalize<TableCommand>}`
 
 /** Host bindings in ProseMirror key notation, by shortcut name. */
@@ -407,6 +409,8 @@ export const shortcutNames: readonly ShortcutName[] = [
   'redo',
   'moveBlockUp',
   'moveBlockDown',
+  'indent',
+  'outdent',
   ...tableCommands.map(tableShortcut),
 ]
 
@@ -992,8 +996,6 @@ const liftItem: Command = (state, dispatch) => {
   return true
 }
 
-const listItemShiftTab = $prose(() => keymap({ 'Shift-Tab': liftItem }))
-
 // Backspace in the empty line left by ending a list in the middle removes it and joins the two
 // lists again, as they were before. In the empty item left by ending a nested list in the middle,
 // it moves the item back into the nested list before it, with the items it took along.
@@ -1416,6 +1418,8 @@ export class InkKitEditor {
   private literalKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
   private configuredKeys: Keymap = {}
+  private indentKeys: (view: EditorView, event: KeyboardEvent) => boolean =
+    () => false
   private readOnlyKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
   private suggestions?: Suggestions
@@ -2876,6 +2880,14 @@ export class InkKitEditor {
       }),
   )
 
+  // Indent and outdent keys, replaced whole with the keymap. Milkdown's own key plugin comes last of
+  // the plugins that `use` adds, and it holds the keys that Tab must reach first: Tab in a list item
+  // that holds a typed row makes the table. So this plugin is appended after it, in the state options.
+  private indentPlugin = new Plugin({
+    key: new PluginKey('listIndent'),
+    props: { handleKeyDown: (view, event) => this.indentKeys(view, event) },
+  })
+
   private copySourceSelection(event: ClipboardEvent): void {
     event.preventDefault()
     event.stopPropagation()
@@ -3020,11 +3032,18 @@ export class InkKitEditor {
         )
         ctx.set(defaultValueCtx, '')
         ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
-        // The preset also binds Mod-[ and Mod-] here; the app uses those for back and forward.
-        // Shift-Tab is bound to liftItem instead.
+        ctx.update(editorStateOptionsCtx, (override) => (options) => {
+          const next = override(options)
+          return {
+            ...next,
+            plugins: [...(next.plugins ?? []), instance.indentPlugin],
+          }
+        })
+        // The preset binds Tab, Shift-Tab, Mod-[ and Mod-] to list indentation. The keymap's
+        // `indent` and `outdent` bind it instead.
         ctx.update(listItemKeymap.key, (keys) => ({
           ...keys,
-          SinkListItem: { shortcuts: 'Tab' },
+          SinkListItem: { shortcuts: [] },
           LiftListItem: { shortcuts: [] },
         }))
         // Formatting keys are the app's to set, through setKeymap; the presets' own go.
@@ -3148,7 +3167,6 @@ export class InkKitEditor {
       .use(literalEnter)
       .use(literalReread)
       .use(listItemBackspace)
-      .use(listItemShiftTab)
       .use(nestedItemEnter)
       .use(rejoinLists)
       .use(movedListItems)
@@ -4408,7 +4426,8 @@ export class InkKitEditor {
   /** Replaces every binding. Keys are in ProseMirror's notation. A key given to two shortcuts goes
    *  to the later one, in the order history, formatting, block moves, tables, so it lands the same
    *  way every time. A table binding passes a key it shares with a block move to the move outside
-   *  a table. */
+   *  a table. List indentation keys apply after all of these, and after the table keys the editor
+   *  keeps for itself. */
   setKeymap(keymap: Keymap): void {
     this.assertAlive()
     keymap = keymapBindings(keymap, 'keymap')
@@ -4418,6 +4437,8 @@ export class InkKitEditor {
       moveBlockUp: ['Alt-ArrowUp'],
       moveBlockDown: ['Alt-ArrowDown'],
       tableExit: ['Mod-Enter', 'Enter'],
+      indent: ['Tab'],
+      outdent: ['Shift-Tab'],
       ...keymap,
     }
     const bindings: Record<string, Command> = {}
@@ -4467,6 +4488,21 @@ export class InkKitEditor {
         }
       }
     }
+    // Not in `readOnlyKeys`: with nothing to edit, these keys do nothing and are not consumed, so
+    // Tab still moves focus.
+    const indents: Record<string, Command> = {}
+    const sink: Command = (state, dispatch) =>
+      sinkListItem(state.schema.nodes.list_item!)(state, dispatch)
+    for (const [name, command] of [
+      ['indent', sink],
+      ['outdent', liftItem],
+    ] as const) {
+      for (const key of this.configuredKeys[name] ?? [])
+        indents[key] = (state, dispatch, view) =>
+          this.ready && this.writable && !this.literalSurface
+            ? command(state, dispatch, view)
+            : false
+    }
     for (const command of tableCommands) {
       for (const key of this.configuredKeys[tableShortcut(command)] ?? [])
         bindings[key] = (state, dispatch, view) => {
@@ -4489,6 +4525,7 @@ export class InkKitEditor {
       ),
     )
     this.keys = keydownHandler(bindings)
+    this.indentKeys = keydownHandler(indents)
     this.literalKeys = keydownHandler(historyBindings)
   }
 
