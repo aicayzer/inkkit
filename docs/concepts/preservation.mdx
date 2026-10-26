@@ -36,7 +36,7 @@ Inkkit writes a block in canonical form when it can't keep the authored spelling
 - **Repeated blocks.** When the same block appears more than once, Inkkit can't always tell which copy you edited or moved, and that copy can be written in canonical form.
 - **Neighboring lists.** Markdown reads two adjacent lists of one kind as one list unless their markers differ. A new, moved or rewritten list takes a bullet (`-`, `*` or `+`) or number delimiter (`.` or `)`) that the lists beside it don't use. An item added to an authored list takes that list's marker.
 - **Thematic breaks.** A `---` rule that comes to open the document while another `---` line follows it is written as `***`, because it would otherwise read as front matter. A new rule inside a list item, quote, callout or footnote is written as `___`.
-- **Spaces at the edge of a block or table cell, or beside a soft line break** are written as `&#x20;`, because Markdown would otherwise drop them.
+- **Spaces at the edge of a block or table cell, or beside a soft line break** are written as `&#x20;`, because Markdown would otherwise drop them. For example, pressing Enter before the space in `See example today` saves `See example` and `&#x20;today` as two paragraphs. Pressing Backspace joins them again as `See example today`.
 - **A line break at the end of a paragraph** isn't saved until text follows it. See [Line breaks](/concepts/markdown#line-breaks).
 
 ## How an edit is checked

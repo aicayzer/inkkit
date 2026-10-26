@@ -124,6 +124,7 @@ The `@aicayzer/inkkit/core` entry leaves Mermaid out: diagram fences stay editab
 ## Links and autolinks
 
 - **Inline links** keep their form and destination when you edit their text, even when the text matches the destination.
+- **Formatting around a whole link**, such as `**[docs](https://example.com)**`, stays outside the link when you edit the link text, for inline and reference links. Text typed directly against the opening delimiter moves the formatting inside the link, as in `X[**docs**](https://example.com)`, because Markdown doesn't start bold text between a letter and `[`.
 - **Bare addresses**, such as `https://example.com`, `www.example.com` and `ada@example.com`, link to their own text and stay bare while the text is still an address. Typing an address into text links it.
 - **Angle autolinks**, such as `<https://example.com>`, keep their brackets. Typing the closing `>` makes the link.
 - **Code:** an address inside inline code isn't linked.
