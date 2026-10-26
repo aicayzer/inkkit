@@ -17,6 +17,19 @@ export function releasePackageLock() {
     spawnSync('sudo', ['-n', ...command], { stdio: 'ignore', timeout: 60_000 })
 }
 
+// A stalled mirror otherwise holds one download open until the whole attempt times
+// out. A short network timeout and a few retries make apt give up on a stalled
+// connection and ask again, which usually succeeds within seconds.
+export function configureApt() {
+  if (process.platform !== 'linux') return
+  spawnSync('sudo', ['-n', 'tee', '/etc/apt/apt.conf.d/99inkkit-timeouts'], {
+    input:
+      'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "5";\n',
+    stdio: ['pipe', 'ignore', 'ignore'],
+    timeout: 30_000,
+  })
+}
+
 export async function installBrowsers({
   engines,
   command = [
@@ -29,8 +42,10 @@ export async function installBrowsers({
   attempts = 3,
   timeoutMs = 300_000,
   recover = releasePackageLock,
+  prepare = configureApt,
   log = (message) => process.stderr.write(`${message}\n`),
 } = {}) {
+  await prepare()
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const outcome = await new Promise((done) => {
       const child = spawn(command[0], command.slice(1), {

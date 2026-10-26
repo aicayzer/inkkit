@@ -54,3 +54,14 @@ test('recovers the package lock between attempts but not after the last', async 
   })
   assert.deepEqual([result, runs, recoveries], [1, 3, 2])
 })
+
+test('prepares once before the first attempt', async () => {
+  let prepared = 0
+  const { result, runs } = await scenario('process.exit(run < 2 ? 1 : 0)', {
+    prepare: () => {
+      prepared++
+    },
+    recover: () => {},
+  })
+  assert.deepEqual([result, runs, prepared], [0, 2, 1])
+})
