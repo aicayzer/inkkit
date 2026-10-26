@@ -1,5 +1,11 @@
 import { afterEach, expect, test } from 'vitest'
-import { InkKitEditor, type EditorOptions, type FileContext } from '../src/core'
+import {
+  InkKitEditor,
+  type EditorOptions,
+  type FileContext,
+  type WikiLinkAdapter,
+  type WikiLinkReference,
+} from '../src/core'
 const editors: InkKitEditor[] = []
 afterEach(async () => {
   for (const e of editors.splice(0)) await e.destroy()
@@ -9,12 +15,13 @@ async function mount(
   text: string,
   suggest?: (query: string, context: FileContext) => Promise<readonly string[]>,
   slashMenu?: EditorOptions['slashMenu'],
+  adapter: Partial<WikiLinkAdapter> = {},
 ) {
   const root = document.createElement('div')
   document.body.append(root)
   const errors: unknown[] = []
   const options: EditorOptions = {
-    wikiLinks: { open() {}, suggest },
+    wikiLinks: { open() {}, suggest, ...adapter },
     slashMenu,
   }
   const editor = await InkKitEditor.mount(
@@ -244,3 +251,68 @@ test('closing brackets belong to wiki queries, not slash command filters', async
   expect(root.querySelector('.inkkit-wiki-link')?.textContent).toBe('Note')
   expect(errors).toEqual([])
 })
+
+for (const name of ['A|B', ' A\\|B 日本語 😀 ', 'A\\\\|B', ' A\tCafé ']) {
+  test(`table suggestion keeps callback spelling across save and reopen: ${JSON.stringify(name)}`, async () => {
+    const references: {
+      resolve: WikiLinkReference[]
+      open: WikiLinkReference[]
+    } = { resolve: [], open: [] }
+    const adapter: Partial<WikiLinkAdapter> = {
+      resolve(reference) {
+        references.resolve.push({ ...reference })
+        return { missing: false }
+      },
+      open(reference) {
+        references.open.push({ ...reference })
+      },
+    }
+    const source =
+      'Before  \r\n\r\n| TARGET | B |\r\n| --- | --- |\r\n| c | d |\r\n\r\nAfter _kept_.\r\n'
+    const { editor, root, errors } = await mount(
+      source,
+      async () => [name],
+      undefined,
+      adapter,
+    )
+    editor.find('TARGET')
+    editor.insertText('[[', 1)
+    await settle()
+    const typed = editor.snapshot().text
+    editor.keyDown({ key: 'Enter' }, 1)
+    await settle()
+    const escaped = name
+      .replace(/[\\[\]|#]/g, '\\$&')
+      .replace(
+        /(\\*)\|/g,
+        (_match, escapes: string) => `${'\\'.repeat(escapes.length * 2 + 1)}|`,
+      )
+    const expected = { raw: `[[${escaped}]]`, target: name, label: name }
+    expect(references.resolve.at(-1)).toEqual(expected)
+    root
+      .querySelector<HTMLElement>('[role=link]')!
+      .dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      )
+    await settle()
+    expect(references.open.at(-1)).toEqual(expected)
+    const saved = editor.snapshot().text
+    expect(saved).toBe(source.replace('TARGET', `[[${escaped}]]`))
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe(typed)
+    expect(editor.redo()).toBe(true)
+    expect(editor.snapshot().text).toBe(saved)
+    const reader = await mount(saved, undefined, undefined, adapter)
+    await settle()
+    expect(references.resolve.at(-1)).toEqual(expected)
+    reader.root
+      .querySelector<HTMLElement>('[role=link]')!
+      .dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      )
+    await settle()
+    expect(references.open.at(-1)).toEqual(expected)
+    expect(reader.editor.snapshot().text).toBe(saved)
+    expect(errors).toEqual([])
+  })
+}

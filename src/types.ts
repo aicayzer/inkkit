@@ -93,6 +93,8 @@ export interface ImageAdapter {
 }
 /** A wiki link as authored. */
 export interface WikiLinkReference {
+  /** The link's Markdown as the document holds it, such as `[[Plan|Plan]]`. */
+  raw: string
   /** The note name, with escapes removed. Empty for a link such as `[[#Heading]]`. */
   target: string
   fragment?: string
@@ -117,6 +119,8 @@ export interface FileReference {
   reference: string
   /** `path` for `![alt](destination)`, `wiki` for `![[name]]`. */
   kind: 'path' | 'wiki'
+  /** The embed's Markdown as the document holds it, such as `![alt](a\_b.png)`. */
+  raw: string
   /** The reference without its fragment. Use it to find the file. */
   target: string
   /** Everything after the separating `#`, such as `t=10` or `page=3`. */

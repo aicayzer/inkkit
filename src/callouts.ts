@@ -9,6 +9,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Nodes, Parent, Root, RootContent } from 'mdast'
 import type { Processor } from 'unified'
 import { defaultHandlers, type Handle } from 'mdast-util-to-markdown'
+import { mediaPolicyEvent } from './files'
 
 interface Callout extends Parent {
   type: 'inkkitCallout'
@@ -326,7 +327,7 @@ export const calloutView = $prose(
                   .toLowerCase()
                   .replace(/^./, (letter) => letter.toUpperCase())
               dom.setAttribute('data-inkkit-folded', String(folded))
-              view.dom.dispatchEvent(new Event('inkkit-media-policy'))
+              view.dom.dispatchEvent(new Event(mediaPolicyEvent))
               button.hidden = !node.attrs.fold
               button.setAttribute('aria-expanded', String(!folded))
               button.setAttribute(

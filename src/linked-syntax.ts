@@ -1,13 +1,21 @@
 import { $inputRule, $node, $prose, $remark } from '@milkdown/kit/utils'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { InputRule } from '@milkdown/kit/prose/inputrules'
-import { Mark, type Node as ProseNode } from '@milkdown/kit/prose/model'
-import type { Literal } from 'mdast'
+import {
+  Mark,
+  type Node as ProseNode,
+  type Schema,
+} from '@milkdown/kit/prose/model'
+import type { Literal, Nodes, Root } from 'mdast'
 import type { Extension as FromExtension } from 'mdast-util-from-markdown'
 import { defaultHandlers, type Handle } from 'mdast-util-to-markdown'
 import type { Code, Extension, Tokenizer, State } from 'micromark-util-types'
 import type { Processor } from 'unified'
-import type { FileReference, WikiLinkReference } from './types'
+import {
+  InkKitError,
+  type FileReference,
+  type WikiLinkReference,
+} from './types'
 import { showsText } from './references'
 import { insertedAt } from './smart-punctuation'
 
@@ -28,6 +36,7 @@ declare module 'mdast' {
   }
   interface Image {
     inkkitFileRaw?: string
+    inkkitFileSource?: string
     inkkitFileTarget?: string
     inkkitFileFragment?: string | null
     inkkitFileWidth?: number | null
@@ -61,6 +70,15 @@ const toTable = (raw: string): string =>
     /(\\*)\|/g,
     (_match, escapes: string) => `${'\\'.repeat(escapes.length * 2 + 1)}|`,
   )
+
+// GFM removes the table escape before CommonMark reads the image. Unlike
+// named syntax, an existing CommonMark pipe escape already works in both contexts.
+function pathTableForm(raw: string, inTable: boolean): string {
+  if (!inTable) return raw
+  return raw.replace(/(\\*)\|/g, (_match, escapes: string) =>
+    escapes.length % 2 ? escapes + '|' : escapes + '\\|',
+  )
+}
 
 export function parseLinkedSyntax(
   raw: string,
@@ -196,6 +214,7 @@ export function wikiMarkdown(node: ProseNode, inTable = false): string {
 
 export function wikiReference(node: ProseNode): WikiLinkReference {
   return {
+    raw: wikiMarkdown(node, Boolean(node.attrs.inTable)),
     target: String(node.attrs.target),
     ...(node.attrs.fragment != null
       ? { fragment: String(node.attrs.fragment) }
@@ -205,6 +224,11 @@ export function wikiReference(node: ProseNode): WikiLinkReference {
 }
 
 export function fileReference(node: ProseNode): FileReference {
+  return { ...fileFields(node), raw: fileSource(node) }
+}
+
+/** `fileReference` without the embed's text, which takes writing it. */
+export function fileFields(node: ProseNode): Omit<FileReference, 'raw'> {
   const reference = String(node.attrs.src ?? '')
   const named = node.attrs.inkkitFileRaw != null
   const alt = String(node.attrs.alt ?? '')
@@ -243,6 +267,71 @@ export function fileReference(node: ProseNode): FileReference {
   }
 }
 
+/** A path image's Markdown as it was read, with the attributes it was read as. */
+export interface AuthoredImage {
+  text: string
+  src: string
+  alt: string
+  title: string
+}
+
+const writers = new WeakMap<Schema, (node: ProseNode) => string>()
+
+/** Sets how an image of `schema` is written when it has no authored text. */
+export function setImageWriter(
+  schema: Schema,
+  write: (node: ProseNode) => string,
+): void {
+  writers.set(schema, write)
+}
+
+/**
+ * A file embed's Markdown as the document holds it: its authored text while
+ * the embed is unchanged, otherwise the text InkKit writes for it.
+ */
+function fileSource(node: ProseNode): string {
+  if (node.attrs.inkkitFileRaw != null)
+    return namedFileMarkdown(node, Boolean(node.attrs.inkkitFileInTable)) ?? ''
+  const authored = authoredFileSource(node)
+  if (authored != null) return authored
+  const write = writers.get(node.type.schema)
+  if (!write) throw new InkKitError('internal', 'The image writer is not set')
+  return pathTableForm(write(node), Boolean(node.attrs.inkkitFileInTable))
+}
+
+/** Only reuse authored spelling while it still describes the image. */
+export function authoredFileSource(node: ProseNode): string | null {
+  const authored = node.attrs.inkkitFileSource as AuthoredImage | null
+  return authored &&
+    authored.src === node.attrs.src &&
+    authored.alt === node.attrs.alt &&
+    authored.title === node.attrs.title
+    ? authored.text
+    : null
+}
+
+/** Records each path image's Markdown as written, for `FileReference.raw`. */
+export function remarkFileSources() {
+  return (tree: Root, file: { value?: unknown }) => {
+    // Positions count from after a byte order mark.
+    const source = String(file.value ?? '').replace(/^\uFEFF/, '')
+    const visit = (node: Nodes, inTable = false) => {
+      if (node.type === 'image' && node.inkkitFileRaw == null) {
+        const start = node.position?.start.offset
+        const end = node.position?.end.offset
+        if (start != null && end != null)
+          node.inkkitFileSource = source.slice(start, end)
+        node.inkkitFileInTable = inTable
+      }
+      if ('children' in node)
+        node.children.forEach((child) =>
+          visit(child, inTable || node.type === 'tableCell'),
+        )
+    }
+    visit(tree)
+  }
+}
+
 export function namedFileMarkdown(
   node: ProseNode,
   inTable = false,
@@ -250,7 +339,7 @@ export function namedFileMarkdown(
   if (node.attrs.inkkitFileRaw == null) return undefined
   let raw = String(node.attrs.inkkitFileRaw)
   const authoredInTable = Boolean(node.attrs.inkkitFileInTable)
-  const width = fileReference(node).width ?? null
+  const width = fileFields(node).width ?? null
   const original = node.attrs.inkkitFileWidth ?? null
   if (width !== original) {
     if (authoredInTable) raw = fromTable(raw)
@@ -394,6 +483,75 @@ export const wikiLinkComposition = $prose(
             return false
           },
         },
+      },
+    }),
+)
+
+/**
+ * A pasted or moved atom retains its original attributes. Stores the spelling
+ * its new context saves before preservation and node views observe it, so
+ * adapter references and clipboard metadata agree.
+ */
+export const referenceTableContext = $prose(
+  () =>
+    new Plugin({
+      key: new PluginKey('inkkitReferenceTableContext'),
+      appendTransaction(transactions, _before, state) {
+        if (!transactions.some((tr) => tr.docChanged)) return null
+        let ranges: Array<[number, number]> = []
+        for (const transaction of transactions)
+          for (const map of transaction.mapping.maps) {
+            ranges = ranges.map(([from, to]) => [
+              map.map(from, -1),
+              map.map(to),
+            ])
+            map.forEach((_from, _to, from, to) => ranges.push([from, to]))
+          }
+        const tr = state.tr
+        const seen = new Set<number>()
+        for (const [from, to] of ranges)
+          state.doc.nodesBetween(from, to, (node, pos) => {
+            if (
+              !['inkkit_wiki_link', 'image', 'image_block'].includes(
+                node.type.name,
+              ) ||
+              seen.has(pos)
+            )
+              return
+            seen.add(pos)
+            const $pos = state.doc.resolve(pos)
+            let inTable = false
+            for (let depth = $pos.depth; depth > 0; depth--)
+              if (
+                ['table_cell', 'table_header'].includes(
+                  $pos.node(depth).type.name,
+                )
+              )
+                inTable = true
+            if (node.type.name === 'inkkit_wiki_link') {
+              if (inTable !== Boolean(node.attrs.inTable))
+                tr.setNodeMarkup(pos, undefined, {
+                  ...node.attrs,
+                  raw: wikiMarkdown(node, inTable),
+                  inTable,
+                })
+            } else if (inTable !== Boolean(node.attrs.inkkitFileInTable)) {
+              const authored = node.attrs
+                .inkkitFileSource as AuthoredImage | null
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                inkkitFileRaw: namedFileMarkdown(node, inTable) ?? null,
+                inkkitFileSource: authored
+                  ? {
+                      ...authored,
+                      text: pathTableForm(authored.text, inTable),
+                    }
+                  : null,
+                inkkitFileInTable: inTable,
+              })
+            }
+          })
+        return tr.steps.length ? tr : null
       },
     }),
 )
@@ -562,9 +720,14 @@ export function linkedSyntax(wikiLinks: boolean, files: boolean) {
         Boolean(node.inkkitFileInTable),
         state.stack.includes('tableCell'),
       )
+    if (node.inkkitFileSource != null)
+      return pathTableForm(
+        node.inkkitFileSource,
+        state.stack.includes('tableCell'),
+      )
     return defaultHandlers.image(node, parent, state, info)
   }
-  // Standard image handling is installed by CommonMark; wrap it only for authored named tokens.
+  // CommonMark owns generated images; authored tokens retain their spelling.
   return $remark(
     'inkkitLinkedSyntax',
     () =>

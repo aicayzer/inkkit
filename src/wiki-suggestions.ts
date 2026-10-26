@@ -8,7 +8,7 @@ import {
   type WikiLinkAdapter,
 } from './types'
 import { invalidArgument } from './errors'
-import { parseLinkedSyntax } from './linked-syntax'
+import { parseLinkedSyntax, wikiMarkdown } from './linked-syntax'
 import type { SuggestionSession } from './suggestions'
 
 interface WikiHost {
@@ -36,7 +36,12 @@ export function wikiSuggestionNode(
 ): ProseNode {
   if (!validName(name))
     throw invalidArgument('A note suggestion must be a supported note name')
-  return state.schema.nodes.inkkit_wiki_link!.create(
+  const { $from } = state.selection
+  let inTable = false
+  for (let depth = $from.depth; depth > 0; depth--)
+    if (['table_cell', 'table_header'].includes($from.node(depth).type.name))
+      inTable = true
+  const node = state.schema.nodes.inkkit_wiki_link!.create(
     {
       raw: rawName(name),
       target: name,
@@ -45,7 +50,13 @@ export function wikiSuggestionNode(
       inTable: false,
     },
     undefined,
-    state.selection.$from.marks(),
+    $from.marks(),
+  )
+  if (!inTable) return node
+  return node.type.create(
+    { ...node.attrs, raw: wikiMarkdown(node, true), inTable },
+    undefined,
+    node.marks,
   )
 }
 export function wikiSuggestionTransaction(
