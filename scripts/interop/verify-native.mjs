@@ -2671,6 +2671,80 @@ if (releaseAtLeast('0.0.14')) {
     ],
   }
 }
+// Continuation typing and tight-list paste use the same packed facade as hosts.
+for (const [index, marker] of [
+  '# ',
+  '- ',
+  '+ ',
+  '* ',
+  '1. ',
+  '> ',
+  '```',
+  '1) ',
+].entries()) {
+  const source =
+    '__Before__ &amp;\r\n\r\n+ two\r\n  more α\r\n\r\nAfter&#33;\r\n'
+  scenarios[`source-continuation-marker-${index}`] = {
+    source,
+    operations: [
+      { op: 'select', text: 'more', from: 0, to: 0 },
+      { op: 'insertText', text: marker },
+      { op: 'textSnapshot', name: 'readable' },
+      {
+        op: 'assert',
+        name: 'readable',
+        path: 'text',
+        includes: marker + 'more α',
+      },
+      { op: 'snapshot', name: 'edited' },
+      { op: 'undo' },
+      assert('snapshot.text', source),
+      { op: 'redo' },
+      { op: 'save' },
+      { op: 'reopen' },
+      {
+        op: 'assert',
+        path: 'snapshot.text',
+        equalsFrom: { name: 'edited', path: 'text' },
+      },
+    ],
+  }
+}
+for (const [index, markdown] of [
+  'x\n\n<!-- c -->',
+  '<!-- c -->',
+  'x\n\n---',
+  'x\n\ny α',
+].entries()) {
+  const source =
+    '__Before__ &amp;\r\n\r\n+ a\r\n+ more\r\n+ c\r\n\r\nAfter&#33;\r\n'
+  scenarios[`source-tight-list-paste-${index}`] = {
+    source,
+    operations: [
+      { op: 'select', text: 'more' },
+      { op: 'paste', input: { text: markdown, markdown } },
+      contains(
+        'snapshot.text',
+        markdown.includes('<!--')
+          ? '<!-- c -->'
+          : markdown.includes('---')
+            ? '___'
+            : 'y α',
+      ),
+      { op: 'snapshot', name: 'edited' },
+      { op: 'undo' },
+      assert('snapshot.text', source),
+      { op: 'redo' },
+      { op: 'save' },
+      { op: 'reopen' },
+      {
+        op: 'assert',
+        path: 'snapshot.text',
+        equalsFrom: { name: 'edited', path: 'text' },
+      },
+    ],
+  }
+}
 const names = Object.keys(scenarios)
 const groups = {
   core: [
