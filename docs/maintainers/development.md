@@ -1,6 +1,6 @@
 # Development
 
-CI runs Node.js 26. The package supports Node.js 22.14 or later (`engines` in `package.json`). Use the package-manager version in `package.json`.
+CI runs Node.js 26, and the package declares Node.js 26 or later (`engines` in `package.json`). Older Node.js versions are not supported. Use the package-manager version in `package.json`.
 
 ```sh
 pnpm install --frozen-lockfile

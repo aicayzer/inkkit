@@ -42,7 +42,7 @@ Declare UTF-8 in the page that loads Inkkit, for example with `<meta charset="ut
 - **Three specifiers.** Import only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. Other paths in the package aren't exported. TypeScript declarations are included.
 - **Dependencies are bundled.** The package contains Milkdown, ProseMirror and every other runtime dependency except Mermaid, so your app runs the tree that Inkkit tested. A fix in a bundled package reaches you only through an Inkkit release, and your own dependency audit doesn't see bundled packages.
 - **Mermaid is the one dependency,** pinned to an exact version. Your package manager installs it whichever entry you import.
-- **Node.js 22.14 or later** is declared in `engines`, which applies to the tools that install and build the package. The editor itself runs in the page.
+- **Node.js 26 or later** is declared in `engines`, which applies to the tools that install and build the package. The editor itself runs in the page.
 
 ## Entries with and without Mermaid
 
