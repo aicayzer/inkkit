@@ -90,6 +90,12 @@ export interface ImageAdapter {
     reference: string,
     context: DocumentContext,
   ): Promise<PortableImage>
+  /** Called for a context-menu request on an image. Inkkit selects the image first. */
+  contextMenu?(
+    reference: string,
+    point: ClientPoint,
+    context: DocumentContext,
+  ): void
 }
 /** A wiki link as authored. */
 export interface WikiLinkReference {

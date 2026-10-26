@@ -22,6 +22,7 @@ An adapter is an object of functions that you pass to [`mount`](/reference/edito
 | `FileAdapter.resolve`       | Asynchronous | When a path image or `![[name]]` embed renders, and again for clipboard and print.  |
 | `FileAdapter.exportImage`   | Asynchronous | When clipboard or print output needs the bytes of a file that resolved as an image. |
 | `FileAdapter.open`          | Synchronous  | When the person activates a file card's Open button.                                |
+| `ImageAdapter.contextMenu`  | Synchronous  | When the person opens the context menu on an image, and `files` isn't set.          |
 | `FileAdapter.contextMenu`   | Synchronous  | When the person opens the context menu on a file card.                              |
 | `WikiLinkAdapter.suggest`   | Asynchronous | When the text after a typed `[[` changes.                                           |
 | `WikiLinkAdapter.resolve`   | Synchronous  | When a wiki link renders in formatted mode.                                         |
@@ -58,6 +59,14 @@ Returns the bytes and MIME type of a stored image, for [`clipboardSnapshot`](/re
 
 - **Clipboard output:** a rejection or another type leaves that image's `image` out and sets its `error`; the text and HTML carry a readable placeholder.
 - **Print:** the bytes must also match the declared type and decode. A rejection or bad bytes make `printableSnapshot` reject with `image-unavailable`.
+
+</ResponseField>
+
+<ResponseField name="contextMenu" type="(reference: string, point: ClientPoint, context: DocumentContext) => void">
+
+Called when the person opens the context menu on an image, such as with a right-click. `reference` is the image's authored reference, as in `presentation`, and `point` is where, in CSS pixels of the web view's client area. When it is set, Inkkit selects the image and suppresses the browser's own context menu on images, so show yours, for example a Save Image action that reads the bytes through your own storage or `exportImage`. Without it, Inkkit does nothing and the browser's menu shows. A thrown exception reports `image-unavailable` through `events.error`. Inkkit doesn't await a returned value, so handle the failure of asynchronous native work yourself.
+
+Inkkit doesn't call it in source or TXT mode. When `files` is set, every image is a file card and [`FileAdapter.contextMenu`](#fileadapter) receives the request instead.
 
 </ResponseField>
 

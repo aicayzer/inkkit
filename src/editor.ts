@@ -3183,18 +3183,16 @@ export class InkKitEditor {
         options.images || options.files
           ? imageView(
               options.images,
-              options.files
-                ? {
-                    adapter: options.files,
-                    capture: () => instance.adapterCapture(),
-                    active: () =>
-                      instance.ready &&
-                      !instance.destroyed &&
-                      !instance.literalSurface,
-                    labels: { ...defaultLabels, ...options.labels },
-                    error: (error) => instance.report(error),
-                  }
-                : undefined,
+              {
+                capture: () => instance.adapterCapture(),
+                active: () =>
+                  instance.ready &&
+                  !instance.destroyed &&
+                  !instance.literalSurface,
+                labels: { ...defaultLabels, ...options.labels },
+                error: (error) => instance.report(error),
+              },
+              options.files,
               () => {
                 try {
                   instance.assertMutation()
