@@ -123,6 +123,7 @@ const formatCommands: readonly FormatCommand[] = [
   'bulletList',
   'orderedList',
   'taskList',
+  'toggleTask',
   'link',
 ]
 
@@ -625,7 +626,12 @@ test('a bound shortcut runs the format command of the same name', async () => {
   )
   for (const command of commands) {
     // `paragraph` changes only a block that is not one already.
-    const text = command === 'paragraph' ? '## Some words\n' : 'Some words\n'
+    const text =
+      command === 'paragraph'
+        ? '## Some words\n'
+        : command === 'toggleTask'
+          ? '- [ ] Some words\n'
+          : 'Some words\n'
     let byCall = ''
     await open(({ editor, load, select }) => {
       load(text)

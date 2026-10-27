@@ -335,6 +335,8 @@ What each command can do now. Every entry is `false` while the editor is read-on
 
 `FormatOptions` has two optional fields. Any other field, a field with another command, or an unknown command throws `invalid-argument`.
 
+`format('toggleTask')` switches the innermost task item at the start of the selection between checked and unchecked. It returns `false` outside a task item and changes only its checkbox marker in the saved source. `commandState().commands.format.toggleTask` reports availability; the command follows the same read-only, composition and generation guards as other formatting commands. Task markers also expose a checkbox role and checked state, with Space or Enter toggling a focused marker.
+
 <ResponseField name="destination" type="string">
 
 Only with `link`. It must be a relative address, a fragment, a query, or an `http`, `https`, `mailto` or `tel` address, or one whose scheme is in [`linkSchemes`](#editor-options), with no control characters, and Markdown must be able to write it so that it reads back the same. Otherwise `format` throws `invalid-argument`. In a reference link, the shared definition changes, so every link that uses it changes.

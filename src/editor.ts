@@ -246,7 +246,12 @@ import {
   sourceHeadingPosition,
   type OutlineContext,
 } from './outline'
-import { taskListPlugin, toggleTaskList } from './tasks'
+import {
+  taskAtCaret,
+  taskListPlugin,
+  toggleTask,
+  toggleTaskList,
+} from './tasks'
 import { modHeld, trackLinkModifier } from './modifier'
 import { diagramsAvailable, isMermaid, mermaidPreview } from './mermaid'
 import {
@@ -299,6 +304,7 @@ const formatCommands = [
   'bulletList',
   'orderedList',
   'taskList',
+  'toggleTask',
   'link',
 ] as const
 
@@ -1948,6 +1954,7 @@ export class InkKitEditor {
         formatted &&
         (innermostListDepth(textBounds(state).$from) != null ||
           check(wrapInBulletListCommand.key)),
+      toggleTask: formatted && taskAtCaret(state) != null,
       link: check(toggleLinkCommand.key, {}),
     }
     const tables = formatted
@@ -3250,7 +3257,18 @@ export class InkKitEditor {
       .use(history)
       .use(clipboard)
       .use(cursor)
-      .use(taskListPlugin)
+      .use(
+        taskListPlugin((operation) =>
+          instance.forPerson(
+            () =>
+              instance.facadeCall(() => {
+                instance.assertMutation()
+                return !instance.literalSurface && operation()
+              }),
+            false,
+          ),
+        ),
+      )
       .use(undoTypedRule)
       .use(quoteBackspace)
       .use(calloutEnter)
@@ -5167,6 +5185,9 @@ export class InkKitEditor {
         break
       case 'taskList':
         toggleTaskList(this.editor.ctx)
+        break
+      case 'toggleTask':
+        toggleTask(this.editor.ctx)
         break
       case 'link':
         this.link(checked?.destination)

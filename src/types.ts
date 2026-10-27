@@ -285,6 +285,7 @@ export interface EditorLabels {
   slashBulletList: string
   slashOrderedList: string
   slashTaskList: string
+  taskCheckbox: string
   slashQuote: string
   slashCodeBlock: string
   slashTable: string

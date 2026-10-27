@@ -12,6 +12,7 @@ export const defaultLabels: Readonly<EditorLabels> = {
   slashBulletList: 'Bulleted List',
   slashOrderedList: 'Numbered List',
   slashTaskList: 'Checklist',
+  taskCheckbox: 'Task',
   slashQuote: 'Quote',
   slashCodeBlock: 'Code Block',
   slashTable: 'Table',

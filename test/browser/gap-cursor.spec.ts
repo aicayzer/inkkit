@@ -79,7 +79,7 @@ for (const { name, source, reach } of cases) {
       }
     })
     expect(caret).toMatchObject({
-      colour: 'rgb(10, 132, 255)',
+      colour: 'rgb(0, 105, 209)',
       animation: 'inkkit-gapcursor-blink',
       border: '0px',
     })

@@ -718,8 +718,9 @@ window.interop = {
               'compositionstart',
               'compositionend',
             ]
+            // Controls may consume keys before they bubble to the editor.
             for (const type of types)
-              eventTarget.addEventListener(type, observe)
+              eventTarget.addEventListener(type, observe, true)
             try {
               const native = await bridge.postMessage(operation)
               await settle()
@@ -751,7 +752,7 @@ window.interop = {
             } finally {
               target.removeEventListener('keydown', measure, true)
               for (const type of types)
-                eventTarget.removeEventListener(type, observe)
+                eventTarget.removeEventListener(type, observe, true)
             }
             break
           }
