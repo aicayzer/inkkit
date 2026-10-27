@@ -3767,7 +3767,8 @@ export class Preservation {
     if (previous === this.blocks.length - 1 && position == null) {
       const ending = this.source.slice(this.blocks[previous]!.end)
       const lines = ending.replace(/\r\n?/g, '\n')
-      if (/\n[ \t]*\n/.test(lines)) return ending
+      if (/\n[ \t]*\n/.test(lines))
+        return ending + (lines.endsWith('\n') ? '' : this.lineEnding)
       return ending + this.lineEnding.repeat(lines.endsWith('\n') ? 1 : 2)
     }
     return previous != null && position === previous + 1 && block
