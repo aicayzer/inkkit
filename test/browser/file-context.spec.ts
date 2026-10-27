@@ -399,7 +399,8 @@ for (const [kind, tableRaw, paragraphRaw] of [
     )
     expect(result.transfer).toEqual([
       ['resolve', tableRaw],
-      ['resolve', paragraphRaw],
+      // An identical authored reference keeps its resolved presentation during the move.
+      ...(tableRaw === paragraphRaw ? [] : [['resolve', paragraphRaw]]),
     ])
     expect(result.undone).toBe(true)
     expect(result.undoText).toBe(source)
