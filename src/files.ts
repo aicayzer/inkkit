@@ -150,12 +150,17 @@ export class FileResolution {
   state: FileResolutionState = { status: 'idle' }
   private reference?: FileReference
   private key = ''
-  private request?: { controller: AbortController; isCurrent(): boolean }
+  private request?: {
+    controller: AbortController
+    pending: boolean
+    isCurrent(): boolean
+  }
   private dead = false
 
   constructor(
     private readonly runtime: FileViewRuntime,
     private readonly changed: () => void,
+    private readonly cache?: FilePresentationCache,
   ) {}
 
   update(reference: FileReference): void {
@@ -167,12 +172,27 @@ export class FileResolution {
     ])
     this.reference = Object.freeze({ ...reference })
     if (this.key === key && this.request?.isCurrent()) return
+    if (this.key !== key) this.cache?.release(this, this.key)
     this.key = key
+    this.cache?.retain(this, key)
+    const cached = this.cache?.get(key)
+    if (cached) {
+      if (this.request?.pending) this.request.controller.abort()
+      this.request = {
+        controller: cached.controller,
+        pending: false,
+        isCurrent: cached.isCurrent,
+      }
+      this.state = { status: 'resolved', presentation: cached.presentation }
+      this.changed()
+      return
+    }
     this.retry()
   }
 
   /** Resolves again from a blank loading card. */
   retry(): void {
+    this.cache?.delete(this.key)
     this.cancel()
     this.start(true)
   }
@@ -182,18 +202,20 @@ export class FileResolution {
    * the host's change doesn't affect neither blanks nor moves.
    */
   refresh(): void {
+    this.cache?.delete(this.key)
     if (this.dead || !this.runtime.active()) return
     if (this.state.status === 'idle') this.retry()
     else this.start(false)
   }
 
   private start(blank: boolean): void {
-    this.request?.controller.abort()
+    if (!this.cache || this.request?.pending) this.request?.controller.abort()
     this.request = undefined
     if (this.dead || !this.reference || !this.runtime.active()) return
     const captured = this.runtime.capture()
     const request = {
       controller: new AbortController(),
+      pending: true,
       isCurrent: captured.isCurrent,
     }
     this.request = request
@@ -208,7 +230,13 @@ export class FileResolution {
       (presentation) => {
         if (!this.current(request)) return
         const before = this.state
+        request.pending = false
         this.state = { status: 'resolved', presentation }
+        this.cache?.set(this.key, {
+          presentation,
+          isCurrent: request.isCurrent,
+          controller: request.controller,
+        })
         if (
           before.status !== 'resolved' ||
           !samePresentation(before.presentation, presentation)
@@ -241,8 +269,90 @@ export class FileResolution {
     this.state = { status: 'idle' }
   }
 
+  /** Hidden views keep an answer for this document, but never accept a late answer. */
+  suspend(): void {
+    if (this.request?.pending || this.state.status === 'idle') this.cancel()
+  }
+
+  invalidate(): void {
+    this.cache?.delete(this.key)
+    this.cancel()
+  }
+
   destroy(): void {
     this.dead = true
-    this.cancel()
+    this.cache?.release(this, this.key)
+    if (
+      !this.cache ||
+      this.request?.pending ||
+      this.state.status !== 'resolved'
+    )
+      this.cancel()
+  }
+}
+
+/** A source commit may replace a node view without changing its authored reference. */
+export class FilePresentationCache {
+  private readonly entries = new Map<
+    string,
+    {
+      owners: Set<object>
+      controllers: Set<AbortController>
+      value?: {
+        presentation: FilePresentation
+        controller: AbortController
+        isCurrent(): boolean
+      }
+    }
+  >()
+  retain(owner: object, key: string): void {
+    let entry = this.entries.get(key)
+    if (!entry)
+      this.entries.set(
+        key,
+        (entry = { owners: new Set(), controllers: new Set() }),
+      )
+    entry.owners.add(owner)
+  }
+  release(owner: object, key: string): void {
+    const entry = this.entries.get(key)
+    if (!entry) return
+    entry.owners.delete(owner)
+    // ProseMirror can replace a view and recreate its unchanged reference in one update.
+    queueMicrotask(() => {
+      if (this.entries.get(key) === entry && !entry.owners.size) {
+        for (const controller of entry.controllers) controller.abort()
+        this.entries.delete(key)
+      }
+    })
+  }
+  get(key: string) {
+    const value = this.entries.get(key)?.value
+    if (value && !value.isCurrent()) {
+      this.delete(key)
+      return undefined
+    }
+    return value
+  }
+  set(
+    key: string,
+    value: {
+      presentation: FilePresentation
+      controller: AbortController
+      isCurrent(): boolean
+    },
+  ): void {
+    const entry = this.entries.get(key)
+    if (!entry) return
+    entry.value = value
+    entry.controllers.add(value.controller)
+  }
+  delete(key: string): void {
+    const entry = this.entries.get(key)
+    if (entry) {
+      for (const controller of entry.controllers) controller.abort()
+      entry.controllers.clear()
+      entry.value = undefined
+    }
   }
 }

@@ -38,6 +38,8 @@ final class SelectionHost: NSObject, NSApplicationDelegate {
               (focus["webFirstResponder"] as? Bool == (expected != "field")),
               (expected != "field" || focus["nativeFieldFirstResponder"] as? Bool == true),
               (expected != "other" || other.isKeyWindow) else { throw fail("Wrong native focus: \(name): \(focus)") }
+        let active = window.isKeyWindow && focus["webFirstResponder"] as? Bool == true
+        _ = try await web.callAsyncJavaScript("selectionFixture.setHostActive(active)", arguments: ["active": active], in: nil, contentWorld: .page)
         guard let state = try await web.callAsyncJavaScript("return await selectionFixture.capture()", arguments: [:], in: nil, contentWorld: .page) as? [String: Any] else { throw fail("Missing state") }
         let debugData = try JSONSerialization.data(withJSONObject: ["native": focus, "fixture": state], options: [.prettyPrinted, .sortedKeys])
         try debugData.write(to: URL(fileURLWithPath: arguments[2]).appendingPathComponent(name + ".json"))

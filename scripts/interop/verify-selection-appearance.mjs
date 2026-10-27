@@ -79,9 +79,9 @@ const cases = existsSync(join(output, 'native.json'))
   : []
 const evidence = {
   scope:
-    'Window focus, native field focus, a second window and a host blur() in a real WKWebView, from the packed candidate. Native textarea paint is recorded, not asserted.',
+    'Native setHostActive, window focus, native field focus, a second window and a host blur() in a real WKWebView, from the packed candidate. Native textarea paint is recorded, not asserted.',
   verification: {
-    automaticFocusAndRange: 'not-run',
+    hostActivationAndRange: 'not-run',
     formattedPaint: 'not-run',
   },
   modes,
@@ -138,7 +138,7 @@ for (const result of cases) {
     throw Error(`Invalid selected range: ${result.name}`)
   const active = /-(active|returned|second-editor)$/.test(result.name)
   if (selection.active !== active)
-    throw Error(`Wrong automatic presentation state: ${result.name}`)
+    throw Error(`Wrong host activation presentation state: ${result.name}`)
   const second = result.name.endsWith('second-editor')
   if (second && result.fixture.selections[0].active)
     throw Error('Both editors report active selection')
@@ -159,7 +159,7 @@ for (const result of cases) {
   )
     throw Error(`Formatted selection colour missing: ${result.name}`)
 }
-evidence.verification.automaticFocusAndRange = 'passed'
+evidence.verification.hostActivationAndRange = 'passed'
 evidence.verification.formattedPaint = modes.includes('formatted')
   ? 'passed'
   : 'not-run'

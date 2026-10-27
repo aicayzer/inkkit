@@ -1,4 +1,5 @@
 .inkkit-root {
+  --_inkkit-font-size: var(--inkkit-font-size, 15px);
   box-sizing: border-box;
   color-scheme: var(--inkkit-color-scheme, light dark);
   color: var(--inkkit-text-color, CanvasText);
@@ -9,7 +10,7 @@
     system-ui,
     sans-serif
   );
-  font-size: var(--inkkit-font-size, 15px);
+  font-size: var(--_inkkit-font-size);
   line-height: var(--inkkit-line-height, normal);
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: none;
@@ -60,7 +61,7 @@
     var(--inkkit-padding-bottom, 48px);
   background: transparent;
   color: var(--_inkkit-text);
-  font: calc(var(--inkkit-font-size, 15px) * 1)/var(--inkkit-line-height, 1.5)
+  font: calc(var(--_inkkit-font-size) * 1)/var(--inkkit-line-height, 1.5)
     var(--_inkkit-mono);
 }
 
@@ -75,7 +76,7 @@
 .inkkit-root .inkkit-table-block {
   position: relative;
   margin: 0 0
-    var(--inkkit-paragraph-spacing, calc(var(--inkkit-font-size, 15px) * 0.667));
+    var(--inkkit-paragraph-spacing, calc(var(--_inkkit-font-size) * 0.667));
 }
 .inkkit-root .inkkit-table-scroll {
   overflow-x: auto;
@@ -91,9 +92,9 @@
 .inkkit-root .ProseMirror th {
   position: relative;
   box-sizing: border-box;
-  min-width: calc(var(--inkkit-font-size, 15px) * 4);
-  padding: calc(var(--inkkit-font-size, 15px) * 0.4)
-    calc(var(--inkkit-font-size, 15px) * 0.6);
+  min-width: calc(var(--_inkkit-font-size) * 4);
+  padding: calc(var(--_inkkit-font-size) * 0.4)
+    calc(var(--_inkkit-font-size) * 0.6);
   border: 0 solid var(--_inkkit-rule);
   border-width: 0 1px 1px 0;
   vertical-align: top;
@@ -263,7 +264,7 @@
 .inkkit-root .ProseMirror .inkkit-image-block {
   display: block;
   margin: 0 0
-    var(--inkkit-paragraph-spacing, calc(var(--inkkit-font-size, 15px) * 0.667));
+    var(--inkkit-paragraph-spacing, calc(var(--_inkkit-font-size) * 0.667));
   line-height: 0;
 }
 .inkkit-root .ProseMirror .inkkit-image-block > .inkkit-image {
@@ -526,7 +527,7 @@
 
 .inkkit-root .ProseMirror p {
   margin: 0 0
-    var(--inkkit-paragraph-spacing, calc(var(--inkkit-font-size, 15px) * 0.667));
+    var(--inkkit-paragraph-spacing, calc(var(--_inkkit-font-size) * 0.667));
 }
 
 .inkkit-root .ProseMirror h1,
@@ -534,32 +535,32 @@
 .inkkit-root .ProseMirror h3 {
   line-height: 1.25;
   letter-spacing: -0.01em;
-  margin: calc(var(--inkkit-font-size, 15px) * 1.867) 0
-    calc(var(--inkkit-font-size, 15px) * 0.533);
+  margin: calc(var(--_inkkit-font-size) * 1.867) 0
+    calc(var(--_inkkit-font-size) * 0.533);
 }
 
 .inkkit-root .ProseMirror h1 {
-  font-size: calc(var(--inkkit-font-size, 15px) * 1.733);
+  font-size: calc(var(--_inkkit-font-size) * 1.733);
   font-weight: 700;
 }
 
 .inkkit-root .ProseMirror h2 {
-  font-size: calc(var(--inkkit-font-size, 15px) * 1.4);
+  font-size: calc(var(--_inkkit-font-size) * 1.4);
   font-weight: 700;
 }
 
 .inkkit-root .ProseMirror h3 {
-  font-size: calc(var(--inkkit-font-size, 15px) * 1.133);
+  font-size: calc(var(--_inkkit-font-size) * 1.133);
   font-weight: 600;
 }
 
 .inkkit-root .ProseMirror h4,
 .inkkit-root .ProseMirror h5,
 .inkkit-root .ProseMirror h6 {
-  font-size: calc(var(--inkkit-font-size, 15px) * 1);
+  font-size: calc(var(--_inkkit-font-size) * 1);
   font-weight: 600;
-  margin: calc(var(--inkkit-font-size, 15px) * 1.333) 0
-    calc(var(--inkkit-font-size, 15px) * 0.4);
+  margin: calc(var(--_inkkit-font-size) * 1.333) 0
+    calc(var(--_inkkit-font-size) * 0.4);
 }
 
 .inkkit-root .ProseMirror strong {
@@ -600,25 +601,25 @@
   font-size: 0.88em;
   background: var(--_inkkit-code-bg);
   border-radius: 5px;
-  padding: calc(var(--inkkit-font-size, 15px) * 0.067)
-    calc(var(--inkkit-font-size, 15px) * 0.333);
+  padding: calc(var(--_inkkit-font-size) * 0.067)
+    calc(var(--_inkkit-font-size) * 0.333);
 }
 
 .inkkit-root .ProseMirror pre {
   position: relative;
   font-family: var(--_inkkit-mono);
-  font-size: calc(var(--inkkit-font-size, 15px) * 0.867);
+  font-size: calc(var(--_inkkit-font-size) * 0.867);
   line-height: 1.5;
   background: var(--_inkkit-code-bg);
   border-radius: 8px;
-  padding: calc(var(--inkkit-font-size, 15px) * 0.8)
-    calc(var(--inkkit-font-size, 15px) * 0.933);
-  margin: 0 0 calc(var(--inkkit-font-size, 15px) * 0.8);
+  padding: calc(var(--_inkkit-font-size) * 0.8)
+    calc(var(--_inkkit-font-size) * 0.933);
+  margin: 0 0 calc(var(--_inkkit-font-size) * 0.8);
   overflow-x: auto;
 }
 
 .inkkit-root .ProseMirror pre[data-language] {
-  padding-top: max(calc(var(--inkkit-font-size, 15px) * 2), 30px);
+  padding-top: max(calc(var(--_inkkit-font-size) * 2), 30px);
 }
 
 .inkkit-root .ProseMirror pre .inkkit-copy {
@@ -661,8 +662,8 @@
 }
 
 .inkkit-root .ProseMirror blockquote {
-  margin: 0 0 calc(var(--inkkit-font-size, 15px) * 0.8);
-  padding: 2px 0 2px calc(var(--inkkit-font-size, 15px) * 0.8);
+  margin: 0 0 calc(var(--_inkkit-font-size) * 0.8);
+  padding: 2px 0 2px calc(var(--_inkkit-font-size) * 0.8);
   border-left: 2px solid var(--_inkkit-accent);
 }
 
@@ -677,18 +678,18 @@
 .inkkit-root .ProseMirror hr {
   border: 0;
   border-top: 1px solid var(--_inkkit-rule);
-  margin: calc(var(--inkkit-font-size, 15px) * 1.333) 0;
+  margin: calc(var(--_inkkit-font-size) * 1.333) 0;
 }
 
 .inkkit-root .ProseMirror ul,
 .inkkit-root .ProseMirror ol {
   margin: 0 0
-    var(--inkkit-paragraph-spacing, calc(var(--inkkit-font-size, 15px) * 0.667));
-  padding-left: calc(var(--inkkit-font-size, 15px) * 1.733);
+    var(--inkkit-paragraph-spacing, calc(var(--_inkkit-font-size) * 0.667));
+  padding-left: calc(var(--_inkkit-font-size) * 1.733);
 }
 
 .inkkit-root .ProseMirror li {
-  margin: 0 0 calc(var(--inkkit-font-size, 15px) * 0.267);
+  margin: 0 0 calc(var(--_inkkit-font-size) * 0.267);
 }
 
 .inkkit-root .ProseMirror li > p {
@@ -697,7 +698,7 @@
 
 .inkkit-root .ProseMirror li ul,
 .inkkit-root .ProseMirror li ol {
-  margin-top: calc(var(--inkkit-font-size, 15px) * 0.267);
+  margin-top: calc(var(--_inkkit-font-size) * 0.267);
   margin-bottom: 0;
 }
 
@@ -712,7 +713,7 @@
   /* The box is centered on the first line: 1lh is the line height the item's
      text uses, including when it is normal, and --inkkit-checkbox-offset
      moves the box down for a font whose lines look off-center. */
-  --_inkkit-task-size: calc(var(--inkkit-font-size, 15px) * 0.933);
+  --_inkkit-task-size: calc(var(--_inkkit-font-size) * 0.933);
   --_inkkit-task-top: calc(
     (1lh - var(--_inkkit-task-size)) / 2 + var(--inkkit-checkbox-offset, 0px)
   );
@@ -721,7 +722,7 @@
 .inkkit-root .ProseMirror li[data-item-type='task']::before {
   content: '';
   position: absolute;
-  left: calc(var(--inkkit-font-size, 15px) * -1.667);
+  left: calc(var(--_inkkit-font-size) * -1.667);
   top: var(--_inkkit-task-top);
   width: var(--_inkkit-task-size);
   height: var(--_inkkit-task-size);
@@ -747,10 +748,10 @@
   li[data-item-type='task'][data-checked='true']::after {
   content: '';
   position: absolute;
-  left: calc(var(--inkkit-font-size, 15px) * -1.333);
-  top: calc(var(--_inkkit-task-top) + var(--inkkit-font-size, 15px) * 0.133);
-  width: calc(var(--inkkit-font-size, 15px) * 0.2);
-  height: calc(var(--inkkit-font-size, 15px) * 0.467);
+  left: calc(var(--_inkkit-font-size) * -1.333);
+  top: calc(var(--_inkkit-task-top) + var(--_inkkit-font-size) * 0.133);
+  width: calc(var(--_inkkit-font-size) * 0.2);
+  height: calc(var(--_inkkit-font-size) * 0.467);
   border: solid Canvas;
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
@@ -853,28 +854,28 @@
 .inkkit-root .ProseMirror .inkkit-literal-markdown {
   white-space: pre-wrap;
   font-family: var(--_inkkit-mono);
-  font-size: calc(var(--inkkit-font-size, 15px) * 0.9);
+  font-size: calc(var(--_inkkit-font-size) * 0.9);
 }
 
 .inkkit-root .inkkit-footnote-reference {
   cursor: pointer;
   color: var(--_inkkit-accent, currentColor);
-  font-size: calc(var(--inkkit-font-size, 15px) * 0.75);
+  font-size: calc(var(--_inkkit-font-size) * 0.75);
 }
 
 .inkkit-root .inkkit-footnote-definition {
   border-inline-start: 2px solid var(--_inkkit-muted, currentColor);
-  padding-inline-start: calc(var(--inkkit-font-size, 15px) * 1);
+  padding-inline-start: calc(var(--_inkkit-font-size) * 1);
 }
 
 .inkkit-root .inkkit-footnote-definition::before {
   content: '[' attr(data-inkkit-label) ']';
-  font-size: calc(var(--inkkit-font-size, 15px) * 0.8);
+  font-size: calc(var(--_inkkit-font-size) * 0.8);
 }
 
 .inkkit-root .inkkit-reference-definition {
   font-family: var(--_inkkit-mono);
-  font-size: calc(var(--inkkit-font-size, 15px) * 0.8);
+  font-size: calc(var(--_inkkit-font-size) * 0.8);
   opacity: 0.7;
 }
 
@@ -886,8 +887,8 @@
 .inkkit-root .ProseMirror .inkkit-callout {
   --_inkkit-callout-color: var(--_inkkit-accent);
   border-inline-start: 3px solid var(--_inkkit-callout-color);
-  padding: calc(var(--inkkit-font-size, 15px) * 0.65)
-    calc(var(--inkkit-font-size, 15px) * 1);
+  padding: calc(var(--_inkkit-font-size) * 0.65)
+    calc(var(--_inkkit-font-size) * 1);
   background: color-mix(in srgb, var(--_inkkit-callout-color) 7%, transparent);
 }
 
@@ -907,14 +908,14 @@
 .inkkit-root .inkkit-callout-header {
   display: flex;
   align-items: baseline;
-  gap: calc(var(--inkkit-font-size, 15px) * 0.75);
+  gap: calc(var(--_inkkit-font-size) * 0.75);
 }
 
 .inkkit-root [data-inkkit-callout-toggle] {
   color: var(--_inkkit-muted);
   background: transparent;
   border: 0;
-  padding: calc(var(--inkkit-font-size, 15px) * 0.25);
+  padding: calc(var(--_inkkit-font-size) * 0.25);
   cursor: pointer;
 }
 
@@ -936,7 +937,7 @@
 
 .inkkit-root [data-inkkit-comments-visible='true'] .inkkit-comment-block {
   display: block;
-  padding: calc(var(--inkkit-font-size, 15px) * 0.5);
+  padding: calc(var(--_inkkit-font-size) * 0.5);
 }
 
 @media print {
@@ -980,7 +981,7 @@
 }
 .inkkit-root .inkkit-mermaid-preview[data-state='error'] {
   color: var(--inkkit-diagram-error-color, #9b2424);
-  font-size: calc(var(--inkkit-font-size, 15px) * 0.9);
+  font-size: calc(var(--_inkkit-font-size) * 0.9);
 }
 
 /* One ring for every control InkKit draws; the editing surfaces can be set apart. */
@@ -1028,8 +1029,8 @@
   background: var(--inkkit-menu-background, light-dark(#fff, #252529));
   color: var(--inkkit-menu-text, CanvasText);
   box-shadow: var(--inkkit-menu-shadow, 0 4px 18px #0003);
-  font: calc(var(--inkkit-font-size, 15px) * 14 / 15) /
-    calc(var(--inkkit-font-size, 15px) * 1.6)
+  font: calc(var(--_inkkit-font-size) * 14 / 15) /
+    calc(var(--_inkkit-font-size) * 1.6)
     var(--inkkit-font-family, system-ui, sans-serif);
 }
 .inkkit-root .inkkit-suggestions [role='option'] {
