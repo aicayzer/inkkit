@@ -229,8 +229,9 @@ import {
   optionalString,
 } from './errors'
 import { selectionPlugin } from './selection'
-import { search, SearchQuery, setSearchState } from 'prosemirror-search'
+import { SearchQuery, setSearchState } from 'prosemirror-search'
 import {
+  search,
   findFormatted,
   findLiteral,
   replaceFormatted,
@@ -1485,7 +1486,7 @@ export class InkKitEditor {
               ] as SourceProvenance | null
               const from = anchor?.from ?? this.plain.selectionStart
               const to = anchor?.to ?? this.plain.selectionEnd
-              if (!this.plainComposing) this.plain.value = markdown
+              if (!this.plainComposing) this.setSourceValue(markdown)
               if (!this.plainComposing) {
                 this.plain.setSelectionRange(
                   Math.min(from, this.plain.value.length),
@@ -2099,7 +2100,7 @@ export class InkKitEditor {
       if (provenance) {
         preservation = this.sourcePreservations.get(provenance)
         if (!preservation) {
-          preservation = new Preservation(this.editor.ctx, provenance.text)
+          preservation = Preservation.read(this.editor.ctx, provenance.text)
           this.sourcePreservations.set(provenance, preservation)
         }
       }
@@ -2171,7 +2172,7 @@ export class InkKitEditor {
     this.plainSearch = ''
     this.literalMatch = undefined
     if (mode === 'source') {
-      this.plain.value = text
+      this.setSourceValue(text)
       this.plain.setSelectionRange(
         Math.min(anchor, head),
         Math.max(anchor, head),
@@ -2312,12 +2313,39 @@ export class InkKitEditor {
   }
 
   private showTypedSource(text: string, from: number, to: number): void {
-    this.plain.value = text
+    this.setSourceValue(text)
     this.plain.setSelectionRange(
       Math.min(from, this.plain.value.length),
       Math.min(to, this.plain.value.length),
     )
     this.revealLiteralSelection()
+  }
+
+  // WebKit lays out a large textarea incrementally only when its initial
+  // value was assigned off-tree. An attached whole-value replacement also
+  // loses that state after undo or paste, so every replacement uses this path.
+  private setSourceValue(text: string): void {
+    const plain = this.plain
+    if (text.length < 65_536 || !plain.isConnected || this.plainComposing) {
+      plain.value = text
+      return
+    }
+    const focused = plain.ownerDocument.activeElement === plain
+    const {
+      selectionStart,
+      selectionEnd,
+      selectionDirection,
+      scrollTop,
+      scrollLeft,
+    } = plain
+    const marker = plain.ownerDocument.createComment('source')
+    plain.replaceWith(marker)
+    plain.value = text
+    marker.replaceWith(plain)
+    plain.setSelectionRange(selectionStart, selectionEnd, selectionDirection)
+    if (focused) plain.focus({ preventScroll: true })
+    plain.scrollTop = scrollTop
+    plain.scrollLeft = scrollLeft
   }
 
   /**
@@ -2422,7 +2450,7 @@ export class InkKitEditor {
           ),
         )
       else {
-        const preservation = new Preservation(this.editor.ctx, text)
+        const preservation = Preservation.read(this.editor.ctx, text)
         this.sourcePreservations.set(provenance, preservation)
         parsed = preservation.baseline
       }
@@ -2695,7 +2723,7 @@ export class InkKitEditor {
         : all
           ? snapshot.text
           : completeDiagrams.size
-            ? new Preservation(this.editor.ctx, snapshot.text).serialize(
+            ? Preservation.read(this.editor.ctx, snapshot.text).serialize(
                 doc.type.create(null, selectionContent(doc, valid)),
               )
             : selectionMarkdown(this.editor.ctx, doc, valid)
@@ -3288,7 +3316,7 @@ export class InkKitEditor {
     instance.plain.addEventListener('input', () => {
       if (!instance.ready || !instance.literalSurface) return
       if (!instance.writable) {
-        instance.plain.value = instance.currentText()
+        instance.setSourceValue(instance.currentText())
         return
       }
       try {
@@ -3497,7 +3525,7 @@ export class InkKitEditor {
     // Parsed before anything changes, so Markdown that cannot be loaded changes nothing.
     let preservation: Preservation
     try {
-      preservation = new Preservation(this.editor.ctx, markdown)
+      preservation = Preservation.read(this.editor.ctx, markdown)
     } catch (error) {
       throw new InkKitError(
         'preservation',
@@ -3528,7 +3556,7 @@ export class InkKitEditor {
     this.plainSearch = ''
     this.literalMatch = undefined
     this.formatType = input.format
-    this.plain.value = input.text
+    this.setSourceValue(input.text)
     this.plain.setSelectionRange(
       this.plain.value.length,
       this.plain.value.length,

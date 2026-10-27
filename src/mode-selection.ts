@@ -1,8 +1,7 @@
-import { remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import type { Root, RootContent } from 'mdast'
-import { decodedOffsets } from './preserve'
+import type { RootContent } from 'mdast'
+import { decodedOffsets, Preservation } from './preserve'
 
 interface Point {
   formatted: number
@@ -99,12 +98,7 @@ export function modeSelectionMap(ctx: Ctx, source: string, doc: ProseNode) {
         )
     }
   }
-  const processor = ctx.get(remarkCtx)
-  // Apply the same dialect transforms as the editor, including hidden HTML
-  // comments, so repeated visible text cannot match a hidden source leaf.
-  const tree = processor.runSync(processor.parse(source), {
-    value: source,
-  }) as Root
+  const tree = Preservation.read(ctx, source).sourceTree
   tree.children.forEach((node) => visit(node as RootContent))
   let cursor = 0
   doc.descendants((node, position) => {

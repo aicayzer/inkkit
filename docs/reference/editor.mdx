@@ -216,7 +216,7 @@ Each steps through the history and returns whether it applied a step. In source 
 
 `find(text: string, expectedGeneration?: number): boolean`
 
-Selects the next match after the selection, wrapping at the end, and returns whether it found one. Search is literal and case-insensitive. Source and TXT modes search the full text, including syntax; formatted mode searches readable text within one text segment, not link destinations or other attributes. An empty search finds nothing. It works in a read-only editor and doesn't change the revision. For a host-owned find bar, see [controls](/guides/controls).
+Selects the next match after the selection, wrapping at the end, and returns whether it found one. Search is literal and case-insensitive. Source and TXT modes search the full text, including syntax; formatted mode searches readable text within one text segment, not link destinations or other attributes. Formatted matches stay highlighted after editing and moving the caret, until another query, `find('')`, or a document load. `replace` and `replaceAll` also set this query. An empty search clears the highlights and finds nothing. It works in a read-only editor and doesn't change the revision. For a host-owned find bar, see [controls](/guides/controls).
 
 ### replace and replaceAll
 

@@ -190,3 +190,60 @@ test('undo and redo cross between formatted history and source steps in order', 
   await expect(area).toHaveValue(withY)
   expect(await operation(page, 'redo')).toBe(false)
 })
+
+test('large source replacement keeps focus, caret and composition', async ({
+  page,
+}) => {
+  const text =
+    Array.from(
+      { length: 1500 },
+      (_, i) => `Paragraph ${i} with enough ordinary text and Unicode café 🧭.`,
+    ).join('\r\n\r\n') + '\r\n'
+  await page.goto('/?fixture=everyday&configuration=minimal&observe=false')
+  await page.waitForFunction(() => window.inkkitPlayground?.observe)
+  await page.evaluate(
+    (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+    text,
+  )
+  await operation(page, 'editingMode', { mode: 'source' })
+  const area = page.locator('textarea.inkkit-plain')
+  await area.focus()
+  const at = await area.evaluate((element) => {
+    const input = element as HTMLTextAreaElement
+    const at = input.value.indexOf('Paragraph 1000') + 'Paragraph 1000'.length
+    input.setSelectionRange(at, at)
+    return at
+  })
+  await page.keyboard.type('x')
+  await operation(page, 'undo')
+  await expect(area).toBeFocused()
+  expect(
+    await area.evaluate(
+      (input) => (input as HTMLTextAreaElement).selectionStart,
+    ),
+  ).toBe(at)
+  expect((await observe(page)).snapshot!.text).toBe(text)
+  await operation(page, 'redo')
+  await expect(area).toBeFocused()
+  expect(
+    await area.evaluate(
+      (input) => (input as HTMLTextAreaElement).selectionStart,
+    ),
+  ).toBe(at + 1)
+  await operation(page, 'pastePlain', { text: ' café\nmore' })
+  await expect(area).toBeFocused()
+  expect((await observe(page)).snapshot!.text).toBe(
+    text.replace('Paragraph 1000', 'Paragraph 1000x café\nmore'),
+  )
+  await area.dispatchEvent('compositionstart', { data: '' })
+  const before = await area.inputValue()
+  await expect(
+    operation(page, 'replaceSource', { text: 'refused' }),
+  ).rejects.toThrow()
+  await expect(area).toHaveValue(before)
+  await area.dispatchEvent('compositionend', { data: '' })
+  await operation(page, 'editingMode', { mode: 'formatted' })
+  expect((await observe(page)).snapshot!.text).toBe(
+    text.replace('Paragraph 1000', 'Paragraph 1000x café\nmore'),
+  )
+})
