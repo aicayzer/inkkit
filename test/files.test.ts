@@ -352,7 +352,7 @@ test.each(['image', 'audio', 'video', 'pdf', 'file'] as const)(
           }
           expect(
             root.querySelector(
-              '.inkkit-file audio, .inkkit-file video, .inkkit-file iframe, .inkkit-file img',
+              '.inkkit-file audio, .inkkit-file video, .inkkit-file iframe',
             ),
           ).toBeNull()
           editor.setEditingMode('formatted')
@@ -494,6 +494,85 @@ test("an error presentation's card shows the adapter's message", async () => {
       )
     },
   )
+})
+
+test('unchanged resolved images survive source typing and mode switches without another request or DOM rebuild', async () => {
+  const resolve = vi.fn(async () => image)
+  await mounted({ resolve }, async (editor, root) => {
+    await vi.waitFor(() => expect(root.querySelector('img')).not.toBeNull())
+    const original = root.querySelector('img')
+    const before = editor.snapshot().text
+    editor.setEditingMode('source')
+    const textarea = root.querySelector('textarea')!
+    for (const suffix of ['\nA', '\nAB', '\nABC']) {
+      textarea.value = before + suffix
+      textarea.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertText',
+          data: suffix.at(-1),
+        }),
+      )
+      expect(root.querySelector('img')).toBe(original)
+    }
+    editor.setEditingMode('formatted')
+    await Promise.resolve()
+    expect(resolve).toHaveBeenCalledTimes(1)
+    expect(root.querySelector('img')?.getAttribute('src')).toBe(image.url)
+    expect(editor.snapshot().text).toBe(before + '\nABC')
+    editor.setEditingMode('source')
+    editor.setEditingMode('formatted')
+    expect(resolve).toHaveBeenCalledTimes(1)
+  })
+})
+
+test('changed source references and explicit hidden refreshes invalidate retained answers', async () => {
+  const resolve = vi.fn(async () => image)
+  await mounted({ resolve }, async (editor, root) => {
+    await vi.waitFor(() => expect(root.querySelector('img')).not.toBeNull())
+    editor.setEditingMode('source')
+    const textarea = root.querySelector('textarea')!
+    textarea.value = '![Changed](other)\r\n'
+    textarea.dispatchEvent(
+      new InputEvent('input', { bubbles: true, inputType: 'insertText' }),
+    )
+    expect(resolve).toHaveBeenCalledTimes(1)
+    editor.setEditingMode('formatted')
+    await vi.waitFor(() => expect(resolve).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(root.querySelector('img')).not.toBeNull())
+    editor.setEditingMode('source')
+    editor.refreshReferences(['other'])
+    expect(resolve).toHaveBeenCalledTimes(2)
+    editor.setEditingMode('formatted')
+    await vi.waitFor(() => expect(resolve).toHaveBeenCalledTimes(3))
+    editor.reloadDocument({
+      ...source,
+      text: '![Changed](other)\r\n',
+      generation: 2,
+    })
+    await vi.waitFor(() => expect(resolve).toHaveBeenCalledTimes(4))
+    expect(editor.snapshot().text).toBe('![Changed](other)\r\n')
+  })
+})
+
+test('removing the final view releases its cached presentation and a later insertion resolves afresh', async () => {
+  const requests: FileContext[] = []
+  await mounted(
+    {
+      resolve: async (_, context) => {
+        requests.push(context)
+        return image
+      },
+    },
+    async (editor, root) => {
+      await vi.waitFor(() => expect(root.querySelector('img')).not.toBeNull())
+      editor.replaceSource('No image\n')
+      await vi.waitFor(() => expect(requests[0]!.signal.aborted).toBe(true))
+      editor.replaceSource(source.text)
+      await vi.waitFor(() => expect(requests).toHaveLength(2))
+    },
+  )
+  expect(requests[1]!.signal.aborted).toBe(true)
 })
 
 test('reload and source mode abort held requests; late results cannot populate the new view', async () => {

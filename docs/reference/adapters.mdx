@@ -76,9 +76,11 @@ Resolves path images (`![alt](destination)`) and named embeds (`![[name]]`) into
 
 <ResponseField name="resolve" type="(reference: FileReference, context: FileContext) => Promise<FilePresentation>" required>
 
-Returns how to show a file. Inkkit calls it when a file renders in formatted mode, again when its reference, kind or fragment changes, when the person presses the card's Retry button, when formatted mode returns, and when [`refreshReferences`](/reference/editor#refreshreferences) names the file or names no target. [`clipboardSnapshot`](/reference/editor#clipboardsnapshot) and [`printableSnapshot`](/reference/editor#printablesnapshot) call it afresh.
+Returns how to show a file. Inkkit calls it when a file first renders in formatted mode, again when its reference, kind or fragment changes, when the person presses the card's Retry button, and when [`refreshReferences`](/reference/editor#refreshreferences) names the file or names no target. [`clipboardSnapshot`](/reference/editor#clipboardsnapshot) and [`printableSnapshot`](/reference/editor#printablesnapshot) call it afresh.
 
-`context.signal` aborts when the request is obsolete: a newer request for the same view, a reload, source mode, a folded callout, a canceled output or `destroy`. Abandon the work when it aborts.
+`context.signal` aborts when the request is obsolete: a newer request for the same view, a reload, removal of the last view for that reference, a canceled output or `destroy`. Pending requests also abort when source mode or a folded callout hides the view. Abandon the work when it aborts.
+
+Resolved presentations are retained for the current document across source-mode typing and mode switches. An unchanged reference does not resolve again on return; a changed reference resolves when formatted mode returns. Pending requests are canceled while hidden, and audio, video and PDF resources are released without autoplay on return. Call `refreshReferences` when the host's answer changes; loading or reloading a document invalidates retained answers. Clipboard and print still resolve their own frozen output.
 
 The result must be a valid [`FilePresentation`](#filepresentation). An unknown `kind`, a missing `url` or `message`, a `javascript:` or `vbscript:` URL, a `mimeType` that doesn't match the kind, or a `data:` URL of another type makes it invalid.
 

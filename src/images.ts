@@ -15,6 +15,7 @@ import {
 import { coded } from './errors'
 import {
   FileResolution,
+  FilePresentationCache,
   mediaPolicyEvent,
   refreshOf,
   refreshes,
@@ -49,6 +50,7 @@ class ImageView implements NodeView {
   private stopResize?: () => void
   private resolution?: FileResolution
   private previewFailed = false
+  private suspended = false
   /** Present when the host sets `files`, which then shows every image. */
   private readonly runtime?: FileViewRuntime
 
@@ -59,6 +61,7 @@ class ImageView implements NodeView {
     private readonly adapter: ImageAdapter | undefined,
     private readonly host: AdapterHost | undefined,
     files: FileAdapter | undefined,
+    cache: FilePresentationCache,
     private readonly canMutate: () => boolean = () => true,
   ) {
     const runtime = files && host && { ...host, adapter: files }
@@ -80,6 +83,7 @@ class ImageView implements NodeView {
           this.previewFailed = false
           this.render()
         },
+        cache,
       )
       this.resolution.update(this.reference())
     }
@@ -127,19 +131,35 @@ class ImageView implements NodeView {
     if (!this.runtime) return
     const refresh = refreshOf(event)
     if (refresh) {
-      if (!this.active() || !refreshes(refresh, this.reference().target)) return
+      if (!refreshes(refresh, this.reference().target)) return
+      if (!this.active()) {
+        this.resolution?.invalidate()
+        return
+      }
       // A card whose preview failed has nothing to keep, and a new answer may load.
       if (this.previewFailed) this.resolution?.retry()
       else this.resolution?.refresh()
       return
     }
     if (!this.active()) {
+      if (this.suspended) return
+      this.suspended = true
       this.stopResize?.()
       this.stopResize = undefined
-      this.resolution?.cancel()
-      this.releaseMedia()
-      this.render()
-    } else this.resolution?.update(this.reference())
+      this.resolution?.suspend()
+      if (this.media || this.pdf) this.render()
+    } else {
+      const suspended = this.suspended
+      this.suspended = false
+      this.resolution?.update(this.reference())
+      const state = this.resolution?.state
+      if (
+        suspended &&
+        state?.status === 'resolved' &&
+        ['audio', 'video', 'pdf'].includes(state.presentation.kind)
+      )
+        this.render()
+    }
   }
 
   private cancelResize = (): void => {
@@ -324,6 +344,13 @@ class ImageView implements NodeView {
         return
       }
       const presentation = state.presentation
+      if (
+        !this.active() &&
+        ['audio', 'video', 'pdf'].includes(presentation.kind)
+      ) {
+        this.card(label)
+        return
+      }
       if (presentation.kind === 'missing') {
         this.card(label, this.runtime.labels.fileMissing, true)
       } else if (presentation.kind === 'error') {
@@ -491,11 +518,21 @@ export function imageView(
   files?: FileAdapter,
   canMutate: () => boolean = () => true,
 ) {
+  const cache = new FilePresentationCache()
   const view = (schema: { node: unknown }) =>
     $view(
       schema.node as typeof imageSchema.node,
       () => (node, view, getPos) =>
-        new ImageView(node, view, getPos, adapter, host, files, canMutate),
+        new ImageView(
+          node,
+          view,
+          getPos,
+          adapter,
+          host,
+          files,
+          cache,
+          canMutate,
+        ),
     )
   return [view(imageSchema), view(imageBlockSchema)]
 }
