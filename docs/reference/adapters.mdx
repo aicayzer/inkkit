@@ -82,6 +82,10 @@ Returns how to show a file. Inkkit calls it when a file first renders in formatt
 
 Resolved presentations are retained for the current document across source-mode typing and mode switches. An unchanged reference does not resolve again on return; a changed reference resolves when formatted mode returns. Pending requests are canceled while hidden, and audio, video and PDF resources are released without autoplay on return. Call `refreshReferences` when the host's answer changes; loading or reloading a document invalidates retained answers. Clipboard and print still resolve their own frozen output.
 
+Image resize handles accept keyboard focus and show the current width in pixels. Arrow keys change the width by 10 pixels, or 1 pixel with Shift; Home sets the minimum width and End fits the editor width. Resizing uses the same source-preserving operation and undo history as dragging, and is unavailable while read-only or composing. The handle remains visible while its image has keyboard focus. This also applies to images presented through `ImageAdapter`.
+
+PDF frames retain an empty sandbox and stay out of the tab sequence, because WebKit's sandboxed PDF viewer can trap keyboard focus. The visible Open button remains the keyboard path to the document when the adapter provides `open`.
+
 The result must be a valid [`FilePresentation`](#filepresentation). An unknown `kind`, a missing `url` or `message`, a `javascript:` or `vbscript:` URL, a `mimeType` that doesn't match the kind, or a `data:` URL of another type makes it invalid.
 
 - **On screen,** a rejection or an invalid result shows an error card with a Retry button and reports `file-unavailable` through `events.error`. So does a resolved image, audio, video or PDF that then fails to load.

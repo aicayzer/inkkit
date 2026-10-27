@@ -329,6 +329,7 @@ export interface EditorLabels {
   fileOpen: string
   filePreviewUnavailable: string
   filePDFPreview: string
+  imageResize: string
   wikiMissing: string
   /** Name of an author comment, which stays out of the readable text. */
   comment: string

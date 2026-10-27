@@ -634,6 +634,10 @@ window.interop = {
               ),
               pdfSandbox:
                 view().querySelector('iframe')?.getAttribute('sandbox') ?? null,
+              pdfTabIndex: view().querySelector('iframe')?.tabIndex ?? null,
+              opens: files.events
+                .filter((event) => event.operation === 'open')
+                .map((event) => event.reference),
               pdfFallback: view().textContent.includes('Open to view this PDF'),
               wikiOpens: files.events.filter(
                 (event) => event.operation === 'wikiOpen',
@@ -666,11 +670,17 @@ window.interop = {
                 if (!editor.find(operation.find))
                   throw Error('Native input find failed')
             }
-            if (operation.focus !== false || operation.find !== undefined)
-              editor.focus()
-            const target = activeEditor()
+            const target = operation.selector
+              ? view().querySelector(operation.selector)
+              : activeEditor()
+            if (!target) throw Error('Native input target is missing')
+            if (operation.focus !== false || operation.find !== undefined) {
+              if (operation.selector) target.focus()
+              else editor.focus()
+            }
             if (document.activeElement !== target)
               throw Error('Editor is not the DOM active element')
+            const eventTarget = operation.selector ? view() : target
             const events = []
             const keyToFrame: number[] = []
             const measure = () => {
@@ -701,7 +711,8 @@ window.interop = {
               'compositionstart',
               'compositionend',
             ]
-            for (const type of types) target.addEventListener(type, observe)
+            for (const type of types)
+              eventTarget.addEventListener(type, observe)
             try {
               const native = await bridge.postMessage(operation)
               await settle()
@@ -724,12 +735,29 @@ window.interop = {
                 ...native,
                 events,
                 ...(operation.measure ? { keyToFrame } : {}),
-                active: document.activeElement === target,
+                active:
+                  document.activeElement ===
+                  (operation.selector
+                    ? view().querySelector(operation.selector)
+                    : target),
               }
             } finally {
               target.removeEventListener('keydown', measure, true)
               for (const type of types)
-                target.removeEventListener(type, observe)
+                eventTarget.removeEventListener(type, observe)
+            }
+            break
+          }
+          case 'controlState': {
+            const control = view().querySelector(operation.selector)
+            if (!control) throw Error('Control is missing')
+            result = {
+              focused: document.activeElement === control,
+              role: control.getAttribute('role'),
+              value: control.getAttribute('aria-valuenow'),
+              visible:
+                getComputedStyle(control).opacity !== '0' &&
+                getComputedStyle(control).display !== 'none',
             }
             break
           }
