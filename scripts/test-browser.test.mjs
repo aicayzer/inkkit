@@ -26,7 +26,44 @@ test('preserves a failed browser run', async () => {
   await scenario({ runnerExit: 7, expected: 7 })
 })
 
-async function scenario({ exit, runnerExit, expected }) {
+for (const chunks of [
+  [
+    'ab',
+    'ort: Lazy deopt after a fast API call with return value is unsupported',
+    '\r\n',
+  ],
+  ['ordinary warning\nFA', 'TAL ERROR: Reached heap limit', '\n'],
+]) {
+  test(
+    'stops both processes when a fatal runtime header precedes any exit',
+    { timeout: 15_000 },
+    async () => {
+      await scenario({
+        exit: `${JSON.stringify(chunks)}.forEach((chunk, index) => setTimeout(() => process.stderr.write(chunk), index * 30));
+          setTimeout(() => process.exit(98), 5000)`,
+        expected: 1,
+        fatal: true,
+      })
+    },
+  )
+}
+
+test('does not mistake a quoted abort message for a fatal header', async () => {
+  await scenario({
+    exit: "console.error('warning mentions abort: in a message'); process.exit(0)",
+    expected: 1,
+  })
+})
+
+test('keeps the start of a long stderr line across chunks', async () => {
+  await scenario({
+    exit: `process.stderr.write('x'.repeat(2048) + 'abort: ' + 'y'.repeat(1017));
+      setTimeout(() => { process.stderr.write('\\n'); process.exit(0) }, 30)`,
+    expected: 1,
+  })
+})
+
+async function scenario({ exit, runnerExit, expected, fatal = false }) {
   const directory = mkdtempSync(join(tmpdir(), 'inkkit-browser-'))
   const logFile = join(directory, 'server.log')
   const serverFile = join(directory, 'server.mjs')
@@ -74,15 +111,20 @@ async function scenario({ exit, runnerExit, expected }) {
     if (exit) {
       assert.match(log, /server stdout before exit/)
       assert.match(log, /simulated fatal server dump/)
-      assert.match(log, /Playground server exited unexpectedly/)
-      assert.match(
-        log,
-        exit.includes('SIGKILL')
-          ? /signal SIGKILL/
-          : exit.includes('23')
-            ? /code 23/
-            : /code 0/,
-      )
+      if (fatal) {
+        assert.match(log, /Playground server reported a fatal runtime error/)
+      } else {
+        assert.match(log, /Playground server exited unexpectedly/)
+        assert.match(
+          log,
+          exit.includes('SIGKILL')
+            ? /signal SIGKILL/
+            : exit.includes('23')
+              ? /code 23/
+              : /code 0/,
+        )
+        assert.doesNotMatch(log, /reported a fatal runtime error/)
+      }
     } else {
       assert.doesNotMatch(log, /exited unexpectedly/)
     }

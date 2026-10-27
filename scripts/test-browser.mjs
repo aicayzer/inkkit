@@ -29,6 +29,7 @@ export async function runBrowserTests({
   const stopped = new Set()
   let failure
   let testsFinished = false
+  let stderrLine = ''
   const log = (message) => {
     appendFileSync(logFile, message)
     process.stderr.write(message)
@@ -70,6 +71,16 @@ export async function runBrowserTests({
     vite.stderr.on('data', (chunk) => {
       appendFileSync(logFile, chunk)
       process.stderr.write(chunk)
+      const output = stderrLine + chunk.toString()
+      const fatal = output.match(
+        /(?:^|[\r\n])((?:abort:|FATAL ERROR:)[^\r\n]*)\r?\n/,
+      )
+      // A runtime abort can stop serving requests before the process exits.
+      if (fatal)
+        fail(
+          `Playground server reported a fatal runtime error (${fatal[1]}); stopping browser tests. See ${logFile}.`,
+        )
+      stderrLine = output.slice(output.lastIndexOf('\n') + 1).slice(0, 1024)
     })
     vite.on('error', (error) =>
       fail(`Playground server failed to start: ${error.message}`),
