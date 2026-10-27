@@ -33,6 +33,8 @@ const pasted = Array.from(
   { length: 500 },
   (_, index) => `Pasted ${index} 雪.`,
 ).join('\n\n')
+// Keep the insertion before the first CRLF so textarea and source offsets agree.
+const position = 20
 const assert = (path, equals, name) => ({
   op: 'assert',
   path,
@@ -64,7 +66,7 @@ const evidence = {
 for (const phase of ['entry', 'undo', 'redo', 'paste']) {
   const operations = [
     { op: 'editingMode', mode: 'source' },
-    { op: 'selectSourceRange', from: 100 },
+    { op: 'selectSourceRange', from: position },
   ]
   if (phase === 'undo' || phase === 'redo') {
     operations.push({ op: 'insertText', text: 'prepared' }, { op: 'undo' })
@@ -73,7 +75,7 @@ for (const phase of ['entry', 'undo', 'redo', 'paste']) {
   if (phase === 'paste')
     operations.push({ op: 'pasteAsPlainText', text: pasted })
   operations.push(
-    { op: 'selectSourceRange', from: 100 },
+    { op: 'selectSourceRange', from: position },
     { op: 'snapshot', name: 'before' },
   )
   for (let sample = 0; sample < 3; sample++)
@@ -116,7 +118,7 @@ for (const phase of ['entry', 'undo', 'redo', 'paste']) {
   const typed = snapshots[1]?.result?.text
   const exact =
     typeof before === 'string' &&
-    typed === before.slice(0, 100) + 'xxx' + before.slice(100)
+    typed === before.slice(0, position) + 'xxx' + before.slice(position)
   const passed =
     run.status === 0 &&
     result?.passed === true &&
