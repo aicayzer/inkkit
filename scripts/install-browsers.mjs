@@ -1,6 +1,47 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+
+// GitHub's Ubuntu image can use an Azure mirror list. After an install failure,
+// retry against Ubuntu's archive instead of asking the same stalled mirror.
+export function fallbackSources(source) {
+  return source.replace(
+    /(?:https?:\/\/azure\.archive\.ubuntu\.com\/ubuntu\/?|mirror\+file:\/{1,3}etc\/apt\/apt-mirrors\.txt)/g,
+    'http://archive.ubuntu.com/ubuntu/',
+  )
+}
+
+export function useFallbackMirror({
+  platform = process.platform,
+  read = readFileSync,
+  run = spawnSync,
+} = {}) {
+  if (platform !== 'linux') return
+  for (const path of [
+    '/etc/apt/sources.list',
+    '/etc/apt/sources.list.d/ubuntu.sources',
+  ]) {
+    let source
+    try {
+      source = read(path, 'utf8')
+    } catch (error) {
+      if (error.code === 'ENOENT') continue
+      throw error
+    }
+    const fallback = fallbackSources(source)
+    if (fallback === source) continue
+    const result = run('sudo', ['-n', 'tee', path], {
+      input: fallback,
+      stdio: ['pipe', 'ignore', 'inherit'],
+      timeout: 30_000,
+    })
+    if (result.status !== 0)
+      throw Error(
+        `Could not configure Ubuntu fallback mirror: ${result.error?.message ?? result.status}`,
+      )
+  }
+}
 
 // A stalled package mirror can hang `playwright install --with-deps` for
 // 30 minutes, so each attempt is bounded and the whole process group is killed.
@@ -44,6 +85,7 @@ export async function installBrowsers({
   timeoutMs = 300_000,
   recover = releasePackageLock,
   prepare = withDeps ? configureApt : () => {},
+  fallback = withDeps ? useFallbackMirror : () => {},
   log = (message) => process.stderr.write(`${message}\n`),
 } = {}) {
   await prepare()
@@ -72,7 +114,10 @@ export async function installBrowsers({
     })
     if (outcome === 'ok') return 0
     log(`Browser install attempt ${attempt}/${attempts} ${outcome}.`)
-    if (attempt < attempts) await recover()
+    if (attempt < attempts) {
+      await recover()
+      if (attempt === 1) await fallback()
+    }
   }
   return 1
 }

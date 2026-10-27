@@ -59,7 +59,11 @@ test(
       const parse = ctx.get(parserCtx)
       let localSaves = 0
       const kinds = new Map<string, number>()
-      for (let seed = 1; seed <= Number(process.env.SEEDS ?? 600); seed++) {
+      for (
+        let seed = 1;
+        seed <= Number(process.env.PRESERVATION_LOCAL_SEEDS ?? 600);
+        seed++
+      ) {
         let state = seed
         const random = () =>
           (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32
@@ -196,7 +200,7 @@ test(
         expect(kinds.get(kind), kind).toBeGreaterThan(10)
     }),
   // Longer runs with more seeds.
-  Math.max(120_000, Number(process.env.SEEDS ?? 600) * 100),
+  Math.max(120_000, Number(process.env.PRESERVATION_LOCAL_SEEDS ?? 600) * 100),
 )
 
 // Applies `edit` to the loaded document and saves it both ways.
@@ -553,8 +557,8 @@ const reference = process.env.INKKIT_PRESERVE_REFERENCE
   : Preservation
 
 // Each seed saves its note a dozen times, with and without the record of
-// moves, so this test runs fewer seeds than the one above unless SEEDS is set.
-const seeds = Number(process.env.SEEDS ?? 300)
+// moves, so this test has its own smaller default sample.
+const seeds = Number(process.env.PRESERVATION_STRUCTURAL_SEEDS ?? 300)
 
 test(
   'block moves save wherever saving without them does, and leave other blocks as it does',
@@ -730,5 +734,5 @@ test(
       expect(checked).toBeGreaterThan(seeds * 2.5)
       expect(keptSource / carriedBlocks).toBeGreaterThan(0.9)
     }),
-  Math.max(120_000, Number(process.env.SEEDS ?? 600) * 100),
+  Math.max(120_000, seeds * 100),
 )
