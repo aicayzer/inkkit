@@ -32,21 +32,29 @@ test('task checkboxes announce state and toggle with the keyboard without losing
   await expect(page.getByRole('checkbox', { name: 'Other' })).toBeFocused()
 })
 
-test('task command works with a configured key at the writing caret', async ({
-  page,
-  openFixture,
-}) => {
-  await openFixture()
-  await page.evaluate(() =>
-    window.inkkitPlayground.replaceDocument('- [ ] Café\n', 'md'),
-  )
-  await operation(page, 'keymap', { keymap: { toggleTask: ['Ctrl-Enter'] } })
-  await operation(page, 'focus')
-  await page.keyboard.press('Control+Enter')
-  expect((await observe(page)).snapshot!.text).toBe('- [x] Café\n')
-  await operation(page, 'undo')
-  expect((await observe(page)).snapshot!.text).toBe('- [ ] Café\n')
-})
+for (const platform of ['MacIntel', 'Linux x86_64']) {
+  test(`task command works with a configured key at the writing caret on ${platform}`, async ({
+    page,
+    openFixture,
+  }) => {
+    await page.addInitScript((platform) => {
+      Object.defineProperty(navigator, 'platform', { value: platform })
+    }, platform)
+    await openFixture()
+    await page.evaluate(() =>
+      window.inkkitPlayground.replaceDocument('- [ ] Café\n', 'md'),
+    )
+    // Ctrl-Enter is the default table-exit key on non-Apple platforms.
+    await operation(page, 'keymap', {
+      keymap: { toggleTask: ['Ctrl-Shift-Enter'] },
+    })
+    await operation(page, 'focus')
+    await page.keyboard.press('Control+Shift+Enter')
+    expect((await observe(page)).snapshot!.text).toBe('- [x] Café\n')
+    await operation(page, 'undo')
+    expect((await observe(page)).snapshot!.text).toBe('- [ ] Café\n')
+  })
+}
 
 for (const scheme of ['light', 'dark'] as const) {
   test(`default link, footnote and task colors contrast in ${scheme}`, async ({
