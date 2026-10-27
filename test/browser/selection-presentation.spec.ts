@@ -80,6 +80,66 @@ const sentence = [
   'Third block',
 ].join('\n\n')
 
+test('native host activation preserves the range while overriding browser focus', async ({
+  page,
+}) => {
+  await mountPage(page, [sentence])
+  await word(page, 0)
+  const before = await page.evaluate(() =>
+    window.selectionEditors[0]!.snapshot(),
+  )
+  await page.evaluate(() => window.selectionEditors[0]!.setHostActive(false))
+  await expectPainted(page, ['First'])
+  expect(await colour(page)).toBe(blue)
+  await page.evaluate(() => window.selectionEditors[0]!.setHostActive(true))
+  expect(await colour(page)).toBe(red)
+  await page.locator('#field').focus()
+  expect(await colour(page)).toBe(blue)
+  expect(
+    await page.evaluate(() => window.selectionEditors[0]!.snapshot()),
+  ).toEqual(before)
+  await page.evaluate(() => window.selectionEditors[0]!.setHostActive(null))
+})
+
+test('read-only state is exposed on the textbox and source textarea', async ({
+  page,
+}, testInfo) => {
+  await mountPage(page, [sentence])
+  const formatted = page.getByRole('textbox', {
+    name: 'Formatted Markdown editor',
+  })
+  await page.evaluate(() => window.selectionEditors[0]!.setEditable(false))
+  await expect(formatted).toHaveAttribute('aria-readonly', 'true')
+  await expect(formatted).not.toBeEditable()
+  expect(await formatted.ariaSnapshot()).toContain('textbox')
+  const cdp =
+    testInfo.project.name === 'chromium'
+      ? await page.context().newCDPSession(page)
+      : undefined
+  const readonly = async () => {
+    const tree = await cdp!.send('Accessibility.getFullAXTree')
+    return tree.nodes
+      .find((node) => node.name?.value === 'Formatted Markdown editor')
+      ?.properties?.find((property) => property.name === 'readonly')?.value
+      .value
+  }
+  if (cdp) expect(await readonly()).toBe(true)
+  await page.evaluate(() =>
+    window.selectionEditors[0]!.setEditingMode('source'),
+  )
+  await expect(page.locator('#editor-0 textarea')).not.toBeEditable()
+  await page.evaluate(() => {
+    window.selectionEditors[0]!.setEditable(true)
+    window.selectionEditors[0]!.setEditingMode('formatted')
+  })
+  await expect(formatted).not.toHaveAttribute('aria-readonly')
+  await expect(formatted).toBeEditable()
+  if (cdp) {
+    expect(await readonly()).toBe(false)
+    await cdp.detach()
+  }
+})
+
 test('selecting in one editor and then another paints only the latest selection', async ({
   page,
 }) => {
