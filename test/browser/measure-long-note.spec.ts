@@ -75,8 +75,31 @@ test('long-note editing costs', async ({ page, browserName, browser }) => {
           textarea.value.indexOf('Paragraph 501'),
           textarea.value.indexOf('Paragraph 501'),
         )
-        await api.operation('insertText', { text: 'x' })
+        const sourceKey = (text: string) => {
+          textarea.dispatchEvent(
+            new InputEvent('beforeinput', {
+              inputType: 'insertText',
+              data: text,
+              bubbles: true,
+            }),
+          )
+          textarea.setRangeText(
+            text,
+            textarea.selectionStart,
+            textarea.selectionEnd,
+            'end',
+          )
+          textarea.dispatchEvent(
+            new InputEvent('input', {
+              inputType: 'insertText',
+              data: text,
+              bubbles: true,
+            }),
+          )
+        }
+        sourceKey('x')
         await measure('headingsAfterEdit', () => api.operation('headings', {}))
+        sourceKey('y')
         await measure('sourceToFormatted', () =>
           api.operation('editingMode', { mode: 'formatted' }),
         )
