@@ -4,3 +4,6 @@ _local/
 _tmp/
 *.tgz
 .DS_Store
+
+# Records kept beside the code, synced to Marfa (not part of this repository)
+/marfa/
