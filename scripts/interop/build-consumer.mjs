@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 const script = dirname(fileURLToPath(import.meta.url))
-const tarball = resolve(
-  process.argv[2] ?? '_local/release/aicayzer-inkkit-0.0.1.tgz',
-)
+if (!process.argv[2])
+  throw Error(
+    'Usage: build-consumer.mjs CANDIDATE_ARCHIVE [OUTPUT_DIRECTORY] [core]',
+  )
+const tarball = resolve(process.argv[2])
 const destination = resolve(process.argv[3] ?? '_local/interop/consumer')
 // `core` builds the consumer against the core entry, without Mermaid.
 const core = process.argv[4] === 'core'
@@ -53,6 +55,25 @@ execFileSync(join(destination, 'node_modules/.bin/vite'), ['build'], {
 const html = await readFile(join(destination, 'dist/index.html'), 'utf8')
 if (/<script[^>]+\bsrc=|<link[^>]+\bhref=/i.test(html))
   throw Error('Consumer bundle is not self-contained')
+const { version } = JSON.parse(
+  await readFile(
+    join(destination, 'node_modules/@aicayzer/inkkit/package.json'),
+    'utf8',
+  ),
+)
+await writeFile(
+  join(destination, 'dist/consumer-evidence.json'),
+  JSON.stringify(
+    {
+      version,
+      entry: core ? 'core' : 'index',
+      tarballSha256,
+      bundleSha256: createHash('sha256').update(html).digest('hex'),
+    },
+    null,
+    2,
+  ) + '\n',
+)
 console.log(
   JSON.stringify(
     {

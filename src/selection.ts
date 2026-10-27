@@ -1,4 +1,10 @@
-import { Plugin, PluginKey, type EditorState } from '@milkdown/kit/prose/state'
+import {
+  Plugin,
+  PluginKey,
+  type EditorState,
+  type Selection,
+} from '@milkdown/kit/prose/state'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 
@@ -9,6 +15,9 @@ const activeClass = 'inkkit-selection-active'
 interface Span {
   from: number
   to: number
+  start: number
+  end: number
+  index: number
 }
 
 /** The selected text within each block. */
@@ -16,14 +25,94 @@ function covered(state: EditorState): Span[] {
   const { from, to, empty, visible } = state.selection
   if (empty || !visible) return []
   const text: Span[] = []
-  state.doc.nodesBetween(from, to, (node, pos) => {
+  let index = 0
+  state.doc.descendants((node, pos) => {
     if (!node.isTextblock) return true
     const start = Math.max(from, pos + 1)
     const end = Math.min(to, pos + node.nodeSize - 1)
-    if (end > start) text.push({ from: start, to: end })
+    if (end > start)
+      text.push({
+        from: start,
+        to: end,
+        start: pos + 1,
+        end: pos + node.nodeSize - 1,
+        index,
+      })
+    index++
     return false
   })
   return text
+}
+
+// These are the content containers of the textblock schemas Inkkit installs. Walking
+// them once avoids ProseMirror's root-to-position scan for each selected paragraph.
+function blockContents(view: EditorView): Element[] {
+  return Array.from(
+    view.dom.querySelectorAll('p,h1,h2,h3,h4,h5,h6,pre,.inkkit-comment-block'),
+  )
+    .filter((element) => {
+      const excluded = element.closest(
+        '.ProseMirror-widget,[contenteditable="false"]',
+      )
+      return !excluded || excluded === view.dom
+    })
+    .map((element) =>
+      element.tagName === 'PRE' &&
+      !element.classList.contains('inkkit-literal-markdown')
+        ? (element.querySelector(':scope > code') ?? element)
+        : element,
+    )
+}
+
+function matchesBlock(node: ProseNode, content: Element | undefined): boolean {
+  if (!content) return false
+  switch (node.type.name) {
+    case 'paragraph':
+      return content.tagName === 'P'
+    case 'heading':
+      return content.tagName === `H${node.attrs.level}`
+    case 'code_block':
+      return (
+        content.tagName === 'CODE' && content.parentElement?.tagName === 'PRE'
+      )
+    case 'literal_markdown':
+      return content.classList.contains('inkkit-literal-markdown')
+    case 'comment_block':
+      return content.classList.contains('inkkit-comment-block')
+    default:
+      return false
+  }
+}
+
+function blockRange(view: EditorView, span: Span, content: Element): Range {
+  const range = view.dom.ownerDocument.createRange()
+  range.selectNodeContents(content)
+  // Code controls and trailing caret aids are decorations, not document content.
+  const children = Array.from(content.childNodes)
+  const decoration = (node: Node) =>
+    node instanceof Element &&
+    (node.classList.contains('ProseMirror-widget') ||
+      node.classList.contains('ProseMirror-trailingBreak'))
+  const first = children.find((node) => !decoration(node))
+  const last = [...children].reverse().find((node) => !decoration(node))
+  if (first) range.setStartBefore(first)
+  if (last) range.setEndAfter(last)
+  if (span.from !== span.start) {
+    const start = view.domAtPos(span.from)
+    range.setStart(start.node, start.offset)
+  }
+  if (span.to !== span.end) {
+    const end = view.domAtPos(span.to)
+    range.setEnd(end.node, end.offset)
+  }
+  return range
+}
+
+export function setSelectionHostActive(
+  view: EditorView,
+  active: boolean | null,
+): void {
+  Painter.of(view.dom.ownerDocument).hostActive(view, active)
 }
 
 function domRange(view: EditorView, span: Span): Range {
@@ -92,6 +181,14 @@ class Painter {
   private readonly custom = paintable()
   private owner: EditorView | null = null
   private windowFocused: boolean
+  private readonly hostActivation = new WeakMap<EditorView, boolean>()
+  private painted?: { owner: EditorView; doc: ProseNode; selection: Selection }
+
+  hostActive(view: EditorView, active: boolean | null): void {
+    if (active === null) this.hostActivation.delete(view)
+    else this.hostActivation.set(view, active)
+    this.sync()
+  }
 
   static of(doc: Document): Painter {
     let painter = Painter.all.get(doc)
@@ -175,17 +272,48 @@ class Painter {
 
   private sync(): void {
     for (const [view, root] of this.views)
-      root.classList.toggle(activeClass, this.windowFocused && focused(view))
+      root.classList.toggle(
+        activeClass,
+        (this.hostActivation.get(view) ?? this.windowFocused) && focused(view),
+      )
     if (!this.custom) return
     const { owner } = this
+    if (
+      owner &&
+      this.painted?.owner === owner &&
+      this.painted.doc === owner.state.doc &&
+      this.painted.selection.eq(owner.state.selection)
+    )
+      return
     const spans = owner ? covered(owner.state) : []
     if (!owner || !spans.length) {
       CSS.highlights.delete(name)
+      this.painted = undefined
       return
     }
     const highlight = new Highlight()
-    for (const span of spans) highlight.add(domRange(owner, span))
+    const contents = blockContents(owner)
+    let blocks = 0
+    let mapped = true
+    owner.state.doc.descendants((node) => {
+      if (!node.isTextblock) return true
+      if (!matchesBlock(node, contents[blocks])) mapped = false
+      blocks++
+      return false
+    })
+    // An unexpected node view keeps the existing mapping, never paints the wrong block.
+    for (const span of spans)
+      highlight.add(
+        mapped && contents.length === blocks
+          ? blockRange(owner, span, contents[span.index]!)
+          : domRange(owner, span),
+      )
     CSS.highlights.set(name, highlight)
+    this.painted = {
+      owner,
+      doc: owner.state.doc,
+      selection: owner.state.selection,
+    }
   }
 }
 

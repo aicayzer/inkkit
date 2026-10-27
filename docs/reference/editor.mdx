@@ -25,7 +25,7 @@ Each member first throws `destroyed` if the editor was destroyed, then `invalid-
 
 | Members                                                                                                                                                                                                           | Expected generation                                    | Then throws                                                                                                                                                                               |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `editable`, `editingMode`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`                                                                                                                           | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
+| `editable`, `editingMode`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`, `setHostActive`                                                                                                          | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
 | `loadDocument`                                                                                                                                                                                                    | None.                                                  | `invalid-argument` when the generation isn't greater than the loaded one, then `preservation` when the Markdown can't be loaded.                                                          |
 | `setEditable`, `setTextInputPreferences`                                                                                                                                                                          | None.                                                  | `composition`.                                                                                                                                                                            |
 | `reloadDocument`                                                                                                                                                                                                  | Optional, the last parameter. Checked only when given. | `not-ready` and `stale-document`, only when the generation is given. Then the same errors as `loadDocument`.                                                                              |
@@ -138,7 +138,15 @@ It throws `preservation` when the current content can't be written as Markdown t
 
 `editable` is whether the person can edit. `setEditable` turns editing on or off for the formatted surface and the source and TXT surface, and sends `commandStateChanged`. It throws `composition` during text composition. It keeps focus, selection, source, revision, dirty state and history.
 
-Every member that changes the document throws `read-only` while editing is off, including `undo` and `redo`. [Read-only mode](/concepts/documents#read-only-mode) lists what stays available.
+Every member that changes the document throws `read-only` while editing is off, including `undo` and `redo`. The formatted textbox exposes `aria-readonly="true"`; the source and TXT textarea has its native `readonly` attribute. Enabling editing removes those read-only states. [Read-only mode](/concepts/documents#read-only-mode) lists what stays available.
+
+### setHostActive
+
+`setHostActive(active: boolean | null): void`
+
+Sets the native host's activation state for selection presentation. Pass `true` when the host window is active and the web view holds native input, and `false` when either stops being true. Pass `null` to restore automatic browser focus detection, the default. DOM focus still chooses which editor on the page is active.
+
+The method changes only the active or inactive selection color. It does not focus or blur a surface, collapse a selection, change editing permission, emit a document change, or add history. It works before loading and during composition. Invalid values throw `invalid-argument`; a destroyed editor throws `destroyed`.
 
 ### setTextInputPreferences
 

@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
@@ -81,7 +81,111 @@ test('whole-document selection splits highlights across paragraphs, lists and co
   })
 })
 
+test('Select All builds ranges without a root lookup for every block and reuses them on focus changes', async () => {
+  await withEditor((editor, ctx) => {
+    editor.loadDocument({
+      documentId: 'long',
+      format: 'md',
+      generation: 1,
+      text: Array.from({ length: 200 }, (_, i) => `Paragraph ${i}`).join(
+        '\n\n',
+      ),
+    })
+    const view = ctx.get(editorViewCtx)
+    const lookup = vi.spyOn(view, 'domAtPos')
+    view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
+    expect(paintedText()).toHaveLength(200)
+    expect(lookup.mock.calls.length).toBeLessThan(5)
+    const highlight = CSS.highlights.get('inkkit-selection')
+    window.dispatchEvent(new Event('blur'))
+    window.dispatchEvent(new Event('focus'))
+    expect(CSS.highlights.get('inkkit-selection')).toBe(highlight)
+    lookup.mockRestore()
+  })
+})
+
+test('native host activation changes only presentation and null restores browser detection', async () => {
+  await withEditor((editor, ctx) => {
+    editor.loadDocument({
+      documentId: 'native',
+      format: 'md',
+      generation: 1,
+      text: 'café 😀\r\n\r\nMore',
+    })
+    editor.focus()
+    const view = ctx.get(editorViewCtx)
+    view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
+    const before = editor.snapshot()
+    const selection = editor.textSnapshot().selection
+    const element = document.activeElement
+    editor.setHostActive(false)
+    expect(active(view)).toBe(false)
+    expect(paintedText()).toEqual(['café 😀', 'More'])
+    editor.setHostActive(true)
+    expect(active(view)).toBe(true)
+    window.dispatchEvent(new Event('blur'))
+    expect(active(view)).toBe(true)
+    editor.setHostActive(null)
+    expect(active(view)).toBe(false)
+    expect(editor.snapshot()).toEqual(before)
+    expect(editor.textSnapshot().selection).toEqual(selection)
+    expect(document.activeElement).toBe(element)
+    expect(() => editor.setHostActive('yes' as never)).toThrow(
+      expect.objectContaining({ code: 'invalid-argument' }),
+    )
+  })
+})
+
+test('read-only semantics follow the public editability policy on both surfaces', async () => {
+  await withEditor((editor, ctx) => {
+    const view = ctx.get(editorViewCtx)
+    editor.setEditable(false)
+    expect(view.dom.getAttribute('aria-readonly')).toBe('true')
+    expect(document.querySelector('textarea')!.readOnly).toBe(true)
+    editor.setEditable(true)
+    expect(view.dom.hasAttribute('aria-readonly')).toBe(false)
+    expect(document.querySelector('textarea')!.readOnly).toBe(false)
+  })
+})
+
 const lines = (...values: string[]) => values.join('\n\n')
+
+test.each([true, false])(
+  'mixed nested blocks paint the same ranges as the editor mapping (editable %s)',
+  async (editable) => {
+    await withEditor((editor, ctx) => {
+      editor.loadDocument({
+        documentId: 'mixed',
+        generation: 1,
+        format: 'md',
+        text: '# Heading\n\n> Quote **bold**\n>\n> - Nested\n>   - Deeper\n\n- [ ] Task\n\n| A | B |\n| - | - |\n| x | y |\n\n> [!NOTE] Title\n> Inside callout\n>\n> ## Nested heading\n\n```js\nconst x = 1\n```\n\n<div>literal</div>\n\n%% hidden comment %%\n\nLast 😀',
+      })
+      editor.setEditable(editable)
+      const view = ctx.get(editorViewCtx)
+      const expected: string[] = []
+      view.state.doc.descendants((node, pos) => {
+        if (!node.isTextblock) return true
+        if (node.content.size) {
+          const from = view.domAtPos(pos + 1)
+          const to = view.domAtPos(pos + node.nodeSize - 1)
+          const range = document.createRange()
+          range.setStart(from.node, from.offset)
+          range.setEnd(to.node, to.offset)
+          expected.push(range.toString())
+        }
+        return false
+      })
+      view.dispatch(
+        view.state.tr.setSelection(new AllSelection(view.state.doc)),
+      )
+      expect(paintedText()).toEqual(expected)
+      const before = editor.snapshot()
+      editor.setHostActive(false)
+      editor.setHostActive(true)
+      expect(editor.snapshot()).toEqual(before)
+    })
+  },
+)
 
 /** Mounts two editors, the second after the first, and an outside paragraph and field. */
 async function withPage(

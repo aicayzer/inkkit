@@ -335,6 +335,31 @@ window.interop = {
       let result
       try {
         switch (operation.op) {
+          case 'insertImages':
+            result = editor.insertImages(
+              operation.images,
+              operation.at,
+              operation.generation ?? generation,
+            )
+            break
+          case 'insertPaths':
+            result = editor.insertPaths(
+              operation.paths,
+              operation.at ?? { clientX: -100, clientY: -100 },
+              operation.generation ?? generation,
+            )
+            break
+          case 'pasteAsPlainText':
+            result = editor.pasteAsPlainText(
+              operation.text,
+              operation.generation ?? generation,
+            )
+            break
+          case 'pageError':
+            dispatchEvent(
+              new ErrorEvent('error', { message: operation.message }),
+            )
+            break
           case 'textSnapshot':
             result = editor.textSnapshot()
             break
@@ -910,6 +935,7 @@ window.interop = {
                 surface instanceof HTMLTextAreaElement
                   ? surface.readOnly
                   : null,
+              ariaReadOnly: surface.getAttribute('aria-readonly'),
               contenteditable: surface.getAttribute('contenteditable'),
               focused: document.activeElement === surface,
             }
@@ -1044,6 +1070,14 @@ window.interop = {
             if (!(target instanceof HTMLTextAreaElement))
               throw Error('Source input requires the source textarea')
             target.focus()
+            target.dispatchEvent(
+              new InputEvent('beforeinput', {
+                bubbles: true,
+                inputType: operation.inputType ?? 'insertText',
+                data: operation.text ?? null,
+                isComposing: operation.composing ?? false,
+              }),
+            )
             if (operation.value !== undefined) target.value = operation.value
             else
               target.setRangeText(

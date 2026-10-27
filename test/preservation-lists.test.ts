@@ -310,8 +310,8 @@ function separable(blocks: Placed[], fixed: (index: number) => boolean) {
   return true
 }
 
-// A sample keeps the suite fast on shared runners; `SEEDS` runs more locally.
-const seeds = Number(process.env.SEEDS) || 400
+// A sample keeps the suite fast on shared runners.
+const seeds = Number(process.env.PRESERVATION_LIST_SEEDS) || 400
 
 test(
   'random list insertions, moves, swaps, deletions and edits save unless an unchanged list would change',

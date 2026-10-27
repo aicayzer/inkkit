@@ -403,6 +403,39 @@ test('a document that ends in an open code fence refuses the append and changes 
     expect(editor.snapshot().dirty).toBe(false)
   }))
 
+test.each([
+  '***\n',
+  '---\n',
+  '___\n',
+  '```js\n```\n',
+  '<br>\n',
+  '![existing](old.png)\n',
+  '[ref]: http://example.com\n',
+  'Hello\n\n\n',
+  '- a\n\n\n',
+  'Café 😀\r\n\r\n \t\r\n',
+  'Café 😀\r\r \t\r',
+  'Hello\n\n    ',
+  'Hello\n\n\t',
+  'Hello\r\n\r\n    ',
+])(
+  'appendImages preserves a lone block and its trailing bytes: %j',
+  async (source) => {
+    let saved = ''
+    await run(source, ({ editor, text }) => {
+      expect(editor.appendImages(pair)).toBe(true)
+      saved = text()
+      expect(saved.startsWith(source)).toBe(true)
+      expect(saved).toContain('![A](a.png)')
+      expect(editor.undo()).toBe(true)
+      expect(text()).toBe(source)
+      expect(editor.redo()).toBe(true)
+      expect(text()).toBe(saved)
+    })
+    await run(saved, ({ text }) => expect(text()).toBe(saved))
+  },
+)
+
 test('appendImages keeps the selection, focus and scroll position where they were', () =>
   run('First\n\nSecond\n', ({ editor, view, at, select }) => {
     select(at('Second', 3), at('Second'))

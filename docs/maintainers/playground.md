@@ -73,7 +73,7 @@ Playwright serves the playground on port 4178. Set `INKKIT_PLAYGROUND_PORT` to a
 The configured report is `_local/playwright/report`, individual artefacts are in `_local/playwright/results`, and machine-readable results are `_local/playwright/results.json`. Failure evidence includes screenshots, structured observations and traces. Keep failed evidence alongside the reviewed commit and command. The controlled failure is excluded by the default configuration. Select it explicitly, overriding that exclusion, to demonstrate reporting:
 
 ```sh
-pnpm exec playwright test --project=chromium --grep @intentional-failure --grep-invert '^$'
+pnpm exec playwright test --config playwright.diagnostics.config.ts --project=chromium
 ```
 
 Record its expected non-zero result separately from passing smoke/regression evidence, and retain that run's artefacts before another run overwrites the configured output. See [development](development.md#bounded-verification) for check triggers and confidence limits, and the [native runner](../../scripts/interop/README.md) for selected WKWebView checks.

@@ -228,7 +228,7 @@ import {
   optionalRecord,
   optionalString,
 } from './errors'
-import { selectionPlugin } from './selection'
+import { selectionPlugin, setSelectionHostActive } from './selection'
 import { SearchQuery, setSearchState } from 'prosemirror-search'
 import {
   search,
@@ -1816,6 +1816,13 @@ export class InkKitEditor {
     this.publishCommandState()
   }
 
+  /** Supplies native host activation for selection presentation. Null restores browser detection. */
+  setHostActive(active: boolean | null): void {
+    this.assertAlive()
+    if (active !== null) expectBoolean(active, 'active')
+    setSelectionHostActive(this.editor.ctx.get(editorViewCtx), active)
+  }
+
   /** Replaces the input preferences. A field left out takes its default. Throws `composition`
    *  during text composition. */
   setTextInputPreferences(preferences: TextInputPreferences): void {
@@ -1840,10 +1847,13 @@ export class InkKitEditor {
       typeof view.props.attributes === 'function'
         ? view.props.attributes(view.state)
         : view.props.attributes
+    const inputAttributes = { ...attributes }
+    delete inputAttributes['aria-readonly']
+    if (!this.writable) inputAttributes['aria-readonly'] = 'true'
     view.setProps({
       editable: () => this.writable && !this.literalSurface,
       attributes: {
-        ...attributes,
+        ...inputAttributes,
         role: 'textbox',
         'aria-multiline': 'true',
         'aria-label':
@@ -4471,7 +4481,7 @@ export class InkKitEditor {
    * Resolves wiki links and file embeds again, all of them or those whose `target` is named, after
    * something they point to changed. A file keeps its card until the new answer differs. Changes no
    * document state, so it works in a read-only editor and during composition. Source and TXT modes
-   * draw no references, and they resolve afresh when formatted mode returns.
+   * draw no references; named file answers are invalidated and resolved when formatted mode returns.
    */
   refreshReferences(
     targets?: readonly string[],
@@ -4680,7 +4690,11 @@ export class InkKitEditor {
     const { doc, tr } = view.state
     const blocks = this.imageBlocks(images)
     // An empty document is one empty paragraph, which would save as `<br />` ahead of the images.
-    const empty = doc.childCount === 1 && doc.firstChild!.content.size === 0
+    const empty =
+      doc.childCount === 1 &&
+      doc.firstChild!.type.name === 'paragraph' &&
+      doc.firstChild!.content.size === 0 &&
+      this.currentText().trim() === ''
     if (empty) tr.replaceWith(0, doc.content.size, blocks)
     else tr.insert(doc.content.size, blocks)
     // A step of its own, so neither earlier nor later typing joins it.
@@ -5368,6 +5382,7 @@ export class InkKitEditor {
       'pasteAsPlainText',
       'commandState',
       'setEditable',
+      'setHostActive',
       'setTextInputPreferences',
       'setEditingMode',
       'replaceSource',
