@@ -54,7 +54,7 @@ On 27 October 2026, the native probe compared the published 0.3.1 archive with c
 
 Trusted input, focus, exact changed bytes and save/reopen all passed. **The native 35 ms target in #206 remains unmet.** These timings are not the browser results above and do not close that criterion.
 
-A bounded diagnostic comparison found most native cost between `beforeinput` and the capture-phase `input` event, before Inkkit's input handler; that handler added about 1–5 ms. A listener-free textarea with the same value and styling still had a 52 ms median. Disabling spelling and correction did not remove the cost, and LF and CRLF behaved similarly. Resetting the same textarea value off-tree between keystrokes produced subsequent samples of 32–33 ms, but those samples exclude the reset's own cost. This is an investigation lead, not a production fix or a performance pass. Any further improvement must include its complete input cost and retain focus, selection, history and composition.
+A bounded diagnostic comparison found most native cost between `beforeinput` and the capture-phase `input` event, before Inkkit's input handler; that handler added about 1–5 ms. A listener-free textarea with the same value and styling still had a 52 ms median. Disabling spelling and correction did not remove the cost, and LF and CRLF behaved similarly. Resetting the same textarea value off-tree between keystrokes produced subsequent samples of 32–33 ms, but those samples exclude the reset's own cost. Including that reset inside input raised the median to 90 ms, so it is not a viable production fix. Any further improvement must include its complete input cost and retain focus, selection, history and composition.
 
 ### Whole-text selection
 
