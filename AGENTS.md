@@ -34,21 +34,7 @@ Rules that follow from the boundary:
 
 ## Build and verify
 
-Use Node.js 26 or later, which is what CI runs, and the pnpm version in `package.json`.
-
-```sh
-pnpm install --frozen-lockfile
-pnpm check            # typecheck, Vitest, build, API reference check, packed-consumer test (opens Chromium and WebKit)
-pnpm format:check     # Prettier; `pnpm format` rewrites
-pnpm build:playground
-pnpm test:built-playground  # opens the built page; needs the build first
-```
-
-- One unit file: `pnpm exec vitest run test/<name>.test.ts`.
-- Browser tests use Playwright against the playground: `pnpm exec playwright install chromium webkit` once, then `pnpm exec playwright test --project=chromium test/browser/<name>.spec.ts`. For code, dependency and workflow changes, CI runs every browser test in Chromium on Linux for pull requests, and in Chromium and WebKit on macOS for pushes to main and releases. Before pushing, run the specs for what you changed in Chromium, and in WebKit too when selection, input, clipboard or layout changes; WebKit does not run on pull requests. A test that cannot run in an engine calls `test.skip` with the reason.
-- The native runner in `scripts/interop/` tests the packed candidate in a real `WKWebView`. Run selected groups when focus, input, the bridge, clipboard, print or resource lifecycle changes. Browser WebKit does not prove `WKWebView` behavior. A rejected or empty selection is a failure, not a pass.
-- Documentation-only edits run a formatting check and skip editor and browser tests. Mintlify page, asset or configuration changes validate the site. Release runs retain all checks.
-- Choose checks from the changed behavior, not every fixture and configuration; [development](docs/maintainers/development.md) has the table. Say which checks you did not run. A local pass does not show that hosted CI passed.
+Use Node.js 26 or later and the pnpm version in `package.json`. [Development](docs/maintainers/development.md#bounded-verification) defines the required checks and commands for each kind of change, including publication and native boundaries. Follow that policy; report omitted checks and keep local, hosted CI, WKWebView and consumer-app evidence distinct. The [native runner](scripts/interop/README.md) documents its current build and run recipe.
 
 ## Conventions
 

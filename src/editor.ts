@@ -4662,7 +4662,11 @@ export class InkKitEditor {
     const { doc, tr } = view.state
     const blocks = this.imageBlocks(images)
     // An empty document is one empty paragraph, which would save as `<br />` ahead of the images.
-    const empty = doc.childCount === 1 && doc.firstChild!.content.size === 0
+    const empty =
+      doc.childCount === 1 &&
+      doc.firstChild!.type.name === 'paragraph' &&
+      doc.firstChild!.content.size === 0 &&
+      this.currentText().trim() === ''
     if (empty) tr.replaceWith(0, doc.content.size, blocks)
     else tr.insert(doc.content.size, blocks)
     // A step of its own, so neither earlier nor later typing joins it.

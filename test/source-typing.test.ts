@@ -494,9 +494,8 @@ function random(seed: number) {
   }
 }
 
-// A sample keeps the suite fast on shared runners, which have run this ten
-// times slower than a local machine; `SEEDS` runs more locally.
-const seeds = Number(process.env.SEEDS) || 10
+// Deterministic seeds make a failure reproducible on a shared runner.
+const seeds = Number(process.env.SOURCE_TYPING_SEEDS) || 60
 
 test('random typing, undo, redo and mode switches keep every view of the text in agreement', async () => {
   for (let seed = 1; seed <= seeds; seed++) {
@@ -504,7 +503,8 @@ test('random typing, undo, redo and mode switches keep every view of the text in
     const log: string[] = [`seed ${seed}:`]
     await run((editor, plain, ctx, changes) => {
       vi.useFakeTimers()
-      const text = paragraphs(4)
+      const text =
+        'First **bold** and _italic_ text.\n\nSecond `code` text.\n\n- A list item\n- Another item\n'
       editor.loadDocument({ ...document1, text })
       const view = ctx.get(editorViewCtx)
       const agree = () => {
@@ -512,8 +512,8 @@ test('random typing, undo, redo and mode switches keep every view of the text in
         if (editor.editingMode === 'source') {
           expect(plain.value, log.join(' ')).toBe(saved)
         } else {
-          expect(view.state.doc.textContent, log.join(' ')).toBe(
-            ctx.get(parserCtx)(saved).textContent,
+          expect(view.state.doc.content.toJSON(), log.join(' ')).toEqual(
+            ctx.get(parserCtx)(saved).content.toJSON(),
           )
         }
         expect(changes.at(-1) ?? text, log.join(' ')).toBe(

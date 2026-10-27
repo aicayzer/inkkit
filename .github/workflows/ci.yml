@@ -19,7 +19,7 @@ jobs:
       editor: ${{ steps.scope.outputs.editor }}
       site: ${{ steps.scope.outputs.site }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - id: scope
@@ -39,8 +39,8 @@ jobs:
     steps:
       - if: ${{ needs.changes.result != 'success' || needs.docs.result == 'failure' || needs.docs.result == 'cancelled' }}
         run: exit 1
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '26'
       - if: ${{ needs.changes.outputs.editor != 'true' }}
@@ -51,7 +51,7 @@ jobs:
         if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm format:check
         if: ${{ needs.changes.outputs.editor == 'true' }}
-      - run: node --test scripts/ci-scope.test.mjs scripts/install-browsers.test.mjs
+      - run: node --test scripts/ci-scope.test.mjs scripts/install-browsers.test.mjs scripts/test-browser.test.mjs scripts/interop/verify-native.test.mjs
         if: ${{ needs.changes.outputs.editor == 'true' }}
       # The packed-consumer test opens its pages in both engines on main and
       # releases. Pull requests use Chromium only, like the browser shards, and
@@ -67,7 +67,7 @@ jobs:
         if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm test:built-playground
         if: ${{ needs.changes.outputs.editor == 'true' }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ needs.changes.outputs.editor == 'true' }}
         with:
           name: package-candidate
@@ -88,8 +88,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '26'
       - run: npm install --global pnpm@11.0.9
@@ -97,9 +97,8 @@ jobs:
       # The Ubuntu image already has Chromium's libraries; skipping apt avoids a mirror that stalls.
       - run: node scripts/install-browsers.mjs --no-deps chromium
         timeout-minutes: 17
-      - run: node --test scripts/test-browser.test.mjs
       - run: node scripts/test-browser.mjs --project=chromium --shard=${{ matrix.shard }}/3
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure() || cancelled()
         with:
           name: browser-chromium-${{ matrix.shard }}
@@ -122,17 +121,16 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '26'
       - run: npm install --global pnpm@11.0.9
       - run: pnpm install --frozen-lockfile
       - run: node scripts/install-browsers.mjs webkit
         timeout-minutes: 17
-      - run: node --test scripts/test-browser.test.mjs
       - run: node scripts/test-browser.mjs --project=webkit --shard=${{ matrix.shard }}/3
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure() || cancelled()
         with:
           name: browser-webkit-${{ matrix.shard }}
@@ -181,8 +179,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '26'
       - run: npx --yes mint@4.2.1125 validate

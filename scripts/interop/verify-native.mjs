@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { resolve, join } from 'node:path'
+import { resolve, join, dirname } from 'node:path'
 
 const positional = []
 const requestedGroups = []
@@ -19,37 +19,14 @@ for (let index = 2; index < process.argv.length; index++) {
     throw Error(`Unknown option: ${argument}`)
   else positional.push(argument)
 }
-if (positional.length > 4)
-  throw Error('Expected at most BUNDLE OUTPUT_DIRECTORY HOST_BINARY VERSION')
-const version = positional[3] ?? '0.0.2'
-const versions = [
-  '0.0.2',
-  '0.0.3',
-  '0.0.4',
-  '0.0.5',
-  '0.0.6',
-  '0.0.7',
-  '0.0.8',
-  '0.0.9',
-  '0.0.10',
-  '0.0.11',
-  '0.0.12',
-  '0.0.13',
-  '0.0.14',
-  '0.2.0',
-  '0.3.0',
-  '0.3.1',
-]
-if (!versions.includes(version))
-  throw Error(`Native fixture version must be one of ${versions.join(', ')}`)
-const releaseAtLeast = (target) =>
-  versions.indexOf(version) >= versions.indexOf(target)
+if (positional.length > 3)
+  throw Error(
+    'Expected at most BUNDLE OUTPUT_DIRECTORY HOST_BINARY; select scenarios with --group or --scenario, not a version',
+  )
 const bundle = resolve(
   positional[0] ?? '_local/interop/consumer/dist/index.html',
 )
-const destination = resolve(
-  positional[1] ?? `_local/interop/regression-${version}`,
-)
+const destination = resolve(positional[1] ?? '_local/interop/regression')
 const host = resolve(positional[2] ?? '_local/interop/webkit-host')
 const assert = (path, equals, name) => ({ op: 'assert', path, equals, name })
 const contains = (path, includes, name) => ({
@@ -232,7 +209,8 @@ const calloutSource =
   '> [!NOTE] Native &#13; title\n> Native note body.\n>  Indented &amp; native source.\n\n> [!TIP]+ Native &#10; title\n> Native tip body.\n\n> [!IMPORTANT]\n> Native important body.\n\n> [!WARNING]- Native folded title\n> Native folded body.\n\n- > [!CAUTION] Native nested title\n  > Native caution body.\n\n> [!TODO]\n> Unsupported native callout.\n\n> [!NOTE] + Spaced fold stays literal\n> Unsupported native fold.\n'
 const commentSource =
   'Public [link][Shared] <!--INLINE_SECRET <script>window.commentExecuted=true</script>--> beside %%OBSIDIAN_SECRET%% text.\n\n<!--\nBLOCK_SECRET\n-->\n\n%%\nOBSIDIAN_BLOCK_SECRET\n%%\n\n[Shared]: https://example.com/shared\n'
-if (releaseAtLeast('0.0.3'))
+
+{
   Object.assign(scenarios, {
     'callout-lifecycle': {
       source: calloutSource,
@@ -542,7 +520,8 @@ if (releaseAtLeast('0.0.3'))
       ],
     },
   })
-if (releaseAtLeast('0.0.4')) {
+}
+{
   const flowchart = 'flowchart TD\n    A[Start] --> B[Finish]'
   const authored = `\uFEFFBefore **bold**.\r\n\r\n~~~~mermaid\r\n${flowchart.replaceAll('\n', '\r\n')}\r\n~~~~\r\n\r\nAfter &amp; preserved.\r\n`
   const editedSurrounding = authored.replace('Before', 'Changed')
@@ -694,7 +673,7 @@ if (releaseAtLeast('0.0.4')) {
     }
   }
 }
-if (releaseAtLeast('0.0.5')) {
+{
   const imageData =
     'iVBORw0KGgoAAAANSUhEUgAAAFAAAAAoCAYAAABpYH0BAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAUKADAAQAAAABAAAAKAAAAADbisV7AAAAlUlEQVRoBe3SMQ0AIQAEQR4X6MC/Nj5BAtvO9dtM7jtrn2HPAvO5FF4BgPEIAAFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPjIA/2VgCmiePpoIAAAAASUVORK5CYII='
   const imageSource =
@@ -926,7 +905,7 @@ if (releaseAtLeast('0.0.5')) {
   })
 }
 
-if (releaseAtLeast('0.0.6')) {
+{
   const richTable =
     '\uFEFFBefore table.\r\n\r\n| Name | Value | Detail |\r\n| :--- | ---: | :---: |\r\n| Bravo | 2 | **bold** [ref][Shared] and note[^Note] |\r\n| Alpha | 1 | `code` ==highlight== ![opaque](images/fixture.png) |\r\n| Equal | 2 | third detail |\r\n\r\nAfter table.\r\n\r\n[Shared]: https://example.com/shared "Authored"\r\n\r\n[^Note]: Retained footnote.\r\n'
   const undo = { op: 'keyDown', key: 'z', code: 'KeyZ', metaKey: true }
@@ -1147,24 +1126,13 @@ if (releaseAtLeast('0.0.6')) {
             html: '<p>Before</p><table><!--PRIVATE_TABLE_COMMENT--><tr><th>head</th></tr><tr><td>cell</td></tr></table><p>After</p>',
           },
         },
-        ...(releaseAtLeast('0.2.0')
-          ? [
-              contains('snapshot.text', '| head |'),
-              contains('snapshot.text', '| cell |'),
-              excludes('snapshot.text', 'PRIVATE_TABLE_COMMENT'),
-            ]
-          : [
-              contains('snapshot.text', '<table><!--PRIVATE_TABLE_COMMENT-->'),
-              contains('snapshot.text', '<td>cell</td>'),
-            ]),
+        contains('snapshot.text', '| head |'),
+        contains('snapshot.text', '| cell |'),
+        excludes('snapshot.text', 'PRIVATE_TABLE_COMMENT'),
         contains('snapshot.text', 'Before'),
         contains('snapshot.text', 'After'),
         { op: 'export', name: 'copied' },
-        (releaseAtLeast('0.2.0') ? excludes : contains)(
-          'markdown',
-          'PRIVATE_TABLE_COMMENT',
-          'copied',
-        ),
+        excludes('markdown', 'PRIVATE_TABLE_COMMENT', 'copied'),
         excludes('text', 'PRIVATE_TABLE_COMMENT', 'copied'),
         excludes('html', 'PRIVATE_TABLE_COMMENT', 'copied'),
         contains('text', 'head', 'copied'),
@@ -1188,13 +1156,9 @@ if (releaseAtLeast('0.0.6')) {
           name: 'event',
         },
         assert('prevented', true, 'event'),
-        ...(releaseAtLeast('0.2.0')
-          ? [
-              excludes('snapshot.text', 'PRIVATE_TABLE_COMMENT'),
-              contains('snapshot.text', '| head |'),
-              contains('snapshot.text', '| cell |'),
-            ]
-          : [contains('snapshot.text', '<!--PRIVATE_TABLE_COMMENT-->')]),
+        excludes('snapshot.text', 'PRIVATE_TABLE_COMMENT'),
+        contains('snapshot.text', '| head |'),
+        contains('snapshot.text', '| cell |'),
         undo,
         assert('snapshot.text', ''),
       ],
@@ -1208,11 +1172,9 @@ if (releaseAtLeast('0.0.6')) {
           op: 'table',
           command: 'sortRows',
           options: { column: 1, comparison: 'number' },
-          ...(releaseAtLeast('0.2.0')
-            ? { name: 'invalid' }
-            : { expectedError: 'finite decimal' }),
+          name: 'invalid',
         },
-        ...(releaseAtLeast('0.2.0') ? [assert('', false, 'invalid')] : []),
+        assert('', false, 'invalid'),
         same('snapshot.text', 'original', 'text'),
         same('snapshot.revision', 'original', 'revision'),
         same('snapshot.dirty', 'original', 'dirty'),
@@ -1240,7 +1202,7 @@ if (releaseAtLeast('0.0.6')) {
   })
 }
 
-if (releaseAtLeast('0.0.7')) {
+{
   const raw =
     '\uFEFF# Authored  \r\n\r\n[Label](<https://example.com>) and **bold**.\r\n\r\n<div data-private="untouched">unsupported\r\n\r\n~~~mermaid\r\nflowchart LR\r\nA -->\r\n'
   const original = '# Heading\n\n[Label](https://example.com)\n'
@@ -1824,7 +1786,7 @@ if (releaseAtLeast('0.0.7')) {
   })
 }
 
-if (releaseAtLeast('0.2.0')) {
+{
   Object.assign(scenarios, {
     'host-task-marker-selection': {
       source: 'Before café\r\n\r\n* [ ] First task\r\n* [x] Second task\r\n',
@@ -1868,7 +1830,7 @@ if (releaseAtLeast('0.2.0')) {
   })
 }
 
-if (releaseAtLeast('0.0.8')) {
+{
   Object.assign(scenarios, {
     'host-task-marker-layout': {
       source: '- [ ] First task\n- [x] Finished task\n',
@@ -2025,7 +1987,7 @@ if (releaseAtLeast('0.0.8')) {
     },
   })
 }
-if (releaseAtLeast('0.0.9')) {
+{
   scenarios['native-search-scoped-unicode'] = {
     source:
       'Unicode A😀B é 中文.\n\n**Formatted match**.\n\n> [!NOTE]- Folded\n> Hidden body match.\n\n<!-- hidden author comment -->\n\n![Opaque image](images/native.png)\n',
@@ -2271,7 +2233,7 @@ if (releaseAtLeast('0.0.9')) {
     }
   }
 }
-if (releaseAtLeast('0.0.10')) {
+{
   Object.assign(scenarios, {
     'linked-files-source-sizing': {
       files: true,
@@ -2403,7 +2365,7 @@ if (releaseAtLeast('0.0.10')) {
     },
   })
 }
-if (releaseAtLeast('0.0.11')) {
+{
   scenarios['integration-minimal-print'] = {
     mode: 'printable',
     configuration: 'minimal',
@@ -2559,7 +2521,7 @@ if (releaseAtLeast('0.0.11')) {
     ],
   }
 }
-if (releaseAtLeast('0.0.12')) {
+{
   const authored = 'Before ![[\tPhoto # page=2\t|\t00140x00090\t]] after.\r\n'
   scenarios['linked-files-authored-dimensions'] = {
     files: true,
@@ -2582,7 +2544,7 @@ if (releaseAtLeast('0.0.12')) {
     ],
   }
 }
-if (releaseAtLeast('0.0.13')) {
+{
   for (const mode of ['formatted', 'source', 'txt']) {
     scenarios[`host-document-load-releases-${mode}-focus`] = {
       source: '# Reading\n\nText to edit.\n',
@@ -2613,7 +2575,7 @@ if (releaseAtLeast('0.0.13')) {
     }
   }
 }
-if (releaseAtLeast('0.0.14')) {
+{
   for (const mode of ['formatted', 'source', 'txt']) {
     scenarios[`native-search-batch-geometry-${mode}`] = {
       source: 'A😀B é 中文\n\nSecond paragraph.\n',
@@ -2702,7 +2664,7 @@ if (releaseAtLeast('0.0.14')) {
     ],
   }
 }
-if (releaseAtLeast('0.0.14')) {
+{
   for (const html of [false, true]) {
     scenarios[`integration-cancel-${html ? 'html' : 'file'}-import`] = {
       source: 'Café\r\n',
@@ -2893,11 +2855,112 @@ scenarios['container-text-fidelity'] = {
     },
   ],
 }
+const sameSaved = (name) => ({
+  op: 'assert',
+  path: 'snapshot.text',
+  equalsFrom: { name, path: 'text' },
+})
+const savedUndoRedo = (original) => [
+  { op: 'snapshot', name: 'inserted' },
+  { op: 'undo' },
+  assert('snapshot.text', original),
+  { op: 'redo' },
+  sameSaved('inserted'),
+  { op: 'save' },
+  { op: 'reopen' },
+  sameSaved('inserted'),
+]
+scenarios['host-insert-images-table'] = {
+  source: '| Picture | Value |\r\n| --- | --- |\r\n| here | café |\r\n',
+  operations: [
+    { op: 'select', text: 'here' },
+    {
+      op: 'insertImages',
+      images: [{ reference: 'images/雪 photo.png', alt: '雪 picture' }],
+      name: 'insertedImage',
+    },
+    assert('', true, 'insertedImage'),
+    contains('snapshot.text', '![雪 picture](<images/雪 photo.png>)'),
+    contains('snapshot.text', '\r\n'),
+    ...savedUndoRedo(
+      '| Picture | Value |\r\n| --- | --- |\r\n| here | café |\r\n',
+    ),
+  ],
+}
+for (const mode of ['formatted', 'source']) {
+  const original = 'Before café\r\n'
+  scenarios[`host-bridge-paths-${mode}`] = {
+    source: original,
+    operations: [
+      { op: 'editingMode', mode },
+      ...(mode === 'source'
+        ? [{ op: 'selectSourceRange', from: 11 }]
+        : [{ op: 'select', text: 'café', from: 4, to: 4 }]),
+      {
+        op: 'insertPaths',
+        paths: ['/a spaced/雪.txt', '/another file.txt'],
+        name: 'insertedPaths',
+      },
+      assert('', true, 'insertedPaths'),
+      contains('snapshot.text', '/a spaced/雪.txt'),
+      contains('snapshot.text', '/another file.txt'),
+      ...savedUndoRedo(original),
+    ],
+  }
+  const table = '| Text |\r\n| --- |\r\n| old |\r\n'
+  scenarios[`host-plain-paste-${mode}`] = {
+    source: table,
+    operations: [
+      { op: 'editingMode', mode },
+      ...(mode === 'source'
+        ? [{ op: 'selectSourceRange', from: 19, to: 22 }]
+        : [{ op: 'select', text: 'old' }]),
+      { op: 'pasteAsPlainText', text: 'café 😀\r\nnext', name: 'pasted' },
+      assert('', true, 'pasted'),
+      contains('snapshot.text', 'café 😀'),
+      contains('snapshot.text', 'next'),
+      ...savedUndoRedo(table),
+    ],
+  }
+}
+scenarios['host-insert-images-source-refused'] = {
+  source: 'Before\r\n',
+  operations: [
+    { op: 'editingMode', mode: 'source' },
+    {
+      op: 'insertImages',
+      images: [{ reference: 'images/雪 photo.png', alt: '雪 picture' }],
+      name: 'refused',
+    },
+    assert('', false, 'refused'),
+    assert('snapshot.text', 'Before\r\n'),
+    { op: 'commandState', name: 'commands' },
+    assert('commands.undo', false, 'commands'),
+  ],
+}
+scenarios['source-three-inputs-shared-history'] = {
+  source: 'Before\r\n',
+  operations: [
+    { op: 'editingMode', mode: 'source' },
+    { op: 'selectSourceRange', from: 6 },
+    { op: 'sourceInput', text: 'é' },
+    { op: 'sourceInput', text: '雪' },
+    { op: 'sourceInput', text: '😀' },
+    { op: 'editingMode', mode: 'formatted' },
+    assert('snapshot.text', 'Beforeé雪😀\r\n'),
+    ...savedUndoRedo('Before\r\n'),
+  ],
+}
+scenarios['intentional-page-error'] = {
+  source: 'Untouched\n',
+  operations: [{ op: 'pageError', message: 'Intentional native page error' }],
+}
 const names = Object.keys(scenarios)
 const groups = {
   core: [
     'reference-lifecycle',
-    ...(releaseAtLeast('0.0.7') ? ['source-spelling-cross-mode-history'] : []),
+    'source-spelling-cross-mode-history',
+    'source-three-inputs-shared-history',
   ],
   references: names.filter((name) => /reference|footnote/.test(name)),
   tables: names.filter((name) => name.startsWith('table-')),
@@ -2926,7 +2989,7 @@ for (const group of requestedGroups) {
     throw Error(
       `Unknown group: ${group}. Available: ${Object.keys(groups).join(', ')}`,
     )
-  if (!groups[group].length) throw Error(`Empty group ${group} for ${version}`)
+  if (!groups[group].length) throw Error(`Empty group ${group}`)
   groups[group].forEach((name) => selected.add(name))
 }
 for (const name of requestedScenarios) {
@@ -2934,15 +2997,13 @@ for (const name of requestedScenarios) {
   selected.add(name)
 }
 if (!requestedGroups.length && !requestedScenarios.length) {
-  ;(releaseAtLeast('0.0.8') ? groups.core : groups.legacy).forEach((name) =>
-    selected.add(name),
-  )
+  groups.core.forEach((name) => selected.add(name))
 }
 if (!selected.size) throw Error('Selection contains no scenarios')
 if (list) {
   console.log(
     JSON.stringify(
-      { version, groups, selected: [...selected], scenarios: names },
+      { groups, selected: [...selected], scenarios: names },
       null,
       2,
     ),
@@ -2951,12 +3012,22 @@ if (list) {
 }
 await mkdir(destination, { recursive: true })
 
+const consumer = JSON.parse(
+  await readFile(join(dirname(bundle), 'consumer-evidence.json'), 'utf8'),
+)
+const bundleSha256 = createHash('sha256')
+  .update(await readFile(bundle))
+  .digest('hex')
+if (!consumer.version || consumer.bundleSha256 !== bundleSha256)
+  throw Error(
+    'Consumer evidence does not match this bundle; rebuild it from the candidate archive',
+  )
 const evidence = {
-  version,
+  version: consumer.version,
+  entry: consumer.entry,
+  tarballSha256: consumer.tarballSha256,
   bundle,
-  bundleSha256: createHash('sha256')
-    .update(await readFile(bundle))
-    .digest('hex'),
+  bundleSha256,
   host,
   hostSha256: createHash('sha256')
     .update(await readFile(host))
@@ -3076,7 +3147,11 @@ for (const name of selected) {
   evidence.scenarios.push({
     name,
     passed:
-      run.status === 0 && result?.passed === true && printFailures.length === 0,
+      run.status === 0 &&
+      result?.passed === true &&
+      printFailures.length === 0 &&
+      !result?.pageErrors?.length &&
+      !run.stderr.includes('WKWebView page error:'),
     status: run.status,
     error: run.error?.message ?? run.stderr.trim(),
     input,
@@ -3084,6 +3159,7 @@ for (const name of selected) {
     steps: result?.steps?.length ?? 0,
     failures: result?.steps?.filter((step) => !step.passed) ?? [],
     finalError: result?.final?.error ?? null,
+    pageErrors: result?.pageErrors ?? [],
     ...(['print', 'printable'].includes(fixture.mode)
       ? { print: result?.print, printFailures }
       : {}),

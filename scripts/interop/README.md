@@ -1,231 +1,93 @@
-# Native clipboard probes
+# Native WKWebView checks
 
-These probes distinguish a packed-package WebKit consumer from tests hosted in an app. External-app destination checks are exceptional: first identify a changed interoperability contract or a reproduced bug, then select one relevant application and direction. Do not resume the 0.0.7 return matrix. Run any authorised destination check only in a disposable desktop session, vault and documents. Do not use production notes or send a test message.
+The native runner checks the exact packed Inkkit candidate in a disposable WKWebView. It does not prove a consumer app's storage, clipboard integration or permissions. [Development](../../docs/maintainers/development.md#bounded-verification) is the authoritative check-selection policy.
 
-Build the offline consumer from the exact candidate archive. The builder uses an archive filename containing its SHA-256 so that replacing a candidate at the same version cannot reuse the previous package installation.
+**The native host opens visible windows and can take keyboard focus.** Tell the person before running it on an active desktop. Build and inspect selections without launching the host first.
+
+## Build and run
+
+Use the current Node.js and pnpm versions from the repository. The consumer builder needs network access to install its build tools and the candidate's dependencies. It requires an explicit archive and uses the archive hash in the installed filename to prevent stale same-version installations.
 
 ```sh
-node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE
+node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE _local/interop/consumer
 swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/webkit-host
+node scripts/interop/verify-native.mjs --list --group core --group host-controls
+node scripts/interop/verify-native.mjs _local/interop/consumer/dist/index.html _local/interop/results _local/interop/webkit-host --group core --group host-controls
+```
+
+The runner has three optional positional arguments: bundle, result directory and host binary, with the paths above as defaults except that results default to `_local/interop/regression`. There is no fixture-version argument. It runs the current scenario set and reads the installed package version, entry point and archive hash from `consumer-evidence.json` beside the bundle. A missing sidecar or mismatched bundle hash fails before a host launches. Keep the sidecar with the bundle.
+
+To check the entry without Mermaid, build a second consumer with the literal fourth command-line argument `core` and run its core group:
+
+```sh
+node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE _local/interop/core-consumer core
+node scripts/interop/verify-native.mjs _local/interop/core-consumer/dist/index.html _local/interop/core-results _local/interop/webkit-host --group core
+```
+
+Repeat `--group` and `--scenario` to select a union. No selector means `core`; `--list` needs neither a bundle nor a host. Unknown, empty or rejected selections fail. Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls`, `native-search`, `layout`, `linked-files`, `media`, `portable-files`, `integration` and `legacy`. The legacy group excludes host, native, container and intentional-failure scenarios; it is not an exhaustive suite.
+
+Core covers source preservation and shared source/formatted history, including three source inputs followed by one undo and redo. Host controls include the native bridge insertion methods, read-only transitions, input preferences, stale generations and delayed imports. Resource groups use local fixture resources and record callbacks; they never open a real user's files.
+
+`evidence.json` records the package version, entry, archive/bundle/host hashes, exact selection, individual inputs/results, failed steps and page errors. An uncaught page error or unhandled rejection fails the scenario immediately, writes its error and restores the pasteboard. A successful process exit alone is not a pass.
+
+## Fixture operations
+
+An input supplies `source`, optional `format`, `documentId`, `configuration` and `operations`. Name a result with `name`; assertions can read a named result or the current capture. The consumer's switch in [consumer/main.ts](consumer/main.ts) defines the fields for each operation.
+
+| Area                      | Operations                                                                                                                                                                                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Document and history      | `capture`, `editingMode`, `replaceSource`, `undo`, `redo`, `insertText`, `format`, `table`, `tableCells`, `snapshot`, `save`, `reopen`, `load`, `reload`, `insertFootnote`, `navigateFootnote`, `editReferenceDefinition`                                                         |
+| Native bridge insertion   | `insertImages`, `insertPaths`, `pasteAsPlainText`                                                                                                                                                                                                                                 |
+| Selection and search      | `textSnapshot`, `selectTextRange`, `replaceTextRange`, `select`, `selectContents`, `domSelectAll`, `selectBlocks`, `find`, `replace`, `replaceAll`, `headings`, `navigateHeading`                                                                                                 |
+| Viewport and layout       | `revealTextRange`, `textRangeRects`, `textRangesRects`, `rangeGeometry`, `setViewport`, `viewportState`, `layout`                                                                                                                                                                 |
+| Focus, policy and input   | `focus`, `hostFocus`, `nativeInput`, `editable`, `textInput`, `commandState`, `inputAttributes`, `composition`, `domKeyDown`, `taskMarkerClick`, `click`, `setKeymap`, `formattedInput`, `activeKeyDown`, `keyDown`                                                               |
+| Source surface            | `sourceInput`, `sourceState`, `selectSourceRange`, `surface`, `sourceViewport`, `sourceScroll`                                                                                                                                                                                    |
+| Clipboard and printing    | `nativeClipboard`, `domCopy`, `startPrintable`, `finishPrintable`, `insertPrintable`, `printable`, `domPaste`, `pasteExport`, `paste`, `export`                                                                                                                                   |
+| Images and files          | `imageFixture`, `fileState`, `fileContextMenu`, `fileMode`, `fileRelease`, `fileEvents`, `fileAbortCount`, `startFileOutput`, `finishFileOutput`, `fileResize`, `imageImport`, `imageExport`, `startImagePaste`, `cancelPendingImports`, `releaseImageImport`, `finishImagePaste` |
+| Diagnostics and lifecycle | `pageError`, `mountSecond`, `secondState`, `awaitDOM`, `security`, `dom`, `setCommentsVisible`, `removeDOM`, `acknowledgeError`, `assert`                                                                                                                                         |
+
+Assertions accept `equals`, `includes`, `excludes`, `truthy` and `equalsFrom: {name, path}`. An empty path addresses a whole named result. `expectedError` requires a matching code or message. Source selections use normalized textarea UTF-16 offsets; snapshots retain authored CRLF bytes.
+
+Facade calls travel through JSON-compatible inputs and returned values. DOM helpers exercise event handling but do not establish trusted native input. The native keyboard helper posts explicit AppKit events and requires corresponding trusted DOM key events and expected saved bytes; its composition variant uses WebKit's text input client. Neither establishes a particular hardware keyboard, input method candidate window or layout.
+
+For an independently retained failure demonstration:
+
+```sh
+node scripts/interop/verify-native.mjs BUNDLE _local/interop/controlled-failure HOST_BINARY --scenario intentional-assertion-failure
+node scripts/interop/verify-native.mjs BUNDLE _local/interop/page-error HOST_BINARY --scenario intentional-page-error
+```
+
+Both commands must fail with actionable evidence. Intentional failures are excluded from every group and never count as passing verification.
+
+## Clipboard, output and resource checks
+
+The host saves and restores the general pasteboard for native clipboard operations, including failure exits. For external application checks, use the helper to preserve every representation and independently verify restoration before deleting private backups:
+
+```sh
 swiftc scripts/interop/Clipboard.swift -o _local/interop/clipboard
-```
-
-Pass `core` as a third argument to build the consumer from the `@aicayzer/inkkit/core` entry, which leaves Mermaid out of the page. `webkit-host BUNDLE startup - RESULT.json` records the page's first mount time and the host's time from the load request; `scripts/measure-startup.mjs` uses both, as described in [performance](../../docs/maintainers/performance.md).
-
-Save the native clipboard before any probe. The snapshot can contain private content; keep it in ignored scratch storage and never commit it:
-
-```sh
 _local/interop/clipboard save _local/interop/previous-pasteboard.json
-_local/interop/webkit-host _local/interop/consumer/dist/index.html export scripts/interop/fixture.json _local/interop/full.json
-_local/interop/webkit-host _local/interop/consumer/dist/index.html partial scripts/interop/fixture.json _local/interop/partial.json
-_local/interop/clipboard write _local/interop/full.json
-```
-
-Paste into the named disposable destination through its ordinary Paste command, inspect the destination document and copy a full and partial selection back. Read the resulting native clipboard with `clipboard read RESULT.json`. The result records text, HTML, RTF-derived HTML and image attachments. Build a host input containing `source` and `clipboard`, then run `webkit-host ... paste INPUT.json RESULT.json` to verify the package import. Prefer native HTML; when only RTF/RTFD is present, convert it to semantic HTML and associate attachment bytes with their source image URLs. Do not inject an unrelated preview bitmap.
-
-```sh
+# Run the one authorized disposable transfer.
 _local/interop/clipboard restore _local/interop/previous-pasteboard.json
 ```
 
-For Electron destinations, `cdp.py` evaluates an expression only in the selected page of an explicitly configured debugging endpoint. Configure a disposable user-data directory before launching the app. `AX.swift` reads only windows whose title exactly matches its second argument, excluding menu-bar recent documents.
+External-app checks require an identified changed contract or reproduced destination-specific bug, one application and one transfer direction. Use disposable documents; never send messages or touch production notes. A denied recording or accessibility permission is a blocker, not a reason to bypass it. `AX.swift` reads only a window matching its title argument. `cdp.py` requires an explicitly configured debugging endpoint and a disposable profile.
 
-```sh
-CDP_HTTP=http://127.0.0.1:19229 uv run scripts/interop/cdp.py app://obsidian.md 'document.title'
-```
+Printable checks use frozen portable HTML in a separate WebKit view with JavaScript disabled. They wait for images to decode before native printing. Checks cover PDF pages and text, excluded controls and private comments, embedded image streams, page-contained placements and portrait color-band rasters. Containment does not prove every possible PDF clipping path.
 
-`Clipboard.swift` writes RTFD attachments at their original positions using image tokens. It never sends messages, signs in or changes privacy permissions. A screen-recording denial is a test blocker; do not bypass it.
+Print groups can change macOS print preferences. Run them with a wrapper that saves the clipboard and scoped print preferences, restores both on every exit and independently compares the original bytes. Retain restoration evidence. Synthetic composition checks prove guards and transitions, not full IME interoperability. Hidden media must release playback resources; a fixture Open callback does not prove native file opening.
 
-## Fixture-driven WKWebView regressions
+## Dedicated probes
 
-`scenario` mode uses the public editor facade and real DOM selections. Each JSON input supplies `source`, optional `format`/`documentId`, and an `operations` array. Results retain each operation, named exports/snapshots, assertions and the final document. A failed assertion writes its evidence and exits with status 2.
+Build the host and exact candidate consumer with the recipe above. These probes retain their own archive, bundle and host evidence. Their source documents their selection and any additional arguments.
 
-```sh
-node scripts/interop/verify-native.mjs _local/interop/consumer/dist/index.html _local/release/0.0.2/native
-_local/interop/webkit-host _local/interop/consumer/dist/index.html scenario INPUT.json RESULT.json
-```
+| Script                                                                                                | Purpose                                                                                |
+| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `verify-comment-clipboard.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY CLIPBOARD_BINARY` | Native and host-mediated comment movement, preserved source and clipboard restoration. |
+| `verify-terminal-blocks.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                    | Trusted keyboard input after terminal blocks and source replacement.                   |
+| `verify-link-typing.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                        | Link boundaries, shared history, reopening and native composition.                     |
+| `verify-find-delete.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                        | Find followed by immediate arrow/delete input with event timings.                      |
+| `verify-reference-raw.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                      | Exact authored references in adapter callbacks across edits and reopening.             |
+| `verify-selection-appearance.mjs CANDIDATE_ARCHIVE OUTPUT_DIRECTORY [formatted,source,txt]`           | Active/inactive selection, native focus, two editors and gap-cursor presentation.      |
+| `verify-drop-indicator.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY DROP_HOST_BINARY`                | Trusted native drag exit/reentry, insertion and history.                               |
 
-Operations include `select` (text, occurrence and relative from/to offsets), `find`, `insertText`, `format`, `keyDown`, `paste`, `snapshot`, `save`, `reopen`, `load`, `reload`, `export`, `insertFootnote`, `navigateFootnote` and `editReferenceDefinition`. A `select` operation can restrict its search with a DOM `selector`. Keyboard modifiers use the facade's `metaKey`, `ctrlKey`, `altKey` and `shiftKey` fields. `save` captures a fresh snapshot; `reopen` loads those saved bytes with a new generation.
-
-Name a result with `name`, then assert it using `{ "op": "assert", "name": "saved", "path": "text", "includes": "expected" }`. Assertions accept `equals`, `includes` or `excludes`; omit `name` to assert the current `snapshot`/`html`/`selection`/`error` capture. An empty path addresses the complete named result. Set `expectedError` on an operation to require an error code or message. Partial export fixtures can use a `selection` object instead of the original hard-coded bold paragraph.
-
-The bundled 0.0.2 scenarios check source spelling, shared destination edits, collapsed link expansion, selected definition export, multiline footnote edits/navigation, collision paste, undo, save/reopen, stale generations and literal TXT. They do not touch the native clipboard or prove destination application compatibility; run the disposable destination probes separately. The summary records bundle and host hashes beside the input/result files.
-
-For 0.0.3, pass the version as the final argument:
-
-```sh
-node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.3
-```
-
-For 0.0.4, build a separate consumer from its candidate archive and pass `0.0.4` as the final argument. The suite retains the earlier scenarios and adds Mermaid source editing, undo, save/reopen, replacement, whole-document and diagram-only/mixed selection copying, flowchart/sequence PNG assets, invalid/unsafe-source fallback and literal TXT. Native clipboard destination tests remain separate.
-
-```sh
-node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE _local/interop/consumer-0.0.4
-swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/webkit-host-0.0.4
-node scripts/interop/verify-native.mjs _local/interop/consumer-0.0.4/dist/index.html _local/release/0.0.4/native _local/interop/webkit-host-0.0.4 0.0.4
-```
-
-`awaitDOM` waits for a selector to reach the requested `count` (default 1), with a bounded `timeout` in milliseconds (default 15000). `selectBlocks` creates a native DOM selection from `fromSelector` through `toSelector`, with optional zero-based `fromOccurrence`/`toOccurrence`. `security` records external resource loads, active embedded elements and the unsafe callback sentinel. Assertions can use `truthy` for errors whose exact wording belongs to the renderer. Portable image bytes in result JSON use `bytesBase64`, including each diagram's image and ordinary clipboard image slots.
-
-This retains the 0.0.2 scenarios and adds callout folding, highlight formatting, comment visibility and editing, source/ordinary-copy separation, reference-provenance privacy and native print checks. Additional operations inspect DOM attributes/styles, send DOM keys, set comment visibility and host keymaps, and paste a named frozen export. `assert.equalsFrom` compares against a named result without duplicating its bytes.
-
-`print` mode uses the WKWebView native print operation with hidden panels to save a disposable PDF beside its JSON result. PDFKit extracts its text for assertions that comments and editor controls are absent and collapsed callout bodies are included. Build the host against the current macOS SDK before running it.
-
-For 0.0.5, build a fresh consumer from the exact archive and pass `0.0.5`. The suite retains earlier scenarios and exercises the public `printableSnapshot(expectedGeneration?)` API, immediate unsaved edits, stale generations, composition, pending image imports, missing or corrupt image bytes, and document/revision changes during an awaited image export.
-
-```sh
-node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE _local/interop/consumer-0.0.5
-swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/webkit-host-0.0.5
-node scripts/interop/verify-native.mjs _local/interop/consumer-0.0.5/dist/index.html _local/release/0.0.5/native _local/interop/webkit-host-0.0.5 0.0.5
-```
-
-`printable` captures the public API result, including its document identity, generation, revision, standalone HTML, styles, assets and warnings. Result JSON serialises asset bytes as `bytesBase64` and records decoded dimensions and exact correspondence to the HTML's image URLs. `insertPrintable` inserts text and captures immediately, before the fixture's usual settling delay. `imageFixture` creates a local PNG at the specified `reference`, `width` and `height`. `imageExport`, `startPrintable` and `finishPrintable` hold or fail an adapter export to exercise asynchronous races. `startImagePaste` and `finishImagePaste` hold an import; `composition` dispatches the corresponding composition event.
-
-The native `printable` mode reads the named `printable` result (or `printableName`), loads its captured HTML into a **separate WKWebView**, disables content JavaScript, waits for all portable images to decode, and prints asynchronously using the native print operation. It does not print the live editor DOM. The main fixture replaces the live document after capture to verify that the PDF contains the frozen document. Native PDF checks cover multiple pages, the final sentinel, complete folded content, tables, highlights, references and footnotes, excluded revealed comments and controls, image XObject streams, image placements within page bounds, and paper geometry. Placement bounds measure containment within the PDF MediaBox; they do not model arbitrary clipping paths. The portrait fixture also rasterizes each PDF page through CoreGraphics and requires all three equal authored color bands to cover the complete drawn image area on one page. This detects clipping that image resource counts or page bounds alone can miss. Invalid Mermaid retains its source with a `diagram-unavailable` warning; TXT prints escaped literal source.
-
-These probes create disposable PDFs and can affect macOS print preferences. Run them within a wrapper that saves the clipboard and scoped print preferences, restores both on every exit, compares their original bytes independently, and retains restoration proofs. Keep private backups in ignored storage and remove them only after verification. Package-native tests do not establish compatibility with consumer app hosts or clipboard destinations. Run one isolated check only when its changed contract or reproduced bug requires it.
-
-For 0.0.6, pass `0.0.6` as the final argument. The suite retains the earlier scenarios and checks row/header movement, whole-column alignment, stable text and numeric sorting, rich cell preservation, spreadsheet growth, HTML cell formatting, rejected malformed input, mixed unsupported tables with private comments, undo, copying and save/reopen. `table` calls the public facade with `command` and optional `options`; `tableCells` captures ordered cell content and alignment. `domPaste` dispatches a DOM clipboard event with the supplied MIME `types`. It exercises the browser event handler; separate app-host checks must exercise the native Paste action and real pasteboard.
-
-For 0.0.7, pass `0.0.7`. The suite also checks complete raw source, spelling-only changes, history across editing modes, native textarea input and composition, literal source paste, partial-comment copy privacy, TXT, Unicode replacement, literal replacement tokens, multiline replacement, structured boundaries, failed table replacement, ordered headings, folded-heading navigation and stale entries after edits, mode changes, reloads and document switching.
-
-`editingMode`, `replaceSource`, `undo`, `redo`, `replace`, `replaceAll`, `headings` and `navigateHeading` call the public facade. Heading navigation round-trips entries through JSON to exercise a native bridge. `sourceInput` dispatches a textarea input event; `sourceState` records the textarea caret and focus. `surface` checks actual textarea and formatted-wrapper visibility after document loading or reloading. CRLF fixtures distinguish normalised DOM caret positions from exact source and TXT clipboard bytes. `domPaste`, `activeKeyDown` and `composition` target the active editing surface. DOM source Paste does not prove native Paste. Run a protected app-host check only for a changed native clipboard contract or reproduced bug.
-
-The distant-heading fixture checks caret visibility in the textarea viewport after navigation, find, replacement, undo and reload, including wrapped lines. `sourceViewport` mirrors computed text metrics because textarea selections expose no caret geometry; `sourceScroll` sets a controlled initial viewport without changing selection. The incomplete Mermaid fixture verifies its exact `diagram-unavailable` diagnostic before `acknowledgeError` clears it. Any other recorded diagnostic fails the acknowledgement.
-
-## Selected checks from 0.0.8
-
-Version 0.0.8 adds named reusable documents and controlled image adapters in `consumer/fixtures.ts`. The playground uses the same fixture resources. `minimal` omits the image adapter; `rich` supplies deterministic portable PNGs and explicit import/export rejection or manually released delays. The consumer stays an isolated package fixture, not an app integration.
-
-Keep the original positional arguments. Selection flags can appear before or after them, and each `--group` or `--scenario` can be repeated. Selection is the union of requested groups and scenario names. Unknown options, groups and scenarios, missing values, and groups empty for the requested version fail before WKWebView launches. `--list` prints JSON without requiring bundle or host files.
-
-```sh
-node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --list
-node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --group core --group host-controls
-node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.8 --scenario host-delayed-import-editability-epoch
-```
-
-Groups are `core`, `references`, `tables`, `source`, `diagrams`, `print`, `host-controls`, `native-search`, `layout`, `linked-files`, `media`, `portable-files`, `integration`, `containers` and `legacy`. Versions from 0.0.8 default to bounded `core`; previous versions retain their historical complete suite when no selector is supplied. `legacy` retains every prior scenario available for the version. No group includes `intentional-assertion-failure`; it requires explicit selection.
-
-The core covers reference preservation and shared source/formatted history. Host controls cover source focus/input preferences, read-only transitions and preserved history, bridge command state and stale generations, synthetic composition guards, and cancellation of manually delayed image imports after editability changes. Synthetic composition events verify guards; they do not prove complete IME interoperability.
-
-New public-facade operations are `editable`, `textInput` and `commandState`; `inputAttributes` inspects the active DOM surface. Captures include pull-based command state, the most recent command-state event, editability and adapter events. Command state is round-tripped through JSON to check bridge-readable values. The runner records hashes, exact selection, failed steps and final errors in `evidence.json`, beside complete input/result files.
-
-To demonstrate the diagnostic path separately from passing evidence:
-
-```sh
-node scripts/interop/verify-native.mjs BUNDLE _local/interop/controlled-failure HOST_BINARY 0.0.8 --scenario intentional-assertion-failure
-```
-
-Expect a non-zero result with the mismatched value and assertion step. Never count this expected failure as passing verification.
-
-For candidate changes run `pnpm check`, `pnpm format:check`, `pnpm build:playground` and the browser specs for the changed behaviour; CI runs the whole browser suite in Chromium and WebKit. Select browser regressions for changed behaviour. Run selected native checks for changed WKWebView, focus/input, bridge, clipboard, print or resource-lifecycle boundaries. Source-only documentation changes need no native run. Print groups remain opt-in and retain the protected preferences/pasteboard procedure above. Release verification still uses the actual archive and exact-version clean offline consumer; hosted CI is distinct from local results.
-
-## Native text and viewport checks from 0.0.9
-
-The `native-search` fixture includes UTF-16 Unicode, comments, folded callouts, protected image labels and distant text. Select the bounded core plus `native-search` and `layout` for the changed native boundaries:
-
-```sh
-node scripts/interop/verify-native.mjs BUNDLE OUTPUT_DIRECTORY HOST_BINARY 0.0.9 --group core --group native-search --group layout
-```
-
-Facade operations include `textSnapshot`, `selectTextRange`, `replaceTextRange`, `revealTextRange`, `textRangeRects`, `visibleTextRanges`, `setViewport` and `viewport`. `text` and `sourceName` identify a substring in a named snapshot; range operations round-trip its snapshot ID and UTF-16 offsets through JSON. Host-focus, controlled resize and second-instance helpers inspect DOM behaviour without exposing editor internals. Geometry is client CSS pixels, with supplied insets representing overlapping host chrome.
-
-The selected cases cover Unicode replacement and shared undo; read-only/composition and stale scopes; formatted/source insets, navigation, reload focus and scroll; resize and multiple-instance independence. Browser cases additionally exercise TXT/CRLF and source composition. Synthetic composition establishes guards, not complete IME interoperability. No native clipboard exchange or print campaign is implied by these layout checks.
-
-## Optional linked files and media from 0.0.10
-
-The shared `linked-files` fixture contains Unicode wiki targets and aliases, escaped table separators, named and path images, audio/video fragments, a PDF, file cards, missing/error states and unsupported forms. Rich configuration enables the controlled `files` and `wikiLinks` adapters; minimal leaves optional syntax literal. Resources are local and disposable. Host actions are recorded callbacks, without storage, permissions or native opening.
-
-```sh
-node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE _local/interop/consumer-0.0.10
-swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/webkit-host-0.0.10
-node scripts/interop/verify-native.mjs _local/interop/consumer-0.0.10/dist/index.html _local/release/0.0.10/native _local/interop/webkit-host-0.0.10 0.0.10 --group core --group linked-files --group media --group portable-files
-```
-
-`linked-files` selects syntax/source preservation, host wiki actions and named-image sizing with undo. Browser cases cover retry, file actions and path sizing. `media` selects read-only controls and resource release through mode/document lifecycle changes. `portable-files` selects ordinary clipboard, explicit Markdown and printable representations for all supported kinds, including descriptive nonimage fallbacks, unavailable image warnings and stale asynchronous exports. The selected native case also prints the frozen portable document to a real PDF. Select only groups relevant to a later changed boundary.
-
-Additional fixture operations are `fileMode` (`normal`, `reject`, `hold`, `corrupt`), `fileRelease`, `fileEvents`, `fileResize` (optional cancellation), `startFileOutput` (`kind: 'print'` for printable output; otherwise clipboard export) and `finishFileOutput`. Browser regressions use `@linked-files`; native assertions retain callback identities, source snapshots and portable output alongside the usual evidence hashes. Portable-output checks exercise the captured API result; native PDF printing remains a separate selected check with the protected clipboard/preferences procedure above. A PDF view's host opening callback does not prove a native PDF viewer integration.
-
-## Consolidation checks from 0.0.11
-
-The `integration` group combines minimal/rich source, read-only, history, native range invalidation, same-generation reloads, TXT, multiline insertion/rejection, delayed image import/file-output cancellation and per-instance comment/privacy checks. It includes one frozen native PDF case: use the clipboard/print-preference protection described above. That case verifies explicit diagram print/copy with minimal previews disabled. Combine this group with bounded core and selected resource/layout cases; do not run every historical group.
-
-`mountSecond` accepts optional source; `secondState` captures its snapshot and computed comment display. `fileAbortCount` records cancelled fixture callbacks. Held output must actually start before its cancellation can be claimed. These helpers remain engine fixtures and do not prove app storage or native actions.
-
-## Comment movement through the native clipboard
-
-Run the bounded comment clipboard regression against an exact candidate archive:
-
-```sh
-node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE _local/interop/comment-consumer
-swiftc -target arm64-apple-macos27.0 scripts/interop/WebKitHost.swift -o _local/interop/comment-host
-swiftc scripts/interop/Clipboard.swift -o _local/interop/comment-clipboard
-node scripts/interop/verify-comment-clipboard.mjs CANDIDATE_ARCHIVE _local/interop/comment-consumer/dist/index.html _local/interop/comment-results _local/interop/comment-host _local/interop/comment-clipboard
-```
-
-The named cases exercise formatted and source modes, selecting text containing hidden or revealed inline `%%` and HTML comments in one loaded document. Native cases invoke the WKWebView responder's Cut and Paste actions. Host cases export through `clipboardSnapshot`, write its text and HTML to the native pasteboard, delete the selection through `insertText`, read the pasteboard and call `paste`. The host sequence checks the facade transfer contract; it does not establish an atomic host Cut implementation. Neither path rewrites pasteboard HTML.
-
-Assertions require comment-free external text and HTML, preserved comments after local movement, undo of the paste and removal, and exact save/reopen bytes. Evidence records archive, bundle and host hashes. These disposable fixture checks establish package WKWebView behaviour, not Memos or PadPad integration.
-
-The runner saves and restores all native pasteboard representations, verifies restoration independently and removes private backups only after a byte match. The host also restores its snapshot before exiting normally or reporting an error. Keep results in ignored scratch storage. A rejected native action or empty selection is a failure.
-
-## Native keyboard input
-
-Build the host and a fresh consumer as above, then run the terminal-block regression against that exact archive:
-
-```sh
-node scripts/interop/verify-terminal-blocks.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY
-```
-
-The bounded suite types after public `load` and `replaceSource` calls with terminal dividers, an image, a diagram, an ordinary paragraph, and CRLF/Unicode source. It checks exact snapshots, undo/redo and save/reopen. A separate case types, moves left and deletes forward. It does not touch the clipboard.
-
-The fixture's `nativeInput` operation accepts an explicit macOS `keyCode` (0–127), `characters`, and optional `metaKey`, `shiftKey`, `altKey` and `ctrlKey`. Supply a `keys` array (up to 32 keys) to queue a sequence without per-key waits; the completion wait follows the whole batch. The bridge uses public `NSEvent.keyEvent` and queues key-down/key-up events with `NSApplication.postEvent`, then yields to the AppKit event loop. It requires the key window and a WKWebView first responder. The consumer requires the actual DOM active editor, records trusted keyboard/input events and requires one trusted key-down per requested key. The runner also asserts the resulting document; posting an event alone is not a pass.
-
-These are constructed AppKit events with explicit US keyboard characters. They prove this disposable WKWebView path, not hardware keyboard delivery, IME composition or consumer-app behaviour.
-
-Run the link typing checks against the exact archive with:
-
-```sh
-node scripts/interop/verify-link-typing.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY
-```
-
-The cases type at the end of, inside and over inline, reference, angle and bare links, and after `format('link')` at a caret, in a CRLF and Unicode document. They check the saved bytes, the rendered link text, undo, redo and reopening. `nativeInput` with a `compose` array of strings composes text as an input method does, through the web view's `NSTextInputContext` client: each string but the last is set as marked text and the last is committed. The consumer requires a trusted `compositionend`. This exercises WebKit's composition path, not a particular input method's candidate window or keyboard layout.
-
-Run the bounded find/arrow/delete checks against the exact archive with:
-
-```sh
-node scripts/interop/verify-find-delete.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY
-```
-
-The runner primes native focus, then calls find and focus synchronously before posting an arrow/delete batch. `nativeInput` with `focus: false` skips native activation and its 100 ms delay, and rejects a window without WKWebView key focus. Optional `find` and `findCount` run within the same fixture operation, with no intervening settling wait. Results record elapsed milliseconds from find to each trusted DOM event, selection collapse before deletion, exact changed bytes, errors, undo and save/reopen. IPC and event-loop delivery still take time; use the recorded first-key timing when interpreting this evidence.
-
-## Native drop indicator
-
-The dedicated probe drags disposable HTML from a page element into the packed editor, leaves the web view, returns and drops after the second paragraph. It records trusted drag and keyboard events, rendered indicator states, snapshots and exact insertion, undo, redo and reopen bytes. It uses native mouse events through the window server; the host must have permission to post those events. It reads only the drag pasteboard and does not touch the general clipboard.
-
-```sh
-swiftc -target arm64-apple-macos27.0 scripts/interop/DropIndicatorHost.swift -o _local/interop/drop-host
-node scripts/interop/verify-drop-indicator.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY _local/interop/drop-host
-```
-
-A missing accepted drop or trusted event fails the probe. This fixture verifies the package in WKWebView, not a consumer app's native file handling.
-
-## Authored reference text
-
-`FileReference.raw` and `WikiLinkReference.raw` hold a reference's Markdown as the document holds it. The dedicated check loads CRLF Unicode wiki links, named embeds and path images, in paragraphs and table cells, in the packed consumer and compares what every adapter callback receives with the saved bytes, including after undo, redo, reopening, resizing and a table paste. Build the host and consumer as above, then run it against the exact archive:
-
-```sh
-node scripts/interop/verify-reference-raw.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY
-```
-
-It records the archive, bundle, host and fixture hashes beside each scenario's result. It exercises the facade and DOM events in a real WKWebView, not a consumer app's use of `raw`.
-
-## Native selection and gap cursor
-
-The selection probe opens two editors in a visible `WKWebView` window with a native text field and a second window. For formatted, source and TXT modes it records the selection's state after the editor has focus, after a native field takes focus, after another window becomes key, after the window returns, after the host calls `blur()` and after a second editor takes the selection. It checks the active and inactive colors in snapshot pixels, that one page paints one selection, and that the first editor stops painting when the second takes over. Snapshots omit a native textarea's selection, so source and TXT modes record their pixels without asserting them. WebKit also collapses a textarea's selection when a native field takes focus, with or without Inkkit, so that one case does not require a selection. Run it on a logged-in Mac with a fresh output directory:
-
-```sh
-node scripts/interop/verify-selection-appearance.mjs CANDIDATE_ARCHIVE OUTPUT_DIRECTORY [formatted,source,txt]
-```
-
-The `layout` group includes `native-layout-gap-cursor`, which checks that the gap cursor after a final image is a vertical caret one line tall.
+The drop probe uses `DropIndicatorHost.swift`, built like the normal host, and needs permission to post native mouse events. It uses the drag pasteboard, not the general clipboard. The selection probe creates a native text field and a second window; WKWebView snapshots omit native textarea selection, so source/TXT pixel recordings alone do not prove its paint. Report these limits with the evidence.
