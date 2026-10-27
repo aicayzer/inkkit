@@ -61,6 +61,8 @@ const evidence = {
   },
   method:
     'Trusted AppKit keydown to the next frame and timer in WKWebView; each phase uses a fresh document. Paste is a facade operation, followed by measured trusted typing.',
+  gate: 'Trusted native input and exact saved/reopened bytes. Timing is reported separately; a correctness pass does not satisfy the performance target.',
+  performanceTargetMs: 35,
   cases: [],
 }
 for (const phase of ['entry', 'undo', 'redo', 'paste']) {
@@ -141,15 +143,14 @@ for (const phase of ['entry', 'undo', 'redo', 'paste']) {
     status: run.status,
     samples,
     median,
-    under40ms: median !== null && median < 40,
+    under35ms: median !== null && median < 35,
     exact,
     errors: run.stderr,
     failures: result?.steps?.filter((step) => !step.passed),
   })
 }
-evidence.passed = evidence.cases.every(
-  (entry) => entry.passed && entry.under40ms,
-)
+evidence.passed = evidence.cases.every((entry) => entry.passed)
+evidence.performanceTargetMet = evidence.cases.every((entry) => entry.under35ms)
 writeFileSync(
   join(output, 'evidence.json'),
   JSON.stringify(evidence, null, 2) + '\n',

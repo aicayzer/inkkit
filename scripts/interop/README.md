@@ -92,3 +92,5 @@ Build the host and exact candidate consumer with the recipe above. These probes 
 | `verify-drop-indicator.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY DROP_HOST_BINARY`                | Trusted native drag exit/reentry, insertion and history.                                                     |
 
 The drop probe uses `DropIndicatorHost.swift`, built like the normal host, and needs permission to post native mouse events. It uses the drag pasteboard, not the general clipboard. The selection probe creates a native text field and a second window; WKWebView snapshots omit native textarea selection, so source/TXT pixel recordings alone do not prove its paint. Report these limits with the evidence.
+
+The long-source probe gates trusted input and exact saved/reopened bytes. It also reports each latency sample and whether all phase medians meet issue #206's 35 ms target. Its correctness exit status does not establish performance acceptance; inspect `performanceTargetMet` separately and retain an unmet target as outstanding work.
