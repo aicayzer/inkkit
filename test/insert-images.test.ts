@@ -414,6 +414,7 @@ test.each([
   'Hello\n\n\n',
   '- a\n\n\n',
   'Café 😀\r\n\r\n \t\r\n',
+  'Café 😀\r\r \t\r',
 ])(
   'appendImages preserves a lone block and its trailing bytes: %j',
   async (source) => {
