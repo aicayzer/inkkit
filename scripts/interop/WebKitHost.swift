@@ -330,7 +330,13 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        fputs("WKWebView: \(message.body)\n", stderr)
+        let detail = String(describing: message.body)
+        fputs("WKWebView page error: \(detail)\n", stderr)
+        restorePasteboard()
+        let failure: [String: Any] = ["passed": false, "pageErrors": [detail]]
+        try? JSONSerialization.data(withJSONObject: failure, options: [.prettyPrinted, .sortedKeys])
+            .write(to: URL(fileURLWithPath: args[4]))
+        exit(2)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
