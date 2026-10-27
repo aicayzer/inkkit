@@ -80,14 +80,15 @@ Print groups can change macOS print preferences. Run them with a wrapper that sa
 
 Build the host and exact candidate consumer with the recipe above. These probes retain their own archive, bundle and host evidence. Their source documents their selection and any additional arguments.
 
-| Script                                                                                                | Purpose                                                                                |
-| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `verify-comment-clipboard.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY CLIPBOARD_BINARY` | Native and host-mediated comment movement, preserved source and clipboard restoration. |
-| `verify-terminal-blocks.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                    | Trusted keyboard input after terminal blocks and source replacement.                   |
-| `verify-link-typing.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                        | Link boundaries, shared history, reopening and native composition.                     |
-| `verify-find-delete.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                        | Find followed by immediate arrow/delete input with event timings.                      |
-| `verify-reference-raw.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                      | Exact authored references in adapter callbacks across edits and reopening.             |
-| `verify-selection-appearance.mjs CANDIDATE_ARCHIVE OUTPUT_DIRECTORY [formatted,source,txt]`           | Active/inactive selection, native focus, two editors and gap-cursor presentation.      |
-| `verify-drop-indicator.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY DROP_HOST_BINARY`                | Trusted native drag exit/reentry, insertion and history.                               |
+| Script                                                                                                | Purpose                                                                                                      |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `verify-comment-clipboard.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY CLIPBOARD_BINARY` | Native and host-mediated comment movement, preserved source and clipboard restoration.                       |
+| `verify-terminal-blocks.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                    | Trusted keyboard input after terminal blocks and source replacement.                                         |
+| `verify-link-typing.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                        | Link boundaries, shared history, reopening and native composition.                                           |
+| `verify-find-delete.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                        | Find followed by immediate arrow/delete input with event timings.                                            |
+| `verify-long-source.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                        | Trusted source typing on 10,000 paragraphs after entry, undo, redo and paste; exact bytes and frame latency. |
+| `verify-reference-raw.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY HOST_BINARY`                      | Exact authored references in adapter callbacks across edits and reopening.                                   |
+| `verify-selection-appearance.mjs CANDIDATE_ARCHIVE OUTPUT_DIRECTORY [formatted,source,txt]`           | Active/inactive selection, native focus, two editors and gap-cursor presentation.                            |
+| `verify-drop-indicator.mjs CANDIDATE_ARCHIVE BUNDLE OUTPUT_DIRECTORY DROP_HOST_BINARY`                | Trusted native drag exit/reentry, insertion and history.                                                     |
 
 The drop probe uses `DropIndicatorHost.swift`, built like the normal host, and needs permission to post native mouse events. It uses the drag pasteboard, not the general clipboard. The selection probe creates a native text field and a second window; WKWebView snapshots omit native textarea selection, so source/TXT pixel recordings alone do not prove its paint. Report these limits with the evidence.
