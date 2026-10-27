@@ -2955,6 +2955,34 @@ scenarios['intentional-page-error'] = {
   source: 'Untouched\n',
   operations: [{ op: 'pageError', message: 'Intentional native page error' }],
 }
+scenarios['host-keyboard-open-links'] = {
+  source: '[Café](https://example.com) [[ Plan# section | 日本語 ]]  \r\n',
+  files: true,
+  operations: [
+    { op: 'setKeymap', bindings: { openLink: ['Ctrl-o'] } },
+    { op: 'select', text: 'Café', from: 2, to: 2 },
+    { op: 'keyDown', key: 'o', ctrlKey: true },
+    assert('openedLinks.0', 'https://example.com'),
+    { op: 'editable', editable: false },
+    { op: 'selectTextRange', text: ' 日本語 ' },
+    { op: 'keyDown', key: 'o', ctrlKey: true },
+    { op: 'fileState', name: 'files' },
+    assert('wikiOpens', 1, 'files'),
+    { op: 'capture', name: 'opened' },
+    assert('openedWikiLinks.0', '[[ Plan# section | 日本語 ]]', 'opened'),
+    assert(
+      'snapshot.text',
+      '[Café](https://example.com) [[ Plan# section | 日本語 ]]  \r\n',
+    ),
+    assert('commandState.commands.undo', false),
+    { op: 'save' },
+    { op: 'reopen' },
+    assert(
+      'snapshot.text',
+      '[Café](https://example.com) [[ Plan# section | 日本語 ]]  \r\n',
+    ),
+  ],
+}
 const names = Object.keys(scenarios)
 const groups = {
   core: [
