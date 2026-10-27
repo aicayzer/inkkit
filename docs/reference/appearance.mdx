@@ -143,6 +143,7 @@ Pass bindings in [`keymap`](/reference/options#editor-options) at mount, or repl
 | `taskList`             | None                   | `format('taskList')`        |
 | `undo`                 | `Mod-z`                | `undo()`                    |
 | `redo`                 | `Mod-y`, `Shift-Mod-z` | `redo()`                    |
+| `openLink`             | None                   | Open the link at the caret  |
 | `moveBlockUp`          | `Alt-ArrowUp`          | `moveBlock('up')`           |
 | `moveBlockDown`        | `Alt-ArrowDown`        | `moveBlock('down')`         |
 | `indent`               | `Tab`                  | Indent the list item        |
@@ -167,11 +168,12 @@ Pass bindings in [`keymap`](/reference/options#editor-options) at mount, or repl
 
 A `Keymap` maps each name to an array of keys. An unknown name, or a value that isn't an array of strings, throws `invalid-argument`; a `null` entry counts as omitted.
 
-- **Where bindings apply.** History bindings work on every surface. Formatting, block move and table bindings work only in formatted mode. `Mod-z`, `Mod-y` and `Shift-Mod-z` are always consumed, even when unbound, so the browser's own undo never changes source or TXT text.
-- **A key shared by two names** goes to the later group, in the order history, formatting, block moves, tables. `indent` and `outdent` come last: their keys apply only to a key that the other groups leave alone. A table binding passes its key on to a block move bound to the same key when its command isn't available, so `tableMoveRowUp` and `moveBlockUp` can share a key: rows move in a table, blocks move elsewhere.
+- **Where bindings apply.** History bindings work on every surface. Link opening, formatting, block move and table bindings work only in formatted mode. `Mod-z`, `Mod-y` and `Shift-Mod-z` are always consumed, even when unbound, so the browser's own undo never changes source or TXT text.
+- **Open a link.** Bind `openLink`, for example `{ openLink: ['Mod-O'] }`, to open the Markdown link at the caret through `events.openLink`, or a selected wiki link through `WikiLinkAdapter.open`. It also works in read-only mode. The callback receives the same safe address or authored wiki reference as a pointer activation. The binding consumes the key without changing selection, text or history, including when no link is present. It does nothing during composition or in source and TXT modes.
+- **A key shared by two names** goes to the later group, in the order history, link opening, formatting, block moves, tables. `indent` and `outdent` come last: their keys apply only to a key that the other groups leave alone. A table binding passes its key on to a block move bound to the same key when its command isn't available, so `tableMoveRowUp` and `moveBlockUp` can share a key: rows move in a table, blocks move elsewhere.
 - **Indent and outdent** move the list item at the selection one level in or out, as the Tab and Shift-Tab keys always have. They do nothing, and the key isn't consumed, outside a list, in source and TXT modes and in a read-only editor. They run after the keys that Tab and Shift-Tab keep for tables: Tab in a list item that holds a typed table row makes the table, and Tab in a table cell moves to the next cell. Bind `[]` to a name to turn its default off. The editor binds no `Mod-[` or `Mod-]`, so a host can use them.
 - **A bound key is consumed** even when its history, formatting or block move command isn't available now. A table binding passes the key on when its command isn't available. A block move binding passes the key on in a table, in a read-only editor and where there is no block to move, so the web view's own caret movement applies; on a Mac, Option-Up and Option-Down move to the start or end of a paragraph.
-- **A command that fails from a shortcut** the person presses reports its error through `events.error`. Through [`keyDown`](/reference/editor#keydown), a bound key in a read-only editor throws `read-only`, except a block move key, which returns `false`.
+- **A command that fails from a shortcut** the person presses reports its error through `events.error`. Through [`keyDown`](/reference/editor#keydown), a mutation binding in a read-only editor throws `read-only`, except a block move key, which returns `false`. `openLink` remains available.
 
 ### Key notation
 

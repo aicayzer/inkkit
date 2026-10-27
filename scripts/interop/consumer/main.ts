@@ -19,6 +19,7 @@ let currentCommandState
 let pendingPaste
 let pendingPrintable
 let secondEditor
+const openedLinks = []
 const mountEditor = (configuration = 'rich', linked = false) =>
   InkKitEditor.mount(
     document.querySelector('#editor'),
@@ -31,7 +32,9 @@ const mountEditor = (configuration = 'rich', linked = false) =>
       clipboard(data) {
         receivedClipboard = data
       },
-      openLink() {},
+      openLink(href) {
+        openedLinks.push(href)
+      },
       error(error) {
         window.lastError = error.message
         window.lastErrorCode = error.code ?? null
@@ -81,6 +84,10 @@ const capture = () => ({
   editable: editor.editable,
   adapterEvents: [...images.events],
   fileEvents: [...files.events],
+  openedLinks: [...openedLinks],
+  openedWikiLinks: files.events
+    .filter((event) => event.operation === 'wikiOpen')
+    .map((event) => event.raw),
   error: window.lastError ?? null,
   errorCode: window.lastErrorCode ?? null,
   diagnostics: window.interopErrors ?? [],
