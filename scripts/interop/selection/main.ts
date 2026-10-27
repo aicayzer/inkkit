@@ -118,6 +118,21 @@ const capture = async () => {
     select(0)
   },
   select,
+  setHostActive(active: boolean | null) {
+    const focused = document.activeElement
+    const selections = editors.map((editor) =>
+      JSON.stringify(editor.textSnapshot().selection),
+    )
+    editors.forEach((editor) => editor.setHostActive(active))
+    if (
+      document.activeElement !== focused ||
+      editors.some(
+        (editor, index) =>
+          JSON.stringify(editor.textSnapshot().selection) !== selections[index],
+      )
+    )
+      throw Error('Host activation changed focus or selection')
+  },
   blur: (index: number) => editors[index].blur(),
   capture,
 }

@@ -910,6 +910,7 @@ window.interop = {
                 surface instanceof HTMLTextAreaElement
                   ? surface.readOnly
                   : null,
+              ariaReadOnly: surface.getAttribute('aria-readonly'),
               contenteditable: surface.getAttribute('contenteditable'),
               focused: document.activeElement === surface,
             }
