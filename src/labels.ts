@@ -55,6 +55,7 @@ export const defaultLabels: Readonly<EditorLabels> = {
   fileOpen: 'Open',
   filePreviewUnavailable: 'Preview unavailable',
   filePDFPreview: 'Open to view this PDF',
+  imageResize: 'Resize image',
   wikiMissing: 'Link unavailable',
   comment: 'Author comment',
   preservedMarkdown: 'Preserved Markdown',

@@ -347,6 +347,7 @@
   opacity: 0;
 }
 .inkkit-root .ProseMirror .inkkit-image:hover .inkkit-image-handle,
+.inkkit-root .ProseMirror .inkkit-image:focus-within .inkkit-image-handle,
 .inkkit-root .ProseMirror .inkkit-image-handle:active {
   opacity: 1;
 }
@@ -1013,6 +1014,7 @@
 
 /* One ring for every control InkKit draws; the editing surfaces can be set apart. */
 .inkkit-root button:focus-visible,
+.inkkit-root .inkkit-image-handle:focus-visible,
 .inkkit-root .inkkit-file audio:focus-visible,
 .inkkit-root .inkkit-file video:focus-visible {
   outline: var(--inkkit-focus-width, 2px) solid
