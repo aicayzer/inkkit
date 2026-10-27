@@ -28,6 +28,8 @@ Repeat `--group` and `--scenario` to select a union. No selector means `core`; `
 
 Core covers source preservation and shared source/formatted history, including three source inputs followed by one undo and redo. Host controls include the native bridge insertion methods, read-only transitions, input preferences, stale generations and delayed imports. Resource groups use local fixture resources and record callbacks; they never open a real user's files.
 
+The media group checks trusted keyboard image resizing and PDF focus traversal. PDF checks exercise Tab and Shift+Tab, then use Option+Tab to include every control under the macOS default keyboard navigation setting. `nativeInput` accepts an optional `selector` inside the editor for control input; `controlState` records that control's focus, role, value and visibility. These operations exercise the rendered controls rather than a host's own toolbar.
+
 `evidence.json` records the package version, entry, archive/bundle/host hashes, exact selection, individual inputs/results, failed steps and page errors. An uncaught page error or unhandled rejection fails the scenario immediately, writes its error and restores the pasteboard. A successful process exit alone is not a pass.
 
 ## Fixture operations

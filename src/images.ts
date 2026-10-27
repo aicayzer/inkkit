@@ -24,6 +24,7 @@ import {
 } from './files'
 import { fileReference } from './linked-syntax'
 import { imageBlockSchema } from './image-blocks'
+import { defaultLabels } from './labels'
 
 /** A width rides in the alt text, as `![a picture|400](images/….png)`. Other Markdown readers
  *  show the picture and keep the number without requiring a private extension. */
@@ -44,6 +45,9 @@ class ImageView implements NodeView {
   /** The card or picture, which a standalone image's block row holds. */
   private element: HTMLElement
   private image?: HTMLImageElement
+  private handle?: HTMLElement
+  private destroyed = false
+  private restoreResizeFocus = false
   private media?: HTMLMediaElement
   private pdf?: HTMLIFrameElement
   private width: number | null = null
@@ -182,6 +186,7 @@ class ImageView implements NodeView {
   }
 
   destroy(): void {
+    this.destroyed = true
     this.view.dom.removeEventListener('inkkit-cancel-resize', this.cancelResize)
     this.view.dom.removeEventListener(mediaPolicyEvent, this.mediaPolicy)
     this.stopResize?.()
@@ -258,6 +263,8 @@ class ImageView implements NodeView {
   }
 
   private card(label: string, status?: string, retry = false): void {
+    if (this.resolution?.state.status !== 'loading' && !this.handle)
+      this.restoreResizeFocus = false
     const footer = document.createElement('span')
     footer.className = 'inkkit-file-footer'
     const name = document.createElement('span')
@@ -304,6 +311,8 @@ class ImageView implements NodeView {
   }
 
   private render(): void {
+    if (this.handle && document.activeElement === this.handle)
+      this.restoreResizeFocus = true
     this.stopResize?.()
     this.stopResize = undefined
     this.releaseMedia()
@@ -317,6 +326,7 @@ class ImageView implements NodeView {
     this.width = width
     this.element.textContent = ''
     this.image = undefined
+    this.handle = undefined
     if (this.runtime) {
       this.element.classList.add('inkkit-file')
       const state = this.resolution!.state
@@ -382,6 +392,9 @@ class ImageView implements NodeView {
         const pdf = document.createElement('iframe')
         pdf.title = label
         pdf.setAttribute('sandbox', '')
+        // WebKit's sandboxed PDF viewer cannot return keyboard focus to its parent.
+        // The Open control provides the keyboard path to the document.
+        pdf.tabIndex = -1
         pdf.referrerPolicy = 'no-referrer'
         if (width != null) pdf.style.width = `${width}px`
         pdf.addEventListener('error', () => {
@@ -392,6 +405,7 @@ class ImageView implements NodeView {
         this.element.append(pdf)
         this.card(label, this.runtime.labels.filePDFPreview)
       } else this.card(label)
+      this.restoreHandleFocus()
       return
     }
     const presentation = this.adapter?.presentation(
@@ -404,6 +418,16 @@ class ImageView implements NodeView {
     }
     this.element.classList.remove('inkkit-image-absent')
     this.renderImage(presentation.url, alt, width)
+    this.restoreHandleFocus()
+  }
+
+  private restoreHandleFocus(): void {
+    if (!this.restoreResizeFocus || !this.handle) return
+    this.restoreResizeFocus = false
+    // A file adapter may resolve the changed width asynchronously. Do not steal focus
+    // if the person has moved elsewhere while the loading card was visible.
+    if (this.canResize() && document.activeElement === document.body)
+      this.handle.focus({ preventScroll: true })
   }
 
   private renderImage(url: string, alt: string, width: number | null): void {
@@ -423,8 +447,78 @@ class ImageView implements NodeView {
     // The grip sits on the whole card, so it centres on the picture and its name together.
     const handle = document.createElement('span')
     handle.className = 'inkkit-image-handle'
+    handle.tabIndex = 0
+    handle.setAttribute('role', 'slider')
+    handle.setAttribute('aria-orientation', 'horizontal')
+    handle.setAttribute(
+      'aria-label',
+      `${this.host?.labels.imageResize ?? defaultLabels.imageResize} ${alt}`.trim(),
+    )
+    handle.addEventListener('focus', this.updateHandle)
+    handle.addEventListener('keydown', this.resizeKey)
     handle.addEventListener('pointerdown', this.startResize)
+    this.handle = handle
     this.element.append(preview, handle)
+    this.updateHandle()
+    image.addEventListener('load', this.updateHandle)
+  }
+
+  private updateHandle = (): void => {
+    if (!this.handle || !this.image) return
+    const width = Math.round(
+      this.image.getBoundingClientRect().width || this.width || minimumWidth,
+    )
+    this.handle.setAttribute(
+      'aria-valuemin',
+      String(Math.min(minimumWidth, width)),
+    )
+    this.handle.setAttribute(
+      'aria-valuemax',
+      String(Math.max(minimumWidth, width, this.view.dom.clientWidth)),
+    )
+    this.handle.setAttribute('aria-valuenow', String(width))
+    this.handle.setAttribute('aria-valuetext', `${width}px`)
+  }
+
+  private resizeKey = (event: KeyboardEvent): void => {
+    if (event.altKey || event.ctrlKey || event.metaKey || !this.canResize())
+      return
+    const image = this.image
+    if (
+      !image ||
+      event.currentTarget !== this.handle ||
+      !this.handle.isConnected
+    )
+      return
+    const limit = Math.max(minimumWidth, this.view.dom.clientWidth)
+    const current = Math.round(
+      image.getBoundingClientRect().width || this.width || minimumWidth,
+    )
+    const step = event.shiftKey ? 1 : 10
+    let width: number
+    switch (event.key) {
+      case 'ArrowLeft':
+      case 'ArrowDown':
+        width = current - step
+        break
+      case 'ArrowRight':
+      case 'ArrowUp':
+        width = current + step
+        break
+      case 'Home':
+        width = minimumWidth
+        break
+      case 'End':
+        width = limit
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+    this.width = Math.min(limit, Math.max(minimumWidth, width))
+    this.commit()
+    this.handle?.focus({ preventScroll: true })
+    this.updateHandle()
   }
 
   private startResize = (event: PointerEvent): void => {
@@ -495,7 +589,13 @@ class ImageView implements NodeView {
   }
 
   private canResize(): boolean {
-    return this.view.editable && !this.view.composing && this.canMutate()
+    return (
+      !this.destroyed &&
+      this.view.editable &&
+      !this.view.composing &&
+      (!this.host || this.host.active()) &&
+      this.canMutate()
+    )
   }
 }
 
