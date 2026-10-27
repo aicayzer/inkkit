@@ -94,7 +94,9 @@ test('Select All builds ranges without a root lookup for every block and reuses 
     const view = ctx.get(editorViewCtx)
     const lookup = vi.spyOn(view, 'domAtPos')
     view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
-    expect(paintedText()).toHaveLength(200)
+    expect(paintedText()).toEqual([
+      Array.from({ length: 200 }, (_, i) => `Paragraph ${i}`).join(''),
+    ])
     expect(lookup.mock.calls.length).toBeLessThan(5)
     const highlight = CSS.highlights.get('inkkit-selection')
     window.dispatchEvent(new Event('blur'))
@@ -120,7 +122,7 @@ test('native host activation changes only presentation and null restores browser
     const element = document.activeElement
     editor.setHostActive(false)
     expect(active(view)).toBe(false)
-    expect(paintedText()).toEqual(['café 😀', 'More'])
+    expect(paintedText()).toEqual(['café 😀More'])
     editor.setHostActive(true)
     expect(active(view)).toBe(true)
     window.dispatchEvent(new Event('blur'))
@@ -133,6 +135,47 @@ test('native host activation changes only presentation and null restores browser
     expect(() => editor.setHostActive('yes' as never)).toThrow(
       expect.objectContaining({ code: 'invalid-argument' }),
     )
+  })
+})
+
+test('a range across plain blocks keeps partial Unicode boundaries and excludes intervening controls', async () => {
+  await withEditor((editor) => {
+    const source =
+      'First café 😀\r\n\r\nSecond line\r\n\r\n```txt\r\ncode\r\n```\r\n\r\nThird\r\n\r\nFourth'
+    editor.loadDocument({
+      documentId: 'ranges',
+      generation: 1,
+      format: 'md',
+      text: source,
+    })
+    const before = editor.snapshot()
+    const snapshot = editor.textSnapshot()
+    editor.selectTextRange(
+      {
+        snapshotId: snapshot.snapshotId,
+        from: 2,
+        to: snapshot.text.indexOf('line') + 2,
+      },
+      { focus: false },
+    )
+    expect(paintedText()).toEqual(['rst café 😀Second li'])
+    editor.selectTextRange(
+      { snapshotId: snapshot.snapshotId, from: 0, to: snapshot.text.length },
+      { focus: false },
+    )
+    expect(paintedText()).toEqual([
+      'First café 😀Second line',
+      'code',
+      'ThirdFourth',
+    ])
+    expect(editor.snapshot()).toEqual(before)
+    editor.loadDocument({
+      documentId: 'reopened',
+      generation: 2,
+      format: 'md',
+      text: editor.snapshot().text,
+    })
+    expect(editor.snapshot().text).toBe(source)
   })
 })
 
@@ -178,7 +221,7 @@ test.each([true, false])(
       view.dispatch(
         view.state.tr.setSelection(new AllSelection(view.state.doc)),
       )
-      expect(paintedText()).toEqual(expected)
+      expect(paintedText().join('')).toEqual(expected.join(''))
       const before = editor.snapshot()
       editor.setHostActive(false)
       editor.setHostActive(true)

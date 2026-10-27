@@ -65,6 +65,17 @@ The selection implementation in `65da320` was measured separately with `node scr
 | 5,000      |                  54.2 / 17.2 |                   215 / 81 |
 | 10,000     |                   226 / 21.3 |                  715 / 181 |
 
+The first linear implementation still missed the 100 ms WebKit target at 10,000 paragraphs. A follow-up coalesces adjacent plain paragraph and heading text into one highlight range. Decorated blocks, controls, code and list boundaries keep separate ranges. Pixel checks in both engines confirm that the selection still excludes margins and gaps between blocks.
+
+The same command and fixture on an Apple M4 running macOS 27, Node.js 26.11.0, Chromium 156.0.8078.4 and WebKit 27.2 measured the first linear implementation at `a4bedf7` against the coalesced ranges. Each median uses five samples after one warm-up:
+
+| Paragraphs | Chromium before / after (ms) | WebKit before / after (ms) |
+| ---------- | ---------------------------: | -------------------------: |
+| 5,000      |                  12.3 / 16.6 |                    69 / 16 |
+| 10,000     |                  18.9 / 17.3 |                   150 / 21 |
+
+Both engines now meet the 100 ms target on this fixture, and doubling the document does not double the median. These timings measure text selection through the next frame, not document loading or native host activation.
+
 ## Checks and limits
 
 `test/browser/long-note-scaling.spec.ts` compares median costs at 1,000 and 4,000 blocks for typing, trusted Enter, leaving source mode after an edit, whole-text selection, active-query typing and outline reads. It permits eight times the smaller measurement plus a small timer allowance. It runs with the existing browser checks; there is no extra CI job. Focused command:

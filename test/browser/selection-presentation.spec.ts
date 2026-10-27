@@ -281,7 +281,7 @@ test('the selection fills only the text, never the margins or the gaps between b
   await mountPage(page, [sentence])
   await page.locator('#editor-0 .ProseMirror').click()
   await page.keyboard.press('ControlOrMeta+a')
-  await expect.poll(async () => (await painted(page)).length).toBe(3)
+  await expectPainted(page, [sentence.replaceAll('\n', '')])
   const surface = page.locator('#editor-0 .ProseMirror')
   // The surface's own ::selection, which a descendant rule does not reach, is clear too.
   for (const selector of ['', ' p'])
