@@ -15,8 +15,12 @@ import { viteSingleFile } from 'vite-plugin-singlefile'
 
 export default defineConfig({
   base: './',
-  plugins: [viteSingleFile()],
-  build: { modulePreload: false, cssCodeSplit: false },
+  plugins: [viteSingleFile({ deleteInlinedFiles: false })],
+  build: {
+    modulePreload: false,
+    cssCodeSplit: false,
+    license: { fileName: 'HOST-THIRD-PARTY-NOTICES.md' },
+  },
 })
 ```
 
@@ -27,6 +31,38 @@ Declare UTF-8 in the page, for example with `<meta charset="utf-8">`. The bundle
 </Warning>
 
 If the page sets a Content Security Policy, it must allow the inline script and style that a single-file build produces, and `blob:` images. Inkkit decodes images and diagrams through `blob:` URLs for clipboard and print output. Without `img-src blob:`, `printableSnapshot()` rejects for documents with images or diagrams. Also allow any custom scheme your adapters use for display URLs.
+
+## Carry the license notices
+
+An inlined page contains third-party code even when its license comments have been removed. Distribute Inkkit's `LICENSE`, `NOTICE` and `dist/THIRD-PARTY-NOTICES.txt` with the page, for example in the app's license resources. The third-party file covers the dependencies already bundled inside both Inkkit entries. A host bundler cannot recover those packages' identities from Inkkit's compiled JavaScript.
+
+Also generate notices for the dependencies that **your host** bundles. The configuration above uses Vite's [`build.license`](https://vite.dev/config/build-options#build-license). `deleteInlinedFiles: false` keeps module records available until Vite collects the licenses; otherwise the single-file plugin deletes the chunks first and Vite emits an empty list. The build directory retains redundant script and style files, but the HTML page still runs offline without them.
+
+Run `pnpm exec vite build` with the host's frozen lockfile installed. Ship `dist/HOST-THIRD-PARTY-NOTICES.md` with the page and the three Inkkit files. Include this asset in any post-build copy step; copying only `index.html` leaves the notices behind. Inspect the generated output for missing license texts and preserve additional `NOTICE` files required by the included packages.
+
+For example, save this as `scripts/copy-inkkit-notices.mjs` and run `node scripts/copy-inkkit-notices.mjs` after the host build. Include `dist/licenses/` in the app resources alongside `dist/index.html`; adjust the output directory if your host uses another location.
+
+```js
+import { copyFile, mkdir } from 'node:fs/promises'
+
+const packageDist = new URL('.', import.meta.resolve('@aicayzer/inkkit/core'))
+await mkdir('dist/licenses', { recursive: true })
+for (const [source, destination] of [
+  ['../LICENSE', 'INKKIT-LICENSE.txt'],
+  ['../NOTICE', 'INKKIT-NOTICE.txt'],
+  ['THIRD-PARTY-NOTICES.txt', 'INKKIT-THIRD-PARTY-NOTICES.txt'],
+]) {
+  await copyFile(new URL(source, packageDist), `dist/licenses/${destination}`)
+}
+await copyFile(
+  'dist/HOST-THIRD-PARTY-NOTICES.md',
+  'dist/licenses/HOST-THIRD-PARTY-NOTICES.md',
+)
+```
+
+The full `@aicayzer/inkkit` entry includes Mermaid and its diagram dependencies. The package also ships `dist/THIRD-PARTY-NOTICES-FULL.txt`, generated from the release's actual bundle modules, as a reference for that tested tree. A host may resolve different Mermaid transitive versions, so generate its own list instead of treating the reference as a substitute. The `core` entry does not include Mermaid unless the host imports it elsewhere.
+
+Review the included licenses and any applicable source obligations. These files record dependencies and preserve notices; they do not by themselves establish compliance with every license term.
 
 ## Follow the bridge rules
 

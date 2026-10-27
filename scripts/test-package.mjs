@@ -60,6 +60,10 @@ export async function checkConsumer(packageSpec, version) {
     offlineBundleBytes: Buffer.byteLength(main.html),
     coreOfflineBundleSha256: sha256(core.html),
     coreOfflineBundleBytes: Buffer.byteLength(core.html),
+    bundledNoticesSha256: sha256(main.coreNotices),
+    fullEntryNoticesSha256: sha256(main.fullNotices),
+    hostNoticesSha256: sha256(main.hostNotices),
+    coreHostNoticesSha256: sha256(core.hostNotices),
   }
 }
 
@@ -199,6 +203,28 @@ async function buildConsumer(packageSpec, version, entry) {
     )
     if (installed.name !== '@aicayzer/inkkit' || installed.version !== version)
       throw new Error('Clean consumer installed an unexpected package version')
+    const packageDist = join(temp, 'node_modules/@aicayzer/inkkit/dist')
+    const coreNotices = await readFile(
+      join(packageDist, 'THIRD-PARTY-NOTICES.txt'),
+      'utf8',
+    )
+    const fullNotices = await readFile(
+      join(packageDist, 'THIRD-PARTY-NOTICES-FULL.txt'),
+      'utf8',
+    )
+    if (
+      !coreNotices.includes('highlight.js@') ||
+      /^mermaid@/m.test(coreNotices)
+    )
+      throw new Error(
+        'Core notices do not describe the prebundled dependency tree',
+      )
+    if (
+      !fullNotices.includes(coreNotices) ||
+      !/^mermaid@/m.test(fullNotices) ||
+      !/^elkjs@.*EPL-2\.0/m.test(fullNotices)
+    )
+      throw new Error('Full-entry notices omit core or diagram dependencies')
     await checkRelativeImports(join(temp, 'node_modules/@aicayzer/inkkit/dist'))
     await writeFile(
       join(temp, 'index.html'),
@@ -239,16 +265,24 @@ const preferences: TextInputPreferences = {spellcheck:false,autocorrect:false,au
     )
     await writeFile(
       join(temp, 'vite.config.mjs'),
-      "import {defineConfig} from 'vite'; import {viteSingleFile} from 'vite-plugin-singlefile'; export default defineConfig({plugins:[viteSingleFile()],build:{target:'safari18',modulePreload:false,cssCodeSplit:false}})",
+      "import {defineConfig} from 'vite'; import {viteSingleFile} from 'vite-plugin-singlefile'; export default defineConfig({plugins:[viteSingleFile({deleteInlinedFiles:false})],build:{target:'safari18',modulePreload:false,cssCodeSplit:false,license:{fileName:'HOST-THIRD-PARTY-NOTICES.md'}}})",
     )
     run(join(temp, 'node_modules/.bin/tsc'), ['--noEmit'], temp)
     run(join(temp, 'node_modules/.bin/vite'), ['build'], temp)
+    const hostNotices = await readFile(
+      join(temp, 'dist/HOST-THIRD-PARTY-NOTICES.md'),
+      'utf8',
+    )
+    if (!hostNotices.includes('@aicayzer/inkkit'))
+      throw new Error('The documented host recipe omits Inkkit notices')
+    if (hostNotices.includes('mermaid') !== (entry === ''))
+      throw new Error('Host notices do not match the selected entry')
     const html = await readFile(join(temp, 'dist/index.html'), 'utf8')
     if (/<script[^>]+\bsrc=|<link[^>]+\bhref=/i.test(html))
       throw new Error('The web-view consumer is not bundled offline')
     for (const engine of Object.keys(engines))
       await runConsumer(join(temp, 'dist/index.html'), engine)
-    return { html }
+    return { html, coreNotices, fullNotices, hostNotices }
   } finally {
     await rm(temp, { recursive: true, force: true })
   }
@@ -291,6 +325,8 @@ async function testPackage() {
         'fresh npm install',
         'public declarations',
         'CSS export',
+        'bundled license notices',
+        'host notice generation for both entries',
         'offline Vite bundle',
         'core entry without Mermaid',
         ...runtimeChecks,

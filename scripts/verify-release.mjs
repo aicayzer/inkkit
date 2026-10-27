@@ -92,6 +92,8 @@ try {
       'fresh registry installation',
       'public declarations',
       'CSS export',
+      'bundled license notices',
+      'host notice generation for both entries',
       'offline Vite bundle',
       'core entry without Mermaid',
       ...runtimeChecks,
