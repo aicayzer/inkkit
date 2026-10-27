@@ -43,6 +43,8 @@ Choose checks from the changed behaviour, not from every available fixture combi
 
 Randomized tests use independent, deterministic samples: `SOURCE_TYPING_SEEDS=60`, `PRESERVATION_LIST_SEEDS=400`, `PRESERVATION_LOCAL_SEEDS=600` and `PRESERVATION_STRUCTURAL_SEEDS=300`. Set only the relevant variable to increase a run, for example `SOURCE_TYPING_SEEDS=200 pnpm exec vitest run test/source-typing.test.ts`. Source typing compares the formatted document's structure and marks, not only its readable text.
 
+The browser suite includes the bounded long-note scaling check. Run it alone with `pnpm exec playwright test --project=chromium test/browser/long-note-scaling.spec.ts`; [performance](performance.md) defines its documents, measurements and allowance.
+
 | Trigger                                                                                 | Required evidence                                                                                                                                                                 |
 | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Final code or package candidate                                                         | `pnpm check`, `pnpm format:check`, `pnpm build:playground`, `pnpm test:built-playground`, actual packed-consumer verification and the whole browser suite in Chromium and WebKit. |

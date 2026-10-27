@@ -41,6 +41,21 @@ The source fixture has 10,000 Unicode paragraphs. Three fresh-page runs measure 
 
 Assigning a large value while the textarea is detached avoids WebKit's slower subsequent input path. The same replacement helper is used after undo, redo, paste and loads, and retains the element, focus, selection and scroll. Composition keeps its existing guards. The former claim that WebKit's source latency was an unavoidable browser cost was incorrect: setup of the same textarea changes that cost.
 
+### Native source input
+
+On 27 October 2026, the native probe compared the published 0.3.1 archive with candidate commit `3d1ec35` on an Apple M4 running macOS 27.0, using its 60 Hz display and system WKWebView. The command was `node scripts/interop/verify-long-source.mjs ARCHIVE BUNDLE OUTPUT HOST`, with both consumers built from the same fixture. The document has 10,000 Unicode paragraphs, 478,888 UTF-8 bytes and CRLF endings. Each phase uses a fresh document and three trusted AppKit keystrokes at offset 20; the reported figures are medians from keydown through the following frame and timer.
+
+| Native source input | 0.3.1 / candidate (ms) |
+| ------------------- | ---------------------: |
+| Enter source mode   |                48 / 47 |
+| After undo          |                67 / 55 |
+| After redo          |                68 / 57 |
+| After paste         |                68 / 55 |
+
+Trusted input, focus, exact changed bytes and save/reopen all passed. **The native 35 ms target in #206 remains unmet.** These timings are not the browser results above and do not close that criterion.
+
+A bounded diagnostic comparison found most native cost between `beforeinput` and the capture-phase `input` event, before Inkkit's input handler; that handler added about 1–5 ms. A listener-free textarea with the same value and styling still had a 52 ms median. Disabling spelling and correction did not remove the cost, and LF and CRLF behaved similarly. Resetting the same textarea value off-tree between keystrokes produced subsequent samples of 32–33 ms, but those samples exclude the reset's own cost. Including that reset inside input raised the median to 90 ms, so it is not a viable production fix. Any further improvement must include its complete input cost and retain focus, selection, history and composition.
+
 ### Whole-text selection
 
 The selection implementation in `65da320` was measured separately with `node scripts/measure-selection.mjs CHECKOUT`, on the same machine and browser versions. It uses `selectTextRange` over the complete text with `focus: false`, a cached text snapshot, one warm-up and five samples through the next animation frame. It includes no parsing or source-mode transition.
@@ -49,6 +64,17 @@ The selection implementation in `65da320` was measured separately with `node scr
 | ---------- | ---------------------------: | -------------------------: |
 | 5,000      |                  54.2 / 17.2 |                   215 / 81 |
 | 10,000     |                   226 / 21.3 |                  715 / 181 |
+
+The first linear implementation still missed the 100 ms WebKit target at 10,000 paragraphs. A follow-up coalesces adjacent plain paragraph and heading text into one highlight range. Decorated blocks, controls, code and list boundaries keep separate ranges. Pixel checks in both engines confirm that the selection still excludes margins and gaps between blocks.
+
+The same command and fixture on an Apple M4 running macOS 27, Node.js 26.11.0, Chromium 156.0.8078.4 and WebKit 27.2 measured the first linear implementation at `a4bedf7` against the coalesced ranges. Each median uses five samples after one warm-up:
+
+| Paragraphs | Chromium before / after (ms) | WebKit before / after (ms) |
+| ---------- | ---------------------------: | -------------------------: |
+| 5,000      |                  12.3 / 16.6 |                    69 / 16 |
+| 10,000     |                  18.9 / 17.3 |                   150 / 21 |
+
+Both engines now meet the 100 ms target on this fixture, and doubling the document does not double the median. These timings measure text selection through the next frame, not document loading or native host activation.
 
 ## Checks and limits
 

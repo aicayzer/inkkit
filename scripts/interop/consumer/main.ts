@@ -672,6 +672,15 @@ window.interop = {
             if (document.activeElement !== target)
               throw Error('Editor is not the DOM active element')
             const events = []
+            const keyToFrame: number[] = []
+            const measure = () => {
+              const start = performance.now()
+              requestAnimationFrame(() =>
+                setTimeout(() => keyToFrame.push(performance.now() - start)),
+              )
+            }
+            if (operation.measure)
+              target.addEventListener('keydown', measure, true)
             const observe = (event) =>
               events.push({
                 type: event.type,
@@ -714,9 +723,11 @@ window.interop = {
               result = {
                 ...native,
                 events,
+                ...(operation.measure ? { keyToFrame } : {}),
                 active: document.activeElement === target,
               }
             } finally {
+              target.removeEventListener('keydown', measure, true)
               for (const type of types)
                 target.removeEventListener(type, observe)
             }

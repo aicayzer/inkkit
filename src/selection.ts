@@ -108,6 +108,45 @@ function blockRange(view: EditorView, span: Span, content: Element): Range {
   return range
 }
 
+// Adjacent plain blocks have no controls or decorations between their text. One
+// range paints the same text without making WebKit process thousands of ranges.
+function addBlockRanges(
+  highlight: Highlight,
+  view: EditorView,
+  spans: Span[],
+  contents: Element[],
+): void {
+  let first: { span: Span; content: Element } | undefined
+  let last: { span: Span; content: Element } | undefined
+  const flush = () => {
+    if (!first || !last) return
+    const range = view.dom.ownerDocument.createRange()
+    range.setStart(
+      first.content.firstChild!,
+      first.span.from - first.span.start,
+    )
+    range.setEnd(last.content.firstChild!, last.span.to - last.span.start)
+    highlight.add(range)
+    first = last = undefined
+  }
+  for (const span of spans) {
+    const content = contents[span.index]!
+    const plain =
+      /^(P|H[1-6])$/.test(content.tagName) &&
+      content.childNodes.length === 1 &&
+      content.firstChild?.nodeType === Node.TEXT_NODE
+    if (!plain) {
+      flush()
+      highlight.add(blockRange(view, span, content))
+      continue
+    }
+    if (last && last.content.nextSibling !== content) flush()
+    first ??= { span, content }
+    last = { span, content }
+  }
+  flush()
+}
+
 export function setSelectionHostActive(
   view: EditorView,
   active: boolean | null,
@@ -302,12 +341,9 @@ class Painter {
       return false
     })
     // An unexpected node view keeps the existing mapping, never paints the wrong block.
-    for (const span of spans)
-      highlight.add(
-        mapped && contents.length === blocks
-          ? blockRange(owner, span, contents[span.index]!)
-          : domRange(owner, span),
-      )
+    if (mapped && contents.length === blocks)
+      addBlockRanges(highlight, owner, spans, contents)
+    else for (const span of spans) highlight.add(domRange(owner, span))
     CSS.highlights.set(name, highlight)
     this.painted = {
       owner,
