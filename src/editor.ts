@@ -136,6 +136,7 @@ import { imageView } from './images'
 import { imagePlacement, isImage, isImageBlock } from './image-blocks'
 import { GapCursor } from '@milkdown/kit/prose/gapcursor'
 import { wikiLinkView } from './wiki-view'
+import { wikiReference } from './linked-syntax'
 import { mediaPolicyEvent, requestRefresh, withFileSignal } from './files'
 import {
   tablePlugins,
@@ -391,7 +392,7 @@ function clientPoint(value: unknown, name: string): ClientPoint {
   }
 }
 
-/** A name in `Keymap`: every format command except `link`, history, block moves, list indentation,
+/** A name in `Keymap`: every format command except `link`, history, link opening, block moves, list indentation,
  *  and every table command. */
 export type ShortcutName =
   | Exclude<FormatCommand, 'link'>
@@ -401,6 +402,7 @@ export type ShortcutName =
   | 'moveBlockDown'
   | 'indent'
   | 'outdent'
+  | 'openLink'
   | `table${Capitalize<TableCommand>}`
 
 /** Host bindings in ProseMirror key notation, by shortcut name. */
@@ -423,6 +425,7 @@ export const shortcutNames: readonly ShortcutName[] = [
   'moveBlockDown',
   'indent',
   'outdent',
+  'openLink',
   ...tableCommands.map(tableShortcut),
 ]
 
@@ -1510,6 +1513,8 @@ export class InkKitEditor {
   )
   private keys: (view: EditorView, event: KeyboardEvent) => boolean = () =>
     false
+  private readingKeys: (view: EditorView, event: KeyboardEvent) => boolean =
+    () => false
 
   private readonly events: EditorEvents
   /** The host's extra link schemes, in lower case. */
@@ -1861,6 +1866,7 @@ export class InkKitEditor {
       attributes: {
         ...inputAttributes,
         role: 'textbox',
+        tabindex: '0',
         'aria-multiline': 'true',
         'aria-label':
           this.options.labels?.formattedEditor ?? defaultLabels.formattedEditor,
@@ -2938,6 +2944,16 @@ export class InkKitEditor {
       new Plugin({
         key: new PluginKey('appKeymap'),
         props: {
+          // ProseMirror skips its editable keydown handler on read-only views.
+          handleDOMEvents: {
+            keydown: (view, event) => {
+              if (!this.writable && this.readingKeys(view, event)) {
+                event.preventDefault()
+                return true
+              }
+              return false
+            },
+          },
           handleKeyDown: (view, event) => {
             if (event.altKey && event.key === 'Enter') {
               return this.forPerson(
@@ -4443,9 +4459,15 @@ export class InkKitEditor {
       return goToNextCell(shiftKey ? -1 : 1)(view.state, view.dispatch)
     }
     if (!this.writable) {
+      if (
+        !this.literalSurface &&
+        this.readOnlyKeys(this.editor.ctx.get(editorViewCtx), event)
+      )
+        return true
       if (['Enter', 'Tab', 'Backspace', 'Delete'].includes(key))
         this.assertMutation(generation)
-      this.readOnlyKeys(this.editor.ctx.get(editorViewCtx), event)
+      if (this.literalSurface)
+        this.readOnlyKeys(this.editor.ctx.get(editorViewCtx), event)
     }
     if (this.literalSurface) {
       if (this.literalKeys(this.editor.ctx.get(editorViewCtx), event))
@@ -4485,7 +4507,12 @@ export class InkKitEditor {
   focus(expectedGeneration?: number): void {
     this.assertReady(expectedGeneration)
     if (this.literalSurface) this.plain.focus()
-    else this.editor.ctx.get(editorViewCtx).focus()
+    else {
+      const view = this.editor.ctx.get(editorViewCtx)
+      // ProseMirror focuses its DOM only while editable.
+      if (!this.writable) view.dom.focus({ preventScroll: true })
+      view.focus()
+    }
   }
 
   /** Moves focus off InkKit's text surfaces. Focus anywhere else, such as in a host control or a
@@ -4520,7 +4547,7 @@ export class InkKitEditor {
   }
 
   /** Replaces every binding. Keys are in ProseMirror's notation. A key given to two shortcuts goes
-   *  to the later one, in the order history, formatting, block moves, tables, so it lands the same
+   *  to the later one, in the order history, link opening, formatting, block moves, tables, so it lands the same
    *  way every time. A table binding passes a key it shares with a block move to the move outside
    *  a table. List indentation keys apply after all of these, and after the table keys the editor
    *  keeps for itself. */
@@ -4552,6 +4579,34 @@ export class InkKitEditor {
       }
     }
     Object.assign(bindings, historyBindings)
+    const openLink: Command = (state) => {
+      if (!this.ready || this.composing || this.literalSurface) return false
+      const { selection } = state
+      const node =
+        selection instanceof NodeSelection
+          ? selection.node
+          : selection.$from.nodeAfter
+      if (node?.type.name === 'inkkit_wiki_link' && this.options.wikiLinks) {
+        const captured = this.adapterCapture()
+        try {
+          if (captured.isCurrent())
+            this.options.wikiLinks.open(wikiReference(node), captured.context)
+        } catch (error) {
+          this.report(coded(error, 'file-unavailable'))
+        }
+      } else {
+        // Prefer the character after a boundary, then the one before it, just
+        // as a caret at either end of a rendered link belongs to that link.
+        const mark = [selection.$from.nodeAfter, selection.$from.nodeBefore]
+          .flatMap((node) => node?.marks ?? [])
+          .find((mark) => mark.type.name === 'link')
+        const href = mark?.attrs.href as string | undefined
+        if (href && isSafeLinkTarget(href, this.linkSchemes))
+          this.events.openLink?.(href)
+      }
+      return true
+    }
+    for (const key of keymap.openLink ?? []) bindings[key] = openLink
     for (const name of formatShortcuts) {
       for (const key of keymap[name] ?? []) {
         bindings[key] = () => {
@@ -4614,13 +4669,20 @@ export class InkKitEditor {
           .filter((key) => !moves[key])
           .map((key) => [
             key,
-            () => {
-              throw new InkKitError('read-only', 'The editor is read-only')
-            },
+            bindings[key] === openLink
+              ? openLink
+              : () => {
+                  throw new InkKitError('read-only', 'The editor is read-only')
+                },
           ]),
       ),
     )
     this.keys = keydownHandler(bindings)
+    this.readingKeys = keydownHandler(
+      Object.fromEntries(
+        Object.entries(bindings).filter(([, handler]) => handler === openLink),
+      ),
+    )
     this.indentKeys = keydownHandler(indents)
     this.literalKeys = keydownHandler(historyBindings)
   }

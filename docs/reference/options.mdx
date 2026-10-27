@@ -185,6 +185,8 @@ What the editor can do, or the caret, changed: the selection, the document, hist
 
 <ResponseField name="openLink" type="(href: string) => void">
 
+Called by a link's Mod-click or the configured `openLink` [shortcut](/reference/appearance#shortcuts). Keyboard opening works in formatted mode, including read-only documents. Wiki links use their adapter's `open` callback instead.
+
 The person clicked a rendered Markdown link with Mod held (Command on Apple platforms, Control elsewhere) in formatted mode, whether or not the editor is editable. It receives the destination as authored; a relative address or fragment isn't resolved against the page. It doesn't fire for an empty address or for a scheme that Inkkit doesn't open, which includes any scheme not in [`linkSchemes`](#editor-options); see [links](/concepts/clipboard). Without this handler, Markdown links don't open. Wiki links go to `WikiLinkAdapter.open` instead.
 
 </ResponseField>
