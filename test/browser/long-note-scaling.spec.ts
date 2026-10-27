@@ -56,8 +56,31 @@ test('long-note editing avoids quadratic interactive work', async ({
           input.value.indexOf('Paragraph 501'),
           input.value.indexOf('Paragraph 501'),
         )
-        await api.operation('insertText', { text: 'x' })
+        const sourceKey = (text: string) => {
+          input.dispatchEvent(
+            new InputEvent('beforeinput', {
+              inputType: 'insertText',
+              data: text,
+              bubbles: true,
+            }),
+          )
+          input.setRangeText(
+            text,
+            input.selectionStart,
+            input.selectionEnd,
+            'end',
+          )
+          input.dispatchEvent(
+            new InputEvent('input', {
+              inputType: 'insertText',
+              data: text,
+              bubbles: true,
+            }),
+          )
+        }
+        sourceKey('x')
         await timed('headings', () => api.operation('headings', {}))
+        sourceKey('y')
         await timed('sourceToFormatted', () =>
           api.operation('editingMode', { mode: 'formatted' }),
         )
