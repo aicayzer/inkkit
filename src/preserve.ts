@@ -3762,6 +3762,13 @@ export class Preservation {
           ? '\uFEFF'
           : ''
     const previous = positions[index - 1]
+    // Appending after the last authored block keeps its trailing whitespace.
+    // The existing reparse still decides whether the new block is separate.
+    if (previous === this.blocks.length - 1 && position == null) {
+      const ending = this.source.slice(this.blocks[previous]!.end)
+      if (/\r?\n[ \t]*\r?\n/.test(ending)) return ending
+      return ending + this.lineEnding.repeat(ending.endsWith('\n') ? 1 : 2)
+    }
     return previous != null && position === previous + 1 && block
       ? this.source.slice(this.blocks[previous]!.end, block.start)
       : this.lineEnding.repeat(2)
