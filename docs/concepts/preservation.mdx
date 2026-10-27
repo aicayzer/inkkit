@@ -54,6 +54,8 @@ In formatted mode, Inkkit checks every change to the document before it appears:
 
 Source mode doesn't parse as you type. Typing, paste and `replaceSource` take effect on the text exactly as written, and Inkkit reads the text when you switch back to formatted mode.
 
+Reading the source outline and returning to formatted mode share a checked parse. For a document made only of paragraphs and headings, an edit can reuse unchanged blocks after parsing the changed run and its neighbours. Text containing references, HTML or comments, or changes that introduce another block type, use the full parser. Both paths keep the same literal fallback for syntax the formatted editor cannot represent; caching does not remove preservation checks.
+
 Where a refusal arrives depends on what made the edit:
 
 | The edit came from                                                                                                                                                                    | The refusal arrives as      |

@@ -1,7 +1,16 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index d52a5260a7b9924b2865053ea1e8c6484225277b..38c84e4ec276d8145dcfd1567d7b54957480c2cf 100644
+index d52a5260a7b9924b2865053ea1e8c6484225277b..283a87e13eee88498c3238b5e89ac984249fa6fb 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
+@@ -1421,7 +1421,7 @@ var NodeViewDesc = function (_ViewDesc4) {
+   }, {
+     key: "update",
+     value: function update(node, outerDeco, innerDeco, view) {
+-      if (this.dirty == NODE_DIRTY || !node.sameMarkup(this.node)) return false;
++      if (this.dirty == NODE_DIRTY || (this.parent ? !node.sameMarkup(this.node) : node.type != this.node.type)) return false;
+       this.updateInner(node, outerDeco, innerDeco, view);
+       return true;
+     }
 @@ -2961,6 +2961,7 @@ var InputState = _createClass(function InputState() {
    this.lastIOSEnter = 0;
    this.lastIOSEnterFallbackTimeout = -1;
@@ -57,9 +66,18 @@ index d52a5260a7b9924b2865053ea1e8c6484225277b..38c84e4ec276d8145dcfd1567d7b5495
    if (view.focused) {
      view.domObserver.stop();
 diff --git a/dist/index.js b/dist/index.js
-index dc0d117b85e1da3eae915b4d8ff8e5e604683861..b9ac5a7d20501750f7c7b5ead6dc0d3f67d3f406 100644
+index dc0d117b85e1da3eae915b4d8ff8e5e604683861..e1236a0967f76b4269aafb11131521028231e1fa 100644
 --- a/dist/index.js
 +++ b/dist/index.js
+@@ -1481,7 +1481,7 @@ class NodeViewDesc extends ViewDesc {
+     // do so and return true.
+     update(node, outerDeco, innerDeco, view) {
+         if (this.dirty == NODE_DIRTY ||
+-            !node.sameMarkup(this.node))
++            (this.parent ? !node.sameMarkup(this.node) : node.type != this.node.type))
+             return false;
+         this.updateInner(node, outerDeco, innerDeco, view);
+         return true;
 @@ -3132,6 +3132,7 @@ class InputState {
          this.lastIOSEnter = 0;
          this.lastIOSEnterFallbackTimeout = -1;
@@ -179,3 +197,19 @@ index b385cc19d572f49ce00b3335c9a5c9b35da3fab5..ad561edc8edc67c4e80d1424a2cdcfe2
    let event = _event as FocusEvent
    if (view.focused) {
      view.domObserver.stop()
+diff --git a/src/viewdesc.ts b/src/viewdesc.ts
+index 226a161dcdfb26051cd5c19518a9c9336eef560d..a39a9532dbb005a3d6f5b97482ea41c710cf2b7c 100644
+--- a/src/viewdesc.ts
++++ b/src/viewdesc.ts
+@@ -871,8 +871,10 @@ export class NodeViewDesc extends ViewDesc {
+   // If this desc must be updated to match the given node decoration,
+   // do so and return true.
+   update(node: Node, outerDeco: readonly Decoration[], innerDeco: DecorationSource, view: EditorView) {
++    // The root uses the host DOM and outer decorations, not node attributes, to render.
++    // Retain its children when document-only metadata changes.
+     if (this.dirty == NODE_DIRTY ||
+-        !node.sameMarkup(this.node)) return false
++        (this.parent ? !node.sameMarkup(this.node) : node.type != this.node.type)) return false
+     this.updateInner(node, outerDeco, innerDeco, view)
+     return true
+   }

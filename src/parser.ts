@@ -81,8 +81,12 @@ export function parseMarkdown(
   schema: Schema,
   remark: RemarkParser,
   markdown: string,
+  // Preservation already ran the dialect transforms. Reuse that work without
+  // bypassing the checked builder and literal fallback below.
+  parsedTree?: Root,
 ): ProseNode {
-  const tree = remark.runSync(remark.parse(markdown), markdown) as Root
+  const tree =
+    parsedTree ?? (remark.runSync(remark.parse(markdown), markdown) as Root)
   const doc = build(schema, tree as unknown as MarkdownNode)
   if (doc) return doc
   // Micromark's positions exclude an initial byte-order mark.

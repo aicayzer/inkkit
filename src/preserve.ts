@@ -1,6 +1,11 @@
-import { parserCtx, remarkCtx } from '@milkdown/kit/core'
+import { parserCtx, remarkCtx, schemaCtx } from '@milkdown/kit/core'
+import { parseMarkdown } from './parser'
 import type { Ctx } from '@milkdown/kit/ctx'
-import type { Mark, Node as ProseNode } from '@milkdown/kit/prose/model'
+import {
+  Fragment,
+  type Mark,
+  type Node as ProseNode,
+} from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { serialize } from './dialect'
 import { gutterAt } from './gutter'
@@ -2838,6 +2843,20 @@ interface Run {
 
 /** Retains the loaded source of blocks the edit leaves alone. */
 export class Preservation {
+  private static readonly recent = new WeakMap<Ctx, Preservation>()
+  private readonly processor
+  private readonly rawTree: Root
+  readonly sourceTree: Root
+
+  static read(ctx: Ctx, source: string): Preservation {
+    const cached = this.recent.get(ctx)
+    const previous =
+      cached?.processor === ctx.get(remarkCtx) ? cached : undefined
+    if (previous?.source === source) return previous
+    const next = new Preservation(ctx, source, previous)
+    this.recent.set(ctx, next)
+    return next
+  }
   /** The document as loaded from `source`. */
   readonly baseline: ProseNode
   private readonly blocks: Block[] = []
@@ -2877,10 +2896,10 @@ export class Preservation {
   constructor(
     private readonly ctx: Ctx,
     private readonly source: string,
+    previous?: Preservation,
   ) {
     try {
       const parse = (text: string) => parseDoc(ctx, text)
-      this.baseline = parse(source)
       this.lineEnding = !source.includes('\n')
         ? source.includes('\r')
           ? '\r'
@@ -2889,13 +2908,32 @@ export class Preservation {
             !source.replaceAll('\r\n', '').includes('\n')
           ? '\r\n'
           : '\n'
-      const processor = ctx.get(remarkCtx)
+      const processor = (this.processor = ctx.get(remarkCtx))
       const offset = source.startsWith('\uFEFF') ? 1 : 0
       const body = source.slice(offset)
-      const rawTree = parseTree(ctx, source)
-      const tree = processor.runSync(structuredClone(rawTree), {
-        value: body,
-      }) as Root
+      const incremental = previous?.readEditedSource(source)
+      const rawTree = incremental?.raw ?? parseTree(ctx, source)
+      const tree =
+        incremental?.tree ??
+        (processor.runSync(structuredClone(rawTree), {
+          value: body,
+        }) as Root)
+      this.rawTree = rawTree
+      this.sourceTree = tree
+      this.baseline =
+        incremental?.doc ??
+        parseMarkdown(
+          ctx.get(schemaCtx),
+          processor,
+          source,
+          structuredClone(tree),
+        )
+      const positions = new Map(
+        rawTree.children.map((node) => [
+          `${node.position?.start.offset}:${node.position?.end.offset}`,
+          node,
+        ]),
+      )
       for (const [index, node] of tree.children.entries()) {
         let start = node.position?.start.offset
         const end = node.position?.end.offset
@@ -2912,13 +2950,16 @@ export class Preservation {
           ? this.baseline.type.create(null, [this.baseline.child(index)])
           : parse(text)
         const blockText =
-          parsed.childCount === 1
+          previous?.forms.get(parsed.firstChild!) ??
+          (parsed.childCount === 1
             ? blockForm(ctx, parsed.firstChild!)
-            : form(write(ctx, parsed))
+            : form(write(ctx, parsed)))
         // The editor shows the baseline, so its blocks are these nodes until
         // an edit replaces them, and their forms need not be written again.
         if (own) this.forms.set(this.baseline.child(index), blockText)
-        const ast = positionalNode(rawTree, node as unknown as SourceNode)
+        const ast = (positions.get(
+          `${node.position?.start.offset}:${node.position?.end.offset}`,
+        ) ?? node) as unknown as SourceNode
         if (
           parsed.childCount === 1 &&
           parsed.firstChild!.type.name === 'literal_markdown'
@@ -2955,8 +2996,8 @@ export class Preservation {
             node.position!.start.offset! + offset,
             node.position!.end.offset! + offset,
           )
-          // A footnote reference is never validated alone, so only its label
-          // matters, and its body need not be parsed on every keystroke.
+          // Inline references depend on the footnote label, not its body.
+          // Validate the reference without reparsing that body on every key.
           const label = /^\[((?:\\[\s\S]|[^\\\]])*)\]:/.exec(raw)![1]!
           return node.type === 'footnoteDefinition'
             ? { label: definitionLabel(label), text: `[${label}]: x` }
@@ -2967,6 +3008,115 @@ export class Preservation {
       throw new PreservationError('Cannot read Markdown for preservation', {
         cause,
       })
+    }
+  }
+
+  // Paragraphs and headings separated by blank lines have no state outside
+  // their neighbours. Everything that can define or consume distant syntax
+  // stays on the full parser path. The changed run is parsed by that same
+  // parser, including its neighbours, before any old nodes are reused.
+  private readEditedSource(
+    source: string,
+  ): { raw: Root; tree: Root; doc: ProseNode } | undefined {
+    if (
+      this.source.startsWith('\uFEFF') ||
+      source.startsWith('\uFEFF') ||
+      /[\[\]<>%]/.test(this.source) ||
+      /[\[\]<>%]/.test(source) ||
+      this.blocks.length !== this.baseline.childCount ||
+      this.blocks.some(
+        (_, index) =>
+          !['paragraph', 'heading'].includes(
+            this.baseline.child(index).type.name,
+          ),
+      )
+    )
+      return
+    let prefix = 0,
+      suffix = 0
+    while (
+      prefix < source.length &&
+      prefix < this.source.length &&
+      source[prefix] === this.source[prefix]
+    )
+      prefix++
+    while (
+      suffix < source.length - prefix &&
+      suffix < this.source.length - prefix &&
+      source[source.length - suffix - 1] ===
+        this.source[this.source.length - suffix - 1]
+    )
+      suffix++
+    const first = Math.max(
+      0,
+      this.blocks.findIndex((block) => block.end >= prefix) - 1,
+    )
+    let last = this.blocks.findIndex(
+      (block) => block.start > this.source.length - suffix,
+    )
+    if (last < 0) last = this.blocks.length - 1
+    else last = Math.min(this.blocks.length - 1, last + 1)
+    if (!this.blocks[first] || !this.blocks[last]) return
+    const start = this.blocks[first]!.start
+    const end = this.blocks[last]!.end
+    const delta = source.length - this.source.length
+    const nextEnd = end + delta
+    if (nextEnd < start || prefix < start || this.source.length - suffix > end)
+      return
+    const part = new Preservation(this.ctx, source.slice(start, nextEnd))
+    if (
+      part.blocks.length !== part.baseline.childCount ||
+      part.blocks.some(
+        (_, index) =>
+          !['paragraph', 'heading'].includes(
+            part.baseline.child(index).type.name,
+          ),
+      )
+    )
+      return
+    const lines = [0]
+    for (const match of source.matchAll(/\r\n|\r|\n/g))
+      lines.push(match.index + match[0].length)
+    const point = (offset: number) => {
+      let low = 0,
+        high = lines.length
+      while (low + 1 < high) {
+        const middle = (low + high) >> 1
+        if (lines[middle]! <= offset) low = middle
+        else high = middle
+      }
+      return { offset, line: low + 1, column: offset - lines[low]! + 1 }
+    }
+    const shifted = <T>(node: T, amount: number): T => {
+      const visit = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.map(visit)
+        if (!value || typeof value !== 'object') return value
+        if ('offset' in value && typeof value.offset === 'number')
+          return point(value.offset + amount)
+        return Object.fromEntries(
+          Object.entries(value).map(([key, child]) => [key, visit(child)]),
+        )
+      }
+      return visit(node) as T
+    }
+    const splice = (old: Root, fresh: Root): Root => ({
+      type: 'root',
+      children: [
+        ...old.children.slice(0, first),
+        ...fresh.children.map((node) => shifted(node, start)),
+        ...old.children.slice(last + 1).map((node) => shifted(node, delta)),
+      ],
+    })
+    const children: ProseNode[] = []
+    this.baseline.forEach((node, _offset, index) => {
+      if (index === first)
+        part.baseline.forEach((child) => children.push(child))
+      if (index < first || index > last) children.push(node)
+    })
+    return {
+      raw: splice(this.rawTree, part.rawTree),
+      tree: splice(this.sourceTree, part.sourceTree),
+      doc: this.baseline.copy(Fragment.fromArray(children)),
     }
   }
 
@@ -3222,7 +3372,11 @@ export class Preservation {
   private static plainInline(node: ProseNode): boolean {
     let plain = true
     node.descendants((child) => {
-      if (child.isInline && !child.isText && child.type.name !== 'hardbreak')
+      if (
+        child.isInline &&
+        !child.isText &&
+        !['hardbreak', 'footnote_reference'].includes(child.type.name)
+      )
         plain = false
       return plain
     })
