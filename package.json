@@ -41,7 +41,7 @@
     "node": ">=26"
   },
   "scripts": {
-    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && vite build --config vite.package.config.ts && node scripts/finish-build.mjs",
+    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && vite build --config vite.package.config.ts && node scripts/build-host-notices.ts && node scripts/finish-build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "format": "prettier --write .",
