@@ -7,11 +7,18 @@ import { closeHistory } from '@milkdown/kit/prose/history'
 import {
   Selection,
   TextSelection,
+  Plugin,
   type EditorState,
   type Transaction,
 } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { SearchQuery, setSearchState, getSearchState } from 'prosemirror-search'
+import {
+  SearchQuery,
+  setSearchState,
+  getSearchState,
+  search as baseSearch,
+} from 'prosemirror-search'
+import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { InkKitError } from './types'
 import { coded } from './errors'
 
@@ -22,6 +29,93 @@ export interface TextMatch {
 export interface LiteralReplacement extends TextMatch {
   text: string
   count: number
+}
+
+interface HighlightState {
+  query: SearchQuery
+  range: TextMatch | null
+  deco: DecorationSet
+}
+
+// Keep the library's query/command state and match semantics, but do not
+// rebuild every match when only the selection or one block changed.
+export function search(): Plugin {
+  const original = baseSearch()
+  return new Plugin<HighlightState>({
+    ...original.spec,
+    state: {
+      init: original.spec.state!.init,
+      apply(tr, current, oldState, state) {
+        if (tr.getMeta(original) || current.range)
+          return original.spec.state!.apply.call(
+            this,
+            tr,
+            current,
+            oldState,
+            state,
+          )
+        if (!current.query.valid || (!tr.docChanged && !tr.selectionSet))
+          return current
+        let deco = tr.docChanged
+          ? current.deco.map(tr.mapping, tr.doc)
+          : current.deco
+        let from = tr.doc.content.size,
+          to = 0
+        if (tr.docChanged) {
+          tr.mapping.maps.forEach((map, index) =>
+            map.forEach((_a, _b, start, end) => {
+              const rest = tr.mapping.slice(index + 1)
+              from = Math.min(from, rest.map(start, -1))
+              to = Math.max(to, rest.map(end, 1))
+            }),
+          )
+          if (from <= to) {
+            const left = tr.doc.resolve(Math.max(0, from - 1))
+            const right = tr.doc.resolve(Math.min(tr.doc.content.size, to + 1))
+            from = left.depth ? left.before(1) : left.pos
+            to = right.depth ? right.after(1) : right.pos
+            deco = deco.remove(deco.find(from, to))
+            const added: Decoration[] = []
+            for (let position = from; position < to;) {
+              const match = current.query.findNext(state, position, to)
+              if (!match) break
+              added.push(
+                Decoration.inline(match.from, match.to, {
+                  class: 'ProseMirror-search-match',
+                }),
+              )
+              position = Math.max(match.to, position + 1)
+            }
+            deco = deco.add(state.doc, added)
+          }
+        }
+        const previous = {
+          from: tr.mapping.map(oldState.selection.from),
+          to: tr.mapping.map(oldState.selection.to),
+        }
+        for (const [selection, active] of [
+          [previous, false],
+          [state.selection, true],
+        ] as const) {
+          const matches = deco
+            .find(selection.from, selection.to)
+            .filter(
+              (item) =>
+                item.from === selection.from && item.to === selection.to,
+            )
+          const replacements = matches.map((item) =>
+            Decoration.inline(item.from, item.to, {
+              class: active
+                ? 'ProseMirror-active-search-match'
+                : 'ProseMirror-search-match',
+            }),
+          )
+          deco = deco.remove(matches).add(state.doc, replacements)
+        }
+        return { ...current, deco }
+      },
+    },
+  })
 }
 
 function escapedPattern(text: string): string {

@@ -55,7 +55,16 @@ test('the code names only prefixed classes for the elements it draws', () => {
         .split(/\s+/))
         // `language-mermaid` is the Markdown fence convention on imported
         // HTML, which InkKit reads and does not draw.
-        if (name && name !== 'language-mermaid' && !name.startsWith('inkkit-'))
+        // Incremental search retains the upstream plugin's decoration classes.
+        if (
+          name &&
+          name !== 'language-mermaid' &&
+          !(
+            file === 'search.ts' &&
+            /^ProseMirror-(active-)?search-match$/.test(name)
+          ) &&
+          !name.startsWith('inkkit-')
+        )
           found.push([file, name])
   expect(found).toEqual([])
 })

@@ -1,4 +1,3 @@
-import { parserCtx, remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TextSelection } from '@milkdown/kit/prose/state'
@@ -6,6 +5,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { clipboardText } from './clipboard'
 import { revealCalloutAncestors } from './callouts'
 import { InkKitError, type DocumentVersion, type Heading } from './types'
+import { Preservation } from './preserve'
 
 /** The document version headings are read from, and the session key that names it and its mode. */
 export interface OutlineContext extends DocumentVersion {
@@ -29,10 +29,10 @@ function formattedLocations(doc: ProseNode): LocatedHeading[] {
   return headings
 }
 function sourceLocations(ctx: Ctx, source: string): LocatedHeading[] {
-  const processor = ctx.get(remarkCtx)
-  const tree = processor.runSync(processor.parse(source), {
-    value: source,
-  }) as unknown as SourceNode
+  const cached = sourceOutlines.get(ctx)
+  if (cached?.source === source) return cached.headings
+  const preservation = Preservation.read(ctx, source)
+  const tree = preservation.sourceTree as unknown as SourceNode
   const positions: { position: number; level: number }[] = []
   const bom = source.startsWith('\uFEFF') ? 1 : 0
   const visit = (node: SourceNode) => {
@@ -44,7 +44,7 @@ function sourceLocations(ctx: Ctx, source: string): LocatedHeading[] {
     node.children?.forEach(visit)
   }
   visit(tree)
-  const parsed = formattedLocations(ctx.get(parserCtx)(source))
+  const parsed = formattedLocations(preservation.baseline)
   if (
     positions.length !== parsed.length ||
     positions.some(
@@ -55,11 +55,17 @@ function sourceLocations(ctx: Ctx, source: string): LocatedHeading[] {
       'preservation',
       'The current Markdown headings cannot be located safely',
     )
-  return parsed.map((heading, index) => ({
+  const headings = parsed.map((heading, index) => ({
     ...heading,
     position: positions[index]!.position,
   }))
+  sourceOutlines.set(ctx, { source, headings })
+  return headings
 }
+const sourceOutlines = new WeakMap<
+  Ctx,
+  { source: string; headings: LocatedHeading[] }
+>()
 function entry(heading: LocatedHeading, context: OutlineContext): Heading {
   return Object.freeze({
     id: `heading:${context.key}:${heading.position}`,
