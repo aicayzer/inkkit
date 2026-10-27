@@ -17,12 +17,12 @@ Set these CSS custom properties on the editor root or an ancestor. Inkkit reads 
 | `--inkkit-monospace-font`                | `ui-monospace, 'SF Mono', Menlo, monospace`                                                                        | Source and TXT text, inline code, code blocks, literal Markdown blocks, reference definitions and visible comments.                                                                                                                                                                         |
 | `--inkkit-color-scheme`                  | `light dark`                                                                                                       | The editor's `color-scheme`. Set `light` or `dark` to force one whatever the system setting.                                                                                                                                                                                                |
 | `--inkkit-text-color`                    | `CanvasText`                                                                                                       | Text.                                                                                                                                                                                                                                                                                       |
-| `--inkkit-accent-color`                  | `#0a84ff`                                                                                                          | Caret, including the one drawn beside a table, image or callout, links and wiki links, quote bars, ordered list numbers, checked task boxes, footnote references, Note callouts, selection and match highlights, table control highlights, selected images, and the focus rings by default. |
+| `--inkkit-accent-color`                  | `light-dark(#0069d1, #409cff)`                                                                                     | Caret, including the one drawn beside a table, image or callout, links and wiki links, quote bars, ordered list numbers, checked task boxes, footnote references, Note callouts, selection and match highlights, table control highlights, selected images, and the focus rings by default. |
 | `--inkkit-selection-background`          | `--inkkit-accent-color` at 30%                                                                                     | Selected text while the editor has focus in an active window.                                                                                                                                                                                                                               |
 | `--inkkit-inactive-selection-background` | `light-dark(#d4d4d4, #555)`                                                                                        | Selected text while the window is inactive, while focus is in a host field, or after `blur()`.                                                                                                                                                                                              |
 | `--inkkit-drop-indicator-color`          | `--inkkit-accent-color`                                                                                            | Drop position indicator. Choose a color with at least 3:1 contrast against the host background.                                                                                                                                                                                             |
 | `--inkkit-muted-color`                   | `color-mix(in srgb, CanvasText 55%, transparent)`                                                                  | Secondary text: the placeholder, struck-through and completed task text, callout fold buttons, visible comments, file card status, the code language button and code comments.                                                                                                              |
-| `--inkkit-checkbox-border-color`         | `color-mix(in srgb, CanvasText 35%, transparent)`                                                                  | Unchecked task checkbox border. Checked boxes use `--inkkit-accent-color`.                                                                                                                                                                                                                  |
+| `--inkkit-checkbox-border-color`         | `color-mix(in srgb, CanvasText 55%, transparent)`                                                                  | Unchecked task checkbox border. Checked boxes use `--inkkit-accent-color`.                                                                                                                                                                                                                  |
 | `--inkkit-rule-color`                    | `color-mix(in srgb, CanvasText 14%, transparent)`                                                                  | Table borders, dividers, file card borders and table control outlines.                                                                                                                                                                                                                      |
 | `--inkkit-table-radius`                  | `4px`                                                                                                              | Outer table corners. Set `0px` for square corners. Internal cell divisions stay square.                                                                                                                                                                                                     |
 | `--inkkit-code-background`               | `color-mix(in srgb, CanvasText 8%, transparent)`                                                                   | Inline code, code blocks, table header cells, visible comments and file card controls.                                                                                                                                                                                                      |
@@ -62,61 +62,62 @@ Tables have a subtle 4px outer radius by default. Internal cell divisions stay s
 
 Pass any of these keys in [`labels`](/reference/options#editor-options) at mount to replace the default text. Labels are fixed at mount.
 
-| Label                    | Default text              | Where it appears                                                                                  |
-| ------------------------ | ------------------------- | ------------------------------------------------------------------------------------------------- |
-| `formattedEditor`        | Formatted Markdown editor | Accessible name of the formatted editing surface.                                                 |
-| `sourceEditor`           | Markdown source editor    | Accessible name of the Markdown source surface.                                                   |
-| `plainTextEditor`        | Plain text editor         | Accessible name of the TXT surface.                                                               |
-| `placeholder`            | Start typing…             | Shown in an empty formatted document.                                                             |
-| `copyCode`               | Copy                      | The code block Copy button, drawn only when `events.copy` is set.                                 |
-| `codeLanguage`           | Code language             | Accessible name of a code block's language button and its list.                                   |
-| `codeLanguageSearch`     | Search languages          | Placeholder and accessible name of the language search field.                                     |
-| `codeAuto`               | Auto                      | The language choice for a fence with no language, highlighted by detection.                       |
-| `codePlainText`          | Plain text                | The language choice that writes `text` and turns highlighting off.                                |
-| `expandCallout`          | Expand                    | The fold button of a collapsed callout, followed by the callout's title in its accessible name.   |
-| `collapseCallout`        | Collapse                  | The fold button of an expanded callout, followed by the callout's title in its accessible name.   |
-| `diagramRendering`       | Rendering diagram…        | The preview card while a diagram renders.                                                         |
-| `diagramUnavailable`     | Diagram unavailable:      | Prefix of the renderer's message on a diagram that can't render.                                  |
-| `footnote`               | Footnote                  | Prefix of the footnote label in the accessible name of footnote references and definitions.       |
-| `tableAddRow`            | Add row                   | Table row menu: add a row after it.                                                               |
-| `tableAddColumn`         | Add column                | Table column menu: add a column after it.                                                         |
-| `tableDeleteRow`         | Delete row                | Table row menu: delete the row. The header row doesn't offer it.                                  |
-| `tableDeleteColumn`      | Delete column             | Table column menu: delete the column.                                                             |
-| `tableAlignLeft`         | Align left                | Table column menu: align left.                                                                    |
-| `tableAlignCenter`       | Align center              | Table column menu: align center.                                                                  |
-| `tableAlignRight`        | Align right               | Table column menu: align right.                                                                   |
-| `tableMoveColumn`        | Move column               | The control above the active column, which opens its menu and moves it.                           |
-| `tableMoveRow`           | Move row                  | The control beside the active row, which opens its menu and moves it.                             |
-| `fileLoading`            | Loading file…             | File card status while `FileAdapter.resolve` runs.                                                |
-| `fileMissing`            | File unavailable          | File card status when the file resolves as `missing`.                                             |
-| `fileError`              | File could not be loaded  | File card status when resolution fails, or resolves as `error` with an empty `message`.           |
-| `fileRetry`              | Retry                     | The file card button that resolves the file again.                                                |
-| `fileOpen`               | Open                      | Name and tooltip of the file card Open button, drawn only when `FileAdapter.open` is set.         |
-| `filePreviewUnavailable` | Preview unavailable       | File card status when its image, audio, video or PDF fails to load.                               |
-| `filePDFPreview`         | Open to view this PDF     | Status line of a PDF card.                                                                        |
-| `wikiMissing`            | Link unavailable          | Tooltip and accessible description of a wiki link that `WikiLinkAdapter.resolve` reports missing. |
-| `comment`                | Author comment            | Accessible name of a visible author comment.                                                      |
-| `preservedMarkdown`      | Preserved Markdown        | Accessible name of a block that Inkkit keeps as authored Markdown and doesn't render.             |
-| `suggestions`            | Suggestions               | Accessible name of the suggestion list, for the slash menu and note suggestions.                  |
-| `suggestionsLoading`     | Loading…                  | The suggestion list while `WikiLinkAdapter.suggest` runs.                                         |
-| `suggestionsEmpty`       | No matches                | Shown briefly when nothing matches, before the list closes.                                       |
-| `slashHeading1`          | Heading 1                 | Slash menu: `heading1`.                                                                           |
-| `slashHeading2`          | Heading 2                 | Slash menu: `heading2`.                                                                           |
-| `slashHeading3`          | Heading 3                 | Slash menu: `heading3`.                                                                           |
-| `slashBulletList`        | Bulleted List             | Slash menu: `bulletList`.                                                                         |
-| `slashOrderedList`       | Numbered List             | Slash menu: `orderedList`.                                                                        |
-| `slashTaskList`          | Checklist                 | Slash menu: `taskList`.                                                                           |
-| `slashQuote`             | Quote                     | Slash menu: `quote`.                                                                              |
-| `slashCodeBlock`         | Code Block                | Slash menu: `codeBlock`.                                                                          |
-| `slashTable`             | Table                     | Slash menu: `table`.                                                                              |
-| `slashCallout`           | Callout                   | Slash menu: `callout`, which opens the callout choices.                                           |
-| `slashDivider`           | Divider                   | Slash menu: `divider`.                                                                            |
-| `slashDiagram`           | Diagram                   | Slash menu: `diagram`, when previews are available.                                               |
-| `slashNote`              | Note                      | Slash menu callout choice.                                                                        |
-| `slashTip`               | Tip                       | Slash menu callout choice.                                                                        |
-| `slashImportant`         | Important                 | Slash menu callout choice.                                                                        |
-| `slashWarning`           | Warning                   | Slash menu callout choice.                                                                        |
-| `slashCaution`           | Caution                   | Slash menu callout choice.                                                                        |
+| Label                    | Default text              | Where it appears                                                                                          |
+| ------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `formattedEditor`        | Formatted Markdown editor | Accessible name of the formatted editing surface.                                                         |
+| `sourceEditor`           | Markdown source editor    | Accessible name of the Markdown source surface.                                                           |
+| `plainTextEditor`        | Plain text editor         | Accessible name of the TXT surface.                                                                       |
+| `placeholder`            | Start typing…             | Shown in an empty formatted document.                                                                     |
+| `copyCode`               | Copy                      | The code block Copy button, drawn only when `events.copy` is set.                                         |
+| `codeLanguage`           | Code language             | Accessible name of a code block's language button and its list.                                           |
+| `codeLanguageSearch`     | Search languages          | Placeholder and accessible name of the language search field.                                             |
+| `codeAuto`               | Auto                      | The language choice for a fence with no language, highlighted by detection.                               |
+| `codePlainText`          | Plain text                | The language choice that writes `text` and turns highlighting off.                                        |
+| `expandCallout`          | Expand                    | The fold button of a collapsed callout, followed by the callout's title in its accessible name.           |
+| `collapseCallout`        | Collapse                  | The fold button of an expanded callout, followed by the callout's title in its accessible name.           |
+| `diagramRendering`       | Rendering diagram…        | The preview card while a diagram renders.                                                                 |
+| `diagramUnavailable`     | Diagram unavailable:      | Prefix of the renderer's message on a diagram that can't render.                                          |
+| `footnote`               | Footnote                  | Prefix of the footnote label in the accessible name of footnote references and definitions.               |
+| `tableAddRow`            | Add row                   | Table row menu: add a row after it.                                                                       |
+| `tableAddColumn`         | Add column                | Table column menu: add a column after it.                                                                 |
+| `tableDeleteRow`         | Delete row                | Table row menu: delete the row. The header row doesn't offer it.                                          |
+| `tableDeleteColumn`      | Delete column             | Table column menu: delete the column.                                                                     |
+| `tableAlignLeft`         | Align left                | Table column menu: align left.                                                                            |
+| `tableAlignCenter`       | Align center              | Table column menu: align center.                                                                          |
+| `tableAlignRight`        | Align right               | Table column menu: align right.                                                                           |
+| `tableMoveColumn`        | Move column               | The control above the active column, which opens its menu and moves it.                                   |
+| `tableMoveRow`           | Move row                  | The control beside the active row, which opens its menu and moves it.                                     |
+| `fileLoading`            | Loading file…             | File card status while `FileAdapter.resolve` runs.                                                        |
+| `fileMissing`            | File unavailable          | File card status when the file resolves as `missing`.                                                     |
+| `fileError`              | File could not be loaded  | File card status when resolution fails, or resolves as `error` with an empty `message`.                   |
+| `fileRetry`              | Retry                     | The file card button that resolves the file again.                                                        |
+| `fileOpen`               | Open                      | Name and tooltip of the file card Open button, drawn only when `FileAdapter.open` is set.                 |
+| `filePreviewUnavailable` | Preview unavailable       | File card status when its image, audio, video or PDF fails to load.                                       |
+| `filePDFPreview`         | Open to view this PDF     | Status line of a PDF card.                                                                                |
+| `wikiMissing`            | Link unavailable          | Tooltip and accessible description of a wiki link that `WikiLinkAdapter.resolve` reports missing.         |
+| `comment`                | Author comment            | Accessible name of a visible author comment.                                                              |
+| `preservedMarkdown`      | Preserved Markdown        | Accessible name of a block that Inkkit keeps as authored Markdown and doesn't render.                     |
+| `suggestions`            | Suggestions               | Accessible name of the suggestion list, for the slash menu and note suggestions.                          |
+| `suggestionsLoading`     | Loading…                  | The suggestion list while `WikiLinkAdapter.suggest` runs.                                                 |
+| `suggestionsEmpty`       | No matches                | Shown briefly when nothing matches, before the list closes.                                               |
+| `slashHeading1`          | Heading 1                 | Slash menu: `heading1`.                                                                                   |
+| `slashHeading2`          | Heading 2                 | Slash menu: `heading2`.                                                                                   |
+| `slashHeading3`          | Heading 3                 | Slash menu: `heading3`.                                                                                   |
+| `slashBulletList`        | Bulleted List             | Slash menu: `bulletList`.                                                                                 |
+| `slashOrderedList`       | Numbered List             | Slash menu: `orderedList`.                                                                                |
+| `slashTaskList`          | Checklist                 | Slash menu: `taskList`.                                                                                   |
+| `taskCheckbox`           | Task                      | Accessible name of a task checkbox with an empty first paragraph. Otherwise, its paragraph text names it. |
+| `slashQuote`             | Quote                     | Slash menu: `quote`.                                                                                      |
+| `slashCodeBlock`         | Code Block                | Slash menu: `codeBlock`.                                                                                  |
+| `slashTable`             | Table                     | Slash menu: `table`.                                                                                      |
+| `slashCallout`           | Callout                   | Slash menu: `callout`, which opens the callout choices.                                                   |
+| `slashDivider`           | Divider                   | Slash menu: `divider`.                                                                                    |
+| `slashDiagram`           | Diagram                   | Slash menu: `diagram`, when previews are available.                                                       |
+| `slashNote`              | Note                      | Slash menu callout choice.                                                                                |
+| `slashTip`               | Tip                       | Slash menu callout choice.                                                                                |
+| `slashImportant`         | Important                 | Slash menu callout choice.                                                                                |
+| `slashWarning`           | Warning                   | Slash menu callout choice.                                                                                |
+| `slashCaution`           | Caution                   | Slash menu callout choice.                                                                                |
 
 ## Shortcuts
 
@@ -141,6 +142,7 @@ Pass bindings in [`keymap`](/reference/options#editor-options) at mount, or repl
 | `bulletList`           | None                   | `format('bulletList')`      |
 | `orderedList`          | None                   | `format('orderedList')`     |
 | `taskList`             | None                   | `format('taskList')`        |
+| `toggleTask`           | None                   | `format('toggleTask')`      |
 | `undo`                 | `Mod-z`                | `undo()`                    |
 | `redo`                 | `Mod-y`, `Shift-Mod-z` | `redo()`                    |
 | `moveBlockUp`          | `Alt-ArrowUp`          | `moveBlock('up')`           |

@@ -14,7 +14,7 @@
   line-height: var(--inkkit-line-height, normal);
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: none;
-  --_inkkit-accent: var(--inkkit-accent-color, #0a84ff);
+  --_inkkit-accent: var(--inkkit-accent-color, light-dark(#0069d1, #409cff));
   --_inkkit-text: var(--inkkit-text-color, CanvasText);
   --_inkkit-muted: var(
     --inkkit-muted-color,
@@ -730,7 +730,7 @@
   border: 1.5px solid
     var(
       --inkkit-checkbox-border-color,
-      color-mix(in srgb, CanvasText 35%, transparent)
+      color-mix(in srgb, CanvasText 55%, transparent)
     );
   border-radius: 4px;
   cursor: pointer;
@@ -760,6 +760,33 @@
 
 .inkkit-root .ProseMirror li[data-item-type='task'][data-checked='true'] > p {
   color: var(--_inkkit-muted);
+}
+
+/* The semantic control overlays the existing marker without entering its text. */
+.inkkit-root .inkkit-task-checkbox {
+  position: absolute;
+  left: calc(var(--_inkkit-font-size) * -1.667);
+  top: var(--_inkkit-task-top);
+  width: var(--_inkkit-task-size);
+  height: var(--_inkkit-task-size);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.inkkit-root .inkkit-task-checkbox:focus-visible {
+  outline: 2px solid var(--inkkit-focus-color, var(--_inkkit-accent));
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .inkkit-root .ProseMirror li[data-item-type='task']::before {
+    border-color: CanvasText;
+  }
+  .inkkit-root
+    .ProseMirror
+    li[data-item-type='task'][data-checked='true']::after {
+    border-color: CanvasText;
+  }
 }
 
 .inkkit-root .ProseMirror del {

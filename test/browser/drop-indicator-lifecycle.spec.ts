@@ -65,7 +65,9 @@ for (const scheme of ['light', 'dark'] as const) {
         background: getComputedStyle(root).backgroundColor,
       }
     })
-    expect(colors.foreground).toBe('rgb(10, 132, 255)')
+    expect(colors.foreground).toBe(
+      scheme === 'light' ? 'rgb(0, 105, 209)' : 'rgb(64, 156, 255)',
+    )
     const luminance = (color: string) => {
       const channels = color
         .match(/[\d.]+/g)!
