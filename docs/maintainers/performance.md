@@ -1,5 +1,37 @@
 # Performance evidence
 
+## Browser fixture comparison, 28 October 2026
+
+The opt-in built fixture reduced the wall time of a fixed browser-test workload on candidate `91802f4`. The source, lockfile, tests and browser versions were identical between modes. These are browser-test timings; package consumers and WKWebView have separate checks.
+
+The workload contains 88 cases in nine files. Each engine ran three observations per mode, ordered development/built, built/development, development/built. Every observation started a fresh supervised server and used the ordinary Playwright context lifecycle. Elapsed time includes the fixture build, server startup, all cases and process shutdown; listing and evidence collection are outside that interval. Existing dependency and operating-system caches were not cleared. The fixture rebuilds its output on every built-mode invocation.
+
+```sh
+INKKIT_BROWSER_FIXTURE=dev node scripts/test-browser.mjs --project=chromium \
+  test/browser/mode-selection.spec.ts test/browser/open-link-keyboard.spec.ts \
+  test/browser/preservation-long.spec.ts test/browser/source-typing.spec.ts \
+  test/browser/paste-html.spec.ts test/browser/linked-files.spec.ts \
+  test/browser/selection-presentation.spec.ts test/browser/consolidation.spec.ts \
+  test/browser/playground-tools.spec.ts
+```
+
+Repeat with `INKKIT_BROWSER_FIXTURE=built` and `--project=webkit` in the stated order. The development mode in this comparison uses the dedicated fixture configuration; commands without the variable still use the ordinary development playground.
+
+| Engine   | Development median (range) |     Built median (range) | Median reduction |
+| -------- | -------------------------: | -----------------------: | ---------------: |
+| Chromium |   52.094 s (52.075–52.236) | 30.935 s (30.774–31.391) |            40.6% |
+| WebKit   |   54.031 s (53.838–54.729) | 42.496 s (42.316–42.502) |            21.3% |
+
+Measured on Apple M4 (10 cores, 16 GB), macOS 27.0, Node.js 26.11.0, pnpm 11.0.9, Vite 8.3.3 and Playwright 1.64.0. No competing test or build job was observed in 39 process samples across the two series. Background services remained active; an existing development server stayed idle. The measurements are from one machine and one candidate.
+
+The listings were identical between modes. Every measured run passed all 88 cases without skips, failures or retries. Built-output hashes were identical across repetitions. Before measuring, both modes in both engines passed five fresh-context module-identity probes and the 17 preservation, mode-selection and keyboard-link cases. The probes also patched the imported editor prototype and verified that playground observation invoked it. The existing preservation-refusal test injected a failure through the imported preservation prototype and checked visible DOM, saved bytes and usable history. An initial redirect-based alias failed class identity; module re-exports fixed it before the measured candidate was frozen.
+
+A separate five-context loading probe per mode and engine recorded 202 navigation/resource entries in development mode and nine in built mode. Median navigation-to-observable-document time was 133.0/76.7 ms in Chromium and 176.4/96.7 ms in WebKit (development/built). This probe ran separately from suite timing, and measured before its additional identity imports. It is supplementary loading evidence, not an editor interaction measurement.
+
+The separate long-note scaling case passed in both modes and both engines. Built mode also passed the nine changed accessibility/style cases in each engine. The intentional-failure configuration exited non-zero in both engines with the expected assertion, fixture observations, screenshot and trace. These expected failures are kept separate from passing evidence.
+
+The ranges do not overlap within either engine, supporting the built fixture for this workload. Three observations per mode do not establish tail latency or complete-suite savings. CI adopts the built fixture while keeping check names, sharding, engine rules and retries unchanged. [The audit pull request](https://github.com/aicayzer/inkkit/pull/423) records a separate same-workload hosted comparison; these local results do not establish a hosted improvement. The final complete browser suites and native checks remain release-candidate gates.
+
 ## Long-note work, 27 October 2026
 
 These measurements compare `main` at `2837dbf` with the implementation in `ad43fd0`. They ran on an Apple M4 Pro MacBook Pro, Darwin 27.0.0, Node.js 26.12.1 and Playwright 1.64.0, with headless Chromium 156.0.8078.4 and WebKit 27.2. Other work shared the machine. Values are medians, not latency guarantees or evidence about WKWebView.

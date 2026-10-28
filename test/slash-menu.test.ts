@@ -27,36 +27,75 @@ async function mount(
   })
   return { editor, root, errors }
 }
-const commands = [
-  'Heading 1',
-  'Heading 2',
-  'Heading 3',
-  'Bulleted List',
-  'Numbered List',
-  'Checklist',
-  'Quote',
-  'Code Block',
-  'Table',
-  'Callout',
-  'Divider',
-  'Diagram',
-]
+// These literals specify saved Markdown independently of the editor's serializer.
+const commandBodies = {
+  'Heading 1': '#',
+  'Heading 2': '##',
+  'Heading 3': '###',
+  'Bulleted List': '- <br />',
+  'Numbered List': '1. <br />',
+  Checklist: '- [ ] <br />',
+  Quote: '> <br />',
+  'Code Block': '```\n```',
+  Table: '|   |   |\n| - | - |\n|   |   |\n|   |   |',
+  Callout: '> [!NOTE]\n> <br />',
+  Divider: '---\n\n<br />',
+  Diagram: '```mermaid\n```',
+}
+const commands = Object.keys(commandBodies) as (keyof typeof commandBodies)[]
+// Dividers use underscores inside containers; lists keep the next paragraph tight.
+const dividerBodies = {
+  paragraph: '---\n\n<br />',
+  list: '___\n<br />',
+  quote: '___\n\n<br />',
+}
+// Each row: source, retained prefix, first-line prefix, continuation prefix,
+// blank-line prefix, divider form. Original list markers and indentation stay literal.
+const contexts = {
+  paragraph: ['TARGET', '', '', '', '', 'paragraph'],
+  list: ['* TARGET', '', '* ', '  ', '', 'list'],
+  hyphen: ['- TARGET', '', '- ', '  ', '', 'list'],
+  plus: ['+ TARGET', '', '+ ', '  ', '', 'list'],
+  ordered: ['1. TARGET', '', '1. ', '   ', '', 'list'],
+  parenthesized: ['1) TARGET', '', '1) ', '   ', '', 'list'],
+  task: ['- [ ] TARGET', '- [ ] <br />\n', '  ', '  ', '', 'list'],
+  nested: ['- a\n  - TARGET', '- a\n', '  - ', '    ', '', 'list'],
+  quotedList: ['> - TARGET', '', '> - ', '>   ', '>', 'list'],
+  calloutList: [
+    '> [!TIP]\n> - TARGET',
+    '> [!TIP]\n',
+    '> - ',
+    '>   ',
+    '>',
+    'list',
+  ],
+  hardBreakList: ['- aTARGET', '- a\n', '  ', '  ', '', 'list'],
+  quote: ['> TARGET', '', '> ', '> ', '>', 'quote'],
+  callout: ['> [!TIP]\n> TARGET', '> [!TIP]\n', '> ', '> ', '>', 'quote'],
+} as const
+
+function expectedMarkdown(
+  context: keyof typeof contexts,
+  command: keyof typeof commandBodies,
+  ending: string,
+) {
+  const [, before, first, continuation, blank, divider] = contexts[context]
+  const body =
+    command === 'Divider' ? dividerBodies[divider] : commandBodies[command]
+  const wrapped = body
+    .split('\n')
+    .map((line, index) =>
+      line ? `${index === 0 ? first : continuation}${line}` : blank,
+    )
+    .join('\n')
+  return `Before  \n\n${before}${wrapped}\n\nAfter _unchanged_.\n`.replaceAll(
+    '\n',
+    ending,
+  )
+}
 for (const ending of ['\n', '\r\n']) {
-  for (const [name, body] of Object.entries({
-    paragraph: 'TARGET',
-    list: '* TARGET',
-    hyphen: '- TARGET',
-    plus: '+ TARGET',
-    ordered: '1. TARGET',
-    parenthesized: '1) TARGET',
-    task: '- [ ] TARGET',
-    nested: '- a\n  - TARGET',
-    quotedList: '> - TARGET',
-    calloutList: '> [!TIP]\n> - TARGET',
-    hardBreakList: '- aTARGET',
-    quote: '> TARGET',
-    callout: '> [!TIP]\n> TARGET',
-  })) {
+  for (const name of Object.keys(contexts) as (keyof typeof contexts)[]) {
+    const [body] = contexts[name]
     for (const command of commands)
       test(`${name} ${JSON.stringify(ending)}: ${command} saves, reopens, undoes and redoes`, async () => {
         const source = `Before  \n\n${body}\n\nAfter _unchanged_.\n`.replaceAll(
@@ -100,7 +139,7 @@ for (const ending of ['\n', '\r\n']) {
         }
         expect(root.querySelector(selectors[command]!)).not.toBeNull()
         const saved = editor.snapshot().text
-        expect(saved).toMatchSnapshot()
+        expect(saved).toBe(expectedMarkdown(name, command, ending))
         expect(editor.textSnapshot().text).not.toContain('/')
         expect(saved.startsWith(`Before  ${ending}${ending}`)).toBe(true)
         expect(

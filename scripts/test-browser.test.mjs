@@ -173,3 +173,96 @@ test('signals each process group only once during crash cleanup', async () => {
     kill.mock.restore()
   }
 })
+
+test('a fixture build failure never starts preview', async () => {
+  const { startFixture } = await import('./browser-fixture.mjs')
+  let previewStarted = false
+  await assert.rejects(
+    startFixture({
+      mode: 'built',
+      vite: {
+        build: async () => {
+          throw Error('fixture build failed')
+        },
+        preview: async () => {
+          previewStarted = true
+        },
+      },
+    }),
+    /fixture build failed/,
+  )
+  assert.equal(previewStarted, false)
+})
+
+test('fixture modes reject misspellings instead of falling back to dev', async () => {
+  const { fixtureMode } = await import('./browser-fixture.mjs')
+  assert.throws(() => fixtureMode('build'), /must be dev or built/)
+})
+
+for (const [repository, sourcePrefix] of [
+  ['/fixture-repository', '/@fs/fixture-repository/src/'],
+  [
+    '/fixture repository/café%notes',
+    '/@fs/fixture%20repository/caf%C3%A9%25notes/src/',
+  ],
+]) {
+  for (const mode of ['dev', 'built']) {
+    test(`${mode} fixture routes exact entries in ${repository}`, async () => {
+      const { fixtureRoutes } = await import('./browser-fixture-routes.mjs')
+      const { createServer } = await import('node:http')
+      let middleware
+      const plugin = fixtureRoutes(repository)
+      plugin[mode === 'dev' ? 'configureServer' : 'configurePreviewServer']({
+        middlewares: {
+          use: (handler) => {
+            middleware = handler
+          },
+        },
+      })
+      const server = createServer((request, response) => {
+        middleware(request, response, () => {
+          response.end('static file')
+        })
+      })
+      await new Promise((done) => server.listen(0, '127.0.0.1', done))
+      const base = `http://127.0.0.1:${server.address().port}`
+      try {
+        for (const [source, entry] of [
+          ['core.ts', 'core.js'],
+          ['preserve.ts', 'preservation.js'],
+        ]) {
+          const [from, to] =
+            mode === 'built'
+              ? [sourcePrefix + source, `/_test/${entry}`]
+              : [`/_test/${entry}`, sourcePrefix + source]
+          const response = await fetch(base + from, { redirect: 'manual' })
+          assert.equal(response.status, 200)
+          assert.equal(response.headers.get('content-type'), 'text/javascript')
+          assert.equal(response.headers.get('location'), null)
+          assert.equal(
+            await response.text(),
+            `export * from ${JSON.stringify(to)};`,
+          )
+          const target = await fetch(new URL(to, base))
+          assert.equal(await target.text(), 'static file')
+        }
+        const refused = ['/@fs/%', '/@fs/%ZZ', '/@fs/%E0%A4%A', '/_test/%C0%AF']
+        if (mode === 'built')
+          refused.push(
+            sourcePrefix + 'editor.ts',
+            '/@fs/other-repository/src/core.ts',
+            sourcePrefix + 'core.ts/extra',
+            sourcePrefix.replace('/src/', '/%73rc%252F') + 'core.ts',
+            '/_test/unknown.js',
+          )
+        for (const path of refused) {
+          const response = await fetch(base + path)
+          assert.equal(response.status, 404, path)
+          assert.equal(await response.text(), 'Unknown browser fixture module')
+        }
+      } finally {
+        await new Promise((done) => server.close(done))
+      }
+    })
+  }
+}
