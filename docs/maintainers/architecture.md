@@ -41,3 +41,13 @@ The facade keeps public declarations, argument validation, readiness and mutatio
 - Source and formatted portable cuts use one deferred pipeline: prepare output, refuse missing image or diagram output, await the host clipboard write, retain provenance, validate the original capture and delete the captured selection. A selection movement does not redirect deletion; a document or editability change prevents it. Synchronous ordinary copies retain their surface-specific fallback and event handling.
 
 Output records provenance through a narrow clipboard callback. Neither collaborator owns document freshness, public validation or the facade's atomic/event boundary. The facade cancels output at accepted edits and lifecycle transitions, and destroys clipboard listeners before the source surface and Milkdown.
+
+## Source preservation
+
+`Preservation` coordinates source retention and decides whether a changed document can be saved. Its extracted algorithms do not own editor state or document generations:
+
+- `preserve-types.ts`, `preserve-shape.ts` and `preserve-parse.ts` define source-tree shapes, structural comparisons and parsing/serialization instrumentation.
+- `preserve-alignment.ts` matches original and edited blocks, retaining the existing matching and similarity budgets.
+- `preserve-inline.ts`, `preserve-list.ts`, `preserve-table.ts` and `preserve-literal.ts` retain authored spelling within their syntax. `preserve-containers.ts` handles split and joined containers through an explicit retention callback; `preserve-retain.ts` coordinates recursive node retention.
+
+The coordinator still owns loaded-source caches, incremental validation and whole-document reconstruction. A candidate must satisfy the existing reparse checks before it is accepted. The extraction keeps fallback eligibility, cache lifetimes and fast-path/whole-document cross-checks unchanged.
