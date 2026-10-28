@@ -199,53 +199,67 @@ test('fixture modes reject misspellings instead of falling back to dev', async (
   assert.throws(() => fixtureMode('build'), /must be dev or built/)
 })
 
-test('built fixture redirects only its exact source module entries', async () => {
-  const { fixtureRoutes } = await import('./browser-fixture-routes.mjs')
-  const { createServer } = await import('node:http')
-  let middleware
-  fixtureRoutes('/fixture-repository').configurePreviewServer({
-    middlewares: {
-      use: (handler) => {
-        middleware = handler
-      },
-    },
-  })
-  const server = createServer((request, response) => {
-    middleware(request, response, () => {
-      response.end('static file')
-    })
-  })
-  await new Promise((done) => server.listen(0, '127.0.0.1', done))
-  const base = `http://127.0.0.1:${server.address().port}`
-  try {
-    for (const [source, entry] of [
-      ['core.ts', 'core.js'],
-      ['preserve.ts', 'preservation.js'],
-    ]) {
-      const response = await fetch(
-        `${base}/@fs/fixture-repository/src/${source}`,
-        {
-          redirect: 'manual',
+for (const [repository, sourcePrefix] of [
+  ['/fixture-repository', '/@fs/fixture-repository/src/'],
+  [
+    '/fixture repository/café%notes',
+    '/@fs/fixture%20repository/caf%C3%A9%25notes/src/',
+  ],
+]) {
+  for (const mode of ['dev', 'built']) {
+    test(`${mode} fixture routes exact entries in ${repository}`, async () => {
+      const { fixtureRoutes } = await import('./browser-fixture-routes.mjs')
+      const { createServer } = await import('node:http')
+      let middleware
+      const plugin = fixtureRoutes(repository)
+      plugin[mode === 'dev' ? 'configureServer' : 'configurePreviewServer']({
+        middlewares: {
+          use: (handler) => {
+            middleware = handler
+          },
         },
-      )
-      assert.equal(response.status, 307)
-      assert.equal(response.headers.get('location'), `/_test/${entry}`)
-      const target = await fetch(
-        new URL(response.headers.get('location'), base),
-      )
-      assert.equal(await target.text(), 'static file')
-    }
-    for (const path of [
-      '/@fs/fixture-repository/src/editor.ts',
-      '/@fs/other-repository/src/core.ts',
-      '/@fs/fixture-repository/src/core.ts/extra',
-      '/_test/unknown.js',
-    ]) {
-      const response = await fetch(base + path)
-      assert.equal(response.status, 404, path)
-      assert.equal(await response.text(), 'Unknown browser fixture module')
-    }
-  } finally {
-    await new Promise((done) => server.close(done))
+      })
+      const server = createServer((request, response) => {
+        middleware(request, response, () => {
+          response.end('static file')
+        })
+      })
+      await new Promise((done) => server.listen(0, '127.0.0.1', done))
+      const base = `http://127.0.0.1:${server.address().port}`
+      try {
+        for (const [source, entry] of [
+          ['core.ts', 'core.js'],
+          ['preserve.ts', 'preservation.js'],
+        ]) {
+          const [from, to] =
+            mode === 'built'
+              ? [sourcePrefix + source, `/_test/${entry}`]
+              : [`/_test/${entry}`, sourcePrefix + source]
+          const response = await fetch(base + from, { redirect: 'manual' })
+          assert.equal(response.status, 307)
+          assert.equal(response.headers.get('location'), to)
+          const target = await fetch(
+            new URL(response.headers.get('location'), base),
+          )
+          assert.equal(await target.text(), 'static file')
+        }
+        const refused = ['/@fs/%', '/@fs/%ZZ', '/@fs/%E0%A4%A', '/_test/%C0%AF']
+        if (mode === 'built')
+          refused.push(
+            sourcePrefix + 'editor.ts',
+            '/@fs/other-repository/src/core.ts',
+            sourcePrefix + 'core.ts/extra',
+            sourcePrefix.replace('/src/', '/%73rc%252F') + 'core.ts',
+            '/_test/unknown.js',
+          )
+        for (const path of refused) {
+          const response = await fetch(base + path)
+          assert.equal(response.status, 404, path)
+          assert.equal(await response.text(), 'Unknown browser fixture module')
+        }
+      } finally {
+        await new Promise((done) => server.close(done))
+      }
+    })
   }
-})
+}
