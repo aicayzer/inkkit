@@ -16,4 +16,10 @@
 
 The collaborators receive the context, values or callbacks their responsibility needs. None receives an `InkKitEditor` instance. `DocumentSession` remains the owner of generation and revision identity; document caches and history do not create competing freshness counters.
 
-The facade still coordinates load/reload, focus and mode transitions. Viewport, search, output and clipboard coordination remain there until their separate extraction. [Development](development.md#bounded-verification) defines the verification gates for changes to these boundaries.
+## Readable text, viewport and search
+
+- `editor-text.ts` owns readable projection identity, offset validation and selection. Its snapshot IDs derive from `DocumentSession`; capture and restore retain the projection associated with an atomic call.
+- `editor-viewport.ts` owns viewport settings, visible ranges, geometry and scrolling through nested containers. It reuses callout unfolding and keeps textarea scroll handling separate from formatted geometry.
+- `editor-search.ts` owns the literal query and the raw match behind a normalized textarea selection, including either half of CRLF. It applies search and readable-range replacements through narrow source-edit and preservation callbacks. Accepted edits invalidate the remembered match; mode changes and loads reset the query too.
+
+The facade keeps public argument validation, readiness and mutation guards, and the ordering of focus, reveal and command-state events. It still coordinates load/reload, focus and mode transitions. Output, clipboard and the remaining command/lifecycle coordination await their separate extraction. [Development](development.md#bounded-verification) defines the verification gates for changes to these boundaries.
