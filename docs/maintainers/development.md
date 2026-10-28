@@ -21,6 +21,8 @@ pnpm test:built-playground
 
 The public API is `src/core.ts`; `src/index.ts` registers Mermaid and re-exports it. App hosts own persistence, native menus and file access. Regression tests cover formatting, source preservation, clipboard import/export, tables, snapshots, asynchronous image/file operations and optional wiki links. The clean consumer compiles `FileAdapter`, `WikiLinkAdapter`, their reference/context/presentation types and `EditorOptions` alongside the existing public facade. CI uses hosted runners.
 
+The [internal architecture](architecture.md) describes the editor facade and its collaborators.
+
 ## Dependencies
 
 The package bundles its runtime dependencies into `dist`, so a host runs the exact code that Inkkit tested. Milkdown, ProseMirror, micromark, the mdast utilities, lowlight and DOMPurify are `devDependencies`, and the build bundles them with their own dependencies. `pnpm build` bundles the versions in `pnpm-lock.yaml`, the same tree that Vitest, the browser suite and the playground run. A host's lockfile cannot resolve a different parser, serializer or ProseMirror version for Inkkit.
