@@ -1,10 +1,12 @@
 import { ctxOf } from './editor-access'
 import { describe, expect, test } from 'vitest'
-import { editorViewCtx, remarkCtx } from '@milkdown/kit/core'
+import { editorViewCtx, parserCtx, remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { Nodes, Parents, Root } from 'mdast'
 import { InkKitEditor, InkKitError } from '../src/index'
+import { MarkdownParseRefusal } from '../src/preserve-error'
+import { Preservation } from '../src/preserve'
 
 // Milkdown drops a node it cannot build, and everything inside it, and logs the failure. A document
 // that loaded short of its source would then save only what is left the moment it is edited.
@@ -233,7 +235,11 @@ describe('a note that cannot be kept as source is not loaded', () => {
   const unloadable = 'Before.\n\nNOWHERE\n'
 
   test('on the first load', async () => {
-    await run((editor) => {
+    await run((editor, ctx) => {
+      expect(() => ctx.get(parserCtx)(unloadable)).toThrow(MarkdownParseRefusal)
+      expect(() => new Preservation(ctx, unloadable)).toThrow(
+        MarkdownParseRefusal,
+      )
       expect(failure(() => load(editor, unloadable)).code).toBe('preservation')
       expect(failure(() => editor.snapshot()).code).toBe('not-ready')
       load(editor, 'Fine.\n')

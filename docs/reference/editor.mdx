@@ -562,6 +562,8 @@ interface KeyInput {
 
 It handles the keymap bindings and, in formatted mode, Alt+Enter and Alt+Shift+Enter for footnotes and the editor's own keys such as Enter, Tab and Backspace in lists and tables. Tab and Shift+Tab indent and outdent a list item through the default `indent` and `outdent` bindings. In source and TXT modes it handles Enter, Tab, Backspace and Delete with no Command, Control or Alt held, and returns `false` for other keys. It returns `false` during composition.
 
+In source and TXT modes, Backspace and Delete remove a whole grapheme when the selection is collapsed. Backspace removes the preceding grapheme and Delete removes the following one. If the caret is inside a grapheme, either key removes that whole grapheme. An explicit selection is deleted exactly as selected, even when it contains only part of a grapheme. These deletions use the existing typing history group.
+
 In a read-only editor, a bound key and Enter, Tab, Backspace and Delete throw `read-only`. Tab and Shift+Tab still move between table cells in formatted mode. A block move key, and a key bound to `indent` or `outdent`, returns `false` so the native behaviour applies.
 
 ## Focus

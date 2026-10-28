@@ -53,13 +53,7 @@ export class RegionEdits {
       return undefined
     const current: string[] = []
     doc.forEach((node) => current.push(this.loaded.formOf(node)))
-    let positions: Array<number | undefined>
-    let carried: Carried
-    try {
-      ;({ positions, carried } = this.movement.pairing(doc, current))
-    } catch {
-      return undefined
-    }
+    const { positions, carried } = this.movement.pairing(doc, current)
     const runs = this.reconstruction.runs(positions, current, carried.within)
     if (
       // With nothing left as it was, the whole document is one run.

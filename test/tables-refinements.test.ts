@@ -1,5 +1,5 @@
 import { ctxOf } from './editor-access'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { CellSelection, TableMap } from '@milkdown/kit/prose/tables'
@@ -425,6 +425,117 @@ test('public HTML spreadsheet paste creates a complete table and preserves heade
       ['center', 'right'],
     ])
   }))
+
+test.each([
+  '<table><tr><td>data-inkkit-reference 雪</td><td title="data-inkkit-footnote-reference">é</td></tr></table>',
+  '<TABLE/ ><TR><TD>data-inkkit-reference 雪</TD><TD title="data-inkkit-comment">é</TD></TR></TABLE>',
+])(
+  'HTML spreadsheet classification uses elements and attributes, not cell text: %s',
+  (html) =>
+    run(async (editor, ctx) => {
+      editor.loadDocument({ ...input, text: source })
+      select(ctx, 1, 0)
+      await editor.paste({ text: 'fallback', html: `\r\n${html}\r\n` })
+      expect(values(ctx)[1]).toEqual(['data-inkkit-reference 雪', 'é', 'code'])
+      expect(values(ctx)[2]).toEqual(['a', 'strike', 'highlight'])
+      const saved = editor.snapshot().text
+      const view = ctx.get(editorViewCtx)
+      undo(view.state, view.dispatch)
+      expect(editor.snapshot().text).toBe(source)
+      editor.loadDocument({ ...input, generation: 2, text: saved })
+      expect(editor.snapshot().text).toBe(saved)
+      expect(values(ctx)[1]).toEqual(['data-inkkit-reference 雪', 'é', 'code'])
+    }),
+)
+
+test('table-like text in an HTML attribute does not reject ordinary cell paste', () =>
+  run(async (editor, ctx) => {
+    editor.loadDocument({ ...input, text: source })
+    select(ctx, 1, 0, 2, 1, true)
+    await editor.paste({
+      text: '雪',
+      html: '<span title="<table> data-inkkit-comment">雪</span>',
+    })
+    expect(values(ctx)[1]).toEqual(['雪z', 'link', 'code'])
+    reopen(editor, ctx)
+  }))
+
+test.each([
+  'data-inkkit-reference="target"',
+  'DATA-INKKIT-FOOTNOTE-REFERENCE="note"',
+  'data-inkkit-comment="obsidian"',
+])(
+  'actual clipboard metadata still refuses a table-cell replacement: %s',
+  (attribute) =>
+    run(async (editor, ctx) => {
+      editor.loadDocument({ ...input, text: source })
+      select(ctx, 1, 0)
+      await expect(
+        editor.paste({
+          text: '雪',
+          html: `<TABLE/><TR><TD><span ${attribute}>雪</span></TD></TR></TABLE>`,
+        }),
+      ).rejects.toMatchObject({ code: 'preservation' })
+      expect(editor.snapshot()).toMatchObject({
+        text: source,
+        dirty: false,
+        revision: 0,
+      })
+      const view = ctx.get(editorViewCtx)
+      expect(undo(view.state, view.dispatch)).toBe(false)
+    }),
+)
+
+test('unsupported image table classification parses captured HTML once and keeps the original markup', () =>
+  run(async (editor, ctx) => {
+    editor.loadDocument({ ...input, text: '' })
+    const html =
+      '<table><caption>雪</caption>\r\n<tr><td><img/src="opaque:source" alt="é"></td><td><!--private-->cell</td></tr></table>'
+    const writes = vi.spyOn(Element.prototype, 'innerHTML', 'set')
+    try {
+      await editor.paste({ text: 'fallback', html })
+      expect(
+        writes.mock.calls.filter(([value]) => value === html),
+      ).toHaveLength(1)
+    } finally {
+      writes.mockRestore()
+    }
+    const saved = editor.snapshot().text
+    expect(saved).toBe(
+      '<table><caption>雪</caption>\n<tr><td><img/src="opaque:source" alt="é"></td><td>cell</td></tr></table>\n',
+    )
+    expect(ctx.get(editorViewCtx).dom.querySelector('img')).toBeNull()
+    const view = ctx.get(editorViewCtx)
+    undo(view.state, view.dispatch)
+    expect(editor.snapshot().text).toBe('')
+    editor.loadDocument({ ...input, generation: 2, text: saved })
+    expect(editor.snapshot().text).toBe(saved)
+  }))
+
+test('an HTML image recognised by the parser uses managed import inside a table', () => {
+  const importImage = vi.fn(async () => ({ reference: 'host:managed' }))
+  return run(
+    async (editor, ctx) => {
+      editor.loadDocument({ ...input, text: '' })
+      await editor.paste({
+        text: 'H\n雪',
+        html: '<table><tr><th>H</th></tr><tr><td><img/src="data:image/png;base64,AQ==" alt="雪"></td></tr></table>',
+      })
+      expect(importImage).toHaveBeenCalledOnce()
+      expect(editor.snapshot().text).toBe(
+        '| H                  |\n| ------------------ |\n| ![雪](host:managed) |\n',
+      )
+      reopen(editor, ctx)
+    },
+    {
+      presentation: () => undefined,
+      importImage,
+      async exportImage() {
+        return { bytes: new Uint8Array([1]), mimeType: 'image/png' }
+      },
+    },
+  )
+})
 
 test.each([
   'one\ttwo\t',

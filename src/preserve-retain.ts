@@ -40,7 +40,7 @@ import {
 } from './preserve-inline'
 import { rowPipes, retainShortRow } from './preserve-table'
 import { retainLiteral, holdsLiteral } from './preserve-literal'
-import { PreservationError } from './preserve-error'
+import { PreservationRefusal } from './preserve-error'
 
 // Patch changed leaves so an adjacent edit retains authored delimiters and labels.
 export function retainSource(
@@ -171,7 +171,10 @@ export function retainSource(
   const newStart = after.position?.start.offset
   const newEnd = after.position?.end.offset
   if (start == null || end == null || newStart == null || newEnd == null)
-    throw new PreservationError('A source token has no location')
+    throw new PreservationRefusal(
+      'source-location',
+      'A source token has no location',
+    )
   const raw = source.slice(start, end)
   if (
     before.type === 'code' &&
@@ -275,7 +278,10 @@ export function retainSource(
     const from = after.children[0]!.position?.start.offset
     const to = after.children.at(-1)!.position?.end.offset
     if (from == null || to == null)
-      throw new PreservationError('A source token has no location')
+      throw new PreservationRefusal(
+        'source-location',
+        'A source token has no location',
+      )
     const pipes = rowPipes(raw)
     return `${pipes.opening ? '| ' : ''}${canonical.slice(from, to)} ${pipes.closing != null ? '|' : ''}`
   }
@@ -412,7 +418,10 @@ export function retainSource(
       const childStart = child.position?.start.offset,
         childEnd = child.position?.end.offset
       if (childStart == null || childEnd == null)
-        throw new PreservationError('A source token has no location')
+        throw new PreservationRefusal(
+          'source-location',
+          'A source token has no location',
+        )
       let retainedSource = rewrittenAddress(
         before.type,
         before.children!,
