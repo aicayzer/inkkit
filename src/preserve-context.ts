@@ -5,6 +5,19 @@ import { type SourceNode } from './preserve-types'
 import { parseDoc, parseTree, write } from './preserve-parse'
 import { definitionLabel, semanticSignature } from './preserve-shape'
 
+// The empty paragraph in a list is a complete break line after its markers.
+// Other HTML can consume surrounding blocks and never gets this exception.
+function breakLine(line: string, containers: boolean): boolean {
+  return lineBreakHTML(
+    containers
+      ? line.replace(
+          /^(?:[ \t>]*(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)*[ \t>]*/,
+          '',
+        )
+      : line,
+  )
+}
+
 export class DefinitionContext {
   private readonly definitionNodes = new Map<string, number>()
 
@@ -43,9 +56,18 @@ export class DefinitionContext {
   // document, or undefined when that cannot be known from the block alone.
   inContext(
     text: string,
+    containerBreaks = false,
   ): { text: string; blocks: number; nodes: number } | undefined {
     // HTML and %% comments can span blocks.
-    if (/<|%%/.test(text)) return undefined
+    if (
+      text.includes('%%') ||
+      (text.includes('<') &&
+        (!containerBreaks ||
+          text
+            .split(/\r?\n/)
+            .some((line) => line.includes('<') && !breakLine(line, true))))
+    )
+      return undefined
     if (!text.includes('[')) return { text, blocks: 1, nodes: 1 }
     const definitions = this.definitions(text)
     if (!definitions) return undefined
@@ -70,8 +92,9 @@ export class DefinitionContext {
   // context, so references in it resolve as they do in the document.
   canonicalTree(
     text: string,
+    containerBreaks = false,
   ): { canonical: string; node: SourceNode } | undefined {
-    const local = this.inContext(text)
+    const local = this.inContext(text, containerBreaks)
     if (!local) return undefined
     const tree = parseTree(this.ctx, local.text)
     return tree.children.length === local.blocks
@@ -87,12 +110,12 @@ export class DefinitionContext {
   // the `<br />` line an empty paragraph is written as is the exception. A
   // paragraph after the text must still read as a paragraph of its own, which
   // shows that nothing in the text runs on into what follows it.
-  readsAs(text: string, nodes: ProseNode[]): boolean {
+  readsAs(text: string, nodes: ProseNode[], containerBreaks = false): boolean {
     if (
       text.includes('%%') ||
       text
         .split(/\r?\n/)
-        .some((line) => line.includes('<') && !lineBreakHTML(line))
+        .some((line) => line.includes('<') && !breakLine(line, containerBreaks))
     )
       return false
     const definitions = text.includes('[')

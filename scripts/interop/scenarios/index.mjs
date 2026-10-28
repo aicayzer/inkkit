@@ -3,6 +3,7 @@ import { scenarios as pasteCaret } from './paste-caret.mjs'
 import { scenarios as softBreakSpaces } from './soft-break-spaces.mjs'
 import { scenarios as sourceRedo } from './source-redo.mjs'
 import { scenarios as structuralDeletion } from './structural-deletion.mjs'
+import { scenarios as longList } from './long-list.mjs'
 import { scenarios as imageDrag } from './image-drag.mjs'
 
 const families = {
@@ -12,6 +13,7 @@ const families = {
   'native-source-redo': sourceRedo,
   'native-structural-deletion': structuralDeletion,
   'native-image-drag': imageDrag,
+  'native-long-list': longList,
 }
 export const probeScenarios = Object.assign({}, ...Object.values(families))
 export const probeGroups = Object.fromEntries(
@@ -35,6 +37,8 @@ const contracts = {
     'Public selection setup and trusted source undo, type and undo in WKWebView.',
   'native-structural-deletion':
     'One AppKit batch of three trusted collapsed Backspaces.',
+  'native-long-list':
+    'Trusted AppKit Enter, typing and structural Backspaces, exact bytes, shared undo/redo and save/reopen.',
   'native-image-drag':
     'WKWebView drag data observed by an AppKit destination; drop refused.',
 }

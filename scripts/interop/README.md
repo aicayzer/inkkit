@@ -97,9 +97,10 @@ These cases share the runner, evidence format and selection rules above. They re
 | `native-soft-break-spaces`   |     8 | Trusted space and beforeinput around soft breaks, with LF/CRLF and paragraph/quote variants.                                                              |
 | `native-source-redo`         |     2 | Trusted source undo/type/undo discards obsolete redo while retaining older history.                                                                       |
 | `native-structural-deletion` |     6 | Three trusted Backspaces preserve exact source, revision and authored reference tails.                                                                    |
+| `native-long-list`           |     2 | Trusted Enter, typing and structural Backspaces in bullet/task lists, exact source, history and save/reopen.                                              |
 | `native-image-drag`          |     2 | Block/inline image drag exposes readable text/HTML to an AppKit destination, without private references or bytes; refused drop preserves source/revision. |
 
-`native-editing` selects the first five groups (26 cases). Case names begin with their group name. Use `--list` to inspect exact names and required tools before launching a host. Native groups are opt-in and do not expand the default core or legacy selection.
+`native-editing` selects all probe groups except image drag (28 cases). Case names begin with their group name. Use `--list` to inspect exact names and required tools before launching a host. Native groups are opt-in and do not expand the default core or legacy selection.
 
 Build the clipboard helper for literal paste and the specialised image-drag host for image drag:
 

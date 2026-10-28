@@ -35,6 +35,9 @@ const pasted = Array.from(
 ).join('\n\n')
 // Keep the insertion before the first CRLF so textarea and source offsets agree.
 const position = 20
+const samplesPerPhase = Number(process.env.INKKIT_MEASURE_RUNS ?? 5)
+if (!Number.isInteger(samplesPerPhase) || samplesPerPhase < 3)
+  throw Error('INKKIT_MEASURE_RUNS must be an integer of at least 3')
 const assert = (path, equals, name) => ({
   op: 'assert',
   path,
@@ -57,7 +60,7 @@ const evidence = {
     paragraphs: 10_000,
     bytes: Buffer.byteLength(source),
     lineEndings: 'CRLF',
-    samplesPerPhase: 3,
+    samplesPerPhase,
   },
   method:
     'Trusted AppKit keydown to the next frame and timer in WKWebView; each phase uses a fresh document. Paste is a facade operation, followed by measured trusted typing.',
@@ -80,7 +83,7 @@ for (const phase of ['entry', 'undo', 'redo', 'paste']) {
     { op: 'selectSourceRange', from: position },
     { op: 'snapshot', name: 'before' },
   )
-  for (let sample = 0; sample < 3; sample++)
+  for (let sample = 0; sample < samplesPerPhase; sample++)
     operations.push({
       op: 'nativeInput',
       keyCode: 7,
@@ -113,20 +116,23 @@ for (const phase of ['entry', 'undo', 'redo', 'paste']) {
     result?.steps?.filter((step) => step.operation === 'nativeInput') ?? []
   const samples = steps.flatMap((step) => step.result?.keyToFrame ?? [])
   const ordered = [...samples].sort((a, b) => a - b)
-  const median = ordered[1] ?? null
+  const median = ordered[Math.floor(ordered.length / 2)] ?? null
   const snapshots =
     result?.steps?.filter((step) => step.operation === 'snapshot') ?? []
   const before = snapshots[0]?.result?.text
   const typed = snapshots[1]?.result?.text
   const exact =
     typeof before === 'string' &&
-    typed === before.slice(0, position) + 'xxx' + before.slice(position)
+    typed ===
+      before.slice(0, position) +
+        'x'.repeat(samplesPerPhase) +
+        before.slice(position)
   const passed =
     run.status === 0 &&
     result?.passed === true &&
     !result?.pageErrors?.length &&
     !run.stderr.includes('WKWebView page error:') &&
-    samples.length === 3 &&
+    samples.length === samplesPerPhase &&
     samples.every(Number.isFinite) &&
     exact &&
     steps.every(

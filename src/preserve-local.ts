@@ -2,7 +2,7 @@ import { leadingBOMLength, withoutLeadingBOM } from './bom'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { sourceFrontmatter } from './literals'
-import { type SourceNode, type Reorder } from './preserve-types'
+import { type Block, type SourceNode, type Reorder } from './preserve-types'
 import { retainSource } from './preserve-retain'
 import { SIMILARITY_BUDGET, pairSimilar } from './preserve-alignment'
 import { parseDoc, parseTree, write } from './preserve-parse'
@@ -16,9 +16,12 @@ import {
 import { type LoadedSource } from './preserve-source'
 import { type DefinitionContext } from './preserve-context'
 import { type MoveOrigins } from './preserve-moves'
+import { isPreservationRefusal } from './preserve-error'
+import { ItemRegions } from './preserve-item-regions'
 
 // Validated block and item results are cached only for this loaded source.
 export class LocalEdits {
+  private readonly itemRegions: ItemRegions
   private readonly blockEdits = new WeakMap<
     ProseNode,
     { index: number; text: string }
@@ -42,13 +45,15 @@ export class LocalEdits {
     >,
     private readonly context: Pick<
       DefinitionContext,
-      'canonicalTree' | 'inContext' | 'parseLocally'
+      'canonicalTree' | 'inContext' | 'parseLocally' | 'readsAs'
     >,
     private readonly movement: Pick<
       MoveOrigins,
       'carriedChildren' | 'carries' | 'current'
     >,
-  ) {}
+  ) {
+    this.itemRegions = new ItemRegions(ctx, context, loaded.lineEnding)
+  }
 
   localEdits(doc: ProseNode): string | undefined {
     if (
@@ -229,11 +234,7 @@ export class LocalEdits {
     const list = block.ast
     const offset = leadingBOMLength(this.loaded.source)
     const source = this.loaded.source.slice(offset)
-    if (
-      list.type !== 'list' ||
-      list.children?.length !== node.childCount ||
-      before.childCount !== node.childCount
-    )
+    if (list.type !== 'list' || list.children?.length !== before.childCount)
       return undefined
     // Whole-document matching would read a list that now matches another one
     // as moved there.
@@ -248,6 +249,8 @@ export class LocalEdits {
         return undefined
     }
     const marker = authoredMarker(list, source)
+    if (before.childCount !== node.childCount)
+      return this.structuralItems(before, node, block)
     // Items a block move carried within this list, and below it.
     const reorder = this.movement.current
       ? this.movement.carriedChildren(node, index)
@@ -293,7 +296,7 @@ export class LocalEdits {
                 source,
                 marker,
               )
-        if (text === undefined) return undefined
+        if (text === undefined) return this.structuralItems(before, node, block)
         retained = { index, item: at, from, text }
         this.itemEdits.set(item, retained)
       }
@@ -306,6 +309,20 @@ export class LocalEdits {
       previous = ast.position!.end.offset! + offset
     }
     return output + this.loaded.source.slice(previous, block.end)
+  }
+
+  private structuralItems(
+    before: ProseNode,
+    node: ProseNode,
+    block: Block,
+  ): string | undefined {
+    if (this.movement.current) return undefined
+    try {
+      return this.itemRegions.write(before, node, block, this.loaded.source)
+    } catch (error) {
+      if (!isPreservationRefusal(error)) throw error
+      return undefined
+    }
   }
 
   // The source of an item a block move carried from `original`'s place to
