@@ -1,6 +1,6 @@
 import { ctxOf } from './editor-access'
 import { readFileSync } from 'node:fs'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { InkKitEditor } from '../src/index'
@@ -123,8 +123,9 @@ test('diagram status uses labels and retains diagnostics as plain text', async (
     })
     const preview = instance.root.querySelector('.inkkit-mermaid-preview')!
     expect(preview.textContent).toBe('Drawing')
-    await Promise.resolve()
-    expect(preview.textContent).toContain('Unavailable:')
+    await vi.waitFor(() =>
+      expect(preview.textContent).toContain('Unavailable:'),
+    )
     expect(preview.getAttribute('role')).toBe('status')
     expect(instance.editor.snapshot().dirty).toBe(false)
   } finally {

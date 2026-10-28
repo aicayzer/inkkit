@@ -95,7 +95,8 @@ try {
       'bundled license notices',
       'host notice generation for both entries',
       'offline Vite bundle',
-      'core entry without Mermaid',
+      'core entry without Pele or DOMPurify',
+      'full entry renders and exports a diagram without host dependencies',
       ...runtimeChecks,
     ],
   }

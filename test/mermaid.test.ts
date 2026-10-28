@@ -2,6 +2,8 @@ import { ctxOf, optionsOf } from './editor-access'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
+import { Schema } from '@milkdown/kit/prose/model'
+import * as pele from 'pele'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { undo } from '@milkdown/kit/prose/history'
 import {
@@ -13,18 +15,22 @@ import {
 import {
   diagramImage,
   renderDiagram,
-  safeDiagramSVG,
-  validateDiagram,
+  registerDiagram,
+  DiagramStore,
 } from '../src/mermaid'
+import { renderPele, safeDiagramSVG } from '../src/pele'
+import { validateDiagram } from '../src/diagram-validation'
 import { Preservation } from '../src/preserve'
 import { withEditor } from './harness'
 
-const renderer = vi.hoisted(() => ({
-  initialize: vi.fn(),
-  render: vi.fn(),
-  mermaidAPI: { getDiagramFromText: vi.fn() },
-}))
-vi.mock('mermaid', () => ({ default: renderer }))
+vi.mock('pele', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('pele')>()
+  return { ...actual, render: vi.fn(actual.render) }
+})
+
+const renderer = {
+  render: vi.fn<(source: string) => string | Promise<string>>(),
+}
 
 const cleanSVG =
   '<svg viewBox="0 0 100 50"><text x="5" y="20">Diagram</text></svg>'
@@ -35,11 +41,12 @@ const diagramBytes = new Uint8Array([4, 5, 6])
 const imageBytes = new Uint8Array([1, 2, 3])
 
 beforeEach(() => {
-  renderer.initialize.mockReset()
-  renderer.render.mockReset().mockResolvedValue({ svg: cleanSVG })
-  renderer.mermaidAPI.getDiagramFromText
-    .mockReset()
-    .mockResolvedValue({ type: 'pie', db: {} })
+  vi.mocked(pele.render).mockClear()
+  renderer.render.mockReset().mockResolvedValue(cleanSVG)
+  registerDiagram((source) => {
+    validateDiagram(source)
+    return renderer.render(source)
+  })
   vi.stubGlobal(
     'URL',
     class extends originalURL {
@@ -70,6 +77,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  registerDiagram(renderPele)
 })
 
 async function run(
@@ -249,70 +257,37 @@ for (const resource of [
     expect(result).toContain('<rect')
   })
 
-test('the parse result is checked before Mermaid renders', async () => {
-  renderer.mermaidAPI.getDiagramFromText.mockResolvedValueOnce({
-    type: 'er',
-    db: {
-      getClasses: () => new Map(),
-      getEntities: () => new Map([['A', { cssStyles: ['fill:#f0e'] }]]),
-      getSubGraphs: () => [],
-    },
+test('Pele parses before layout and keeps rendering bounded and offline', () => {
+  const layout = vi.mocked(pele.render).mockReturnValueOnce({
+    svg: cleanSVG,
+    width: 100,
+    height: 50,
+    links: [],
+    type: 'flowchart',
+    mermaidType: 'flowchart-v2',
   })
-  await expect(renderDiagram(source())).rejects.toThrow(/actions, resources/)
-  expect(renderer.render).not.toHaveBeenCalled()
-})
-
-test('a parse result without the expected accessors is refused', async () => {
-  renderer.mermaidAPI.getDiagramFromText.mockResolvedValueOnce({
-    type: 'er',
-    db: {},
-  })
-  await expect(renderDiagram(source())).rejects.toThrow()
-  expect(renderer.render).not.toHaveBeenCalled()
-})
-
-test('annotations are refused when the parse result cannot show them', async () => {
-  renderer.mermaidAPI.getDiagramFromText.mockResolvedValueOnce({
-    type: 'classDiagram',
-    db: {
-      styleClasses: new Map(),
-      getClasses: () => new Map([['Shape', { styles: [] }]]),
-    },
-  })
-  await expect(
-    renderDiagram(`classDiagram\nclass Shape${++sequence} {\n<<interface>>\n}`),
-  ).rejects.toThrow(/could not be checked/)
-  expect(renderer.render).not.toHaveBeenCalled()
-})
-
-test('a parse error is reported without rendering', async () => {
-  renderer.mermaidAPI.getDiagramFromText.mockRejectedValueOnce(
-    new Error('Parse error on line 2'),
-  )
-  await expect(renderDiagram(source())).rejects.toThrow('Parse error')
-  expect(renderer.render).not.toHaveBeenCalled()
-})
-
-test('rendering locks safe configuration and removes its temporary DOM', async () => {
-  await renderDiagram(source())
-  expect(renderer.initialize).toHaveBeenCalledWith(
+  expect(renderPele(source())).toContain('<svg')
+  expect(layout).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'flowchart', nodes: expect.any(Map) }),
     expect.objectContaining({
-      startOnLoad: false,
-      securityLevel: 'strict',
-      htmlLabels: false,
-      suppressErrorRendering: true,
+      fontFamily: 'Arial, sans-serif',
+      limit: 30000,
       maxEdges: 500,
-      secure: expect.arrayContaining([
-        'securityLevel',
-        'htmlLabels',
-        'dompurifyConfig',
-        'themeCSS',
-      ]),
+      links: false,
+      images: false,
+      autoDirection: false,
+      idPrefix: expect.any(String),
     }),
   )
   expect(
     document.querySelector('[aria-hidden="true"][style*="-100000px"]'),
   ).toBeNull()
+})
+
+test('a Pele parse error is reported before layout', () => {
+  const layout = vi.mocked(pele.render)
+  expect(() => renderPele('flowchart TD\nA[Unclosed')).toThrow()
+  expect(layout).not.toHaveBeenCalled()
 })
 
 test('a rejected renderer does not poison subsequent diagram rendering', async () => {
@@ -336,9 +311,9 @@ test('a transient renderer failure can be retried without editing the authored d
 })
 
 test('portable diagram bounds oversized rasters and releases blob URLs', async () => {
-  renderer.render.mockResolvedValueOnce({
-    svg: '<svg viewBox="0 0 100000 50000"><rect width="100" height="50"/></svg>',
-  })
+  renderer.render.mockResolvedValueOnce(
+    '<svg viewBox="0 0 100000 50000"><rect width="100" height="50"/></svg>',
+  )
   const dimensions: number[] = []
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(
     function (this: HTMLCanvasElement) {
@@ -617,9 +592,54 @@ test('partial diagram source copy remains readable source rather than a rendered
     expect(clip.html).not.toContain('<figure')
   }))
 
+test('source selection export reuses the edited diagram cached by a whole-document export', () =>
+  run(async (editor, root) => {
+    const fence = '~~~~mermaid  \r\nflowchart LR\r\nA --> Target\r\n~~~~~~  '
+    const authored = `__Before__ café\r\n\r\n${fence}\r\n\r\n_After_\r\n`
+    const edited = authored.replace('A --> Target', 'B --> Target')
+    const editedFence = fence.replace('A --> Target', 'B --> Target')
+    const editedDiagram = 'flowchart LR\nB --> Target'
+    editor.loadDocument({ ...input, text: authored })
+    expect(editor.setEditingMode('source')).toBe(true)
+    const plain = root.querySelector('textarea')!
+    const at = plain.value.indexOf('A --> Target')
+    plain.setSelectionRange(at, at + 1)
+    plain.dispatchEvent(
+      new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText' }),
+    )
+    plain.setRangeText('B', at, at + 1, 'end')
+    plain.dispatchEvent(
+      new InputEvent('input', { bubbles: true, inputType: 'insertText' }),
+    )
+    expect(editor.snapshot().text).toBe(edited)
+
+    const whole = await editor.clipboardSnapshot()
+    expect(whole.markdown).toBe(edited)
+    expect(whole.diagrams?.[0]?.source).toBe(editedDiagram)
+    expect(
+      renderer.render.mock.calls.filter(([text]) => text === editedDiagram),
+    ).toHaveLength(1)
+    const callsAfterWholeExport = renderer.render.mock.calls.length
+    const saved = editor.snapshot()
+    const selectedFence = editedFence.replaceAll('\r\n', '\n')
+    const start = plain.value.indexOf(selectedFence)
+    expect(start).toBeGreaterThanOrEqual(0)
+    plain.setSelectionRange(start, start + selectedFence.length)
+
+    const selection = await editor.clipboardSnapshot('selection')
+    expect(selection.markdown).toBe(editedFence)
+    expect(selection.diagrams?.[0]?.source).toBe(editedDiagram)
+    expect(selection.html).toContain('<figure')
+    expect(selection.html).not.toContain('Before')
+    expect(selection.html).not.toContain('After')
+    expect(renderer.render).toHaveBeenCalledTimes(callsAfterWholeExport)
+    expect(editor.snapshot()).toEqual(saved)
+    expect(editor.snapshot().text).toBe(edited)
+  }))
+
 test('replacing a document during diagram export rejects stale completion', () =>
   run(async (editor) => {
-    let finish!: (value: { svg: string }) => void
+    let finish!: (value: string) => void
     renderer.render.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -638,7 +658,7 @@ test('replacing a document during diagram export rejects stale completion', () =
       generation: 2,
       text: 'Replacement',
     })
-    finish({ svg: cleanSVG })
+    finish(cleanSVG)
     await rejected
     expect(editor.snapshot().text).toBe('Replacement')
   }))
@@ -668,3 +688,134 @@ test('pending authored-image import prevents exporting a document containing dia
     },
     { ...images },
   ))
+
+const diagramSchema = new Schema({
+  nodes: {
+    doc: { content: 'code_block*' },
+    code_block: {
+      content: 'text*',
+      attrs: { language: { default: 'mermaid' } },
+    },
+    text: {},
+  },
+})
+const diagramDocument = (sources: string[]) =>
+  diagramSchema.node(
+    'doc',
+    null,
+    sources.map((text) =>
+      diagramSchema.node(
+        'code_block',
+        { language: 'mermaid' },
+        diagramSchema.text(text),
+      ),
+    ),
+  )
+
+test('exporting 100 already rendered diagrams performs no additional layout renders', async () => {
+  const store = new DiagramStore()
+  const sources = Array.from({ length: 100 }, source)
+  store.reconcile(diagramDocument(sources))
+  await Promise.all(sources.map((text) => store.render(text)))
+  expect(renderer.render).toHaveBeenCalledTimes(100)
+  for (const text of sources) {
+    expect(await diagramImage(text, store)).toMatchObject({
+      bytes: diagramBytes,
+      mimeType: 'image/png',
+    })
+  }
+  expect(renderer.render).toHaveBeenCalledTimes(100)
+  store.destroy()
+})
+
+test('duplicate diagrams share geometry only within their owning document', async () => {
+  const first = new DiagramStore()
+  const second = new DiagramStore()
+  const text = source()
+  first.reconcile(diagramDocument([text, text]))
+  second.reconcile(diagramDocument([text]))
+  await Promise.all([
+    first.render(text),
+    first.render(text),
+    second.render(text),
+  ])
+  expect(renderer.render).toHaveBeenCalledTimes(2)
+  first.destroy()
+  expect(await second.render(text)).toContain('<svg')
+  expect(renderer.render).toHaveBeenCalledTimes(2)
+  second.destroy()
+})
+
+test('reconciliation retains current diagrams and discards removed geometry', async () => {
+  const store = new DiagramStore()
+  const kept = source()
+  const removed = source()
+  store.reconcile(diagramDocument([kept, removed]))
+  await Promise.all([store.render(kept), store.render(removed)])
+  store.reconcile(diagramDocument([kept]))
+  await store.render(kept)
+  expect(renderer.render).toHaveBeenCalledTimes(2)
+  store.reconcile(diagramDocument([kept, removed]))
+  await store.render(removed)
+  expect(renderer.render).toHaveBeenCalledTimes(3)
+  store.destroy()
+})
+
+test('document replacement clears geometry even when the next source is identical', async () => {
+  const store = new DiagramStore()
+  const text = source()
+  store.reconcile(diagramDocument([text]))
+  await store.render(text)
+  store.clear()
+  store.reconcile(diagramDocument([text]))
+  await store.render(text)
+  expect(renderer.render).toHaveBeenCalledTimes(2)
+  store.destroy()
+})
+
+test('a destroyed document cannot start rendering again', async () => {
+  const store = new DiagramStore()
+  const text = source()
+  store.reconcile(diagramDocument([text]))
+  await store.render(text)
+  store.destroy()
+  await expect(store.render(text)).rejects.toThrow()
+  expect(renderer.render).toHaveBeenCalledTimes(1)
+})
+
+test('a failed document render can be retried without changing the source', async () => {
+  const store = new DiagramStore()
+  const text = source()
+  store.reconcile(diagramDocument([text]))
+  renderer.render.mockRejectedValueOnce(new Error('Temporary failure'))
+  await expect(store.render(text)).rejects.toThrow('Temporary failure')
+  await expect(store.render(text)).resolves.toContain('<svg')
+  expect(renderer.render).toHaveBeenCalledTimes(2)
+  store.destroy()
+})
+
+for (const operation of ['clear', 'destroy'] as const)
+  test(`${operation} invalidates pending geometry and prevents stale reuse`, async () => {
+    const store = new DiagramStore()
+    const text = source()
+    let finish!: (value: string) => void
+    renderer.render.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve
+        }),
+    )
+    store.reconcile(diagramDocument([text]))
+    const pending = store.render(text)
+    const stale = expect(pending).rejects.toThrow()
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    store[operation]()
+    finish(cleanSVG)
+    await stale
+    if (operation === 'clear') {
+      store.reconcile(diagramDocument([text]))
+      await store.render(text)
+      expect(renderer.render).toHaveBeenCalledTimes(2)
+      store.destroy()
+    }
+  })

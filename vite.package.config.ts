@@ -1,9 +1,6 @@
 import { defineConfig } from 'vite'
 import { thirdPartyNotices } from './scripts/third-party-notices'
 
-// Mermaid stays external; the other runtime dependencies are bundled.
-const external = /^mermaid(?:\/|$)/
-
 export default defineConfig({
   plugins: [thirdPartyNotices()],
   // Fixed here so the bundle runs the same whatever the host's build defines.
@@ -22,7 +19,6 @@ export default defineConfig({
     minify: false,
     sourcemap: false,
     rolldownOptions: {
-      external: (id) => external.test(id),
       output: { chunkFileNames: 'chunks/[name]-[hash].js' },
     },
   },

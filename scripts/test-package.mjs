@@ -24,8 +24,8 @@ const run = (command, args, cwd) =>
 export const sha256 = (bytes) =>
   createHash('sha256').update(bytes).digest('hex')
 
-// The main entry bundles Mermaid; the core entry must not.
-const mermaidMarker = 'Syntax error in text'
+// These runtime strings survive host minification. Neither belongs in core.
+const diagramMarkers = ['pele-lifelines', 'SAFE_FOR_TEMPLATES']
 
 // Every current host embeds WebKit; Chromium covers the web.
 // Pull requests set INKKIT_PACKAGE_ENGINES=chromium, because WebKit's system
@@ -51,10 +51,14 @@ export const runtimeChecks = Object.keys(engines).map(
 export async function checkConsumer(packageSpec, version) {
   const main = await buildConsumer(packageSpec, version, '')
   const core = await buildConsumer(packageSpec, version, '/core')
-  if (!main.html.includes(mermaidMarker))
-    throw new Error('The main-entry consumer bundle does not contain Mermaid')
-  if (core.html.includes(mermaidMarker))
-    throw new Error('The core-entry consumer bundle contains Mermaid')
+  for (const marker of diagramMarkers) {
+    if (!main.html.includes(marker))
+      throw new Error(`The main-entry consumer omits diagram code: ${marker}`)
+    if (core.html.includes(marker))
+      throw new Error(
+        `The core-entry consumer includes diagram code: ${marker}`,
+      )
+  }
   return {
     offlineBundleSha256: sha256(main.html),
     offlineBundleBytes: Buffer.byteLength(main.html),
@@ -84,7 +88,7 @@ async function checkRelativeImports(dist) {
 // Opens the bundled page from a file URL, as a web view host does, and runs
 // the editor: a package that throws on mount, ships an empty stylesheet or
 // reaches the network fails here.
-async function runConsumer(file, engineName) {
+async function runConsumer(file, engineName, entry) {
   const browser = await engines[engineName].launch()
   try {
     const page = await browser.newPage()
@@ -159,6 +163,40 @@ async function runConsumer(file, engineName) {
       fail(`undo saved ${JSON.stringify(steps.afterUndo)}`)
     if (!steps.redone || steps.afterRedo !== edited)
       fail(`redo saved ${JSON.stringify(steps.afterRedo)}`)
+    const diagramSource =
+      '```mermaid\r\nflowchart TD\r\nA[Café] --> B[Saved]\r\n```'
+    await page.evaluate((text) => {
+      window.editor.loadDocument({
+        documentId: 'diagram',
+        generation: 3,
+        format: 'md',
+        text,
+      })
+    }, diagramSource)
+    if (entry === '') {
+      await page.locator('svg.pele').waitFor({ state: 'visible' })
+      const labels = await page.locator('svg.pele').textContent()
+      if (!labels.includes('Café') || !labels.includes('Saved'))
+        fail('the bundled Pele preview lost diagram labels')
+    } else if (await page.locator('svg.pele').count()) {
+      fail('the core entry rendered a diagram')
+    }
+    const diagram = await page.evaluate(async () => {
+      const source = window.editor.snapshot(3).text
+      const output = await window.editor.printableSnapshot(3)
+      return { source, assets: output.assets.length, warnings: output.warnings }
+    })
+    if (diagram.source !== diagramSource)
+      fail('diagram rendering changed saved source')
+    if (entry === '' && (diagram.assets !== 1 || diagram.warnings.length))
+      fail('the full entry did not export its diagram')
+    if (
+      entry !== '' &&
+      !diagram.warnings.some(
+        (warning) => warning.code === 'diagram-unavailable',
+      )
+    )
+      fail('the core entry did not report its source fallback')
     if (problems.length) fail()
   } finally {
     await browser.close()
@@ -203,6 +241,10 @@ async function buildConsumer(packageSpec, version, entry) {
     )
     if (installed.name !== '@aicayzer/inkkit' || installed.version !== version)
       throw new Error('Clean consumer installed an unexpected package version')
+    if (Object.keys(installed.dependencies ?? {}).length)
+      throw new Error(
+        'Inkkit unexpectedly requires host-installed runtime dependencies',
+      )
     const packageDist = join(temp, 'node_modules/@aicayzer/inkkit/dist')
     const coreNotices = await readFile(
       join(packageDist, 'THIRD-PARTY-NOTICES.txt'),
@@ -214,17 +256,16 @@ async function buildConsumer(packageSpec, version, entry) {
     )
     if (
       !coreNotices.includes('highlight.js@') ||
+      !/^pele@1\.12\.0 \(MIT\)/m.test(coreNotices) ||
+      !coreNotices.includes('Lucide Icons and Contributors') ||
+      !coreNotices.includes('under the ISC License') ||
       /^mermaid@/m.test(coreNotices)
     )
+      throw new Error('Bundled notices omit dependencies or retain Mermaid')
+    if (fullNotices !== coreNotices)
       throw new Error(
-        'Core notices do not describe the prebundled dependency tree',
+        'The compatible full-entry notice filename has stale contents',
       )
-    if (
-      !fullNotices.includes(coreNotices) ||
-      !/^mermaid@/m.test(fullNotices) ||
-      !/^elkjs@.*EPL-2\.0/m.test(fullNotices)
-    )
-      throw new Error('Full-entry notices omit core or diagram dependencies')
     await checkRelativeImports(join(temp, 'node_modules/@aicayzer/inkkit/dist'))
     await writeFile(
       join(temp, 'index.html'),
@@ -245,7 +286,7 @@ const wikiLinks: WikiLinkAdapter = {resolve(reference:WikiLinkReference, context
 import type {FormatCommand, FormatOptions, ImageInsertion, KeyInput, Keymap, ShortcutName} from '@aicayzer/inkkit${entry}';
 const headingCommand: FormatCommand = 'heading6'; const formatOptions: FormatOptions = {destination:'https://example.com'}; const keyInput: KeyInput = {key:'z',metaKey:true}; const insertions: readonly ImageInsertion[] = [{reference:'opaque/photo.png',alt:'Photo'}]; const shortcut: ShortcutName = 'tableSortRows'; const keymap: Keymap = {[shortcut]:['Mod-Alt-s']}; void headingCommand; void formatOptions; void keyInput; void insertions; void keymap;
 const minimalFiles: FileAdapter = {resolve:files.resolve}; const minimalWikiLinks: WikiLinkAdapter = {open:wikiLinks.open}; void minimalFiles; void minimalWikiLinks; void fileReference; void wikiReference;
-const preferences: TextInputPreferences = {spellcheck:false,autocorrect:false,autocapitalize:'none'}; const labels: Partial<EditorLabels> = {formattedEditor:'Document'}; const options: EditorOptions = {rendering:{codeHighlighting:false,diagramPreview:false},files,wikiLinks,editable:true,textInput:preferences,labels,keymap:{heading6:['Mod-6'],undo:[],tableExit:[],indent:['Mod-]'],outdent:[]}}; const editor = await InkKitEditor.mount(document.querySelector<HTMLElement>('#editor')!, {changed(changed:DocumentSnapshot){void changed.revision},commandStateChanged(state:CommandState){void state.commands.undo; void state.caret.marks},copy(){},openLink(){},clipboard(output:ClipboardOutput){void output.generation}}, options);\neditor.loadDocument({documentId:'consumer',generation:1,format:'md',text:'# Consumer\\n'});\nconst mode: EditingMode = 'source'; editor.setEditingMode(mode,1); editor.replaceSource('# Consumer source\\nBody\\n',1); editor.replaceAll('Body','Literal $&',1); editor.undo(1); editor.redo(1); editor.setEditingMode('formatted',1); const headings: readonly Heading[] = editor.headings(1); if(headings[0]) editor.navigateHeading(headings[0]); editor.find('Body',1); editor.replace('Body','Content',1); const snapshot: DocumentSnapshot = editor.snapshot(1); const version: DocumentVersion = snapshot; void version; const scope: ClipboardScope = 'selection'; const copied: ClipboardOutput = await editor.clipboardSnapshot(scope,1); void copied.revision; const pasted: boolean = editor.pasteAsPlainText('',1); void pasted; editor.focus(1); editor.blur(1); editor.refreshReferences(['Plan'],1); editor.refreshReferences();\nconst printable: PrintableDocument = await editor.printableSnapshot(1);\nconst styles: string = printable.styles; const warnings: readonly PrintableWarning[] = printable.warnings; void styles; void warnings;\nconst tableCommand: TableCommand = 'sortRows'; const tableOptions: TableOptions = {column:0,comparison:'number',order:'ascending'}; editor.table(tableCommand,tableOptions);\nconst state: CommandState = editor.commandState(1); void state.commands.table.sortRows; editor.setEditable(false); const editable: boolean = editor.editable; void editable; editor.setTextInputPreferences({}); editor.setEditable(true);\nconst readable: ReadableTextSnapshot = editor.textSnapshot(1); const range: TextRange = readable.selection; editor.selectTextRange(range, {focus:false,reveal:false}); const rectangles: readonly TextRect[] = editor.textRangesRects([range])[0] ?? []; const batches: readonly (readonly TextRect[])[] = editor.textRangesRects([range]); void batches; const visible: readonly TextRange[] = editor.visibleTextRanges(readable.snapshotId); const insets: Partial<ViewportInsets> = {top:32,bottom:8}; const viewportOptions: ViewportOptions = {insets}; editor.setViewport(viewportOptions); const viewport: ViewportSnapshot = editor.viewport(); void rectangles; void visible; void viewport; editor.revealTextRange(readable.selection); editor.replaceTextRange(readable.selection, '');\nwindow.editor = editor; window.snapshot = snapshot; void InkKitError;\ndeclare global {interface Window {editor:typeof editor;snapshot:DocumentSnapshot}}\n`,
+const preferences: TextInputPreferences = {spellcheck:false,autocorrect:false,autocapitalize:'none'}; const labels: Partial<EditorLabels> = {formattedEditor:'Document'}; const options: EditorOptions = {rendering:{codeHighlighting:false,diagramPreview:true},files,wikiLinks,editable:true,textInput:preferences,labels,keymap:{heading6:['Mod-6'],undo:[],tableExit:[],indent:['Mod-]'],outdent:[]}}; const editor = await InkKitEditor.mount(document.querySelector<HTMLElement>('#editor')!, {changed(changed:DocumentSnapshot){void changed.revision},commandStateChanged(state:CommandState){void state.commands.undo; void state.caret.marks},copy(){},openLink(){},clipboard(output:ClipboardOutput){void output.generation}}, options);\neditor.loadDocument({documentId:'consumer',generation:1,format:'md',text:'# Consumer\\n'});\nconst mode: EditingMode = 'source'; editor.setEditingMode(mode,1); editor.replaceSource('# Consumer source\\nBody\\n',1); editor.replaceAll('Body','Literal $&',1); editor.undo(1); editor.redo(1); editor.setEditingMode('formatted',1); const headings: readonly Heading[] = editor.headings(1); if(headings[0]) editor.navigateHeading(headings[0]); editor.find('Body',1); editor.replace('Body','Content',1); const snapshot: DocumentSnapshot = editor.snapshot(1); const version: DocumentVersion = snapshot; void version; const scope: ClipboardScope = 'selection'; const copied: ClipboardOutput = await editor.clipboardSnapshot(scope,1); void copied.revision; const pasted: boolean = editor.pasteAsPlainText('',1); void pasted; editor.focus(1); editor.blur(1); editor.refreshReferences(['Plan'],1); editor.refreshReferences();\nconst printable: PrintableDocument = await editor.printableSnapshot(1);\nconst styles: string = printable.styles; const warnings: readonly PrintableWarning[] = printable.warnings; void styles; void warnings;\nconst tableCommand: TableCommand = 'sortRows'; const tableOptions: TableOptions = {column:0,comparison:'number',order:'ascending'}; editor.table(tableCommand,tableOptions);\nconst state: CommandState = editor.commandState(1); void state.commands.table.sortRows; editor.setEditable(false); const editable: boolean = editor.editable; void editable; editor.setTextInputPreferences({}); editor.setEditable(true);\nconst readable: ReadableTextSnapshot = editor.textSnapshot(1); const range: TextRange = readable.selection; editor.selectTextRange(range, {focus:false,reveal:false}); const rectangles: readonly TextRect[] = editor.textRangesRects([range])[0] ?? []; const batches: readonly (readonly TextRect[])[] = editor.textRangesRects([range]); void batches; const visible: readonly TextRange[] = editor.visibleTextRanges(readable.snapshotId); const insets: Partial<ViewportInsets> = {top:32,bottom:8}; const viewportOptions: ViewportOptions = {insets}; editor.setViewport(viewportOptions); const viewport: ViewportSnapshot = editor.viewport(); void rectangles; void visible; void viewport; editor.revealTextRange(readable.selection); editor.replaceTextRange(readable.selection, '');\nwindow.editor = editor; window.snapshot = snapshot; void InkKitError;\ndeclare global {interface Window {editor:typeof editor;snapshot:DocumentSnapshot}}\n`,
     )
     await writeFile(
       join(temp, 'tsconfig.json'),
@@ -275,13 +316,13 @@ const preferences: TextInputPreferences = {spellcheck:false,autocorrect:false,au
     )
     if (!hostNotices.includes('@aicayzer/inkkit'))
       throw new Error('The documented host recipe omits Inkkit notices')
-    if (hostNotices.includes('mermaid') !== (entry === ''))
-      throw new Error('Host notices do not match the selected entry')
+    if (/^#+ mermaid(?:@|\s)/m.test(hostNotices))
+      throw new Error('Host notices unexpectedly include a Mermaid dependency')
     const html = await readFile(join(temp, 'dist/index.html'), 'utf8')
     if (/<script[^>]+\bsrc=|<link[^>]+\bhref=/i.test(html))
       throw new Error('The web-view consumer is not bundled offline')
     for (const engine of Object.keys(engines))
-      await runConsumer(join(temp, 'dist/index.html'), engine)
+      await runConsumer(join(temp, 'dist/index.html'), engine, entry)
     return { html, coreNotices, fullNotices, hostNotices }
   } finally {
     await rm(temp, { recursive: true, force: true })
@@ -328,7 +369,8 @@ async function testPackage() {
         'bundled license notices',
         'host notice generation for both entries',
         'offline Vite bundle',
-        'core entry without Mermaid',
+        'core entry without Pele or DOMPurify',
+        'full entry renders and exports a diagram without host dependencies',
         ...runtimeChecks,
       ],
     }

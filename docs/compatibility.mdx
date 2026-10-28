@@ -3,7 +3,7 @@ title: 'Compatibility'
 description: 'Browser requirements, package entries, page size and versioning.'
 ---
 
-Inkkit runs in WebKit and Chromium from the versions below, ships as ES modules only, and has two entries: one that renders Mermaid diagrams and one that leaves Mermaid out of your page.
+Inkkit runs in WebKit and Chromium from the versions below, ships as ES modules only, and has two entries: one that renders Mermaid syntax with Pele and one that leaves the diagram renderer out of your page.
 
 ## Browser engines
 
@@ -40,39 +40,32 @@ Declare UTF-8 in the page that loads Inkkit, for example with `<meta charset="ut
 
 - **ES modules only.** The package is `"type": "module"` and its exports have only `import` conditions, so `require()` can't load it. Import it through a bundler; the build targets ES2022.
 - **Three specifiers.** Import only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. Other paths in the package aren't exported. TypeScript declarations are included.
-- **Dependencies are bundled.** The package contains Milkdown, ProseMirror and every other runtime dependency except Mermaid, so your app runs the tree that Inkkit tested. A fix in a bundled package reaches you only through an Inkkit release, and your own dependency audit doesn't see bundled packages.
-- **Mermaid is the one dependency,** pinned to an exact version. Your package manager installs it whichever entry you import.
+- **Dependencies are bundled.** The package contains Milkdown, ProseMirror, Pele, DOMPurify and every other runtime dependency, so your app runs the tree that Inkkit tested. A fix in a bundled package reaches you only through an Inkkit release, and your own dependency audit doesn't see bundled packages.
+- **No separate runtime installation.** Hosts do not install Pele or DOMPurify. Update Inkkit and rebuild your page and notices to receive bundled fixes.
 - **Node.js 26 or later** is declared in `engines`, which applies to the tools that install and build the package. The editor itself runs in the page.
 
-## Entries with and without Mermaid
+## Entries with and without diagrams
 
-| Specifier               | Contents                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------ |
-| `@aicayzer/inkkit`      | The editor, with Mermaid diagram previews.                                                             |
-| `@aicayzer/inkkit/core` | The same exports. It never imports Mermaid, so `mermaid` code blocks stay editable source, unrendered. |
+| Specifier               | Contents                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `@aicayzer/inkkit`      | The editor, with Pele previews for supported Mermaid syntax.                                                     |
+| `@aicayzer/inkkit/core` | The same exports. It imports neither Pele nor DOMPurify; `mermaid` code blocks stay editable source, unrendered. |
 
-Both entries use `@aicayzer/inkkit/style.css`. Import from one entry throughout your app: if any module imports `@aicayzer/inkkit`, your bundle includes Mermaid. Setting `rendering.diagramPreview` to `false` turns previews off but doesn't remove Mermaid from the page. For what the core entry does with diagrams in copies and print, see [Markdown support](/concepts/markdown#mermaid).
+Both entries use `@aicayzer/inkkit/style.css`. Import from one entry throughout your app: if any module imports `@aicayzer/inkkit`, your bundle includes Pele and DOMPurify. Setting `rendering.diagramPreview` to `false` turns previews off but doesn't remove either library from the page. For what the core entry does with diagrams in copies and print, see [Markdown support](/concepts/markdown#mermaid).
 
 ### Page size
 
-Measured on October 25, 2026, with the package built from `main` after version 0.1.6: a minimal page built with Vite and `vite-plugin-singlefile`, with every script and style inlined.
-
-| Entry                   | Page size |
-| ----------------------- | --------: |
-| `@aicayzer/inkkit`      |    6.2 MB |
-| `@aicayzer/inkkit/core` |    1.0 MB |
-
-Mermaid makes up about 83% of the main-entry page, and a single-file build runs its module code at start-up even before a diagram renders. Measure your own page.
+The main entry includes the diagram renderer and sanitizer; the core entry excludes both. The packed-consumer check records the exact byte size of both offline pages for each release. Measure your own page after bundling, because host code and build settings also affect its size.
 
 ## License notices
 
-The package carries three notice files:
+The package carries these license notices:
 
 - `LICENSE`: Inkkit's MIT license.
 - `NOTICE`: the notice for the table styles that Inkkit adapts from prosemirror-tables, and a pointer to the file below.
 - `dist/THIRD-PARTY-NOTICES.txt`: the name, version, license and license text of every package bundled into either entry. The package build generates it from the bundled modules.
 
-A page that bundles Inkkit contains the packages in `dist/THIRD-PARTY-NOTICES.txt`, so ship that file, `LICENSE` and `NOTICE` with your app. Mermaid and its dependencies aren't in that file: if you import the main entry, collect their notices from your own build ([#188](https://github.com/aicayzer/inkkit/issues/188)).
+Ship `dist/THIRD-PARTY-NOTICES.txt`, `LICENSE` and `NOTICE` with your app. The generated notices include Pele, its included Lucide ISC notice and DOMPurify. `dist/THIRD-PARTY-NOTICES-FULL.txt` remains available with the same contents for existing host copy recipes. Also collect notices for dependencies your own host bundles; see [the web-view guide](/guides/web-view#carry-the-license-notices).
 
 ## Versioning
 

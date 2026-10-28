@@ -137,7 +137,7 @@ import {
   sourceHeadingPosition,
   type OutlineContext,
 } from './outline'
-import { diagramsAvailable } from './mermaid'
+import { diagramsAvailable, DiagramStore } from './mermaid'
 
 /** An inline format that `CaretState` can report. */
 export type Mark =
@@ -707,9 +707,12 @@ export class InkKitEditor {
     revealLiteral: () => this.revealLiteralSelection(),
     revealCurrent: () => this.revealCurrentSelection(),
   })
+  private readonly diagrams = new DiagramStore()
   private readonly output: EditorOutput = new EditorOutput({
     ctx: () => this.editor.ctx,
     exportDocument: (text) => this.document.exportDocument(text),
+    diagrams: () => this.diagrams,
+    root: () => this.root,
     sourceMode: () => this.mode === 'source',
     element: () => this.source.element,
     images: () => this.options.images,
@@ -1430,6 +1433,7 @@ export class InkKitEditor {
     this.activation.destroy()
     this.clipboard.destroy()
     this.source.destroy()
+    this.diagrams.destroy()
     await this.editor.destroy()
     if (this.ownsRootClass) this.root.classList.remove('inkkit-root')
   }
@@ -1537,6 +1541,7 @@ export class InkKitEditor {
       report: (error) => instance.report(error),
     })
     instance.editor = await createMilkdownEditor(root, options, {
+      diagrams: instance.diagrams,
       plugins: {
         indent: instance.indentPlugin,
         paste: instance.pasteController.plugin,
@@ -1644,6 +1649,7 @@ export class InkKitEditor {
     this.mediaPolicy()
     this.pasteController.cancelPending()
     // Views made while the new document loads capture its generation.
+    this.diagrams.clear()
     this.session.load(input.documentId, input.generation)
     this.document.resetCaches()
     this.history.reset()

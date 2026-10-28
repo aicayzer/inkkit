@@ -5,6 +5,10 @@ export function fixtureRoutes(repository) {
   const entries = new Map([
     [`/@fs${resolve(repository, 'src/core.ts')}`, '/_test/core.js'],
     [`/@fs${resolve(repository, 'src/preserve.ts')}`, '/_test/preservation.js'],
+    [
+      `/@fs${resolve(repository, 'test/browser/diagram-probe.ts')}`,
+      '/_test/diagrams.js',
+    ],
   ])
   const requestPath = (request) => {
     try {

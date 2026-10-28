@@ -45,15 +45,15 @@ A member that changes the document also throws `preservation` when the result ca
 
 ## Entry points
 
-| Specifier                    | Contents                                                                     |
-| ---------------------------- | ---------------------------------------------------------------------------- |
-| `@aicayzer/inkkit`           | `InkKitEditor`, `InkKitError` and every type, with Mermaid diagram previews. |
-| `@aicayzer/inkkit/core`      | The same exports. It never imports Mermaid, so the bundle leaves it out.     |
-| `@aicayzer/inkkit/style.css` | The stylesheet, for either entry. It is scoped to the editor root.           |
+| Specifier                    | Contents                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------ |
+| `@aicayzer/inkkit`           | `InkKitEditor`, `InkKitError` and every type, with Pele previews for Mermaid syntax. |
+| `@aicayzer/inkkit/core`      | The same exports. It imports neither Pele nor DOMPurify.                             |
+| `@aicayzer/inkkit/style.css` | The stylesheet, for either entry. It is scoped to the editor root.                   |
 
 With the core entry, `mermaid` fences stay editable code blocks that keep their source, and no preview is shown whatever `rendering.diagramPreview` says. `events.error` never reports `diagram-unavailable`. Clipboard output keeps each diagram's source with an `error` on its `diagrams` entry, and `printableSnapshot` prints the source as code with a `diagram-unavailable` warning.
 
-Import from one entry throughout the app. If any module imports `@aicayzer/inkkit`, the bundle includes Mermaid. See [compatibility](/compatibility) for what each entry costs.
+Import from one entry throughout the app. If any module imports `@aicayzer/inkkit`, the bundle includes Pele and DOMPurify. See [compatibility](/compatibility) for what each entry costs.
 
 ```ts
 import { InkKitEditor } from '@aicayzer/inkkit/core'

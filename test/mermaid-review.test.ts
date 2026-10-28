@@ -6,19 +6,22 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { closeHistory, undo } from '@milkdown/kit/prose/history'
 import { InkKitEditor } from '../src/index'
 
-const renderer = vi.hoisted(() => ({
-  initialize: vi.fn(),
-  render: vi.fn(),
-  mermaidAPI: {
-    getDiagramFromText: vi.fn(async () => ({ type: 'pie', db: {} })),
-  },
-}))
-vi.mock('mermaid', () => ({ default: renderer }))
+import { registerDiagram } from '../src/mermaid'
+import { validateDiagram } from '../src/diagram-validation'
+import { renderPele } from '../src/pele'
+
+const renderer = {
+  render: vi.fn<(source: string) => string | Promise<string>>(),
+}
 const originalURL = URL
 
 beforeEach(() => {
-  renderer.render.mockResolvedValue({
-    svg: '<svg viewBox="0 0 100 50"><text>Diagram</text></svg>',
+  renderer.render
+    .mockReset()
+    .mockResolvedValue('<svg viewBox="0 0 100 50"><text>Diagram</text></svg>')
+  registerDiagram((source) => {
+    validateDiagram(source)
+    return renderer.render(source)
   })
   vi.stubGlobal(
     'URL',
@@ -47,6 +50,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  registerDiagram(renderPele)
 })
 async function run(
   callback: (editor: InkKitEditor, ctx: Ctx) => Promise<void>,

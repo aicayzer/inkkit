@@ -1581,16 +1581,16 @@ window.interop.measure = async (
         : fixtures.everyday.text
   load(text)
   const loaded = performance.now()
-  for (
-    let i = 0;
-    i < 300 &&
-    view().querySelector('.inkkit-mermaid-preview:not([data-state])');
-    i++
-  )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-  if (view().querySelector('.inkkit-mermaid-preview:not([data-state])'))
-    throw Error('Performance diagrams did not settle')
-  const previews = [...view().querySelectorAll('.inkkit-mermaid-preview')]
+  const previews = [
+    ...view().querySelectorAll<HTMLElement>('.inkkit-mermaid-preview'),
+  ]
+  for (const preview of previews) {
+    preview.scrollIntoView({ block: 'center' })
+    for (let i = 0; i < 300 && !preview.dataset.state; i++)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    if (!preview.dataset.state)
+      throw Error('Performance diagram did not settle')
+  }
   const expectedPreviews =
     document === 'mixed' &&
     (configuration === 'rich' || !minimalPreviewsDisabled)

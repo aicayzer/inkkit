@@ -997,10 +997,74 @@
 }
 /* Diagram previews are presentation; the authored code remains editable. */
 .inkkit-root .inkkit-mermaid-preview {
+  --_inkkit-diagram-bg: var(
+    --inkkit-diagram-background,
+    light-dark(#ffffff, #1c1c1e)
+  );
+  --_inkkit-diagram-fg: var(
+    --inkkit-diagram-text-color,
+    light-dark(#1c1c1e, #f2f2f7)
+  );
+  --_inkkit-diagram-muted: light-dark(#636366, #aeaeb2);
+  --_inkkit-diagram-line: light-dark(#48484a, #d1d1d6);
+  --_inkkit-diagram-surface: light-dark(#f2f2f7, #2c2c2e);
+  --_inkkit-diagram-surface-alt: light-dark(#e5e5ea, #3a3a3c);
+  --_inkkit-diagram-border: #8e8e93;
+  --_inkkit-diagram-font: Arial, sans-serif;
+  --_inkkit-diagram-font-mono: monospace;
+  --_inkkit-diagram-series-1: color-mix(
+    in srgb,
+    var(--inkkit-diagram-series-1, light-dark(#0088ff, #0091ff))
+      var(--inkkit-diagram-color-strength, 35%),
+    var(--_inkkit-diagram-bg)
+  );
+  --_inkkit-diagram-series-2: color-mix(
+    in srgb,
+    var(--inkkit-diagram-series-2, light-dark(#34c759, #30d158))
+      var(--inkkit-diagram-color-strength, 35%),
+    var(--_inkkit-diagram-bg)
+  );
+  --_inkkit-diagram-series-3: color-mix(
+    in srgb,
+    var(--inkkit-diagram-series-3, light-dark(#6155f5, #6d7cff))
+      var(--inkkit-diagram-color-strength, 35%),
+    var(--_inkkit-diagram-bg)
+  );
+  --_inkkit-diagram-series-4: color-mix(
+    in srgb,
+    var(--inkkit-diagram-series-4, light-dark(#ff8d28, #ff9230))
+      var(--inkkit-diagram-color-strength, 35%),
+    var(--_inkkit-diagram-bg)
+  );
+  --_inkkit-diagram-series-5: color-mix(
+    in srgb,
+    var(--inkkit-diagram-series-5, light-dark(#ff383c, #ff4245))
+      var(--inkkit-diagram-color-strength, 35%),
+    var(--_inkkit-diagram-bg)
+  );
+  --_inkkit-diagram-series-6: color-mix(
+    in srgb,
+    var(--inkkit-diagram-series-6, light-dark(#00c8b3, #00dac3))
+      var(--inkkit-diagram-color-strength, 35%),
+    var(--_inkkit-diagram-bg)
+  );
+  --_inkkit-diagram-series-7: color-mix(
+    in srgb,
+    var(--inkkit-diagram-series-7, light-dark(#ffcc00, #ffd600))
+      var(--inkkit-diagram-color-strength, 35%),
+    var(--_inkkit-diagram-bg)
+  );
+  --_inkkit-diagram-series-8: color-mix(
+    in srgb,
+    var(--inkkit-diagram-series-8, light-dark(#00c0e8, #3cd3fe))
+      var(--inkkit-diagram-color-strength, 35%),
+    var(--_inkkit-diagram-bg)
+  );
+  --_inkkit-diagram-accent: var(--_inkkit-diagram-series-1);
   padding: 16px;
   overflow: auto;
-  background: var(--inkkit-diagram-background, #fff);
-  color: var(--inkkit-diagram-text-color, #222);
+  background: var(--_inkkit-diagram-bg);
+  color: var(--_inkkit-diagram-fg);
 }
 .inkkit-root .inkkit-mermaid-preview svg {
   display: block;
@@ -1008,7 +1072,7 @@
   height: auto;
 }
 .inkkit-root .inkkit-mermaid-preview[data-state='error'] {
-  color: var(--inkkit-diagram-error-color, #9b2424);
+  color: var(--inkkit-diagram-error-color, light-dark(#9b2424, #ffb4ab));
   font-size: calc(var(--_inkkit-font-size) * 0.9);
 }
 

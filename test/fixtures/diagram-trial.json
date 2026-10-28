@@ -1,0 +1,1118 @@
+[
+  {
+    "id": "d001",
+    "source": "flowchart LR\n  A[Start] --> B[Finish]",
+    "accepted": true,
+    "texts": ["Start", "Finish"]
+  },
+  {
+    "id": "d002",
+    "source": "classDiagram\nclass Shape {\n<<interface>>\ndraw()\n}\nclass Billing\n<<service>> Billing",
+    "accepted": true,
+    "texts": ["«interface»", "Shape", "draw()", "«service»", "Billing"]
+  },
+  {
+    "id": "d003",
+    "source": "stateDiagram-v2\nstate Split <<fork>>\nstate Merge <<join>>\nstate Check <<choice>>\n[*] --> Split\nSplit --> Merge\nMerge --> Check",
+    "accepted": true,
+    "texts": []
+  },
+  {
+    "id": "d004",
+    "source": "flowchart TD\n    A[Start] --> B[Finish]",
+    "accepted": true,
+    "texts": ["Start", "Finish"]
+  },
+  {
+    "id": "d005",
+    "source": "sequenceDiagram\n    Alice->>Bob: Hello\n    Bob-->>Alice: Welcome",
+    "accepted": true,
+    "texts": ["Hello", "Welcome", "Alice", "Bob", "Alice", "Bob"]
+  },
+  {
+    "id": "d006",
+    "source": "flowchart TD\nA[Unclosed",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d007",
+    "source": "%%{init: {\"securityLevel\":\"loose\"}}%%\nflowchart TD\nA-->B",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d008",
+    "source": "flowchart TD\nA-->B\nclick A inkkitUnsafeCallback",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d009",
+    "source": "flowchart TD\nA-->B\nclick A \"https://example.com/inkkit-probe\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d010",
+    "source": "flowchart TD\nA[\"<img src=https://example.com/inkkit-probe onerror=window.inkkitUnsafeCallback=true>\"]",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d011",
+    "source": "flowchart TD\nA[Printed start] --> B[Printed finish]",
+    "accepted": true,
+    "texts": ["Printed start", "Printed finish"]
+  },
+  {
+    "id": "d012",
+    "source": "flowchart LR\nStart --> Finish",
+    "accepted": true,
+    "texts": ["Start", "Finish"]
+  },
+  {
+    "id": "d013",
+    "source": "graph TD; A-->B",
+    "accepted": true,
+    "texts": ["A", "B"]
+  },
+  {
+    "id": "d014",
+    "source": "graph TD; A-->BX",
+    "accepted": true,
+    "texts": ["A", "BX"]
+  },
+  {
+    "id": "d015",
+    "source": "flowchart LR\nA --> B",
+    "accepted": true,
+    "texts": ["A", "B"]
+  },
+  {
+    "id": "d016",
+    "source": "mindmap\nRoot",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d017",
+    "source": "flowchart TD\nA[Click to upload image] --> B[Style guide]",
+    "accepted": true,
+    "texts": ["Click to upload image", "Style guide"]
+  },
+  {
+    "id": "d018",
+    "source": "sequenceDiagram\nA->>B: Send link\nNote over A,B: click the style icon",
+    "accepted": true,
+    "texts": ["Send link", "click the style icon", "A", "B", "A", "B"]
+  },
+  {
+    "id": "d019",
+    "source": "classDiagram\nclass Account {\n+String icon\n}\nAccount --> Account : click",
+    "accepted": true,
+    "texts": ["click", "Account", "+String icon"]
+  },
+  {
+    "id": "d020",
+    "source": "stateDiagram-v2\nS --> T : style guide\nS : image icon href",
+    "accepted": true,
+    "texts": ["style guide", "image icon href", "T"]
+  },
+  {
+    "id": "d021",
+    "source": "erDiagram\nA ||--|| B : \"Click link\"",
+    "accepted": true,
+    "texts": ["Click link", "A", "B"]
+  },
+  {
+    "id": "d022",
+    "source": "pie title Style guide\n\"click\" : 1\n\"link\" : 2",
+    "accepted": true,
+    "texts": ["Style guide", "33%", "67%", "click", "link"]
+  },
+  {
+    "id": "d023",
+    "source": "flowchart TD\nA --> B\nclassDef c mask-image:image-set(\"inkkit-probe.png\" 1x)\nclass A c",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d024",
+    "source": "stateDiagram-v2\nA --> B\nA style A fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d025",
+    "source": "erDiagram\nA ||--|| B : has\nA classDef c fill:#f0e\nclass A c",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d026",
+    "source": "sequenceDiagram\nparticipant A\nlinks A: {\"Home\": \"page\"}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d027",
+    "source": "classDiagram\nclass Shape {\n<<interface>>\n}\nnote for Shape \"Shape\n<<img src=inkkit-probe.png>>\n\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d028",
+    "source": "stateDiagram-v2\nA --> B\nnote right of A\nstate X <<fork>>\nend note",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d029",
+    "source": "graph TD\nA-->B",
+    "accepted": true,
+    "texts": ["A", "B"]
+  },
+  {
+    "id": "d030",
+    "source": "classDiagram\nclass Shape {\n  <<interface>>\n  draw()\n}",
+    "accepted": true,
+    "texts": ["«interface»", "Shape", "draw()"]
+  },
+  {
+    "id": "d031",
+    "source": "classDiagram\nclass Shape\n<<abstract>> Shape\nShape : area()",
+    "accepted": true,
+    "texts": ["«abstract»", "Shape", "area()"]
+  },
+  {
+    "id": "d032",
+    "source": "classDiagram\nclass Billing <<service>>",
+    "accepted": true,
+    "texts": ["«service»", "Billing"]
+  },
+  {
+    "id": "d033",
+    "source": "classDiagram\nclass Billing <<service>> {\n  +charge()\n}",
+    "accepted": true,
+    "texts": ["«service»", "Billing", "+charge()"]
+  },
+  {
+    "id": "d034",
+    "source": "classDiagram\nclass Colour {\n<<enumeration>>\nRED\nGREEN\n}",
+    "accepted": true,
+    "texts": ["«enumeration»", "Colour", "RED", "GREEN"]
+  },
+  {
+    "id": "d035",
+    "source": "classDiagram\nclass Order\n<<Entity>> Order",
+    "accepted": true,
+    "texts": ["«Entity»", "Order"]
+  },
+  {
+    "id": "d036",
+    "source": "classDiagram\nclass Price {\n  <<value-object type>>\n}",
+    "accepted": true,
+    "texts": ["«value-object type»", "Price"]
+  },
+  {
+    "id": "d037",
+    "source": "classDiagram\nnamespace Shop {\n  class Cart {\n    <<aggregate>>\n  }\n}",
+    "accepted": true,
+    "texts": ["Shop", "«aggregate»", "Cart"]
+  },
+  {
+    "id": "d038",
+    "source": "classDiagram\r\nclass Shape {\r\n<<interface>>\r\n}\r\n",
+    "accepted": true,
+    "texts": ["«interface»", "Shape"]
+  },
+  {
+    "id": "d039",
+    "source": "classDiagram-v2\nclass List~T~ {\n<<interface>>\n+add(T item)\n}\nclass ArrayList~T~\nList <|.. ArrayList",
+    "accepted": true,
+    "texts": ["«interface»", "List<T>", "+add(T item)", "ArrayList<T>"]
+  },
+  {
+    "id": "d040",
+    "source": "stateDiagram-v2\nstate Split <<fork>>\nstate Merge <<join>>\n[*] --> Split\nSplit --> A\nSplit --> B\nA --> Merge\nB --> Merge\nMerge --> [*]",
+    "accepted": true,
+    "texts": ["A", "B"]
+  },
+  {
+    "id": "d041",
+    "source": "stateDiagram-v2\nstate Check <<choice>>\n[*] --> Check\nCheck --> Small : n < 10\nCheck --> Large : n >= 10",
+    "accepted": true,
+    "texts": ["n < 10", "n >= 10", "Small", "Large"]
+  },
+  {
+    "id": "d042",
+    "source": "stateDiagram\nstate Split <<fork>>\n[*] --> Split\nSplit --> A",
+    "accepted": true,
+    "texts": ["A"]
+  },
+  {
+    "id": "d043",
+    "source": "stateDiagram-v2\nstate Busy {\n  state Merge <<join>>\n  A --> Merge\n  B --> Merge\n}",
+    "accepted": true,
+    "texts": ["Busy", "A", "B"]
+  },
+  {
+    "id": "d044",
+    "source": "stateDiagram-v2\nstate Check <<CHOICE>>\n[*] --> Check\nCheck --> A",
+    "accepted": true,
+    "texts": ["A"]
+  },
+  {
+    "id": "d045",
+    "source": "stateDiagram-v2\nstate Split <<fork>>\nstate Merge [[join]]\nSplit --> A\nA --> Merge",
+    "accepted": true,
+    "texts": ["A"]
+  },
+  {
+    "id": "d046",
+    "source": "stateDiagram-v2\nA --> B : shift << 2",
+    "accepted": true,
+    "texts": ["shift << 2", "A", "B"]
+  },
+  {
+    "id": "d047",
+    "source": "stateDiagram-v2\nA --> B\nnote right of A : shift << 2",
+    "accepted": true,
+    "texts": ["B", "A", "shift << 2"]
+  },
+  {
+    "id": "d048",
+    "source": "stateDiagram-v2\nA : shift << 2",
+    "accepted": true,
+    "texts": ["shift << 2"]
+  },
+  {
+    "id": "d049",
+    "source": "classDiagram\nA --> B : shift << 2",
+    "accepted": true,
+    "texts": ["shift << 2", "A", "B"]
+  },
+  {
+    "id": "d050",
+    "source": "classDiagram\nA : shift << 2",
+    "accepted": true,
+    "texts": ["A", "shift << 2"]
+  },
+  {
+    "id": "d051",
+    "source": "classDiagram\nclass A {\n+shift << 2\n}",
+    "accepted": true,
+    "texts": ["A", "+shift << 2"]
+  },
+  {
+    "id": "d052",
+    "source": "stateDiagram-v2\nstate Split <<fork>>\nSplit --> A\n%% later use [[join]]",
+    "accepted": true,
+    "texts": ["A"]
+  },
+  {
+    "id": "d053",
+    "source": "classDiagram\nclass Shape {\n<<interface>> <b>draw</b>\n}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d054",
+    "source": "classDiagram\nclass Shape {\n<<interface>>\n<b>draw()</b>\n}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d055",
+    "source": "classDiagram\nclass Shape {\n<<<b>interface</b>>>\n}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d056",
+    "source": "classDiagram\nclass Shape {\n<<b title=x>>\n}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d057",
+    "source": "classDiagram\nclass Shape {\n<<interface>><b>x</b>\n}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d058",
+    "source": "classDiagram\n<<interface>> <b>Shape</b>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d059",
+    "source": "classDiagram\nclass Shape[\"<<interface>>\"]",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d060",
+    "source": "classDiagram\nclass Shape\nnote for Shape \"<<interface>>\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d061",
+    "source": "classDiagram\nclass Shape\nnote for Shape \"Shape\n<<interface>> Shape\n\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d062",
+    "source": "classDiagram\nclass Shape {\n<<interface>>\n}\nnote for Shape \"Shape\n<<interface>>\n\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d063",
+    "source": "classDiagram\naccDescr {\n<<interface>> Shape\n}\nclass Shape",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d064",
+    "source": "classDiagram\nShape : <<interface>>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d065",
+    "source": "classDiagram\nclass Shape {\n<<interface>> draw\n}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d066",
+    "source": "classDiagram\nA --> B : <<uses>>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d067",
+    "source": "stateDiagram-v2\nstate Shape <<interface>>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d068",
+    "source": "stateDiagram-v2\nstate <b>Split</b> <<fork>>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d069",
+    "source": "stateDiagram-v2\nstate Split <<fork>> <b>x</b>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d070",
+    "source": "stateDiagram-v2\nstate \"<<fork>>\" as Split",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d071",
+    "source": "stateDiagram-v2\nA --> B : <<choice>>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d072",
+    "source": "stateDiagram-v2\nA --> B\nnote right of A : <<fork>>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d073",
+    "source": "stateDiagram-v2\nstate Y [[fork]]\nA --> B\nnote right of A\nstate X <<fork>>\nend note",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d074",
+    "source": "classDiagram\nclass Shape\n<<%% note\ninterface>> Shape",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d075",
+    "source": "classDiagram\nclass Shape\n<< interface>> Shape",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d076",
+    "source": "classDiagram\nclass Shape <<interface>> <<abstract>>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d077",
+    "source": "classDiagram\nclass A[\"x: y\"] <<%% note\ninterface>>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d078",
+    "source": "classDiagram\nclass Shape\nclass A[\"x: y\"] <<%% note\ninterface>>\nnote for Shape \"Shape\n<<interface>> Shape\n\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d079",
+    "source": "flowchart TD\nA[\"<<interface>>\"] --> B",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d080",
+    "source": "flowchart TD\n<<interface>> A",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d081",
+    "source": "sequenceDiagram\nA->>B: <<create>>",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d082",
+    "source": "erDiagram\nA ||--|| B : \"<<owns>>\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d083",
+    "source": "pie\n\"<<slice>>\" : 1",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d084",
+    "source": "graph TD\nA --> B",
+    "accepted": true,
+    "texts": ["A", "B"]
+  },
+  {
+    "id": "d085",
+    "source": "sequenceDiagram\nAlice->>Bob: Hello",
+    "accepted": true,
+    "texts": ["Hello", "Alice", "Bob", "Alice", "Bob"]
+  },
+  {
+    "id": "d086",
+    "source": "classDiagram\nclass A",
+    "accepted": true,
+    "texts": ["A"]
+  },
+  {
+    "id": "d087",
+    "source": "stateDiagram-v2\n[*] --> A",
+    "accepted": true,
+    "texts": ["A"]
+  },
+  {
+    "id": "d088",
+    "source": "stateDiagram\n[*] --> A",
+    "accepted": true,
+    "texts": ["A"]
+  },
+  {
+    "id": "d089",
+    "source": "erDiagram\nA ||--|| B : owns",
+    "accepted": true,
+    "texts": ["owns", "A", "B"]
+  },
+  {
+    "id": "d090",
+    "source": "pie\n\"A\" : 1",
+    "accepted": true,
+    "texts": ["100%", "A"]
+  },
+  {
+    "id": "d091",
+    "source": "flowchart TD\nA[Click to upload image] --> B",
+    "accepted": true,
+    "texts": ["Click to upload image", "B"]
+  },
+  {
+    "id": "d092",
+    "source": "flowchart TD\nA[Style guide] --> B[Link icon]",
+    "accepted": true,
+    "texts": ["Style guide", "Link icon"]
+  },
+  {
+    "id": "d093",
+    "source": "graph TD\nA[icon] --> B[href] --> C[callback]",
+    "accepted": true,
+    "texts": ["icon", "href", "callback"]
+  },
+  {
+    "id": "d094",
+    "source": "flowchart TD\nA[\"classDef and linkStyle\"] --> B",
+    "accepted": true,
+    "texts": ["classDef and linkStyle", "B"]
+  },
+  {
+    "id": "d095",
+    "source": "flowchart TD\nA -- click here --> B",
+    "accepted": true,
+    "texts": ["click here", "A", "B"]
+  },
+  {
+    "id": "d096",
+    "source": "flowchart TD\nA -->|Click me| B",
+    "accepted": true,
+    "texts": ["Click me", "A", "B"]
+  },
+  {
+    "id": "d097",
+    "source": "flowchart TD\nA{Link broken?} --> B{{Image}}",
+    "accepted": true,
+    "texts": ["Link broken?", "Image"]
+  },
+  {
+    "id": "d098",
+    "source": "flowchart TD\nsubgraph Style guide\nA --> B\nend",
+    "accepted": true,
+    "texts": ["Style guide", "A", "B"]
+  },
+  {
+    "id": "d099",
+    "source": "flowchart TD\nA[\"Fontawesome icons\"] --> B\n%% click the link, style it",
+    "accepted": true,
+    "texts": ["Fontawesome icons", "B"]
+  },
+  {
+    "id": "d100",
+    "source": "flowchart TD\nA[\"First line\nstyle guide\"] --> B",
+    "accepted": true,
+    "texts": ["First linestyle guide", "B"]
+  },
+  {
+    "id": "d101",
+    "source": "flowchart TD\nA((Round)) --> B>Flag] --> C[(Store)] --> D[/Lean/]",
+    "accepted": true,
+    "texts": ["Round", "Flag", "Store", "Lean"]
+  },
+  {
+    "id": "d102",
+    "source": "flowchart TD\nA:::warn --> B\nclass B warn",
+    "accepted": true,
+    "texts": ["A", "B"]
+  },
+  {
+    "id": "d103",
+    "source": "sequenceDiagram\nA->>B: Send link",
+    "accepted": true,
+    "texts": ["Send link", "A", "B", "A", "B"]
+  },
+  {
+    "id": "d104",
+    "source": "sequenceDiagram\nparticipant A as Image service\nNote over A,B: click the style icon",
+    "accepted": true,
+    "texts": [
+      "click the style icon",
+      "Image service",
+      "B",
+      "Image service",
+      "B"
+    ]
+  },
+  {
+    "id": "d105",
+    "source": "sequenceDiagram\nLink->>Bob: Hello",
+    "accepted": true,
+    "texts": ["Hello", "Link", "Bob", "Link", "Bob"]
+  },
+  {
+    "id": "d106",
+    "source": "sequenceDiagram\nrect rgb(200, 220, 255)\nA->>B: Inside\nend\nbox Aqua Group\nparticipant C\nend",
+    "accepted": true,
+    "texts": ["Group", "Inside", "A", "B", "C", "A", "B", "C"]
+  },
+  {
+    "id": "d107",
+    "source": "classDiagram\nclass Account {\n+String icon\n+String link\n}\nAccount --> Account : click",
+    "accepted": true,
+    "texts": ["click", "Account", "+String icon", "+String link"]
+  },
+  {
+    "id": "d108",
+    "source": "classDiagram\nclass Style\nclass Link\nStyle --> Link",
+    "accepted": true,
+    "texts": ["Style", "Link"]
+  },
+  {
+    "id": "d109",
+    "source": "classDiagram\nnamespace Shop {\nclass Cart\n}\nnote for Cart \"click the link\"",
+    "accepted": true,
+    "texts": ["Shop", "Cart", "click the link"]
+  },
+  {
+    "id": "d110",
+    "source": "classDiagram\nclass A:::warn\ncssClass \"A\" warn",
+    "accepted": true,
+    "texts": ["A"]
+  },
+  {
+    "id": "d111",
+    "source": "stateDiagram-v2\nstate \"Click to start\" as S\nS --> T : style guide\nS : image icon href",
+    "accepted": true,
+    "texts": ["style guide", "Click to start", "image icon href", "T"]
+  },
+  {
+    "id": "d112",
+    "source": "stateDiagram-v2\nstate Busy {\nA --> B\n}\nnote right of A : style note",
+    "accepted": true,
+    "texts": ["Busy", "B", "A", "style note"]
+  },
+  {
+    "id": "d113",
+    "source": "stateDiagram-v2\nA:::warn --> B\nclass B warn",
+    "accepted": true,
+    "texts": ["A", "B"]
+  },
+  {
+    "id": "d114",
+    "source": "erDiagram\nA ||--|| B : \"Click link\"\nA {\nstring link\nstring style\n}",
+    "accepted": true,
+    "texts": ["Click link", "A", "string", "link", "string", "style", "B"]
+  },
+  {
+    "id": "d115",
+    "source": "erDiagram\nA:::warn ||--|| B : has",
+    "accepted": true,
+    "texts": ["has", "A", "B"]
+  },
+  {
+    "id": "d116",
+    "source": "pie title Style guide\n\"click\" : 1\n\"link\" : 2\n\"image\" : 3",
+    "accepted": true,
+    "texts": ["Style guide", "17%", "33%", "50%", "click", "link", "image"]
+  },
+  {
+    "id": "d117",
+    "source": "flowchart TD\nA[CLICK] --> B[LINKSTYLE]",
+    "accepted": true,
+    "texts": ["CLICK", "LINKSTYLE"]
+  },
+  {
+    "id": "d118",
+    "source": "flowchart TD\nA --> B\nstyle A fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d119",
+    "source": "flowchart TD\nsubgraph s\nA --> B\nend\nstyle s fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d120",
+    "source": "flowchart TD\nA --> B\nclassDef c fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d121",
+    "source": "flowchart TD\nA --> B\nclassDef c stroke:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d122",
+    "source": "flowchart TD\nA --> B\nlinkStyle 0 stroke:#f00",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d123",
+    "source": "flowchart TD\nA --> B\nlinkStyle default stroke:#f00",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d124",
+    "source": "flowchart TD\nA --> B\nlinkStyle default interpolate basis",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d125",
+    "source": "flowchart TD\nA --> B\nclick A callback",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d126",
+    "source": "flowchart TD\nA --> B\nclick A call cb()",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d127",
+    "source": "flowchart TD\nA --> B\nclick A \"page\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d128",
+    "source": "flowchart TD\nA --> B\nclick A href \"page\" \"Tip\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d129",
+    "source": "flowchart TD\nclick X cb \"Tip\"\nX --> B",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d130",
+    "source": "flowchart TD\nA --> B;style A fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d131",
+    "source": "flowchart TD\nsubgraph s\nend style s fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d132",
+    "source": "flowchart TD\nA --> B\r\rstyle A fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d133",
+    "source": "stateDiagram-v2\nA --> B\nstyle A fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d134",
+    "source": "stateDiagram-v2\nA --> B\nclassDef c fill:#f0e\nclass A c",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d135",
+    "source": "stateDiagram-v2\nA --> B\nclick A \"page\" \"Tip\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d136",
+    "source": "stateDiagram-v2\nA --> B\nclick A href \"page\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d137",
+    "source": "stateDiagram-v2\nstate Busy {\nA\nstyle A fill:#f0e\n}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d138",
+    "source": "stateDiagram-v2\nstate Busy { classDef c fill:red\n}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d139",
+    "source": "stateDiagram-v2\nA style A fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d140",
+    "source": "stateDiagram\nA style A fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d141",
+    "source": "stateDiagram-v2\nA --> B\nA classDef c fill:#f0e\nclass A c",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d142",
+    "source": "stateDiagram-v2\nA --> B\nA click A href \"page\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d143",
+    "source": "erDiagram\nA ||--|| B : has\nstyle A fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d144",
+    "source": "erDiagram\nA ||--|| B : has\nclassDef c fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d145",
+    "source": "erDiagram\nA style A fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d146",
+    "source": "erDiagram\nA ||--|| B : x\nA classDef c fill:#f0e\nclass A c",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d147",
+    "source": "classDiagram\nclass A\nstyle A fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d148",
+    "source": "classDiagram\nclass A\nclassDef c fill:#f0e",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d149",
+    "source": "classDiagram\nclass A\nclick A href \"page\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d150",
+    "source": "classDiagram\nclass A\ncallback A \"cb\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d151",
+    "source": "classDiagram\nclass A\nlink A \"page\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d152",
+    "source": "sequenceDiagram\nparticipant A\nlink A: Home @ page",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d153",
+    "source": "sequenceDiagram\nlinks A: {\"Home\": \"page\"}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d154",
+    "source": "sequenceDiagram\nparticipant A\nA->>B: x\n) link A: Home @ page",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d155",
+    "source": "sequenceDiagram\nparticipant A\nA->>B: x\n> links A: {\"Home\": \"page\"}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d156",
+    "source": "sequenceDiagram\nparticipant A\nproperties A: {\"class\": \"x\"}",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d157",
+    "source": "flowchart-elk TD\nA --> B",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d158",
+    "source": "flowchart LR\nDuplicate --> B",
+    "accepted": true,
+    "texts": ["Duplicate", "B"]
+  },
+  {
+    "id": "d159",
+    "source": "flowchart LR\nQuoted --> B",
+    "accepted": true,
+    "texts": ["Quoted", "B"]
+  },
+  {
+    "id": "d160",
+    "source": "flowchart LR\nQuotedCRLF --> B",
+    "accepted": true,
+    "texts": ["QuotedCRLF", "B"]
+  },
+  {
+    "id": "d161",
+    "source": "flowchart LR\nDuplicateEdited --> B",
+    "accepted": true,
+    "texts": ["DuplicateEdited", "B"]
+  },
+  {
+    "id": "d162",
+    "source": "flowchart LR\nA[こんにちは] --> B[Éclair]",
+    "accepted": true,
+    "texts": ["こんにちは", "Éclair"]
+  },
+  {
+    "id": "d163",
+    "source": "flowchart LR\nIncoming --> B",
+    "accepted": true,
+    "texts": ["Incoming", "B"]
+  },
+  {
+    "id": "d164",
+    "source": "flowchart LR\nPasted --> B",
+    "accepted": true,
+    "texts": ["Pasted", "B"]
+  },
+  {
+    "id": "d165",
+    "source": "%%{init: {\"securityLevel\":\"loose\"}}%%\nflowchart LR\nA[Click]-->B",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d166",
+    "source": "flowchart LR\nA[Click]-->B\n%%{init: {\"securityLevel\":\"loose\"}}%%",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d167",
+    "source": "flowchart LR\nA[Click]-->B;  %%{init: {}}%%",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d168",
+    "source": "%%{init: {\"securityLevel\":\"loose\"}}%%\nflowchart LR\nA-->B",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d169",
+    "source": "flowchart LR\nA-->B\n\n\t ---\nconfig: {}\n---",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d170",
+    "source": "flowchart LR\r\nA-->B\r\n\r\n  ---",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d171",
+    "source": "flowchart LR\nA-->B  ---",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d172",
+    "source": "flowchart LR\nA[<img src=\"https://example.com/a.png\">]",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d173",
+    "source": "flowchart LR\nA[&#x3c;script&#x3e;]",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d174",
+    "source": "flowchart LR\nA@{ img: \"https://example.com/a.png\" }",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d175",
+    "source": "flowchart LR\nclick A \"javascript:alert(1)\"",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d176",
+    "source": "flowchart LR\nA[$$x$$]",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d177",
+    "source": "flowchart LR\nstyle A fill:url(/tracking)",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d178",
+    "source": "flowchart LR\nclassDef unsafe fill:u\\72l(/tracking)",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d179",
+    "source": "flowchart LR\nA --> B\nclassDef c mask-image:image-set(\"/pixel\" 1x)",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d180",
+    "source": "flowchart LR\nA --> B\nclassDef c mask:-WEBKIT-IMAGE-SET(\"/pixel\" 1x)",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d181",
+    "source": "flowchart LR\nA --> B\nclassDef c fill:cross-fade(\"/a\", \"/b\", 50%)",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d182",
+    "source": "flowchart LR\nA[image-set (\"/pixel\" 1x)] --> B",
+    "accepted": false,
+    "texts": []
+  },
+  {
+    "id": "d183",
+    "source": "flowchart LR\n",
+    "accepted": true,
+    "texts": []
+  },
+  {
+    "id": "d184",
+    "source": "flowchart LR\nA --- B\n",
+    "accepted": true,
+    "texts": ["A", "B"]
+  },
+  {
+    "id": "d185",
+    "source": "  flowchart LR\n  A --> B",
+    "accepted": true,
+    "texts": ["A", "B"]
+  }
+]

@@ -24,7 +24,7 @@ export default defineConfig({
 })
 ```
 
-Inkkit bundles all of its runtime dependencies except Mermaid. A single-file page inlines Mermaid whenever any module imports `@aicayzer/inkkit`, even if no diagram ever renders. Import from `@aicayzer/inkkit/core` throughout the page unless you need diagram previews. [Compatibility](/compatibility) has the page sizes for each entry.
+Inkkit bundles all of its runtime dependencies. The main entry includes Pele and DOMPurify to render supported Mermaid syntax. Import from `@aicayzer/inkkit/core` throughout the page to exclude both libraries when you do not need rendered diagrams. [Compatibility](/compatibility) compares the entries.
 
 <Warning>
 Declare UTF-8 in the page, for example with `<meta charset="utf-8">`. The bundle contains non-ASCII text, and WebKit reads an undeclared single-file page as Latin-1, which stops the editor from loading.
@@ -60,7 +60,7 @@ await copyFile(
 )
 ```
 
-The full `@aicayzer/inkkit` entry includes Mermaid and its diagram dependencies. The package also ships `dist/THIRD-PARTY-NOTICES-FULL.txt`, generated from the release's actual bundle modules, as a reference for that tested tree. A host may resolve different Mermaid transitive versions, so generate its own list instead of treating the reference as a substitute. The `core` entry does not include Mermaid unless the host imports it elsewhere.
+Pele and DOMPurify are included in Inkkit's generated notices. The package also retains `dist/THIRD-PARTY-NOTICES-FULL.txt` with identical contents, so existing host copy recipes keep working. Upgrading from a Mermaid-based release requires updating Inkkit and rebuilding the offline page and notices. Editor imports and adapters stay unchanged, and no separate Pele installation is required. Remove a direct Mermaid dependency only if your host added one solely for Inkkit.
 
 Review the included licenses and any applicable source obligations. These files record dependencies and preserve notices; they do not by themselves establish compliance with every license term.
 

@@ -1,5 +1,6 @@
-import { registerMermaid } from './mermaid'
+import { registerDiagram } from './mermaid'
+import { renderPele } from './pele'
 
-registerMermaid(async () => (await import('mermaid')).default)
+registerDiagram(renderPele)
 
 export * from './core'

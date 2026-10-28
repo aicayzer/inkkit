@@ -6,11 +6,15 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { InkKitEditor, InkKitError } from '../src/core'
 import { renderDiagram } from '../src/mermaid'
 
-// Each test file has its own module graph, so nothing here registers Mermaid.
-const loaded = vi.hoisted(() => ({ count: 0 }))
-vi.mock('mermaid', () => {
-  loaded.count++
-  return { default: {} }
+// Each test file has its own module graph, so nothing here registers a renderer.
+const loaded = vi.hoisted(() => ({ pele: 0, sanitiser: 0 }))
+vi.mock('pele', () => {
+  loaded.pele++
+  return { parse: vi.fn(), render: vi.fn() }
+})
+vi.mock('dompurify', () => {
+  loaded.sanitiser++
+  return { default: { sanitize: vi.fn() } }
 })
 
 const diagram = 'flowchart LR\nA --> B'
@@ -43,11 +47,11 @@ async function run(
   }
 }
 
-test('the core entry renders no diagram and never loads Mermaid', async () => {
+test('the core entry renders no diagram and loads neither Pele nor DOMPurify', async () => {
   await expect(renderDiagram(diagram)).rejects.toThrow(
     'Diagram rendering is not included in this build. The source is retained.',
   )
-  expect(loaded.count).toBe(0)
+  expect(loaded).toEqual({ pele: 0, sanitiser: 0 })
 })
 
 test('diagram source stays editable and preserved without previews or errors', async () => {
@@ -72,7 +76,7 @@ test('diagram source stays editable and preserved without previews or errors', a
     expect(editor.snapshot().text).toBe(text)
   }, errors)
   expect(errors).toEqual([])
-  expect(loaded.count).toBe(0)
+  expect(loaded).toEqual({ pele: 0, sanitiser: 0 })
 })
 
 test('copy keeps readable diagram source and reports why it is unavailable', async () => {
@@ -94,7 +98,7 @@ test('copy keeps readable diagram source and reports why it is unavailable', asy
     ).toBe(diagram)
     expect(clip.images).toEqual([])
     expect(clip.text).toBe(`Before\n\n${diagram}\n\nAfter`)
-    expect(loaded.count).toBe(0)
+    expect(loaded).toEqual({ pele: 0, sanitiser: 0 })
   }, errors)
   // The host left diagrams out, so a missing rendering is not an error.
   expect(errors).toEqual([])
@@ -113,7 +117,7 @@ test('print keeps readable diagram source with a diagram-unavailable warning', (
     const html = new DOMParser().parseFromString(printed.html, 'text/html')
     expect(html.querySelector('pre code')?.textContent).toBe(diagram)
     expect(html.querySelector('img')).toBeNull()
-    expect(loaded.count).toBe(0)
+    expect(loaded).toEqual({ pele: 0, sanitiser: 0 })
   }))
 
 test('the core entry exports the same public names as the package entry', async () => {
