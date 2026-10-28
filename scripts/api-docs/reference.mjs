@@ -30,8 +30,13 @@ function prose(node) {
       'tableCell',
     ].includes(node.type)
   )
-    return (node.children ?? []).map(prose).join(' ')
+    return directProse(node.children ?? [])
   return ''
+}
+
+function directProse(nodes) {
+  const end = nodes.findIndex((node) => node.type === 'heading')
+  return (end < 0 ? nodes : nodes.slice(0, end)).map(prose).join(' ')
 }
 
 function substantive(value) {
@@ -50,6 +55,8 @@ function attribute(node, name) {
 }
 
 function annotation(node) {
+  if (node.type === 'mdxTextExpression' && node.value.includes('@api'))
+    throw new Error('API annotations must be standalone blocks')
   if (node.type !== 'mdxFlowExpression') return undefined
   const match = /^\s*\/\*\s*@api(-scope)?\s+([^]*?)\s*\*\/\s*$/.exec(node.value)
   if (!match) {
@@ -83,10 +90,20 @@ export function reference(source, file, required) {
       throw new Error(`${location(node)}: unknown API owner ${owner}`)
     return owner
   }
+  const annotations = new Set()
+  const inspect = (node) => {
+    const marker = annotation(node)
+    if (marker) {
+      for (const target of marker.targets) checkOwner(target, node)
+      annotations.add(node)
+    }
+    for (const child of node.children ?? []) inspect(child)
+  }
+  inspect(tree)
   const claim = (targets, nodes, node) => {
     for (const target of targets) {
       checkOwner(target, node)
-      const body = nodes.map(prose).join(' ').trim()
+      const body = directProse(nodes).trim()
       if (!substantive(body))
         errors.push(
           `${location(node)}: ${target} needs an explanatory description (not a signature, example, link or child field)`,
@@ -139,6 +156,7 @@ export function reference(source, file, required) {
       const node = nodes[index]
       const marker = annotation(node)
       if (marker) {
+        annotations.delete(node)
         if (pending)
           throw new Error(`${location(node)}: API annotation has no content`)
         pending = marker
@@ -205,6 +223,10 @@ export function reference(source, file, required) {
         node.type === 'mdxJsxFlowElement' &&
         node.name === 'Expandable'
       ) {
+        if (attached && !attached.scope)
+          throw new Error(
+            `${location(node)}: Expandable requires @api-scope; attach @api to its overview paragraph or heading`,
+          )
         const title = attribute(node, 'title')
         const nested = attached?.scope
           ? owner
@@ -228,5 +250,9 @@ export function reference(source, file, required) {
     if (pending) throw new Error(`${file}: API annotation has no content`)
   }
   walk(tree.children, undefined)
+  for (const node of annotations)
+    throw new Error(
+      `${location(node)}: API annotation is inside unsupported content`,
+    )
   return { descriptions, errors }
 }

@@ -127,6 +127,48 @@ test('a parent field cannot borrow a nested child description', () => {
   assert.ok(result.documented.has('EditorOptions.rendering.diagramPreview'))
 })
 
+test('a parent field cannot borrow prose after a nested heading', () => {
+  const source =
+    '{/* @api-scope Options */}\n## Options\n\n<ResponseField name="rendering" type="object">\n### Child\n\nShows previews below diagrams.\n</ResponseField>'
+  const result = check(['Options', 'Options.rendering', 'Child'], source)
+  missing(result, 'Options.rendering')
+  assert.ok(result.documented.has('Child'))
+})
+
+test('a heading inside a list cannot supply an empty field description', () => {
+  const source =
+    '{/* @api-scope Options */}\n\n<ResponseField name="rendering" type="object">\n- ### Child\n\n  Shows previews below diagrams.\n</ResponseField>'
+  missing(check(['Options', 'Options.rendering'], source), 'Options.rendering')
+})
+
+for (const target of ['MissingType', 'Options'])
+  test(`Expandable does not discard an @api annotation for ${target}`, () => {
+    const source = `{/* @api ${target} */}\n<Expandable title="Options">\n<ResponseField name="enabled" type="boolean">\nTurns the feature on.\n</ResponseField>\n</Expandable>`
+    const result = check(['Options', 'Options.enabled'], source)
+    assert.ok(
+      result.errors.some((error) =>
+        /unknown API owner MissingType|Expandable requires @api-scope/.test(
+          error,
+        ),
+      ),
+    )
+  })
+
+test('API annotations cannot disappear inside unsupported or inline content', () => {
+  for (const source of [
+    'Text {/* @api Options */} continues here.',
+    '- Item\n\n  {/* @api Options */}\n\n  Turns the feature on.',
+  ]) {
+    const result = check(['Options'], source)
+    assert.ok(
+      result.errors.some((error) =>
+        /standalone blocks|unsupported content/.test(error),
+      ),
+      result.errors.join('\n'),
+    )
+  }
+})
+
 test('nested names cannot be supplied under another scope', () => {
   const source =
     '{/* @api-scope Other */}\n\n<ResponseField name="diagramPreview" type="boolean">\nShows previews below diagrams.\n</ResponseField>'
