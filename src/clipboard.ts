@@ -1,3 +1,4 @@
+import { bytesToDataURL, isPortableImageMIME } from './portable-image'
 import {
   DOMSerializer,
   type Fragment,
@@ -307,11 +308,9 @@ export async function portableClipboard(
             )
         signal.throwIfAborted()
         const image = { ...input, bytes: new Uint8Array(input.bytes) }
-        if (!/^image\/(png|jpeg|gif|webp|avif|bmp|tiff)$/i.test(image.mimeType))
+        if (!isPortableImageMIME(image.mimeType.toLowerCase()))
           throw new Error('The image format cannot be exported.')
-        let binary = ''
-        for (const byte of image.bytes) binary += String.fromCharCode(byte)
-        const portable = `data:${image.mimeType};base64,${btoa(binary)}`
+        const portable = bytesToDataURL(image.bytes, image.mimeType)
         element.setAttribute('src', portable)
         element.setAttribute('alt', label)
         fileDescriptions.set(node.attrs, label)
@@ -338,14 +337,12 @@ export async function portableClipboard(
     diagrams.push(result)
     try {
       const image = await withFileSignal(diagramImage(source), signal)
-      let binary = ''
-      for (const byte of image.bytes) binary += String.fromCharCode(byte)
       const figure = document.createElement('figure')
       figure.setAttribute('data-inkkit-mermaid', source)
       const fence = code.parentElement!.getAttribute('data-inkkit-fence')
       if (fence) figure.setAttribute('data-inkkit-fence', fence)
       const element = document.createElement('img')
-      element.src = `data:image/png;base64,${btoa(binary)}`
+      element.src = bytesToDataURL(image.bytes, 'image/png')
       element.alt = `Mermaid diagram: ${source}`
       figure.append(element)
       code.parentElement!.replaceWith(figure)

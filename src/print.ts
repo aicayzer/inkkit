@@ -1,3 +1,5 @@
+import { bytesToDataURL, isPortableImageMIME } from './portable-image'
+import { withoutLeadingBOM } from './bom'
 import type { Fragment, Node, Schema } from '@milkdown/kit/prose/model'
 import { clipboardContent } from './clipboard'
 import { shareableFragment } from './comments'
@@ -114,7 +116,7 @@ export function hasAuthoredImagesInLiterals(
   shareableFragment(content).descendants((node) => {
     if (found) return false
     if (node.type.name !== 'literal_markdown') return true
-    const source = node.textContent.replace(/^\uFEFF/, '')
+    const source = withoutLeadingBOM(node.textContent)
     const body = source.slice(sourceFrontmatter(source)?.length ?? 0)
     if (body && hasImage(parse(body))) found = true
     return false
@@ -216,12 +218,6 @@ async function validatedImage(
   }
 }
 
-function dataURL(image: PortableImage): string {
-  let binary = ''
-  for (const byte of image.bytes) binary += String.fromCharCode(byte)
-  return `data:${image.mimeType};base64,${btoa(binary)}`
-}
-
 const semanticTags = new Set([
   'DIV',
   'P',
@@ -309,13 +305,9 @@ function cleanSemantics(
     if (classes.length) element.setAttribute('class', classes.join(' '))
     const destination = href == null ? undefined : safeLink(href)
     if (destination != null) element.setAttribute('href', destination)
-    if (
-      src &&
-      /^data:image\/(png|jpeg|gif|webp|avif|bmp|tiff);base64,[A-Za-z0-9+/=]+$/.test(
-        src,
-      )
-    )
-      element.setAttribute('src', src)
+    const dataImage = src && /^data:([^;]+);base64,[A-Za-z0-9+/=]+$/.exec(src)
+    if (dataImage && isPortableImageMIME(dataImage[1]!))
+      element.setAttribute('src', src!)
     if (alt != null) element.setAttribute('alt', alt)
     if (width && /^\d+$/.test(width)) element.setAttribute('width', width)
     if (title) element.setAttribute('title', title)
@@ -428,7 +420,7 @@ export async function printableMarkdown(
       )
       signal.throwIfAborted()
       images.set(element, image)
-      element.setAttribute('src', dataURL(image))
+      element.setAttribute('src', bytesToDataURL(image.bytes, image.mimeType))
       element.setAttribute('alt', file?.label || reference.label || '')
       if (reference.width != null && reference.width > 0)
         element.setAttribute('width', String(Math.min(4096, reference.width)))
@@ -466,7 +458,7 @@ export async function printableMarkdown(
       const figure = document.createElement('figure')
       figure.className = 'inkkit-print-diagram'
       const element = document.createElement('img')
-      element.setAttribute('src', dataURL(image))
+      element.setAttribute('src', bytesToDataURL(image.bytes, image.mimeType))
       element.setAttribute('alt', 'Mermaid diagram')
       figure.append(element)
       images.set(element, image)

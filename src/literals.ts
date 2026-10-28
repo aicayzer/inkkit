@@ -1,3 +1,4 @@
+import { withoutLeadingBOM } from './bom'
 import { $node, $remark } from '@milkdown/kit/utils'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { editorLabels } from './labels'
@@ -150,7 +151,7 @@ export function createLiteralPreservation(images: boolean) {
     () => () => (tree: Root, file: { value: unknown }) => {
       restoreInlineBreaks(tree)
       // Micromark's positions exclude an initial byte-order mark.
-      const source = String(file.value).replace(/^\uFEFF/, '')
+      const source = withoutLeadingBOM(String(file.value))
       const frontmatter = sourceFrontmatter(source)
       const frontmatterEnd = frontmatter?.length ?? 0
       const preserveBlock = <T extends RootContent>(

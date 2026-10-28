@@ -1,3 +1,4 @@
+import { leadingBOMLength } from './bom'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { RootContent } from 'mdast'
@@ -12,7 +13,7 @@ interface Point {
 // itself: a repeated word in a link destination or definition is not a caret.
 export function modeSelectionMap(ctx: Ctx, source: string, doc: ProseNode) {
   const points: Point[] = []
-  const bom = source.startsWith('\uFEFF') ? 1 : 0
+  const bom = leadingBOMLength(source)
   let text = ''
   const offsets: number[] = []
   const ends: number[] = []

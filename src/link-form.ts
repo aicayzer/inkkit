@@ -1,3 +1,4 @@
+import { withoutLeadingBOM } from './bom'
 import type { Link, Nodes, Root } from 'mdast'
 
 /**
@@ -33,7 +34,7 @@ export function followsText(text: string, href: string): boolean {
 export function remarkLinkForms() {
   return (tree: Root, file: { value?: unknown }) => {
     // Positions count from after a byte order mark.
-    const source = String(file.value ?? '').replace(/^\uFEFF/, '')
+    const source = withoutLeadingBOM(String(file.value ?? ''))
     const visit = (node: Nodes) => {
       if (node.type === 'link')
         (node as Link).data = {

@@ -1,3 +1,4 @@
+import { withoutLeadingBOM } from './bom'
 import { codeBlockSchema } from '@milkdown/kit/preset/commonmark'
 import { $remark } from '@milkdown/kit/utils'
 import type { Root, Nodes, Code } from 'mdast'
@@ -45,7 +46,7 @@ export function showsFenceInfo(fence: unknown, language: unknown): boolean {
 export const remarkCodeFences = $remark(
   'codeFences',
   () => () => (tree: Root, file: { value: unknown }) => {
-    const source = String(file.value).replace(/^\uFEFF/, '')
+    const source = withoutLeadingBOM(String(file.value))
     const visit = (node: Nodes) => {
       if (node.type === 'code') {
         const raw = source.slice(

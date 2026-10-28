@@ -1,3 +1,4 @@
+import { withoutLeadingBOM } from './bom'
 import { editorLabels } from './labels'
 import { editorLinkSchemes, isSafeLinkTarget } from './link-safety'
 import { followsText, type LinkForm } from './link-form'
@@ -166,7 +167,7 @@ function remarkReferences(this: Processor) {
     },
   })
   return (tree: Root, file: { value: unknown }) => {
-    const source = String(file.value).replace(/^\uFEFF/, '')
+    const source = withoutLeadingBOM(String(file.value))
     const targets = new Map<string, { url: string; title?: string | null }>()
     const walk = (node: Nodes, visit: (node: Nodes) => void) => {
       visit(node)
