@@ -41,7 +41,7 @@ The trade-off: a security fix in a bundled package reaches hosts only through an
 
 ## Bounded verification
 
-Choose checks from the changed behaviour, not from every available fixture combination.
+Choose checks from the changed behaviour, not from every available fixture combination. The [0.3.4 test and CI audit](test-ci-audit.md) records coverage decisions, retained equivalents and measured check costs.
 
 For a maintenance group, run focused checks while implementing each change, then run the complete browser and relevant native suites once on the combined final candidate before release. A later change requires the checks it affects; an identical source tree after rebasing does not require another run. Preserve the earlier commit and tree identity with the evidence. Hosted CI still runs its normal checks on each pull request and merge.
 
