@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const fixtureMode = process.env.INKKIT_BROWSER_FIXTURE
+if (fixtureMode && !['dev', 'built'].includes(fixtureMode))
+  throw Error('INKKIT_BROWSER_FIXTURE must be dev or built')
+
 // Worktrees running tests at the same time need different ports.
 const port = Number(process.env.INKKIT_PLAYGROUND_PORT ?? 4178)
 if (!Number.isInteger(port) || port < 1 || port > 65535)
@@ -33,7 +37,9 @@ export default defineConfig({
   webServer: process.env.INKKIT_EXTERNAL_PLAYGROUND
     ? undefined
     : {
-        command: `pnpm exec vite playground --host 127.0.0.1 --port ${port} --strictPort`,
+        command: fixtureMode
+          ? 'node scripts/browser-fixture.mjs'
+          : `pnpm exec vite playground --host 127.0.0.1 --port ${port} --strictPort`,
         url: `http://127.0.0.1:${port}`,
         reuseExistingServer: false,
         timeout: 30_000,

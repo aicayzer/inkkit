@@ -3,20 +3,23 @@ import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
+import { fixtureMode } from './browser-fixture.mjs'
 
 // Own both process groups so a server crash cannot leave browser workers running.
 export async function runBrowserTests({
   args = [],
   port = Number(process.env.INKKIT_PLAYGROUND_PORT ?? 4178),
-  server = [
-    'node_modules/vite/bin/vite.js',
-    'playground',
-    '--host',
-    '127.0.0.1',
-    '--port',
-    String(port),
-    '--strictPort',
-  ],
+  server = fixtureMode()
+    ? ['scripts/browser-fixture.mjs', String(port)]
+    : [
+        'node_modules/vite/bin/vite.js',
+        'playground',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        String(port),
+        '--strictPort',
+      ],
   runner = ['node_modules/@playwright/test/cli.js', 'test', ...args],
   logFile = '_local/playwright/server.log',
 } = {}) {
