@@ -30,7 +30,7 @@ A separate five-context loading probe per mode and engine recorded 202 navigatio
 
 The separate long-note scaling case passed in both modes and both engines. Built mode also passed the nine changed accessibility/style cases in each engine. The intentional-failure configuration exited non-zero in both engines with the expected assertion, fixture observations, screenshot and trace. These expected failures are kept separate from passing evidence.
 
-The ranges do not overlap within either engine, supporting the built fixture for this workload. Three observations per mode do not establish tail latency or complete-suite savings. Hosted shard timings are a separate comparison; these local results do not establish a hosted improvement. The final complete browser suites and native checks remain release-candidate gates.
+The ranges do not overlap within either engine, supporting the built fixture for this workload. Three observations per mode do not establish tail latency or complete-suite savings. CI adopts the built fixture while keeping check names, sharding, engine rules and retries unchanged. [The audit pull request](https://github.com/aicayzer/inkkit/pull/423) records a separate same-workload hosted comparison; these local results do not establish a hosted improvement. The final complete browser suites and native checks remain release-candidate gates.
 
 ## Long-note work, 27 October 2026
 

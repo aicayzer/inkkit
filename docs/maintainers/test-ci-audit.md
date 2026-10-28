@@ -150,7 +150,7 @@ The controlled comparison supports retaining the built fixture. The same 88 case
 
 [Performance evidence](performance.md#browser-fixture-comparison-28-october-2026) records the exact command, environment, ranges, loading measurements, module-identity and fault-injection checks, scaling and intentional-failure diagnostics. Test contexts remain isolated. The change builds the common fixture once per invocation instead of transforming source modules during navigation; it does not share an editor between tests.
 
-The first hosted audit candidate retains ordinary development serving to supply a same-workload reference. Any subsequent CI adoption must change only serving mode and its policy documentation before comparing hosted jobs. A single hosted observation per mode is descriptive; do not call it a stable median or p90. Local repeated measurements and the historical 100-run samples remain separate evidence.
+The first hosted audit candidate retained ordinary development serving as a same-workload reference. CI adoption changes only the browser serving mode and its policy documentation; source, tests and lockfile remain identical. The [audit pull request](https://github.com/aicayzer/inkkit/pull/423) records the hosted jobs and comparison. A single hosted observation per mode is descriptive, not a stable median or p90. Local repeated measurements and the historical 100-run samples remain separate evidence.
 
 ## Delivery limits and next decisions
 
