@@ -2,12 +2,21 @@ import {
   Editor,
   defaultValueCtx,
   editorStateOptionsCtx,
+  schemaCtx,
+  prosePluginsCtx,
   editorViewOptionsCtx,
   remarkStringifyOptionsCtx,
   rootCtx,
 } from '@milkdown/kit/core'
-import type { MilkdownPlugin } from '@milkdown/kit/ctx'
-import type { Plugin, Transaction } from '@milkdown/kit/prose/state'
+import type { Ctx, MilkdownPlugin } from '@milkdown/kit/ctx'
+import {
+  EditorState,
+  type Plugin,
+  type Transaction,
+} from '@milkdown/kit/prose/state'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { SearchQuery, setSearchState } from 'prosemirror-search'
+import { terminalSelection } from './editor-selection'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose, type $UserKeymap } from '@milkdown/kit/utils'
 import {
@@ -227,4 +236,22 @@ export async function createMilkdownEditor(
         : [],
     )
     .create()
+}
+
+export function createDocumentState(ctx: Ctx, doc: ProseNode): EditorState {
+  return EditorState.create(
+    ctx.get(editorStateOptionsCtx)({
+      schema: ctx.get(schemaCtx),
+      doc,
+      plugins: ctx.get(prosePluginsCtx),
+    }),
+  )
+}
+
+export function initialDocumentSelection(state: EditorState): Transaction {
+  const end = terminalSelection(state.doc)
+  return setSearchState(
+    state.tr.setSelection(end),
+    new SearchQuery({ search: '' }),
+  )
 }

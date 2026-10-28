@@ -4,7 +4,12 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { modeSelectionMap } from './mode-selection'
 import type { EditingMode } from './editor'
 import type { ClipboardInput } from './types'
-import { editedPlainSource, rawOffset, normalizedOffset } from './source'
+import {
+  editedPlainSource,
+  rawOffset,
+  normalizedOffset,
+  type SourceProvenance,
+} from './source'
 
 interface SourceRuntime {
   ready(): boolean
@@ -41,6 +46,22 @@ export class SourceSurface {
   readonly element: HTMLTextAreaElement
   private composingValue = false
   private beforeSelection?: { from: number; to: number }
+
+  reconcileFormattedChange(
+    markdown: string,
+    anchor: SourceProvenance | null,
+  ): void {
+    const from = anchor?.from ?? this.element.selectionStart
+    const to = anchor?.to ?? this.element.selectionEnd
+    if (!this.composing) this.setSourceValue(markdown)
+    if (!this.composing) {
+      this.element.setSelectionRange(
+        Math.min(from, this.element.value.length),
+        Math.min(to, this.element.value.length),
+      )
+      this.runtime.reveal()
+    }
+  }
 
   constructor(
     root: HTMLElement,

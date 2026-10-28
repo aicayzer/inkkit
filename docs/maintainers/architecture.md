@@ -4,9 +4,19 @@
 
 ## Input and assembly
 
-- `editor-milkdown.ts` installs the dialect, views and plugins in their input and transaction order. It receives explicit policy and dispatch callbacks.
-- `editor-keymap.ts` builds configured key handlers. Its callbacks return to the facade so keyboard operations use the same guards as public calls.
+- `editor-milkdown.ts` installs the dialect, views and plugins in their input and transaction order, and constructs replacement editor states. It receives explicit policy and dispatch callbacks; the facade installs document caches before dispatching the initial selection.
+- `editor-keymap.ts` builds configured key handlers, their plugins and native key routing. Its callbacks return to the facade so keyboard operations use the same guards as public calls. Plugin handlers read the current bindings after a keymap change.
+- `editor-policy.ts` applies input attributes and constructs editability, history-input and document-change plugins. The facade owns the predicates and the accepted-change sequence, including revision, cancellation, cache reads and event delivery.
 - `editor-input.ts` contains transaction-based input plugins. `editor-selection.ts` reads formatted caret state, and `editor-commands.ts` applies formatting commands.
+
+## Commands and activation
+
+- `editor-insert.ts` applies formatted plain-text, native-text, path and image insertions. It receives checked arguments and reads authored text only when an operation needs it. The facade keeps source/TXT routing, mutation guards and focus decisions.
+- `editor-links.ts` validates Markdown link destinations, applies link and shared-reference edits, and activates the selected link. Shared-reference edits return through the public method so nested calls retain the same atomic boundary.
+- `editor-footnotes.ts` inserts and locates footnotes. Automatic numbering reads both authored text and parsed references; an explicit label does not need that source read.
+- `editor-activation.ts` owns root link and footnote listeners and modifier tracking. The facade retains their installation and teardown order relative to clipboard, source and Milkdown.
+- `editor-suggestions.ts` assembles slash/wiki providers, applies their transactions and handles host action results. The facade captures the current session and chosen state, validates the eventual commit and temporarily supplies the slash transaction's base state. Host action failures and editor insertion failures retain separate reporting paths.
+- `editor-focus.ts` releases text-surface focus and captures/restores selection, focus and scroll around reload. The facade owns load/mode transitions and suppresses intermediate command-state events.
 
 ## Document and source history
 
@@ -22,7 +32,7 @@ The collaborators receive the context, values or callbacks their responsibility 
 - `editor-viewport.ts` owns viewport settings, visible ranges, geometry and scrolling through nested containers. It reuses callout unfolding and keeps textarea scroll handling separate from formatted geometry.
 - `editor-search.ts` owns the literal query and the raw match behind a normalized textarea selection, including either half of CRLF. It applies search and readable-range replacements through narrow source-edit and preservation callbacks. Accepted edits invalidate the remembered match; mode changes and loads reset the query too.
 
-The facade keeps public argument validation, readiness and mutation guards, and the ordering of focus, reveal and command-state events. It still coordinates load/reload, focus and mode transitions. The remaining command and DOM activation coordination await their separate extraction. [Development](development.md#bounded-verification) defines the verification gates for changes to these boundaries.
+The facade keeps public declarations, argument validation, readiness and mutation guards, and the ordering of focus, reveal and command-state events. It coordinates load/reload, focus, mode transitions and destruction. Its transaction gate validates the final document after appended plugins, restores refused calls and delivers queued events only after a successful call. [Development](development.md#bounded-verification) defines the verification gates for changes to these boundaries.
 
 ## Output and clipboard
 

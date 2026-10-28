@@ -1,3 +1,35 @@
+import { EditorActivation } from './editor-activation'
+import {
+  createEditorSuggestions,
+  insertWikiSuggestion,
+  insertSlashSuggestion,
+  runSlashAction,
+} from './editor-suggestions'
+import {
+  releaseFocus,
+  captureReloadSurface,
+  restoreReloadSurface,
+} from './editor-focus'
+import {
+  applyInputPolicy,
+  createInputPolicyPlugin,
+  createHistoryInputPlugin,
+  createChangePlugin,
+} from './editor-policy'
+import {
+  insertPlainText,
+  insertNativeText,
+  insertPaths,
+  insertImages,
+  appendImages,
+} from './editor-insert'
+import {
+  checkDestination,
+  setLink,
+  editReferenceDefinition,
+  openSelectedLink,
+} from './editor-links'
+import { insertFootnote, navigateFootnote } from './editor-footnotes'
 import { EditorOutput } from './editor-output'
 import { EditorClipboard } from './editor-clipboard'
 import { EditorText } from './editor-text'
@@ -8,57 +40,36 @@ import { EditorDocument } from './editor-document'
 import { SourceHistory } from './editor-history'
 import { $prose } from '@milkdown/kit/utils'
 import { applyFormat, formatAvailability } from './editor-commands'
-import { createEditorKeymap, tableShortcut } from './editor-keymap'
-import { createMilkdownEditor } from './editor-milkdown'
-import { markRun, caretState, terminalSelection } from './editor-selection'
-import { literalTextNodes } from './literal-text'
-import { wikiSession, wikiSuggestionTransaction } from './wiki-suggestions'
+import {
+  createEditorKeymap,
+  tableShortcut,
+  createKeymapPlugin,
+  createIndentPlugin,
+  routeNativeKey,
+} from './editor-keymap'
+import {
+  createMilkdownEditor,
+  createDocumentState,
+  initialDocumentSelection,
+} from './editor-milkdown'
+import { caretState } from './editor-selection'
 import type { SlashMenuOptions, SlashCommandName, SlashCommand } from './types'
-import { Suggestions, type SuggestionSession } from './suggestions'
-import { slashMenuOptions, slashSession, slashTransaction } from './slash-menu'
-import { htmlBreakAt } from './hard-break'
-import {
-  type Editor,
-  editorStateOptionsCtx,
-  editorViewCtx,
-  parserCtx,
-  prosePluginsCtx,
-  schemaCtx,
-} from '@milkdown/kit/core'
+import type { Suggestions, SuggestionSession } from './suggestions'
+import { slashMenuOptions } from './slash-menu'
+import { type Editor, editorViewCtx } from '@milkdown/kit/core'
 import { closeHistory } from '@milkdown/kit/prose/history'
-import { replacementMarks } from './text-input'
-import { blockDropRange } from './drop-placement'
-import { linkSchema } from '@milkdown/kit/preset/commonmark'
 import {
-  Fragment,
   Mark as ProseMark,
-  Slice,
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
-import { goToNextCell } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import {
-  NodeSelection,
-  Plugin,
-  PluginKey,
-  TextSelection,
-  EditorState,
-  type Transaction,
-} from '@milkdown/kit/prose/state'
+import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { literalRereadKey } from './literal-edits'
 import { defaultLabels } from './labels'
-import { serialize } from './dialect'
-import { extraLinkSchemes, isSafeLinkTarget } from './link-safety'
+import { extraLinkSchemes } from './link-safety'
 import { Preservation } from './preserve'
 import { sourceAttribute, type SourceProvenance } from './source'
-import {
-  normaliseLabel,
-  referenceDefinitions,
-  footnoteDefinitions,
-  singleLine,
-} from './references'
-import { imagePlacement } from './image-blocks'
-import { wikiReference } from './linked-syntax'
+import { referenceDefinitions } from './references'
 import { mediaPolicyEvent, requestRefresh } from './files'
 import {
   tableCommand,
@@ -98,11 +109,7 @@ import {
 import type { TextProjection } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
 import { isWrittenEdit, setCommentVisibility } from './comments'
-import {
-  assertHiddenCommentsKept,
-  hiddenCommentExit,
-  insertAfterHiddenComment,
-} from './hidden-comments'
+import { assertHiddenCommentsKept } from './hidden-comments'
 import { PasteController } from './paste'
 import { DocumentSession, type SessionCapture } from './session'
 import {
@@ -123,7 +130,6 @@ import {
   optionalString,
 } from './errors'
 import { setSelectionHostActive } from './selection'
-import { SearchQuery, setSearchState } from 'prosemirror-search'
 import {
   collectFormattedHeadings,
   collectSourceHeadings,
@@ -131,8 +137,6 @@ import {
   sourceHeadingPosition,
   type OutlineContext,
 } from './outline'
-import { toggleTask } from './tasks'
-import { modHeld, trackLinkModifier } from './modifier'
 import { diagramsAvailable } from './mermaid'
 
 /** An inline format that `CaretState` can report. */
@@ -742,10 +746,7 @@ export class InkKitEditor {
   private source!: SourceSurface
   private root!: HTMLElement
   private ownsRootClass = false
-  private clickHandler?: (event: MouseEvent) => void
-  private auxClickHandler?: (event: MouseEvent) => void
-  private untrackLinkModifier?: () => void
-  private footnoteKeyHandler?: (event: KeyboardEvent) => void
+  private activation!: EditorActivation
   private reportingSuppressed = false
   private loading = false
   private call?: FacadeCall
@@ -753,63 +754,50 @@ export class InkKitEditor {
   private inputPreferences: TextInputPreferences = {}
   private literalKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
-  private configuredKeys: Keymap = {}
   private indentKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
   private readOnlyKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
   private suggestions?: Suggestions
   private suggestionBase?: EditorState
-  private changePlugin = $prose(
-    () =>
-      new Plugin({
-        key: new PluginKey('documentChanges'),
-        view: () => ({
-          update: (view, previous) => {
-            if (
-              this.loading ||
-              this.document.sameDocument(view.state.doc, previous.doc)
-            )
-              return
-            // Settling typed source brings the document up to a revision and a
-            // change event that were already reported.
-            if (this.history.syncing) {
-              this.mediaPolicy()
-              return
-            }
-            this.session.changed()
-            this.output.cancel()
-            this.mediaPolicy()
-            this.search.invalidate()
-            let markdown: string
-            try {
-              markdown = this.document.currentText(view.state.doc)
-            } catch (error) {
-              this.events.error?.(coded(error, 'preservation'))
-              return
-            }
-            if (this.literalSurface) {
-              const anchor = view.state.doc.attrs[
-                sourceAttribute
-              ] as SourceProvenance | null
-              const from = anchor?.from ?? this.source.element.selectionStart
-              const to = anchor?.to ?? this.source.element.selectionEnd
-              if (!this.source.composing) this.source.setSourceValue(markdown)
-              if (!this.source.composing) {
-                this.source.element.setSelectionRange(
-                  Math.min(from, this.source.element.value.length),
-                  Math.min(to, this.source.element.value.length),
-                )
-                this.revealLiteralSelection()
-              }
-            }
-            if (markdown === this.lastMarkdown) return
-            this.lastMarkdown = markdown
-            this.events.changed(this.changeSnapshot(markdown))
-          },
-        }),
-      }),
+  private changePlugin = createChangePlugin((view, previous) =>
+    this.documentChanged(view, previous),
   )
+
+  private documentChanged(view: EditorView, previous: EditorState): void {
+    if (
+      this.loading ||
+      this.document.sameDocument(view.state.doc, previous.doc)
+    )
+      return
+    // Settling typed source brings the document up to a revision and a
+    // change event that were already reported.
+    if (this.history.syncing) {
+      this.mediaPolicy()
+      return
+    }
+    this.session.changed()
+    this.output.cancel()
+    this.mediaPolicy()
+    this.search.invalidate()
+    let markdown: string
+    try {
+      markdown = this.document.currentText(view.state.doc)
+    } catch (error) {
+      this.events.error?.(coded(error, 'preservation'))
+      return
+    }
+    if (this.literalSurface)
+      this.source.reconcileFormattedChange(
+        markdown,
+        view.state.doc.attrs[sourceAttribute] as SourceProvenance | null,
+      )
+
+    if (markdown === this.lastMarkdown) return
+    this.lastMarkdown = markdown
+    this.events.changed(this.changeSnapshot(markdown))
+  }
+
   private keys: (view: EditorView, event: KeyboardEvent) => boolean = () =>
     false
   private readingKeys: (view: EditorView, event: KeyboardEvent) => boolean =
@@ -1126,41 +1114,16 @@ export class InkKitEditor {
   }
 
   private applyInputPolicy(): void {
-    const view = this.editor.ctx.get(editorViewCtx)
-    const attributes =
-      typeof view.props.attributes === 'function'
-        ? view.props.attributes(view.state)
-        : view.props.attributes
-    const inputAttributes = { ...attributes }
-    delete inputAttributes['aria-readonly']
-    if (!this.writable) inputAttributes['aria-readonly'] = 'true'
-    view.setProps({
-      editable: () => this.writable && !this.literalSurface,
-      attributes: {
-        ...inputAttributes,
-        role: 'textbox',
-        tabindex: '0',
-        'aria-multiline': 'true',
-        'aria-label':
-          this.options.labels?.formattedEditor ?? defaultLabels.formattedEditor,
+    applyInputPolicy(
+      this.editor.ctx.get(editorViewCtx),
+      this.source.element,
+      this.inputPreferences,
+      this.options.labels?.formattedEditor ?? defaultLabels.formattedEditor,
+      {
+        writable: () => this.writable,
+        literal: () => this.literalSurface,
       },
-    })
-    this.source.element.readOnly = !this.writable
-    for (const surface of [view.dom, this.source.element]) {
-      for (const name of [
-        'spellcheck',
-        'autocorrect',
-        'autocapitalize',
-      ] as const) {
-        const value = this.inputPreferences[name]
-        if (value == null) surface.removeAttribute(name)
-        else
-          surface.setAttribute(
-            name,
-            name === 'autocorrect' ? (value ? 'on' : 'off') : String(value),
-          )
-      }
-    }
+    )
   }
 
   private publishCommandState(): void {
@@ -1227,78 +1190,21 @@ export class InkKitEditor {
     return !!this.options.images || !!this.options.files
   }
 
-  // Edit > Undo and the touch gestures arrive as `beforeinput` events that
-  // ProseMirror's history would handle on its own. This plugin comes before the
-  // history plugin, so every Undo takes the one path through `undo` and `redo`,
-  // with smart punctuation's step and the source-step bookkeeping.
-  private historyInputPlugin = $prose(
-    () =>
-      new Plugin({
-        key: new PluginKey('inkkitHistoryInput'),
-        props: {
-          handleDOMEvents: {
-            beforeinput: (_view, event) => {
-              if (!this.writable) return false
-              const name =
-                event.inputType === 'historyUndo'
-                  ? 'undo'
-                  : event.inputType === 'historyRedo'
-                    ? 'redo'
-                    : undefined
-              if (!name) return false
-              event.preventDefault()
-              if (this.ready && this.commandState().commands[name])
-                this.forPerson(() => this[name](), true)
-              return true
-            },
-          },
-        },
-      }),
-  )
+  private historyInputPlugin = createHistoryInputPlugin({
+    writable: () => this.writable,
+    available: (name) => this.ready && this.commandState().commands[name],
+    run: (name) => {
+      this.forPerson(() => this[name](), true)
+    },
+  })
 
-  private policyPlugin = $prose(
-    () =>
-      new Plugin({
-        key: new PluginKey('inkkitInputPolicy'),
-        filterTransaction: (tr) =>
-          this.loading ||
-          this.writable ||
-          // Source that was typed while the editor was writable.
-          this.history.syncing ||
-          (!tr.docChanged && !tr.storedMarksSet),
-        props: {
-          editable: () => this.writable && !this.literalSurface,
-          // ProseMirror selects the clicked node when Mod is held; a click
-          // that opens a link must not.
-          handleClick: (_view, _pos, event) =>
-            modHeld(event) &&
-            !!(event.target as HTMLElement).closest(
-              'a[href], .inkkit-wiki-link',
-            ),
-          handleDOMEvents: {
-            compositionstart: () => {
-              queueMicrotask(() => this.publishCommandState())
-              return false
-            },
-            compositionend: () => {
-              queueMicrotask(() => this.publishCommandState())
-              return false
-            },
-            beforeinput: (_view, event) => {
-              if (this.writable) return false
-              event.preventDefault()
-              return true
-            },
-            drop: (_view, event) => {
-              if (this.writable) return false
-              event.preventDefault()
-              return true
-            },
-          },
-        },
-        view: () => ({ update: () => this.publishCommandState() }),
-      }),
-  )
+  private policyPlugin = createInputPolicyPlugin({
+    loading: () => this.loading,
+    writable: () => this.writable,
+    syncing: () => this.history.syncing,
+    literal: () => this.literalSurface,
+    publish: () => this.publishCommandState(),
+  })
 
   private get literalSurface(): boolean {
     return this.document.format === 'txt' || this.mode === 'source'
@@ -1467,52 +1373,13 @@ export class InkKitEditor {
   }
 
   private insertPlainText(text: string): void {
-    if (this.literalSurface) {
+    if (this.literalSurface)
       this.source.replaceLiteralSelection(
         text,
         true,
         this.document.format === 'md',
       )
-    } else {
-      const view = this.editor.ctx.get(editorViewCtx)
-      const inHiddenComment = hiddenCommentExit(view.state) !== undefined
-      if (
-        view.state.selection.$from.parent.type.spec.code &&
-        !inHiddenComment
-      ) {
-        view.dispatch(
-          view.state.tr
-            .insertText(text.replace(/\r\n?/g, '\n'))
-            .scrollIntoView(),
-        )
-      } else {
-        const { schema } = view.state
-        const { from, to } = view.state.selection
-        const marks = replacementMarks(view.state, from, to)
-        const isHTML =
-          !inHiddenComment && htmlBreakAt(view.state.selection.$from)
-        const lines = text.replace(/\r\n?/g, '\n').split('\n')
-        const children = literalTextNodes(schema, text, marks, isHTML)
-        if (!children.length) {
-          view.dispatch(view.state.tr.deleteSelection())
-          return
-        }
-        const paragraph = schema.nodes.paragraph!.create(null, children)
-        const transaction = inHiddenComment
-          ? insertAfterHiddenComment(view.state, Fragment.from(paragraph))
-          : view.state.tr
-              .replaceSelection(new Slice(Fragment.from(paragraph), 1, 1))
-              .scrollIntoView()
-        if (!transaction) return
-        // Dispatch validates after appended plugins have normalized the edit.
-        const isolated = lines.length > 1
-        view.dispatch(isolated ? closeHistory(transaction) : transaction)
-        if (isolated)
-          view.dispatch(
-            closeHistory(view.state.tr).setMeta('addToHistory', false),
-          )
-      }
-    }
+    else insertPlainText(this.editor.ctx.get(editorViewCtx), text)
   }
 
   /** Runs a table command and returns whether it applied. False in source and TXT modes, outside a
@@ -1560,58 +1427,24 @@ export class InkKitEditor {
     this.output.cancel()
     this.mediaPolicy()
     this.pasteController.destroy()
-    if (this.clickHandler)
-      this.root.removeEventListener('click', this.clickHandler)
-    if (this.auxClickHandler)
-      this.root.removeEventListener('auxclick', this.auxClickHandler)
-    this.untrackLinkModifier?.()
-    if (this.footnoteKeyHandler)
-      this.root.removeEventListener('keydown', this.footnoteKeyHandler, true)
+    this.activation.destroy()
     this.clipboard.destroy()
     this.source.destroy()
     await this.editor.destroy()
     if (this.ownsRootClass) this.root.classList.remove('inkkit-root')
   }
 
-  // The app's bindings, replaced whole whenever they change; the plugin stays.
-  private keymapPlugin = $prose(
-    () =>
-      new Plugin({
-        key: new PluginKey('appKeymap'),
-        props: {
-          // ProseMirror skips its editable keydown handler on read-only views.
-          handleDOMEvents: {
-            keydown: (view, event) => {
-              if (!this.writable && this.readingKeys(view, event)) {
-                event.preventDefault()
-                return true
-              }
-              return false
-            },
-          },
-          handleKeyDown: (view, event) => {
-            if (event.altKey && event.key === 'Enter') {
-              return this.forPerson(
-                () =>
-                  this.navigateFootnote(
-                    event.shiftKey ? 'reference' : 'definition',
-                  ),
-                true,
-              )
-            }
-            return this.keys(view, event)
-          },
-        },
-      }),
-  )
-
-  // Indent and outdent keys, replaced whole with the keymap. Milkdown's own key plugin comes last of
-  // the plugins that `use` adds, and it holds the keys that Tab must reach first: Tab in a list item
-  // that holds a typed row makes the table. So this plugin is appended after it, in the state options.
-  private indentPlugin = new Plugin({
-    key: new PluginKey('listIndent'),
-    props: { handleKeyDown: (view, event) => this.indentKeys(view, event) },
+  private keymapPlugin = createKeymapPlugin({
+    writable: () => this.writable,
+    reading: (view, event) => this.readingKeys(view, event),
+    keys: (view, event) => this.keys(view, event),
+    footnote: (target) =>
+      this.forPerson(() => this.navigateFootnote(target), true),
   })
+
+  private indentPlugin = createIndentPlugin((view, event) =>
+    this.indentKeys(view, event),
+  )
 
   private dispatchTransaction(view: EditorView, tr: Transaction): void {
     // A call whose edit was refused changes nothing more; it throws when it returns.
@@ -1682,9 +1515,13 @@ export class InkKitEditor {
       editable: () => instance.writable && !instance.literalSurface,
       onPendingChanged: () => instance.publishCommandState(),
     })
-    instance.suggestions = new Suggestions({
+    instance.suggestions = createEditorSuggestions({
       root,
-      labels: { ...defaultLabels, ...options.labels },
+      labels: () => ({ ...defaultLabels, ...options.labels }),
+      slashMenu: () => options.slashMenu,
+      wikiLinks: () => options.wikiLinks,
+      diagrams: () =>
+        options.rendering?.diagramPreview !== false && diagramsAvailable(),
       active: () =>
         instance.ready &&
         !instance.destroyed &&
@@ -1693,24 +1530,11 @@ export class InkKitEditor {
         instance.writable &&
         !instance.composing &&
         !instance.pasteController.pending,
-      start: (view, from, to, text) =>
-        slashSession(view, from, to, text, {
-          options: options.slashMenu,
-          labels: { ...defaultLabels, ...options.labels },
-          diagrams:
-            options.rendering?.diagramPreview !== false && diagramsAvailable(),
-          choose: (session, command, kind) =>
-            instance.chooseSlash(session, command, kind),
-        }) ??
-        wikiSession(view, from, to, text, {
-          adapter: options.wikiLinks,
-          context: () => instance.context(),
-          choose: (session, name) => instance.chooseWiki(session, name),
-          error: (error) => {
-            instance.suggestions?.close()
-            instance.report(error)
-          },
-        }),
+      context: () => instance.context(),
+      chooseSlash: (session, command, kind) =>
+        instance.chooseSlash(session, command, kind),
+      chooseWiki: (session, name) => instance.chooseWiki(session, name),
+      report: (error) => instance.report(error),
     })
     instance.editor = await createMilkdownEditor(root, options, {
       plugins: {
@@ -1778,67 +1602,18 @@ export class InkKitEditor {
       report: (error) => instance.report(error),
       reveal: () => instance.revealLiteralSelection(),
     })
-    const activateFootnote = (event: MouseEvent | KeyboardEvent): boolean => {
-      const element = (event.target as HTMLElement).closest(
-        '[data-inkkit-footnote-reference]',
-      )
-      if (!element) return false
-      const identifier = element.getAttribute('data-inkkit-footnote-reference')
-      const view = instance.editor.ctx.get(editorViewCtx)
-      let position: number | undefined
-      view.state.doc.descendants((node, pos) => {
-        if (
-          position == null &&
-          node.type.name === 'footnote_reference' &&
-          node.attrs.identifier === identifier
-        )
-          position = pos
-      })
-      if (position == null) return false
-      event.preventDefault()
-      try {
-        view.dispatch(
-          view.state.tr.setSelection(
-            NodeSelection.create(view.state.doc, position),
-          ),
-        )
+    instance.activation = new EditorActivation(root, {
+      view: () => instance.editor.ctx.get(editorViewCtx),
+      footnote: () => {
         instance.navigateFootnote('definition')
-      } catch (error) {
-        instance.report(error)
-      }
-      return true
-    }
-    instance.footnoteKeyHandler = (event) => {
-      if (
-        (event.key === 'Enter' || event.key === ' ') &&
-        activateFootnote(event)
-      )
-        event.stopPropagation()
-    }
-    root.addEventListener('keydown', instance.footnoteKeyHandler, true)
-    instance.clickHandler = (event) => {
-      if (activateFootnote(event)) return
-      const anchor = (event.target as HTMLElement).closest('a[href]')
-      if (!anchor) return
-      // A read-only surface is not editable, so the browser would follow the
-      // link itself; only the host opens links.
-      event.preventDefault()
-      if (event.button !== 0 || !modHeld(event)) return
-      // The renderer leaves the address empty when it is not on the list in
-      // link-safety.ts or among the host's `linkSchemes`.
-      const href = anchor.getAttribute('href')
-      if (href) events.openLink?.(href)
-    }
-    root.addEventListener('click', instance.clickHandler)
-    instance.auxClickHandler = (event) => {
-      if ((event.target as HTMLElement).closest('a[href]'))
-        event.preventDefault()
-    }
-    root.addEventListener('auxclick', instance.auxClickHandler)
+      },
+      openLink: (href) => events.openLink?.(href),
+      report: (error) => instance.report(error),
+    })
     instance.clipboard.install(root)
     instance.applyInputPolicy()
     instance.setKeymap(options.keymap ?? {})
-    instance.untrackLinkModifier = trackLinkModifier(root)
+    instance.activation.trackModifier()
     return instance
   }
 
@@ -1894,20 +1669,11 @@ export class InkKitEditor {
 
   /** Moves focus off whichever of InkKit's text surfaces holds it; other focus is left alone. */
   private releaseFocus(): void {
-    const document = this.root.ownerDocument
-    const surface = this.editor.ctx.get(editorViewCtx).dom
-    const active = document.activeElement
-    if (active === this.source.element) {
-      this.source.element.blur()
-      return
-    }
-    if (active === surface) surface.blur()
-    else if (active && active !== document.body) return
-    // WebKit keeps typing into a contenteditable that has lost focus while the document
-    // selection is still in it, including after the host blurred it itself.
-    const selection = document.getSelection()
-    if (selection?.anchorNode && surface.contains(selection.anchorNode))
-      selection.removeAllRanges()
+    releaseFocus(
+      this.root,
+      this.editor.ctx.get(editorViewCtx),
+      this.source.element,
+    )
   }
 
   /** Replaces the document with a newer version of it, keeping the selection, focus, scroll
@@ -1922,25 +1688,12 @@ export class InkKitEditor {
     const wasLiteral = this.literalSurface
     const previousMode = this.editingMode
     const previousFormat = this.document.format
-    const selectedNode =
-      !wasLiteral && view.state.selection instanceof NodeSelection
-        ? view.state.selection.node
-        : undefined
-    const at = wasLiteral
-      ? this.source.element.selectionStart
-      : view.state.selection.anchor
-    const end = wasLiteral
-      ? this.source.element.selectionEnd
-      : view.state.selection.head
-    const direction = this.source.element.selectionDirection
-    const container = this.geometry.container
-    const top = container.scrollTop,
-      left = container.scrollLeft
-    const focused = wasLiteral
-      ? document.activeElement === this.source.element
-      : view.hasFocus()
-    const plainTop = this.source.element.scrollTop,
-      plainLeft = this.source.element.scrollLeft
+    const saved = captureReloadSurface(
+      view,
+      this.source.element,
+      this.geometry.container,
+      wasLiteral,
+    )
     this.reportingSuppressed = true
     try {
       this.loadDocument(input)
@@ -1950,41 +1703,12 @@ export class InkKitEditor {
         previousMode === 'source'
       )
         this.setEditingMode('source', input.generation)
-      if (this.literalSurface)
-        this.source.element.setSelectionRange(
-          Math.min(at, this.source.element.value.length),
-          Math.min(end, this.source.element.value.length),
-          direction,
-        )
-      else {
-        const anchor = Math.min(at, view.state.doc.content.size)
-        const node = view.state.doc.nodeAt(anchor)
-        view.dispatch(
-          view.state.tr.setSelection(
-            selectedNode &&
-              node?.type === selectedNode.type &&
-              NodeSelection.isSelectable(node)
-              ? NodeSelection.create(view.state.doc, anchor)
-              : TextSelection.between(
-                  view.state.doc.resolve(anchor),
-                  view.state.doc.resolve(
-                    Math.min(end, view.state.doc.content.size),
-                  ),
-                ),
-          ),
-        )
-      }
-      if (focused) {
-        if (this.literalSurface)
-          this.source.element.focus({ preventScroll: true })
-        else view.focus()
-      }
-      container.scrollTop = top
-      container.scrollLeft = left
-      if (wasLiteral && this.literalSurface) {
-        this.source.element.scrollTop = plainTop
-        this.source.element.scrollLeft = plainLeft
-      }
+      restoreReloadSurface(
+        view,
+        this.source.element,
+        () => this.literalSurface,
+        saved,
+      )
     } finally {
       this.reportingSuppressed = false
       this.publishCommandState()
@@ -2129,27 +1853,13 @@ export class InkKitEditor {
     const view = ctx.get(editorViewCtx)
     this.loading = true
     try {
-      view.updateState(
-        EditorState.create(
-          ctx.get(editorStateOptionsCtx)({
-            schema: ctx.get(schemaCtx),
-            doc: preservation.baseline,
-            plugins: ctx.get(prosePluginsCtx),
-          }),
-        ),
-      )
+      view.updateState(createDocumentState(ctx, preservation.baseline))
     } finally {
       this.loading = false
     }
     this.document.loaded(preservation)
     this.lastMarkdown = markdown
-    const end = terminalSelection(view.state.doc)
-    view.dispatch(
-      setSearchState(
-        view.state.tr.setSelection(end),
-        new SearchQuery({ search: '' }),
-      ),
-    )
+    view.dispatch(initialDocumentSelection(view.state))
   }
 
   /** Selects the next match and returns whether there was one. */
@@ -2257,18 +1967,7 @@ export class InkKitEditor {
       this.pasteAsPlainText(text)
       return true
     }
-    const view = this.editor.ctx.get(editorViewCtx)
-    if (view.composing) return false
-    const { from, to } = view.state.selection
-    const transaction = () => view.state.tr.insertText(text, from, to)
-    if (
-      !view.someProp('handleTextInput', (handler) =>
-        handler(view, from, to, text, transaction),
-      )
-    ) {
-      view.dispatch(transaction().scrollIntoView())
-    }
-    return true
+    return insertNativeText(this.editor.ctx.get(editorViewCtx), text)
   }
 
   /**
@@ -2294,39 +1993,16 @@ export class InkKitEditor {
       bubbles: true,
       cancelable: true,
     })
-    if (!this.literalSurface && altKey && key === 'Enter')
-      return this.navigateFootnote(shiftKey ? 'reference' : 'definition')
-    if (
-      !this.writable &&
-      !this.literalSurface &&
-      key === 'Tab' &&
-      !metaKey &&
-      !ctrlKey &&
-      !altKey
-    ) {
-      const view = this.editor.ctx.get(editorViewCtx)
-      return goToNextCell(shiftKey ? -1 : 1)(view.state, view.dispatch)
-    }
-    if (!this.writable) {
-      if (
-        !this.literalSurface &&
-        this.readOnlyKeys(this.editor.ctx.get(editorViewCtx), event)
-      )
-        return true
-      if (['Enter', 'Tab', 'Backspace', 'Delete'].includes(key))
-        this.assertMutation(generation)
-      if (this.literalSurface)
-        this.readOnlyKeys(this.editor.ctx.get(editorViewCtx), event)
-    }
-    if (this.literalSurface) {
-      if (this.literalKeys(this.editor.ctx.get(editorViewCtx), event))
-        return true
-      return this.source.keyDown(event)
-    }
-    const view = this.editor.ctx.get(editorViewCtx)
-    return Boolean(
-      view.someProp('handleKeyDown', (handler) => handler(view, event)),
-    )
+    return routeNativeKey(event, {
+      literal: () => this.literalSurface,
+      writable: () => this.writable,
+      view: () => this.editor.ctx.get(editorViewCtx),
+      readOnly: (view, event) => this.readOnlyKeys(view, event),
+      literalKeys: (view, event) => this.literalKeys(view, event),
+      source: (event) => this.source.keyDown(event),
+      footnote: (target) => this.navigateFootnote(target),
+      refuseMutation: () => this.assertMutation(generation),
+    })
   }
 
   focus(expectedGeneration?: number): void {
@@ -2373,30 +2049,13 @@ export class InkKitEditor {
 
   private openSelectedLink(state: EditorState): boolean {
     if (!this.ready || this.composing || this.literalSurface) return false
-    const { selection } = state
-    const node =
-      selection instanceof NodeSelection
-        ? selection.node
-        : selection.$from.nodeAfter
-    if (node?.type.name === 'inkkit_wiki_link' && this.options.wikiLinks) {
-      const captured = this.adapterCapture()
-      try {
-        if (captured.isCurrent())
-          this.options.wikiLinks.open(wikiReference(node), captured.context)
-      } catch (error) {
-        this.report(coded(error, 'file-unavailable'))
-      }
-    } else {
-      // Prefer the character after a boundary, then the one before it, just
-      // as a caret at either end of a rendered link belongs to that link.
-      const mark = [selection.$from.nodeAfter, selection.$from.nodeBefore]
-        .flatMap((node) => node?.marks ?? [])
-        .find((mark) => mark.type.name === 'link')
-      const href = mark?.attrs.href as string | undefined
-      if (href && isSafeLinkTarget(href, this.linkSchemes))
-        this.events.openLink?.(href)
-    }
-    return true
+    return openSelectedLink(state, {
+      wikiLinks: this.options.wikiLinks,
+      capture: () => this.adapterCapture(),
+      linkSchemes: this.linkSchemes,
+      openLink: (href) => this.events.openLink?.(href),
+      report: (error) => this.report(error),
+    })
   }
 
   /** Replaces every binding. Keys are in ProseMirror's notation. A key given to two shortcuts goes
@@ -2422,7 +2081,6 @@ export class InkKitEditor {
       moveBlock: (direction) => this.moveBlock(direction),
       table: (command) => this.table(command),
     })
-    this.configuredKeys = bindings.configuredKeys
     this.readOnlyKeys = bindings.readOnlyKeys
     this.keys = bindings.keys
     this.readingKeys = bindings.readingKeys
@@ -2448,13 +2106,8 @@ export class InkKitEditor {
       this.pasteAsPlainText(paths.join('\n\n'))
       return true
     }
-    const { schema } = this.editor.ctx.get(editorViewCtx).state
-    this.insertBlocks(
-      paths.map((path) =>
-        schema.nodes.paragraph!.create(null, schema.text(path)),
-      ),
-      point,
-    )
+    insertPaths(this.editor.ctx.get(editorViewCtx), paths, point)
+    this.focus()
     return true
   }
 
@@ -2471,33 +2124,9 @@ export class InkKitEditor {
     this.assertMutation(expectedGeneration)
     if (!images.length || !this.canInsertImages || this.literalSurface)
       return false
-    const view = this.editor.ctx.get(editorViewCtx)
-    const placement = point ? undefined : imagePlacement(view.state)
-    if (placement?.kind === 'inline') {
-      this.insertInline(images)
-      return true
-    }
-    const blocks = this.imageBlocks(images)
-    if (point) {
-      this.insertBlocks(blocks, point)
-      return true
-    }
-    const tr =
-      placement?.kind === 'after'
-        ? view.state.tr.insert(placement.pos, blocks)
-        : view.state.tr.replaceSelection(
-            new Slice(Fragment.fromArray(blocks), 0, 0),
-          )
-    // After the last image, so typing continues below it rather than in the block that follows.
-    const last = blocks.at(-1)!.firstChild
-    let after: number | undefined
-    tr.doc.descendants((node, pos) => {
-      if (node === last) after = pos + node.nodeSize
-      return after == null
-    })
-    if (after != null) tr.setSelection(TextSelection.create(tr.doc, after))
-    view.dispatch(tr.scrollIntoView())
-    return true
+    return insertImages(this.editor.ctx.get(editorViewCtx), images, point, () =>
+      this.focus(),
+    )
   }
 
   /** Adds images as the last blocks of the document and leaves everything else as it is: no focus,
@@ -2509,66 +2138,9 @@ export class InkKitEditor {
     this.assertMutation(expectedGeneration)
     if (!images.length || !this.canInsertImages || this.literalSurface)
       return false
-    const view = this.editor.ctx.get(editorViewCtx)
-    const { doc, tr } = view.state
-    const blocks = this.imageBlocks(images)
-    // An empty document is one empty paragraph, which would save as `<br />` ahead of the images.
-    const empty =
-      doc.childCount === 1 &&
-      doc.firstChild!.type.name === 'paragraph' &&
-      doc.firstChild!.content.size === 0 &&
-      this.document.currentText().trim() === ''
-    if (empty) tr.replaceWith(0, doc.content.size, blocks)
-    else tr.insert(doc.content.size, blocks)
-    // A step of its own, so neither earlier nor later typing joins it.
-    view.dispatch(closeHistory(tr))
-    view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
-    return true
-  }
-
-  // One paragraph per image: each is read back as a standalone image block where one fits.
-  private imageBlocks(images: ImageInsertion[]): ProseNode[] {
-    const { schema } = this.editor.ctx.get(editorViewCtx).state
-    return images.map((image) =>
-      schema.nodes.paragraph!.create(
-        null,
-        schema.nodes.image!.create({
-          src: image.reference,
-          alt: image.alt,
-          title: image.title ?? '',
-        }),
-      ),
+    return appendImages(this.editor.ctx.get(editorViewCtx), images, () =>
+      this.document.currentText(),
     )
-  }
-
-  // A table cell holds one line, so the images sit side by side where the selection was, with no
-  // space between them: a space beside an image in a cell is saved as `&#x20;`.
-  private insertInline(images: ImageInsertion[]): void {
-    const view = this.editor.ctx.get(editorViewCtx)
-    const { state } = view
-    const oneLine = (text: string) => text.replace(/\s*[\r\n]+\s*/g, ' ')
-    const nodes = images.map((image) =>
-      state.schema.nodes.image!.create({
-        src: image.reference,
-        alt: oneLine(image.alt),
-        title: oneLine(image.title ?? ''),
-      }),
-    )
-    const { from, to } = state.selection
-    const tr = state.tr.replaceWith(from, to, nodes)
-    tr.setSelection(TextSelection.create(tr.doc, from + nodes.length))
-    view.dispatch(tr.scrollIntoView())
-  }
-
-  private insertBlocks(blocks: ProseNode[], point: ClientPoint): void {
-    const view = this.editor.ctx.get(editorViewCtx)
-    const { from: at, to } = blockDropRange(view, point.clientX, point.clientY)
-    const tr = view.state.tr.replaceWith(at, to, blocks)
-    const end = at + blocks.reduce((size, node) => size + node.nodeSize, 0) - 1
-    view.dispatch(
-      tr.setSelection(TextSelection.create(tr.doc, end)).scrollIntoView(),
-    )
-    this.focus()
   }
 
   private chooseWiki(session: SuggestionSession, name: string): void {
@@ -2583,10 +2155,7 @@ export class InkKitEditor {
               'stale-document',
               'The suggestion belongs to an earlier edit',
             )
-          view.dispatch(wikiSuggestionTransaction(view, session, name))
-          view.dispatch(
-            closeHistory(view.state.tr).setMeta('addToHistory', false),
-          )
+          insertWikiSuggestion(view, session, name)
           return true
         }),
       false,
@@ -2615,21 +2184,19 @@ export class InkKitEditor {
               )
             this.assertMutation(capture.generation)
             if (this.literalSurface) return false
-            const view = this.editor.ctx.get(editorViewCtx)
-            const tr = slashTransaction(
+            insertSlashSuggestion(
               this.editor.ctx,
               session.base,
               value,
               kind,
-            )
-            this.suggestionBase = session.base
-            try {
-              view.dispatch(tr.scrollIntoView())
-            } finally {
-              this.suggestionBase = undefined
-            }
-            view.dispatch(
-              closeHistory(view.state.tr).setMeta('addToHistory', false),
+              (operation) => {
+                this.suggestionBase = session.base
+                try {
+                  operation()
+                } finally {
+                  this.suggestionBase = undefined
+                }
+              },
             )
             return true
           }),
@@ -2639,31 +2206,14 @@ export class InkKitEditor {
       commit(command)
       return
     }
-    // Only what the host's action throws or rejects with is its failure. Inkkit's own insert reports
-    // for itself, so it is not given to this handler.
-    const onHostError = (error: unknown) => {
-      if (!this.destroyed) this.report(coded(error, 'slash-command-failed'))
-    }
-    const insert = (markdown: string | undefined) => {
-      if (this.destroyed) return
-      if (markdown === undefined) return
-      if (typeof markdown !== 'string') {
-        this.report(
-          invalidArgument('A slash command must return Markdown text'),
-        )
-        return
-      }
-      commit({ markdown })
-    }
-    let result: ReturnType<SlashCommand['action']>
-    try {
-      result = command.action(this.context())
-    } catch (error) {
-      onHostError(error)
-      return
-    }
-    if (result instanceof Promise) result.then(insert, onHostError)
-    else insert(result)
+    runSlashAction(command, {
+      context: () => this.context(),
+      destroyed: () => this.destroyed,
+      commit: (markdown) => {
+        commit({ markdown })
+      },
+      report: (error) => this.report(error),
+    })
   }
 
   /** Returns whether the document or the marks the next typed text takes changed. */
@@ -2699,30 +2249,7 @@ export class InkKitEditor {
    * same.
    */
   private checkDestination(destination: string, name: string): void {
-    if (destination.trim() === '')
-      throw invalidArgument(`${name} must not be empty`)
-    if (!isSafeLinkTarget(destination, this.linkSchemes))
-      throw invalidArgument(
-        `${name} must be relative, or an address with an allowed scheme (http, https, mailto, tel or one of linkSchemes), with no control characters`,
-      )
-    const { schema } = this.editor.ctx.get(editorViewCtx).state
-    const written = serialize(
-      this.editor.ctx,
-      schema.node('doc', null, [
-        schema.node('paragraph', null, [
-          schema.text('x', [schema.marks.link!.create({ href: destination })]),
-        ]),
-      ]),
-    )
-    let read: unknown
-    this.editor.ctx
-      .get(parserCtx)(written)
-      .descendants((node) => {
-        read ??= node.marks.find((mark) => mark.type.name === 'link')?.attrs
-          .href
-      })
-    if (read !== destination)
-      throw invalidArgument(`${name} cannot be written in Markdown as given`)
+    checkDestination(this.editor.ctx, destination, name, this.linkSchemes)
   }
 
   /**
@@ -2732,83 +2259,8 @@ export class InkKitEditor {
    * for the next typed text stay waiting.
    */
   private link(destination: string | undefined): void {
-    const view = this.editor.ctx.get(editorViewCtx)
-    const { state } = view
-    const type = linkSchema.type(this.editor.ctx)
-    const { selection, storedMarks } = state
-    const { from, to, empty } = selection
-    const stored = empty ? type.isInSet(storedMarks ?? []) : undefined
-    // Links end at their edges, so a caret at a link's end, where typing
-    // continues or leaves it, is still at that link.
-    const beside = empty ? (selection.$from.nodeBefore?.marks ?? []) : []
-    // A stored link that the caret already sits in is that link, kept when another mark was toggled.
-    if (
-      stored &&
-      !stored.isInSet(selection.$from.marks()) &&
-      !stored.isInSet(beside)
-    ) {
-      const tr = state.tr.removeStoredMark(type)
-      if (destination !== undefined)
-        tr.addStoredMark(type.create({ href: destination }))
-      view.dispatch(tr)
-      return
-    }
-    const mark = type.isInSet(
-      empty
-        ? [
-            ...selection.$from.marks(),
-            ...beside,
-            ...(state.doc.nodeAt(from)?.marks ?? []),
-          ]
-        : (state.doc.nodeAt(from)?.marks ?? []),
-    )
-    const extent = mark && markRun(state.doc, mark, from, to)
-    // Steps clear the stored marks; the ones other than the old link are put back.
-    const keepStored = (tr: Transaction, link?: ProseMark) => {
-      if (!storedMarks) return tr
-      const kept = type.removeFromSet(storedMarks)
-      return tr.setStoredMarks(
-        link && type.isInSet(storedMarks) ? link.addToSet(kept) : kept,
-      )
-    }
-    if (destination === undefined) {
-      if (extent)
-        view.dispatch(
-          keepStored(state.tr.removeMark(extent.from, extent.to, type)),
-        )
-      else if (!empty && state.doc.rangeHasMark(from, to, type))
-        view.dispatch(state.tr.removeMark(from, to, type))
-      return
-    }
-    if (extent && mark!.attrs.identifier != null) {
-      const identifier = String(mark!.attrs.identifier)
-      const definition = referenceDefinitions(state.doc).get(
-        normaliseLabel(identifier),
-      )
-      if (definition?.node.attrs.url === destination) return
-      this.editReferenceDefinition(identifier, destination)
-      if (storedMarks) view.dispatch(view.state.tr.setStoredMarks(storedMarks))
-      return
-    }
-    if (extent) {
-      // An autolink rewritten with its own address would lose its form for nothing.
-      if (mark!.attrs.href === destination) return
-      const link = type.create({ href: destination, title: mark!.attrs.title })
-      view.dispatch(
-        keepStored(
-          state.tr
-            .removeMark(extent.from, extent.to, type)
-            .addMark(extent.from, extent.to, link),
-          link,
-        ),
-      )
-      return
-    }
-    const link = type.create({ href: destination })
-    view.dispatch(
-      empty
-        ? state.tr.addStoredMark(link)
-        : state.tr.removeMark(from, to, type).addMark(from, to, link),
+    setLink(this.editor.ctx, destination, (label, value) =>
+      this.editReferenceDefinition(label, value),
     )
   }
 
@@ -2829,23 +2281,12 @@ export class InkKitEditor {
     optionalString(title, 'title')
     this.assertMutation(expectedGeneration)
     if (this.literalSurface) return false
-    const view = this.editor.ctx.get(editorViewCtx)
-    const definitions = referenceDefinitions(view.state.doc)
-    const definition =
-      definitions.get(normaliseLabel(label)) ??
-      [...definitions.values()].find(
-        ({ node }) =>
-          normaliseLabel(String(node.attrs.label)) === normaliseLabel(label),
-      )
-    if (!definition) return false
-    const transaction = view.state.tr.setNodeMarkup(definition.pos, undefined, {
-      ...definition.node.attrs,
-      url: destination,
-      title: title == null ? definition.node.attrs.title : singleLine(title),
-    })
-    // A refused edit makes the call throw `preservation` and change nothing.
-    view.dispatch(transaction)
-    return true
+    return editReferenceDefinition(
+      this.editor.ctx.get(editorViewCtx),
+      label,
+      destination,
+      title,
+    )
   }
 
   /** Inserts a footnote reference, and a definition when the label has none, and returns whether
@@ -2859,37 +2300,11 @@ export class InkKitEditor {
       )
     this.assertMutation(expectedGeneration)
     if (this.literalSurface) return false
-    const view = this.editor.ctx.get(editorViewCtx)
-    const definitions = footnoteDefinitions(view.state.doc)
-    if (label == null) {
-      let number = 1
-      const labels = new Set(definitions.keys())
-      for (const match of this.snapshot().text.matchAll(/\[\^([^\]\r\n]+)\]/g))
-        labels.add(normaliseLabel(match[1]!))
-      view.state.doc.descendants((node) => {
-        if (node.type.name === 'footnote_reference')
-          labels.add(String(node.attrs.identifier))
-      })
-      while (labels.has(normaliseLabel(String(number)))) number++
-      label = String(number)
-    }
-    const identifier = normaliseLabel(label)
-    const reference = view.state.schema.nodes.footnote_reference!.create({
+    insertFootnote(
+      this.editor.ctx.get(editorViewCtx),
       label,
-      identifier,
-    })
-    const tr = view.state.tr.insert(view.state.selection.to, reference)
-    if (!definitions.has(identifier)) {
-      const definition = view.state.schema.nodes.footnote_definition!.create(
-        { label, identifier },
-        view.state.schema.nodes.paragraph!.create(),
-      )
-      const position = tr.doc.content.size
-      tr.insert(position, definition).setSelection(
-        TextSelection.create(tr.doc, position + 2),
-      )
-    }
-    view.dispatch(tr.scrollIntoView())
+      () => this.snapshot().text,
+    )
     this.focus()
     return true
   }
@@ -2904,39 +2319,8 @@ export class InkKitEditor {
     expectOneOf(target, footnoteTargets, 'target')
     this.assertCurrent(expectedGeneration)
     if (this.literalSurface) return false
-    const view = this.editor.ctx.get(editorViewCtx)
-    const { $from } = view.state.selection
-    let identifier: string | undefined
-    for (let depth = $from.depth; depth > 0; depth--) {
-      const node = $from.node(depth)
-      if (node.type.name === 'footnote_definition')
-        identifier = String(node.attrs.identifier)
-    }
-    const at = view.state.doc.nodeAt(view.state.selection.from)
-    const adjacent =
-      at?.type.name === 'footnote_reference' ? at : $from.nodeBefore
-    if (adjacent?.type.name === 'footnote_reference')
-      identifier = String(adjacent.attrs.identifier)
-    if (!identifier) return false
-    let position: number | undefined
-    if (target === 'definition') {
-      const found = footnoteDefinitions(view.state.doc).get(identifier)
-      if (found) position = found.pos + 2
-    } else
-      view.state.doc.descendants((node, pos) => {
-        if (
-          position == null &&
-          node.type.name === 'footnote_reference' &&
-          node.attrs.identifier === identifier
-        )
-          position = pos
-      })
-    if (position == null) return false
-    view.dispatch(
-      view.state.tr
-        .setSelection(TextSelection.near(view.state.doc.resolve(position)))
-        .scrollIntoView(),
-    )
+    if (!navigateFootnote(this.editor.ctx.get(editorViewCtx), target))
+      return false
     this.focus()
     return true
   }

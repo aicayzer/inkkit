@@ -1,7 +1,14 @@
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { keydownHandler } from '@milkdown/kit/prose/keymap'
 import { sinkListItem } from '@milkdown/kit/prose/schema-list'
-import type { Command, EditorState } from '@milkdown/kit/prose/state'
+import {
+  Plugin,
+  PluginKey,
+  type Command,
+  type EditorState,
+} from '@milkdown/kit/prose/state'
+import { $prose } from '@milkdown/kit/utils'
+import { goToNextCell } from '@milkdown/kit/prose/tables'
 import { blockMove } from './block-move'
 import { liftItem } from './editor-input'
 import { tableCommands } from './tables'
@@ -40,7 +47,6 @@ export function tableShortcut(command: TableCommand): ShortcutName {
 type KeyHandler = (view: EditorView, event: KeyboardEvent) => boolean
 
 interface EditorKeyBindings {
-  configuredKeys: Keymap
   readOnlyKeys: KeyHandler
   keys: KeyHandler
   readingKeys: KeyHandler
@@ -157,11 +163,100 @@ export function createEditorKeymap(
   const indentKeys = keydownHandler(indents)
   const literalKeys = keydownHandler(historyBindings)
   return {
-    configuredKeys,
     readOnlyKeys,
     keys,
     readingKeys,
     indentKeys,
     literalKeys,
   }
+}
+
+interface KeyPlugins {
+  writable(): boolean
+  reading: KeyHandler
+  keys: KeyHandler
+  footnote(target: 'definition' | 'reference'): boolean
+}
+
+// Handlers read the current bindings; changing the keymap does not replace plugins.
+export function createKeymapPlugin(runtime: KeyPlugins) {
+  return $prose(
+    () =>
+      new Plugin({
+        key: new PluginKey('appKeymap'),
+        props: {
+          // ProseMirror skips its editable keydown handler on read-only views.
+          handleDOMEvents: {
+            keydown: (view, event) => {
+              if (!runtime.writable() && runtime.reading(view, event)) {
+                event.preventDefault()
+                return true
+              }
+              return false
+            },
+          },
+          handleKeyDown: (view, event) => {
+            if (event.altKey && event.key === 'Enter')
+              return runtime.footnote(
+                event.shiftKey ? 'reference' : 'definition',
+              )
+            return runtime.keys(view, event)
+          },
+        },
+      }),
+  )
+}
+
+// Milkdown's table-creation Tab binding must run before list indentation.
+export function createIndentPlugin(handler: KeyHandler) {
+  return new Plugin({
+    key: new PluginKey('listIndent'),
+    props: { handleKeyDown: handler },
+  })
+}
+
+interface NativeKeyRouting {
+  literal(): boolean
+  writable(): boolean
+  view(): EditorView
+  readOnly: KeyHandler
+  literalKeys: KeyHandler
+  source(event: KeyboardEvent): boolean
+  footnote(target: 'definition' | 'reference'): boolean
+  refuseMutation(): void
+}
+
+export function routeNativeKey(
+  event: KeyboardEvent,
+  runtime: NativeKeyRouting,
+): boolean {
+  const { key, metaKey, ctrlKey, altKey, shiftKey } = event
+  if (!runtime.literal() && altKey && key === 'Enter')
+    return runtime.footnote(shiftKey ? 'reference' : 'definition')
+  if (
+    !runtime.writable() &&
+    !runtime.literal() &&
+    key === 'Tab' &&
+    !metaKey &&
+    !ctrlKey &&
+    !altKey
+  ) {
+    const view = runtime.view()
+    return goToNextCell(shiftKey ? -1 : 1)(view.state, view.dispatch)
+  }
+  if (!runtime.writable()) {
+    if (!runtime.literal() && runtime.readOnly(runtime.view(), event))
+      return true
+    if (['Enter', 'Tab', 'Backspace', 'Delete'].includes(key))
+      runtime.refuseMutation()
+    if (runtime.literal()) runtime.readOnly(runtime.view(), event)
+  }
+  if (runtime.literal()) {
+    if (runtime.literalKeys(runtime.view(), event)) return true
+    return runtime.source(event)
+  }
+  const view = runtime.view()
+  return Boolean(
+    view.someProp('handleKeyDown', (handler) => handler(view, event)),
+  )
 }
