@@ -1,11 +1,11 @@
-import { ctxOf, withFacade } from './editor-access'
+import { ctxOf, facadeFixture } from './editor-access'
 import { expectFacadeSave } from './facade-preservation'
 import {
   localEditsOf,
   regionsOf,
   withoutFastPaths,
 } from './preservation-access'
-import { expect, test } from 'vitest'
+import { afterAll, describe, expect, test } from 'vitest'
 import { parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
@@ -99,64 +99,72 @@ function replay(
   }
 }
 
-test(
-  'structural edits validated in place save exactly what whole-document preservation saves',
-  () =>
-    withFacade('x\n', (editor) => {
+describe('structural edits validated in place save exactly what whole-document preservation saves', () => {
+  const facade = facadeFixture('x\n')
+  const accepted = new Map<string, number>()
+  let structural = 0
+  let visited = 0
+  const seeds = Number(process.env.SEEDS ?? 300)
+  afterAll(() => {
+    // A focused seed run does not claim coverage of the whole sample.
+    if (visited !== seeds) return
+    if (process.env.REPORT)
+      console.info(`validated in place: ${structural}`, [...accepted])
+    // A run that always fell back to the whole document would pass the
+    // comparison, so require that each kind of edit was validated in place.
+    expect(structural).toBeGreaterThan(500)
+    for (const kind of [
+      'enter',
+      'enter at end',
+      'enter in list',
+      'backspace',
+      'delete',
+      'empty paragraph',
+      'delete blocks',
+      'paste blocks',
+      'paste into paragraph',
+      'heading level',
+      'move',
+    ])
+      expect(accepted.get(kind), kind).toBeGreaterThan(5)
+  })
+  test.each(Array.from({ length: seeds }, (_, index) => index + 1))(
+    'seed %i',
+    (seed) => {
+      visited++
+      const editor = facade()
       const ctx = ctxOf(editor)
       const parse = ctx.get(parserCtx)
-      const accepted = new Map<string, number>()
-      let structural = 0
-      for (let seed = 1; seed <= Number(process.env.SEEDS ?? 300); seed++)
-        replay(ctx, seed, parse, ({ step, kind, source, doc, local, full }) => {
-          const fromLocal = localEditsOf(local, doc)
-          let fast = fromLocal
-          try {
-            fast ??= regionsOf(local, doc)
-          } catch {
-            // Preservation then takes the whole-document path.
-          }
-          if (fast === undefined) return
-          let whole: string | Error
-          try {
-            whole = full.serialize(doc)
-          } catch (error) {
-            whole = error as Error
-          }
-          const label = `seed ${seed} step ${step} ${kind}: ${JSON.stringify(source)}`
-          expect(whole, label).toBe(fast)
-          expectFacadeSave(editor, source, doc, fast, label)
-          // The whole-document path's own test of what reopening must keep.
-          expect(semanticSignature(parse(fast)), label).toBe(
-            semanticSignature(doc),
-          )
-          if (fromLocal === undefined) {
-            structural++
-            accepted.set(kind, (accepted.get(kind) ?? 0) + 1)
-          }
-        })
-      if (process.env.REPORT)
-        console.info(`validated in place: ${structural}`, [...accepted])
-      // A run that always fell back to the whole document would pass the
-      // comparison, so require that each kind of edit was validated in place.
-      expect(structural).toBeGreaterThan(500)
-      for (const kind of [
-        'enter',
-        'enter at end',
-        'enter in list',
-        'backspace',
-        'delete',
-        'empty paragraph',
-        'delete blocks',
-        'paste blocks',
-        'paste into paragraph',
-        'heading level',
-        'move',
-      ])
-        expect(accepted.get(kind), kind).toBeGreaterThan(5)
-    }),
-  240_000,
-)
+      replay(ctx, seed, parse, ({ step, kind, source, doc, local, full }) => {
+        const fromLocal = localEditsOf(local, doc)
+        let fast = fromLocal
+        try {
+          fast ??= regionsOf(local, doc)
+        } catch {
+          // Preservation then takes the whole-document path.
+        }
+        if (fast === undefined) return
+        let whole: string | Error
+        try {
+          whole = full.serialize(doc)
+        } catch (error) {
+          whole = error as Error
+        }
+        const label = `seed ${seed} step ${step} ${kind}: ${JSON.stringify(source)}`
+        expect(whole, label).toBe(fast)
+        expectFacadeSave(editor, source, doc, fast, label)
+        // The whole-document path's own test of what reopening must keep.
+        expect(semanticSignature(parse(fast)), label).toBe(
+          semanticSignature(doc),
+        )
+        if (fromLocal === undefined) {
+          structural++
+          accepted.set(kind, (accepted.get(kind) ?? 0) + 1)
+        }
+      })
+    },
+  )
+})
 
 // These seeds type Markdown characters into a paragraph kept as literal
 // Markdown, which was refused, and keep editing the note after it (#260).
