@@ -50,4 +50,10 @@ Output records provenance through a narrow clipboard callback. Neither collabora
 - `preserve-alignment.ts` matches original and edited blocks, retaining the existing matching and similarity budgets.
 - `preserve-inline.ts`, `preserve-list.ts`, `preserve-table.ts` and `preserve-literal.ts` retain authored spelling within their syntax. `preserve-containers.ts` handles split and joined containers through an explicit retention callback; `preserve-retain.ts` coordinates recursive node retention.
 
-The coordinator still owns loaded-source caches, incremental validation and whole-document reconstruction. A candidate must satisfy the existing reparse checks before it is accepted. The extraction keeps fallback eligibility, cache lifetimes and fast-path/whole-document cross-checks unchanged.
+The remaining collaborators separate state by responsibility:
+
+- `preserve-source.ts` owns the loaded trees, authored block offsets, canonical forms and incremental source reading. Reuse is tied to the same parser context and loaded source.
+- `preserve-context.ts` validates block edits with the definition context they need. `preserve-local.ts` owns validated block/item caches; `preserve-regions.ts` validates changed regions and neighbours.
+- `preserve-moves.ts` tracks carried block identities and correspondence for the current save. `preserve-reconstruction.ts` assembles authored and newly written pieces, including list boundaries and changed link forms.
+
+`Preservation` selects the local, regional or whole-document path and retains final reparse validation. It also owns the recent-instance cache and cross-check policy. Collaborators receive only the fields and operations they use; they do not receive the coordinator or an editor. Temporary move and link-rewrite state is cleared after each attempt. The extraction keeps fallback eligibility, cache lifetimes, work budgets and exact output unchanged.

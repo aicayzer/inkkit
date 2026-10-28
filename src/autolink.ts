@@ -12,7 +12,7 @@ import {
 } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { serialize } from './dialect'
-import { semanticSignature } from './preserve'
+import { semanticSignature } from './preserve-shape'
 import type { LinkForm } from './link-form'
 import { isWrittenEdit } from './comments'
 import { normaliseLabel, referenceDefinitions } from './references'
