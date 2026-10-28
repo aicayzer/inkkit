@@ -68,33 +68,61 @@ const upstream = [
 ]
 const inkkit = /^inkkit-[\w-]+$/
 
-test('every class in the editor is prefixed, or ProseMirror’s or Milkdown’s @linked-files', async ({
+test('rendered classes keep their prefixes and styles @linked-files', async ({
   page,
   openFixture,
 }) => {
   await open(page, openFixture)
-  const classes = await page.evaluate(() => {
-    const found = new Set<string>()
-    for (const element of document.querySelectorAll('.inkkit-root *'))
-      if (!element.closest('svg'))
-        for (const name of element.classList) found.add(name)
-    return [...found]
+  await test.step('runtime class inventory', async () => {
+    const classes = await page.evaluate(() => {
+      const found = new Set<string>()
+      for (const element of document.querySelectorAll('.inkkit-root *'))
+        if (!element.closest('svg'))
+          for (const name of element.classList) found.add(name)
+      return [...found]
+    })
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'inkkit-copy',
+        'inkkit-image',
+        'inkkit-image-handle',
+        'inkkit-literal-markdown',
+        'inkkit-hljs-keyword',
+      ]),
+    )
+    expect(
+      classes.filter(
+        (name) =>
+          !inkkit.test(name) && !upstream.some((pattern) => pattern.test(name)),
+      ),
+    ).toEqual([])
   })
-  expect(classes).toEqual(
-    expect.arrayContaining([
-      'inkkit-copy',
-      'inkkit-image',
-      'inkkit-image-handle',
-      'inkkit-literal-markdown',
-      'inkkit-hljs-keyword',
-    ]),
-  )
-  expect(
-    classes.filter(
-      (name) =>
-        !inkkit.test(name) && !upstream.some((pattern) => pattern.test(name)),
-    ),
-  ).toEqual([])
+  await test.step('computed styles', async () => {
+    const styles = await page.evaluate(() => {
+      const style = (selector: string, property: string) =>
+        getComputedStyle(document.querySelector(selector)!).getPropertyValue(
+          property,
+        )
+      return {
+        copy: style('.inkkit-root pre .inkkit-copy', 'position'),
+        card: style('.inkkit-root .inkkit-image', 'position'),
+        grip: style('.inkkit-root .inkkit-image-handle', 'cursor'),
+        literal: style(
+          '.inkkit-root pre.inkkit-literal-markdown',
+          'white-space',
+        ),
+        keyword: style('.inkkit-root .inkkit-hljs-keyword', 'color'),
+        code: style('.inkkit-root pre code', 'color'),
+      }
+    })
+    expect(styles).toMatchObject({
+      copy: 'absolute',
+      card: 'relative',
+      grip: 'col-resize',
+      literal: 'pre-wrap',
+    })
+    expect(styles.keyword).not.toBe(styles.code)
+  })
 })
 
 test('the placeholder and an absent image carry prefixed classes @linked-files', async ({
@@ -115,34 +143,6 @@ test('the placeholder and an absent image carry prefixed classes @linked-files',
     ),
   ).toMatch(/\w/)
   await expect(page.locator('.inkkit-root [class~="empty"]')).toHaveCount(0)
-})
-
-test('the renamed classes keep their styles @linked-files', async ({
-  page,
-  openFixture,
-}) => {
-  await open(page, openFixture)
-  const styles = await page.evaluate(() => {
-    const style = (selector: string, property: string) =>
-      getComputedStyle(document.querySelector(selector)!).getPropertyValue(
-        property,
-      )
-    return {
-      copy: style('.inkkit-root pre .inkkit-copy', 'position'),
-      card: style('.inkkit-root .inkkit-image', 'position'),
-      grip: style('.inkkit-root .inkkit-image-handle', 'cursor'),
-      literal: style('.inkkit-root pre.inkkit-literal-markdown', 'white-space'),
-      keyword: style('.inkkit-root .inkkit-hljs-keyword', 'color'),
-      code: style('.inkkit-root pre code', 'color'),
-    }
-  })
-  expect(styles).toMatchObject({
-    copy: 'absolute',
-    card: 'relative',
-    grip: 'col-resize',
-    literal: 'pre-wrap',
-  })
-  expect(styles.keyword).not.toBe(styles.code)
 })
 
 test('copied HTML carries only InkKit’s own classes, none of the renamed ones @linked-files', async ({
