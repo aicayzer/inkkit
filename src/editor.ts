@@ -1,3 +1,6 @@
+import { EditorText } from './editor-text'
+import { EditorViewport } from './editor-viewport'
+import { EditorSearch } from './editor-search'
 import { SourceSurface } from './editor-source'
 import { EditorDocument } from './editor-document'
 import { SourceHistory } from './editor-history'
@@ -51,7 +54,6 @@ import {
   sourceAttribute,
   sourceSelection,
   rawOffset,
-  normalizedOffset,
   type SourceProvenance,
 } from './source'
 import {
@@ -104,18 +106,7 @@ import {
   type TableOptions,
   type BlockMoveDirection,
 } from './types'
-import {
-  readableProjection,
-  projectionPosition,
-  projectionOffset,
-  validateOffsets,
-  formattedRects,
-  literalRangesRects,
-  literalVisibleRanges,
-  intersectsViewport,
-  textRect,
-  type TextProjection,
-} from './text-ranges'
+import type { TextProjection } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
 import {
   commentSelectionContent,
@@ -130,7 +121,6 @@ import {
   hiddenCommentExit,
   insertAfterHiddenComment,
 } from './hidden-comments'
-import { scrollOutward, scrollWholePixels } from './scroll'
 import { PasteController } from './paste'
 import { DocumentSession, type SessionCapture } from './session'
 import {
@@ -152,13 +142,6 @@ import {
 } from './errors'
 import { setSelectionHostActive } from './selection'
 import { SearchQuery, setSearchState } from 'prosemirror-search'
-import {
-  findFormatted,
-  findLiteral,
-  replaceFormatted,
-  replaceLiteral,
-  replaceFormattedRange,
-} from './search'
 import {
   collectFormattedHeadings,
   collectSourceHeadings,
@@ -693,8 +676,6 @@ function capturedImage(value: unknown, name: string): CapturedImage {
   }
 }
 
-let editorSequence = 0
-
 interface FacadeCall {
   refusal?: InkKitError
   /** Host events raised during the call, sent when it succeeds and dropped when it fails. */
@@ -736,7 +717,7 @@ export class InkKitEditor {
     changed: () => {
       this.session.changed()
       this.cancelExports()
-      this.literalMatch = undefined
+      this.search.invalidate()
     },
     publish: (text) => {
       if (text !== this.lastMarkdown) {
@@ -754,18 +735,37 @@ export class InkKitEditor {
       }
     },
   })
+  private readonly text = new EditorText({
+    view: () => this.editor.ctx.get(editorViewCtx),
+    literal: () => this.literalSurface,
+    element: () => this.source.element,
+    capture: () => this.session.capture(),
+    version: () => this.session.version(),
+    format: () => this.document.format,
+    mode: () => this.editingMode,
+  })
+  private readonly geometry = new EditorViewport({
+    root: () => this.root,
+    view: () => this.editor.ctx.get(editorViewCtx),
+    literal: () => this.literalSurface,
+    element: () => this.source.element,
+  })
+  private readonly search = new EditorSearch({
+    view: () => this.editor.ctx.get(editorViewCtx),
+    literal: () => this.literalSurface,
+    element: () => this.source.element,
+    currentText: () => this.document.currentText(),
+    capture: () => this.session.capture(),
+    applySource: (text, isolated, from, to) =>
+      this.history.applySource(text, isolated, from, to),
+    assertPreserved: (before, after) =>
+      this.document.assertPreserved(before, after),
+    revealLiteral: () => this.revealLiteralSelection(),
+    revealCurrent: () => this.revealCurrentSelection(),
+  })
   private lastMarkdown = ''
   private readonly session = new DocumentSession()
   private exportControllers = new Set<AbortController>()
-  private plainSearch = ''
-  private literalMatch?: {
-    query: string
-    from: number
-    to: number
-    displayedFrom: number
-    displayedTo: number
-    version: SessionCapture
-  }
   private mode: EditingMode = 'formatted'
   private ready = false
   private destroyed = false
@@ -863,16 +863,7 @@ export class InkKitEditor {
   private copyHandler?: (event: ClipboardEvent) => void
   private reportingSuppressed = false
   private loading = false
-  private readonly textIdentity = ++editorSequence
   private call?: FacadeCall
-  private textScope?: { key: string; id: string; projection: TextProjection }
-  private viewportContainer?: HTMLElement
-  private viewportInsets: ViewportInsets = {
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  }
   private writable = true
   private inputPreferences: TextInputPreferences = {}
   private literalKeys: (view: EditorView, event: KeyboardEvent) => boolean =
@@ -904,7 +895,7 @@ export class InkKitEditor {
             this.session.changed()
             this.cancelExports()
             this.mediaPolicy()
-            this.literalMatch = undefined
+            this.search.invalidate()
             let markdown: string
             try {
               markdown = this.document.currentText(view.state.doc)
@@ -1156,8 +1147,8 @@ export class InkKitEditor {
       state: this.editor.ctx.get(editorViewCtx).state,
       revision: this.session.mark(),
       lastMarkdown: this.lastMarkdown,
-      literalMatch: this.literalMatch,
-      textScope: this.textScope,
+      search: this.search.capture(),
+      text: this.text.capture(),
       history: this.history.capture(),
     }
   }
@@ -1184,8 +1175,8 @@ export class InkKitEditor {
     }
     this.session.restore(before.revision)
     this.lastMarkdown = before.lastMarkdown
-    this.literalMatch = before.literalMatch
-    this.textScope = before.textScope
+    this.search.restore(before.search)
+    this.text.restore(before.text)
     this.history.restore(before.history)
   }
 
@@ -1468,7 +1459,7 @@ export class InkKitEditor {
     return this.source.setMode(mode, {
       ctx: this.editor.ctx,
       wasSource: this.literalSurface,
-      container: this.viewportContainer ?? this.root,
+      container: this.geometry.container,
       settle: () => {
         this.history.settleSource()
         // Source steps that were undone cannot be redone from the other mode.
@@ -1479,8 +1470,7 @@ export class InkKitEditor {
         this.mode = mode
         this.session.modeChanged()
         this.cancelExports()
-        this.plainSearch = ''
-        this.literalMatch = undefined
+        this.search.reset()
       },
       update: () => {
         const suppressed = this.reportingSuppressed
@@ -2302,7 +2292,7 @@ export class InkKitEditor {
         { cause: error },
       )
     }
-    const container = this.viewportContainer ?? this.root
+    const container = this.geometry.container
     const top = container.scrollTop,
       left = container.scrollLeft
     this.releaseFocus()
@@ -2316,8 +2306,7 @@ export class InkKitEditor {
     this.history.reset()
     this.mode = 'formatted'
     this.source.reset()
-    this.plainSearch = ''
-    this.literalMatch = undefined
+    this.search.reset()
     this.document.format = input.format
     this.source.setSourceValue(input.text)
     this.source.element.setSelectionRange(
@@ -2376,7 +2365,7 @@ export class InkKitEditor {
       ? this.source.element.selectionEnd
       : view.state.selection.head
     const direction = this.source.element.selectionDirection
-    const container = this.viewportContainer ?? this.root
+    const container = this.geometry.container
     const top = container.scrollTop,
       left = container.scrollLeft
     const focused = wasLiteral
@@ -2462,139 +2451,27 @@ export class InkKitEditor {
           : expectNumber(given[side], `options.insets.${side}`, { min: 0 }),
       ]),
     ) as unknown as ViewportInsets
-    this.viewportContainer = container
-    this.viewportInsets = insets
+    this.geometry.configure(container, insets)
   }
 
   /** The visible rectangle, the insets and the scroll offsets. */
   viewport(): ViewportSnapshot {
     this.assertAlive()
-    const container = this.viewportContainer ?? this.root
-    const bounds = container.getBoundingClientRect()
-    const root = this.root.getBoundingClientRect()
-    const insets = this.viewportInsets
-    const window = this.root.ownerDocument.defaultView!
-    const left = Math.max(bounds.left + container.clientLeft, root.left, 0)
-    const top = Math.max(bounds.top + container.clientTop, root.top, 0)
-    const right = Math.max(
-      left,
-      Math.min(
-        bounds.left + container.clientLeft + container.clientWidth,
-        root.right,
-        window.innerWidth,
-      ),
-    )
-    const bottom = Math.max(
-      top,
-      Math.min(
-        bounds.top + container.clientTop + container.clientHeight,
-        root.bottom,
-        window.innerHeight,
-      ),
-    )
-    let rect = textRect({ left, top, right, bottom })
-    if (this.literalSurface) {
-      const plain = this.source.element.getBoundingClientRect()
-      const literalLeft = Math.max(
-        rect.left,
-        plain.left + this.source.element.clientLeft,
-      )
-      const literalTop = Math.max(
-        rect.top,
-        plain.top + this.source.element.clientTop,
-      )
-      rect = textRect({
-        left: literalLeft,
-        top: literalTop,
-        right: Math.max(
-          literalLeft,
-          Math.min(
-            rect.right,
-            plain.left +
-              this.source.element.clientLeft +
-              this.source.element.clientWidth,
-          ),
-        ),
-        bottom: Math.max(
-          literalTop,
-          Math.min(
-            rect.bottom,
-            plain.top +
-              this.source.element.clientTop +
-              this.source.element.clientHeight,
-          ),
-        ),
-      })
-    }
-    const insetLeft = Math.min(rect.right, rect.left + insets.left)
-    const insetTop = Math.min(rect.bottom, rect.top + insets.top)
-    rect = textRect({
-      left: insetLeft,
-      top: insetTop,
-      right: Math.max(insetLeft, rect.right - insets.right),
-      bottom: Math.max(insetTop, rect.bottom - insets.bottom),
-    })
-    return Object.freeze({
-      rect: Object.freeze(rect),
-      insets: Object.freeze({ ...insets }),
-      scrollTop:
-        container.scrollTop +
-        (this.literalSurface ? this.source.element.scrollTop : 0),
-      scrollLeft:
-        container.scrollLeft +
-        (this.literalSurface ? this.source.element.scrollLeft : 0),
-    })
-  }
-
-  private readableScope(): NonNullable<InkKitEditor['textScope']> {
-    const { key } = this.session.capture()
-    if (this.textScope?.key !== key)
-      this.textScope = {
-        key,
-        id: `${this.textIdentity}:${key}`,
-        projection: this.literalSurface
-          ? { text: this.source.element.value, spans: [] }
-          : readableProjection(this.editor.ctx.get(editorViewCtx).state.doc),
-      }
-    return this.textScope
+    return this.geometry.snapshot()
   }
 
   /** The readable text and selection. Ranges from it go stale when the document, its revision or
    *  the mode changes. */
   textSnapshot(expectedGeneration?: number): ReadableTextSnapshot {
     this.assertCurrent(expectedGeneration)
-    const scope = this.readableScope()
-    const selection = this.editor.ctx.get(editorViewCtx).state.selection
-    return Object.freeze({
-      snapshotId: scope.id,
-      ...this.session.version(),
-      format: this.document.format,
-      mode: this.editingMode,
-      text: scope.projection.text,
-      selection: Object.freeze({
-        snapshotId: scope.id,
-        from: this.literalSurface
-          ? this.source.element.selectionStart
-          : projectionOffset(scope.projection, selection.from),
-        to: this.literalSurface
-          ? this.source.element.selectionEnd
-          : projectionOffset(scope.projection, selection.to),
-      }),
-    })
+    return this.text.snapshot()
   }
 
   private validateTextRange(range: TextRange): TextProjection {
     this.assertAlive()
     textRange(range, 'range')
     this.assertCurrent()
-    const scope = this.readableScope()
-    if (range.snapshotId !== scope.id)
-      throw new InkKitError(
-        'stale-document',
-        'The readable text snapshot changed',
-      )
-    validateOffsets(scope.projection.text, range.from, range.to)
-    return scope.projection
+    return this.text.validate(range)
   }
 
   selectTextRange(
@@ -2606,43 +2483,7 @@ export class InkKitEditor {
     const focus = optionalBoolean(choices?.focus, 'options.focus')
     const reveal = optionalBoolean(choices?.reveal, 'options.reveal')
     const projection = this.validateTextRange(range)
-    if (this.literalSurface)
-      this.source.element.setSelectionRange(range.from, range.to)
-    else {
-      for (const span of projection.spans)
-        if (
-          span.kind === 'embed' &&
-          ((range.from > span.from && range.from < span.to) ||
-            (range.to > span.from && range.to < span.to))
-        )
-          throw new InkKitError(
-            'invalid-range',
-            'Embedded labels must be selected as complete ranges',
-          )
-      const view = this.editor.ctx.get(editorViewCtx)
-      const from = projectionPosition(projection, range.from, 1)
-      const to = projectionPosition(
-        projection,
-        range.to,
-        range.from === range.to ? 1 : -1,
-      )
-      const embed = projection.spans.find(
-        (span) =>
-          span.kind === 'embed' &&
-          span.from === range.from &&
-          span.to === range.to,
-      )
-      view.dispatch(
-        view.state.tr.setSelection(
-          embed && view.state.doc.nodeAt(embed.start)
-            ? NodeSelection.create(view.state.doc, embed.start)
-            : TextSelection.between(
-                view.state.doc.resolve(from),
-                view.state.doc.resolve(to),
-              ),
-        ),
-      )
-    }
+    this.text.select(range, projection)
     if (focus) {
       if (this.literalSurface)
         this.source.element.focus({ preventScroll: true })
@@ -2658,49 +2499,7 @@ export class InkKitEditor {
     expectString(text, 'text')
     const projection = this.validateTextRange(range)
     this.assertMutation()
-    if (this.literalSurface) {
-      const raw = this.document.currentText()
-      const from = rawOffset(raw, range.from),
-        to = rawOffset(raw, range.to)
-      const ending = /\r\n|\r|\n/.exec(raw)?.[0] ?? '\n'
-      const value = text.replace(/\r\n?/g, '\n')
-      const replaced =
-        raw.slice(0, from) + value.replaceAll('\n', ending) + raw.slice(to)
-      return this.history.applySource(
-        replaced,
-        true,
-        range.from,
-        range.from + value.length,
-      )
-    }
-    if (
-      projection.spans.some(
-        (span) =>
-          (span.kind === 'embed' &&
-            range.from > span.from &&
-            range.from < span.to) ||
-          (span.kind === 'embed' &&
-            range.to > span.from &&
-            range.to < span.to) ||
-          (span.to > range.from &&
-            span.from < range.to &&
-            span.kind !== 'text'),
-      )
-    )
-      throw new InkKitError(
-        'invalid-range',
-        'Replacement cannot remove embedded content or structural separators',
-      )
-    const from = projectionPosition(projection, range.from, 1)
-    const to = projectionPosition(
-      projection,
-      range.to,
-      range.from === range.to ? 1 : -1,
-    )
-    const view = this.editor.ctx.get(editorViewCtx)
-    return replaceFormattedRange(view, from, to, text, (tr) =>
-      this.document.assertPreserved(view.state.doc, view.state.apply(tr).doc),
-    )
+    return this.search.replaceRange(range, text, projection)
   }
 
   /** Measures ranges in client coordinates, with one array of rectangles for each. It measures only
@@ -2714,22 +2513,7 @@ export class InkKitEditor {
     )
     this.assertCurrent()
     const projections = ranges.map((range) => this.validateTextRange(range))
-    if (!ranges.length) return Object.freeze([])
-    const results = this.literalSurface
-      ? literalRangesRects(this.source.element, ranges)
-      : ranges.map((range, index) =>
-          formattedRects(
-            this.editor.ctx.get(editorViewCtx),
-            projections[index]!,
-            range.from,
-            range.to,
-          ),
-        )
-    return Object.freeze(
-      results.map((rects) =>
-        Object.freeze(rects.map((rect) => Object.freeze(rect))),
-      ),
-    )
+    return this.geometry.rangesRects(ranges, projections)
   }
 
   /** The ranges of the snapshot that are inside the viewport now. */
@@ -2738,140 +2522,18 @@ export class InkKitEditor {
     expectString(snapshotId, 'snapshotId')
     const snapshot = this.textSnapshot()
     this.validateTextRange({ snapshotId, from: 0, to: 0 })
-    const viewport = this.viewport().rect
-    if (this.literalSurface)
-      return Object.freeze(
-        literalVisibleRanges(this.source.element, viewport).map((range) =>
-          Object.freeze({ snapshotId, ...range }),
-        ),
-      )
-    const visible = (rect: TextRect) => intersectsViewport(rect, viewport)
-    const ranges: TextRange[] = []
-    const projection = this.readableScope().projection
-    const view = this.editor.ctx.get(editorViewCtx)
-    for (const span of projection.spans) {
-      const current = { text: projection.text, spans: [span] }
-      if (
-        span.kind === 'separator' ||
-        !formattedRects(view, current, span.from, span.to).some(visible)
-      )
-        continue
-      for (let from = span.from; from < span.to;) {
-        const to = from + (snapshot.text.codePointAt(from)! > 0xffff ? 2 : 1)
-        if (formattedRects(view, current, from, to).some(visible)) {
-          const previous = ranges.at(-1)
-          if (previous?.to === from) previous.to = to
-          else ranges.push({ snapshotId, from, to })
-        }
-        from = to
-      }
-    }
-    return Object.freeze(ranges.map((range) => Object.freeze(range)))
+    return this.geometry.visibleRanges(
+      snapshotId,
+      snapshot,
+      this.text.scope().projection,
+    )
   }
 
   /** Scrolls `range` into the viewport, unfolding a callout that holds it. */
   revealTextRange(range: TextRange): void {
     const projection = this.validateTextRange(range)
-    if (!this.literalSurface) {
-      const view = this.editor.ctx.get(editorViewCtx)
-      const position = projectionPosition(projection, range.from, 1)
-      const at = view.domAtPos(position).node
-      let element = at instanceof Element ? at : at.parentElement
-      while (element && this.root.contains(element)) {
-        if (element.matches('.inkkit-callout[data-inkkit-folded="true"]'))
-          element
-            .querySelector<HTMLButtonElement>(
-              ':scope > .inkkit-callout-header [data-inkkit-callout-toggle]',
-            )
-            ?.click()
-        element = element.parentElement
-      }
-    }
-    this.revealRects(this.textRangesRects([range])[0]!)
-  }
-
-  private revealRects(rects: readonly TextRect[]): void {
-    if (!rects.length) return
-    const viewport = this.viewport().rect
-    const leading = rects[0]!
-    const envelope = {
-      top: leading.top,
-      bottom: leading.bottom,
-      left: leading.left,
-      right: leading.right,
-    }
-    for (const rect of rects) {
-      envelope.top = Math.min(envelope.top, rect.top)
-      envelope.bottom = Math.max(envelope.bottom, rect.bottom)
-      envelope.left = Math.min(envelope.left, rect.left)
-      envelope.right = Math.max(envelope.right, rect.right)
-    }
-    const fitsHeight = envelope.bottom - envelope.top <= viewport.height
-    const fitsWidth = envelope.right - envelope.left <= viewport.width
-    const rect = {
-      top: fitsHeight ? envelope.top : leading.top,
-      bottom: fitsHeight
-        ? envelope.bottom
-        : Math.min(leading.bottom, leading.top + viewport.height),
-      left: fitsWidth ? envelope.left : leading.left,
-      right: fitsWidth
-        ? envelope.right
-        : Math.min(leading.right, leading.left + viewport.width),
-    }
-    const vertical =
-      viewport.height <= 0
-        ? 0
-        : rect.top < viewport.top
-          ? rect.top - viewport.top
-          : rect.bottom > viewport.bottom
-            ? rect.bottom - viewport.bottom
-            : 0
-    const horizontal =
-      viewport.width <= 0
-        ? 0
-        : rect.left < viewport.left
-          ? rect.left - viewport.left
-          : rect.right > viewport.right
-            ? rect.right - viewport.right
-            : 0
-    let remainingTop = vertical,
-      remainingLeft = horizontal
-    if (this.literalSurface) {
-      const style = this.root.ownerDocument.defaultView!.getComputedStyle(
-        this.source.element,
-      )
-      // The first or last line sits within the padding plus its own leading,
-      // under half the height of its first rect, so a reveal that ends there
-      // shows the edge. A range of many lines does not count as one line.
-      const halfCaret = (leading.bottom - leading.top) / 2
-      const remaining = scrollWholePixels(
-        this.source.element,
-        vertical,
-        horizontal,
-        {
-          top: (Number.parseFloat(style.paddingTop) || 0) + halfCaret,
-          bottom: (Number.parseFloat(style.paddingBottom) || 0) + halfCaret,
-        },
-      )
-      remainingTop = remaining.vertical
-      remainingLeft = remaining.horizontal
-    }
-    let container: HTMLElement | null = this.viewportContainer ?? this.root
-    const document = this.root.ownerDocument
-    while (
-      container &&
-      container !== document.body &&
-      container !== document.documentElement
-    ) {
-      ;({ vertical: remainingTop, horizontal: remainingLeft } =
-        scrollWholePixels(container, remainingTop, remainingLeft))
-      container = container.parentElement
-    }
-    if (remainingTop || remainingLeft)
-      document.defaultView!.scrollBy(
-        scrollOutward(remainingLeft),
-        scrollOutward(remainingTop),
-      )
+    if (!this.literalSurface) this.geometry.revealCallouts(range, projection)
+    this.geometry.revealRects(this.textRangesRects([range])[0]!)
   }
 
   private revealCurrentSelection(): void {
@@ -2880,30 +2542,16 @@ export class InkKitEditor {
       this.revealLiteralSelection()
       return
     }
-    const view = this.editor.ctx.get(editorViewCtx)
-    const projection = this.readableScope().projection
-    const from = projectionOffset(projection, view.state.selection.from)
-    const to = projectionOffset(projection, view.state.selection.to)
+    const { range, projection } = this.text.selection()
     if (this.composing || this.pasteController.pending) {
-      this.revealRects(formattedRects(view, projection, from, to))
+      this.geometry.revealFormattedSelection(range, projection)
       return
     }
-    this.revealTextRange({
-      snapshotId: this.readableScope().id,
-      from,
-      to,
-    })
+    this.revealTextRange(range)
   }
 
   private revealLiteralSelection(): void {
-    this.revealRects(
-      literalRangesRects(this.source.element, [
-        {
-          from: this.source.element.selectionStart,
-          to: this.source.element.selectionEnd,
-        },
-      ])[0]!,
-    )
+    this.geometry.revealLiteralSelection()
   }
 
   private load(markdown: string, preservation: Preservation): void {
@@ -2941,42 +2589,7 @@ export class InkKitEditor {
     this.assertAlive()
     expectString(text, 'text')
     this.assertCurrent(expectedGeneration)
-    if (this.literalSurface) {
-      const from =
-        this.plainSearch === text
-          ? this.source.element.selectionEnd
-          : this.source.element.selectionStart
-      const raw = this.document.currentText()
-      const match = findLiteral(raw, text, rawOffset(raw, from))
-      this.literalMatch = undefined
-      if (match) {
-        // A textarea displays CRLF as one character; retain a match of either raw half for replacement.
-        const start =
-          raw[match.from] === '\n' && raw[match.from - 1] === '\r'
-            ? match.from - 1
-            : match.from
-        const displayedFrom = normalizedOffset(raw, start),
-          displayedTo = normalizedOffset(raw, match.to)
-        this.source.element.setSelectionRange(displayedFrom, displayedTo)
-        this.literalMatch = {
-          ...match,
-          query: text,
-          displayedFrom,
-          displayedTo,
-          version: this.session.capture(),
-        }
-      } else if (this.plainSearch)
-        this.source.element.setSelectionRange(
-          this.source.element.selectionEnd,
-          this.source.element.selectionEnd,
-        )
-      this.plainSearch = text
-      this.revealLiteralSelection()
-      return !!match
-    }
-    const found = findFormatted(this.editor.ctx.get(editorViewCtx), text)
-    if (found) this.revealCurrentSelection()
-    return found
+    return this.search.find(text)
   }
 
   /** Replaces the selected match, or the next one, and returns whether text changed. */
@@ -2989,7 +2602,7 @@ export class InkKitEditor {
     expectString(search, 'search')
     expectString(replacement, 'replacement')
     this.assertMutation(expectedGeneration)
-    return this.replaceMatches(search, replacement, false) > 0
+    return this.search.replace(search, replacement, false) > 0
   }
 
   /** Replaces every non-overlapping match once and returns how many. */
@@ -3002,49 +2615,7 @@ export class InkKitEditor {
     expectString(search, 'search')
     expectString(replacement, 'replacement')
     this.assertMutation(expectedGeneration)
-    return this.replaceMatches(search, replacement, true)
-  }
-
-  private replaceMatches(
-    search: string,
-    replacement: string,
-    all: boolean,
-  ): number {
-    if (this.literalSurface) {
-      const raw = this.document.currentText()
-      const remembered = this.literalMatch
-      const selection =
-        remembered &&
-        remembered.query === search &&
-        remembered.version.isCurrent() &&
-        remembered.displayedFrom === this.source.element.selectionStart &&
-        remembered.displayedTo === this.source.element.selectionEnd
-          ? { from: remembered.from, to: remembered.to }
-          : {
-              from: rawOffset(raw, this.source.element.selectionStart),
-              to: rawOffset(raw, this.source.element.selectionEnd),
-            }
-      if (remembered?.query !== search) this.literalMatch = undefined
-      const result = replaceLiteral(raw, search, replacement, selection, all)
-      if (result.count)
-        this.history.applySource(
-          result.text,
-          true,
-          normalizedOffset(result.text, result.from),
-          normalizedOffset(result.text, result.to),
-        )
-      this.plainSearch = search
-      return result.count
-    }
-    const view = this.editor.ctx.get(editorViewCtx)
-    return replaceFormatted(
-      view,
-      search,
-      replacement,
-      (tr) =>
-        this.document.assertPreserved(view.state.doc, view.state.apply(tr).doc),
-      all,
-    )
+    return this.search.replace(search, replacement, true)
   }
 
   private outlineContext(): OutlineContext {
