@@ -1,3 +1,4 @@
+import { withInputTimers } from './timing'
 import { expect, test, vi } from 'vitest'
 import { InkKitEditor } from '../src/index'
 
@@ -102,17 +103,20 @@ test('composition prevents a language edit and leaves source intact', () =>
   note(async (editor, root, errors) => {
     const source = '```js\nlet x = 1\n```\n'
     load(editor, source)
-    root
-      .querySelector('.ProseMirror')!
-      .dispatchEvent(
-        new CompositionEvent('compositionstart', { bubbles: true }),
-      )
-    choose(root, 'Bash')
-    expect(errors.length).toBeGreaterThan(0)
-    root
-      .querySelector('.ProseMirror')!
-      .dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await withInputTimers(() => {
+      root
+        .querySelector('.ProseMirror')!
+        .dispatchEvent(
+          new CompositionEvent('compositionstart', { bubbles: true }),
+        )
+      choose(root, 'Bash')
+      expect(errors.length).toBeGreaterThan(0)
+      root
+        .querySelector('.ProseMirror')!
+        .dispatchEvent(
+          new CompositionEvent('compositionend', { bubbles: true }),
+        )
+    })
     expect(editor.snapshot().text).toBe(source)
   }))
 

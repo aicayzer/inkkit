@@ -20,6 +20,22 @@ test('file raw follows saved table spelling before and after reopen', async ({
         document.body.append(root)
         const calls: any[] = []
         const errors: any[] = []
+        const answers: Promise<unknown>[] = []
+        const settle = async () => {
+          await Promise.all(answers.splice(0))
+          // Resolution wraps the adapter answer before updating the card.
+          await new Promise<void>((resolve) => setTimeout(resolve))
+          const card = root.querySelector<HTMLElement>('.inkkit-file')
+          if (
+            card?.dataset.inkkitFileState !== 'resolved' ||
+            !card.querySelector('button[aria-label^=Open]') ||
+            !card.querySelector('img')
+          )
+            throw new Error('The resolved image card is not ready')
+          await Promise.all(
+            [...card.querySelectorAll('img')].map((image) => image.decode()),
+          )
+        }
         const editor = await InkKitEditor.mount(
           root,
           {
@@ -30,12 +46,14 @@ test('file raw follows saved table spelling before and after reopen', async ({
           },
           {
             files: {
-              async resolve(r: any) {
+              resolve(r: any) {
                 calls.push(['resolve', r.raw])
-                return {
+                const answer = Promise.resolve({
                   kind: 'image',
                   url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
-                }
+                })
+                answers.push(answer)
+                return answer
               },
               async exportImage(r: any) {
                 calls.push(['export', r.raw])
@@ -66,7 +84,7 @@ test('file raw follows saved table spelling before and after reopen', async ({
         })
         editor.find('TARGET')
         await editor.paste({ text: token, markdown: 'x ' + token + ' y' }, 1)
-        await new Promise((r) => setTimeout(r, 20))
+        await settle()
         const saved = editor.snapshot()
         const actions = () => {
           root
@@ -90,7 +108,7 @@ test('file raw follows saved table spelling before and after reopen', async ({
           format: 'md',
           text: saved.text,
         })
-        await new Promise((r) => setTimeout(r, 20))
+        await settle()
         actions()
         await editor.clipboardSnapshot('document')
         const after = calls.splice(0)
@@ -153,6 +171,22 @@ for (const wrapper of ['strong', 'link'])
         document.body.append(root)
         const calls: string[][] = []
         const errors: string[] = []
+        const answers: Promise<unknown>[] = []
+        const settle = async () => {
+          await Promise.all(answers.splice(0))
+          // Resolution wraps the adapter answer before updating the card.
+          await new Promise<void>((resolve) => setTimeout(resolve))
+          const card = root.querySelector<HTMLElement>('.inkkit-file')
+          if (
+            card?.dataset.inkkitFileState !== 'resolved' ||
+            !card.querySelector('button[aria-label^=Open]') ||
+            !card.querySelector('img')
+          )
+            throw new Error('The resolved image card is not ready')
+          await Promise.all(
+            [...card.querySelectorAll('img')].map((image) => image.decode()),
+          )
+        }
         const editor = await InkKitEditor.mount(
           root,
           {
@@ -163,12 +197,14 @@ for (const wrapper of ['strong', 'link'])
           },
           {
             files: {
-              async resolve(r: any) {
+              resolve(r: any) {
                 calls.push(['resolve', r.raw])
-                return {
+                const answer = Promise.resolve({
                   kind: 'image',
                   url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
-                }
+                })
+                answers.push(answer)
+                return answer
               },
               open(r: any) {
                 calls.push(['open', r.raw])
@@ -186,7 +222,6 @@ for (const wrapper of ['strong', 'link'])
             },
           },
         )
-        const settle = () => new Promise((r) => setTimeout(r, 30))
         editor.loadDocument({
           documentId: 'a',
           generation: 1,
@@ -286,6 +321,22 @@ for (const [kind, tableRaw, paragraphRaw] of [
         document.body.prepend(root)
         const calls: string[][] = []
         const errors: string[] = []
+        const answers: Promise<unknown>[] = []
+        const settle = async () => {
+          await Promise.all(answers.splice(0))
+          // Resolution wraps the adapter answer before updating the card.
+          await new Promise<void>((resolve) => setTimeout(resolve))
+          const card = root.querySelector<HTMLElement>('.inkkit-file')
+          if (
+            card?.dataset.inkkitFileState !== 'resolved' ||
+            !card.querySelector('button[aria-label^=Open]') ||
+            !card.querySelector('img')
+          )
+            throw new Error('The resolved image card is not ready')
+          await Promise.all(
+            [...card.querySelectorAll('img')].map((image) => image.decode()),
+          )
+        }
         const editor = await InkKitEditor.mount(
           root,
           {
@@ -296,12 +347,14 @@ for (const [kind, tableRaw, paragraphRaw] of [
           },
           {
             files: {
-              async resolve(r: any) {
+              resolve(r: any) {
                 calls.push(['resolve', r.raw])
-                return {
+                const answer = Promise.resolve({
                   kind: 'image',
                   url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
-                }
+                })
+                answers.push(answer)
+                return answer
               },
               open(r: any) {
                 calls.push(['open', r.raw])
@@ -325,7 +378,9 @@ for (const [kind, tableRaw, paragraphRaw] of [
           format: 'md',
           text: source,
         })
-        Object.assign(window, { fileTransfer: { editor, calls, errors } })
+        Object.assign(window, {
+          fileTransfer: { editor, calls, errors, settle },
+        })
       },
       { moduleUrl, source },
     )
@@ -346,7 +401,7 @@ for (const [kind, tableRaw, paragraphRaw] of [
     await page.mouse.move(end.x + 60, end.y + end.height / 2, { steps: 20 })
     await page.mouse.up()
     const result = await page.evaluate(async () => {
-      const { editor, calls, errors } = (window as any).fileTransfer
+      const { editor, calls, errors, settle } = (window as any).fileTransfer
       const root = document.querySelector('#file-transfer')!
       const saved = editor.snapshot().text
       const transfer = calls.splice(0)
@@ -372,7 +427,7 @@ for (const [kind, tableRaw, paragraphRaw] of [
         format: 'md',
         text: saved,
       })
-      await new Promise((r) => setTimeout(r, 30))
+      await settle()
       await actions()
       const after = calls.splice(0)
       await editor.destroy()

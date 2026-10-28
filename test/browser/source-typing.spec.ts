@@ -152,6 +152,7 @@ test('redo from source mode does not carry its steps into the formatted view', a
 test('undo and redo cross between formatted history and source steps in order', async ({
   page,
 }) => {
+  await page.clock.setFixedTime(clockStart)
   await page.goto('/?fixture=everyday&configuration=rich')
   await expect
     .poll(() =>
@@ -168,7 +169,7 @@ test('undo and redo cross between formatted history and source steps in order', 
   await editor.click()
   await page.keyboard.press(documentStart)
   await page.keyboard.type('X')
-  await page.waitForTimeout(700)
+  await pass(page, 501)
   await operation(page, 'editingMode', { mode: 'source' })
   const area = page.locator('textarea.inkkit-plain')
   await area.focus()

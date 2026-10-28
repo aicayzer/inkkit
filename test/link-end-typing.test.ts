@@ -1,3 +1,4 @@
+import { withInputTimers } from './timing'
 import { ctxOf } from './editor-access'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -329,17 +330,18 @@ test('a link being typed can take another destination and continue', () => {
 
 // ProseMirror reads composed text from the DOM; these stand in for that read.
 async function compose(text: string) {
-  view.dom.dispatchEvent(
-    new CompositionEvent('compositionstart', { bubbles: true }),
-  )
-  const { from, to } = view.state.selection
-  view.dispatch(
-    view.state.tr.insertText(text, from, to).setMeta('composition', 7),
-  )
-  view.dom.dispatchEvent(
-    new CompositionEvent('compositionend', { bubbles: true }),
-  )
-  await new Promise((resolve) => setTimeout(resolve, 30))
+  await withInputTimers(() => {
+    view.dom.dispatchEvent(
+      new CompositionEvent('compositionstart', { bubbles: true }),
+    )
+    const { from, to } = view.state.selection
+    view.dispatch(
+      view.state.tr.insertText(text, from, to).setMeta('composition', 7),
+    )
+    view.dom.dispatchEvent(
+      new CompositionEvent('compositionend', { bubbles: true }),
+    )
+  })
 }
 
 test('text composed over a whole link label stays in the link', async () => {

@@ -1,3 +1,4 @@
+import { nextHistoryStep } from './timing'
 import type { Page } from '@playwright/test'
 import { test, expect, observe, operation } from './fixtures'
 
@@ -9,6 +10,7 @@ async function caretAfter(
   after: string,
   selected = '',
 ) {
+  await page.clock.setFixedTime(new Date('2026-01-01T00:00:00Z'))
   await page.goto('/?fixture=everyday&configuration=rich')
   await expect
     .poll(() =>
@@ -73,7 +75,7 @@ for (const [name, pasted] of [
     await caretAfter(page, 'Before\n', 'Before')
     await pastePlain(page, pasted)
     const inserted = (await observe(page)).snapshot!.text
-    await page.waitForTimeout(550)
+    await nextHistoryStep(page)
     await page.keyboard.type('X')
     const saved = (await observe(page)).snapshot!.text
     if (name === 'literal')
@@ -105,7 +107,7 @@ for (const [marker, toggle, label] of [
     }
     await pastePlain(page, 'x\n\n---')
     const inserted = (await observe(page)).snapshot!.text
-    await page.waitForTimeout(550)
+    await nextHistoryStep(page)
     await page.keyboard.type('X')
     const saved = (await observe(page)).snapshot!.text
     if (label === 'reader opened') expect(saved).toContain('> Xhi')
@@ -137,7 +139,7 @@ for (const [name, text, html] of [
     await caretAfter(page, 'Before\n', 'Before')
     await pastePlain(page, text, html ? { 'text/html': html } : {})
     const inserted = (await observe(page)).snapshot!.text
-    await page.waitForTimeout(550)
+    await nextHistoryStep(page)
     await page.keyboard.type('X')
     expect((await observe(page)).snapshot!.text).toBe(
       `${inserted.trimEnd()}\n\nX\n`,
@@ -179,7 +181,7 @@ for (const [name, html] of [
       .poll(async () => (await observe(page)).snapshot!.text)
       .not.toBe('Before\n\n> [!NOTE]+ Title\n> hi\n\nafter\n')
     const inserted = (await observe(page)).snapshot!.text
-    await page.waitForTimeout(550)
+    await nextHistoryStep(page)
     await page.keyboard.type('X')
     const saved = (await observe(page)).snapshot!.text
     expect(saved).toBe(

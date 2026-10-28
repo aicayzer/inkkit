@@ -1,3 +1,4 @@
+import { controlInputTimers, finishInput } from './timing'
 import type { Page } from '@playwright/test'
 import { test, expect, observe, operation, caretAfterMatch } from './fixtures'
 
@@ -221,6 +222,7 @@ test('a quote that a dead key makes follows the rules', async ({
     browserName !== 'chromium',
     'Only Chromium lets a test drive an input method',
   )
+  await controlInputTimers(page)
   await openFixture()
   await smart(page, true)
   await start(page, 'say\n')
@@ -233,7 +235,7 @@ test('a quote that a dead key makes follows the rules', async ({
       selectionEnd: 1,
     })
     await session.send('Input.insertText', { text: quote })
-    await page.waitForTimeout(100)
+    await finishInput(page)
   }
   await expect
     .poll(async () => (await observe(page)).snapshot?.text)

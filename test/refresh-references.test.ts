@@ -1,3 +1,4 @@
+import { nextTask } from './timing'
 import { ctxOf } from './editor-access'
 import { afterEach, expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -86,7 +87,8 @@ async function mount(source = text) {
   }
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 10))
+// Reference resolvers return promises; cross a task only after their continuations.
+const settle = nextTask
 
 function observed(state: HTMLElement) {
   const seen: string[] = []

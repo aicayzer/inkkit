@@ -1,3 +1,4 @@
+import { withInputTimers } from './timing'
 import { expect, test, vi } from 'vitest'
 import { InkKitEditor, type EditorOptions } from '../src/core'
 
@@ -130,14 +131,15 @@ test('image-adapter keyboard resizing clamps width and ignores stale, read-only 
     expect(editor.snapshot().text).toBe(source)
     editor.setEditable(true)
     const surface = root.querySelector('.ProseMirror')!
-    surface.dispatchEvent(
-      new CompositionEvent('compositionstart', { bubbles: true, data: '中' }),
-    )
-    expect(key(root, 'ArrowRight')).toBe(false)
-    surface.dispatchEvent(
-      new CompositionEvent('compositionend', { bubbles: true, data: '' }),
-    )
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await withInputTimers(() => {
+      surface.dispatchEvent(
+        new CompositionEvent('compositionstart', { bubbles: true, data: '中' }),
+      )
+      expect(key(root, 'ArrowRight')).toBe(false)
+      surface.dispatchEvent(
+        new CompositionEvent('compositionend', { bubbles: true, data: '' }),
+      )
+    })
     expect(editor.snapshot().text).toBe(source)
     const stale = root.querySelector('[role="slider"]')!
     editor.loadDocument({

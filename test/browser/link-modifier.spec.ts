@@ -162,9 +162,19 @@ for (const editable of [true, false])
     await open(page, openFixture)
     if (!editable) await operation(page, 'editable', { editable: false })
     const url = page.url()
-    // A reload or navigation clears this.
+    const navigations: string[] = []
+    const openedPages: Page[] = []
+    page.on('framenavigated', (frame) => navigations.push(frame.url()))
+    page.context().on('page', (opened) => openedPages.push(opened))
+    // Observe after the editor's handler, without cancelling anything in the test.
     await page.evaluate(() => {
-      ;(window as unknown as { stayed?: boolean }).stayed = true
+      const probe = { stayed: true, prevented: [] as boolean[] }
+      Object.assign(window, { navigationProbe: probe })
+      for (const type of ['click', 'auxclick'])
+        document.addEventListener(type, (event) => {
+          if ((event.target as Element).closest('a[href]'))
+            probe.prevented.push(event.defaultPrevented)
+        })
     })
     for (const name of ['Site', 'Blanked', 'Empty']) {
       const link = page.getByRole('link', { name })
@@ -172,15 +182,21 @@ for (const editable of [true, false])
       await link.click({ modifiers: ['Shift'] })
       await link.click({ button: 'middle' })
     }
-    // A new window or tab opens asynchronously.
-    await page.waitForTimeout(300)
+    const probe = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            navigationProbe: { stayed: boolean; prevented: boolean[] }
+          }
+        ).navigationProbe,
+    )
+    // A cancelled default action cannot schedule a navigation or a new tab.
+    expect(probe.prevented).toEqual(Array<boolean>(9).fill(true))
+    expect(probe.stayed).toBe(true)
+    expect(navigations).toEqual([])
+    expect(openedPages).toEqual([])
     expect(page.url()).toBe(url)
     expect(page.context().pages()).toHaveLength(1)
-    expect(
-      await page.evaluate(
-        () => (window as unknown as { stayed?: boolean }).stayed,
-      ),
-    ).toBe(true)
     expect((await observe(page)).lastResult).toBeNull()
     if (!editable) expect((await observe(page)).snapshot!.text).toBe(source)
   })

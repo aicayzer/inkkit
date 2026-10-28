@@ -1,3 +1,4 @@
+import { controlInputTimers, finishInput } from './timing'
 import type { Page } from '@playwright/test'
 import { test, expect, observe, operation } from './fixtures'
 
@@ -203,11 +204,12 @@ for (const [name, source, offset, key] of [
   ],
 ] as const)
   test(`${name} changes nothing`, async ({ page, openFixture }) => {
+    await controlInputTimers(page)
     await openFixture()
     await open(page, source)
     await select(page, offset)
     await press(page, [key])
-    await page.waitForTimeout(100)
+    await finishInput(page)
     await expectSaved(page, source)
   })
 
@@ -476,10 +478,11 @@ for (const key of ['Backspace', 'Delete', 'Enter'])
     page,
     openFixture,
   }) => {
+    await controlInputTimers(page)
     await openFixture()
     await load(page, '<!-- c -->\n')
     await press(page, [key])
-    await page.waitForTimeout(100)
+    await finishInput(page)
     await expectSaved(page, '<!-- c -->\n')
   })
 

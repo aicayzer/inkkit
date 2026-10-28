@@ -1,3 +1,4 @@
+import { withInputTimers } from './timing'
 import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -129,9 +130,9 @@ test('an empty heading or code block beside a drop is kept', async () => {
 
 test('destroying the editor right after a drag ends throws nothing', async () => {
   const { editor, root, view } = await mounted()
-  view.dom.dispatchEvent(new Event('dragleave'))
-  await editor.destroy()
-  root.remove()
-  // The drop indicator hides itself 30 ms later.
-  await new Promise((resolve) => setTimeout(resolve, 50))
+  await withInputTimers(async () => {
+    view.dom.dispatchEvent(new Event('dragleave'))
+    await editor.destroy()
+    root.remove()
+  })
 })

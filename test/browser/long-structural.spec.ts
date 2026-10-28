@@ -35,10 +35,17 @@ async function caret(page: Page, label: string, at: 'after' | 'start' | 'end') {
       range.collapse(true)
       ;(paragraph.closest('[contenteditable="true"]') as HTMLElement).focus()
       const selection = window.getSelection()!
+      const changed = new Promise<void>((resolve) =>
+        document.addEventListener(
+          'selectionchange',
+          () => queueMicrotask(resolve),
+          { once: true },
+        ),
+      )
       selection.removeAllRanges()
       selection.addRange(range)
       // The editor reads the caret from a selectionchange task.
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      await changed
     },
     [label, at] as const,
   )

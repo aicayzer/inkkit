@@ -98,7 +98,15 @@ test('a table kept as source does not load the images in its cells', async ({
   await expect
     .poll(async () => (await observe(page)).snapshot!.text)
     .toContain('<table>')
-  await page.waitForTimeout(500)
+  await expect(page.locator('.inkkit-literal-markdown')).toBeVisible()
+  expect(
+    await page
+      .locator('.ProseMirror.editor')
+      .evaluate(
+        (root) => root.querySelectorAll('img[src*="probe.invalid"]').length,
+      ),
+  ).toBe(0)
+  expect((await observe(page)).commandState!.pending).toBe(false)
   expect(requests).toEqual([])
 })
 
@@ -129,7 +137,15 @@ test('a table inside a literal element does not load the images in its cells', a
   await expect
     .poll(async () => (await observe(page)).snapshot!.text)
     .toContain('<details>')
-  await page.waitForTimeout(500)
+  await expect(page.locator('.inkkit-literal-markdown')).toBeVisible()
+  expect(
+    await page
+      .locator('.ProseMirror.editor')
+      .evaluate(
+        (root) => root.querySelectorAll('img[src*="probe.invalid"]').length,
+      ),
+  ).toBe(0)
+  expect((await observe(page)).commandState!.pending).toBe(false)
   expect(requests).toEqual([])
 })
 

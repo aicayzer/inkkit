@@ -1,3 +1,4 @@
+import { controlInputTimers, finishInput } from './timing'
 import { expect, test, type Page } from '@playwright/test'
 import type { FileContext, InkKitEditor } from '../../src/core'
 
@@ -183,13 +184,14 @@ const snapshot = (page: Page) =>
 test('a composition that is cancelled leaves escaped brackets in the note alone', async ({
   page,
 }) => {
+  await controlInputTimers(page)
   await mount(page, { text: '\\[\\[Note]]\r\n' })
   await page.keyboard.press('ControlOrMeta+End')
   const before = await snapshot(page)
   const surface = root(page).locator('[contenteditable=true]')
   await surface.dispatchEvent('compositionstart', { data: '' })
   await surface.dispatchEvent('compositionend', { data: '' })
-  await page.waitForTimeout(100)
+  await finishInput(page)
   expect(await snapshot(page)).toEqual(before)
   expect(before.dirty).toBe(false)
   expect(await links(page)).toEqual([])
@@ -203,6 +205,7 @@ test('an input method that starts and cancels leaves escaped brackets in the not
     browserName !== 'chromium',
     'Only Chromium lets a test drive an input method',
   )
+  await controlInputTimers(page)
   await mount(page, { text: '\\[\\[Note]]\n' })
   await page.keyboard.press('ControlOrMeta+End')
   const before = await snapshot(page)
@@ -217,7 +220,7 @@ test('an input method that starts and cancels leaves escaped brackets in the not
     selectionStart: 0,
     selectionEnd: 0,
   })
-  await page.waitForTimeout(100)
+  await finishInput(page)
   expect((await snapshot(page)).text).toBe(before.text)
   expect(await links(page)).toEqual([])
 })
@@ -230,6 +233,7 @@ test('an input method that commits the closing bracket makes the link', async ({
     browserName !== 'chromium',
     'Only Chromium lets a test drive an input method',
   )
+  await controlInputTimers(page)
   await mount(page)
   await page.keyboard.type('[[Note')
   const session = await page.context().newCDPSession(page)
@@ -240,7 +244,7 @@ test('an input method that commits the closing bracket makes the link', async ({
       selectionEnd: 1,
     })
     await session.send('Input.insertText', { text })
-    await page.waitForTimeout(100)
+    await finishInput(page)
   }
   await expectSaved(page, '[[Note]]\n')
   expect(await links(page)).toEqual(['Note'])
@@ -254,6 +258,7 @@ test('an input method can change its candidate before committing the closing bra
     browserName !== 'chromium',
     'Only Chromium lets a test drive an input method',
   )
+  await controlInputTimers(page)
   await mount(page)
   await page.keyboard.type('[[Note]')
   const session = await page.context().newCDPSession(page)
@@ -263,7 +268,10 @@ test('an input method can change its candidate before committing the closing bra
       selectionStart: 1,
       selectionEnd: 1,
     })
-    await page.waitForTimeout(50)
+    await expect(root(page).locator('[contenteditable=true]')).toHaveText(
+      `[[Note]${text}`,
+    )
+    expect(await links(page)).toEqual([])
   }
   expect(await links(page)).toEqual([])
   await session.send('Input.insertText', { text: ']' })
