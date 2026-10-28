@@ -1,5 +1,4 @@
 import { matchingTextEdges } from './text-edges'
-import { leadingBOMLength } from './bom'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { literalCommentSpans } from './comments'
 
@@ -91,9 +90,7 @@ export function sourceSelection(
     to = rawOffset(source, end)
   let shareable = '',
     cursor = from
-  const bom = leadingBOMLength(source)
-  for (const parsed of literalCommentSpans(source.slice(bom))) {
-    const span = { start: parsed.start + bom, end: parsed.end + bom }
+  for (const span of literalCommentSpans(source)) {
     if (span.end <= from || span.start >= to) continue
     if (span.start > cursor)
       shareable += source.slice(cursor, Math.min(span.start, to))

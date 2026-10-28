@@ -1,3 +1,4 @@
+import { leadingBOMLength } from './bom'
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { editorLabels } from './labels'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -273,11 +274,15 @@ export function literalCommentSpans(value: string): CommentSpan[] {
     extensions: [syntax],
     mdastExtensions: [from],
   })
+  // Micromark positions omit one leading BOM; callers slice the original input.
+  const offset = leadingBOMLength(value)
   const spans: CommentSpan[] = []
   const visit = (node: Nodes) => {
-    const start = node.position?.start.offset
-    const end = node.position?.end.offset
-    if (start != null && end != null) {
+    const parsedStart = node.position?.start.offset
+    const parsedEnd = node.position?.end.offset
+    if (parsedStart != null && parsedEnd != null) {
+      const start = parsedStart + offset
+      const end = parsedEnd + offset
       if (
         node.type === 'inkkitCommentInline' ||
         node.type === 'inkkitCommentBlock'
