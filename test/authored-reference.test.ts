@@ -1,7 +1,7 @@
+import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { Schema } from '@milkdown/kit/prose/model'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { fileReference } from '../src/linked-syntax'
 import {
   InkKitEditor,
@@ -117,7 +117,7 @@ test('a wiki link carries its text as written, telling an alias equal to the nam
 test('a resized path image carries the text InkKit writes for it', async () => {
   const { editor, menus, done } = await mount('See ![a](a\\_b.png) here\n')
   try {
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const view = ctx.get(editorViewCtx)
     view.state.doc.descendants((node, pos) => {
       if (node.type.name === 'image')

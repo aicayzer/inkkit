@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { getMatchHighlights } from 'prosemirror-search'
 import { expect, test } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
@@ -35,10 +36,6 @@ async function withInkKitEditor<T>(
     await editor.destroy()
     root.remove()
   }
-}
-
-function ctxOf(editor: InkKitEditor): Ctx {
-  return (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
 }
 
 function placeCaret(editor: InkKitEditor, pos: number) {

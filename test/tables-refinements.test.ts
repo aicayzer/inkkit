@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -24,7 +25,7 @@ async function run(
     },
     { images },
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     await callback(editor, ctx)
   } finally {

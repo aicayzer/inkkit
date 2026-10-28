@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -60,7 +61,7 @@ async function open<T>(
     text: markdown,
   })
   editor.setCommentsVisible(visible)
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   const view = ctx.get(editorViewCtx)
   try {
     return await run({

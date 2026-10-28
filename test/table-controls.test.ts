@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -48,7 +49,7 @@ async function run(
     },
     { labels },
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     editor.loadDocument({ ...input, text: source })
     await callback(editor, ctx, root, errors)
@@ -466,7 +467,7 @@ async function mountGrid(
     },
     commandStateChanged: () => record(),
   })
-  ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  ctx = ctxOf(editor)
   editor.loadDocument({ ...input, generation: 5, text: grid })
   seen.length = 0
   return {

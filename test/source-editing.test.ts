@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -26,7 +27,7 @@ async function run(
     { changed() {}, copy() {}, openLink() {}, ...events },
     { images },
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     await callback(editor, root.querySelector('textarea')!, ctx, root)
   } finally {

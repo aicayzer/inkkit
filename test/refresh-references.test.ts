@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { afterEach, expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import {
   InkKitEditor,
   type FilePresentation,
@@ -60,10 +60,7 @@ async function mount(source = text) {
   })
   await vi.waitFor(() => expect(files.length).toBeGreaterThanOrEqual(2))
   await settle()
-  const view = () =>
-    (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-      editorViewCtx,
-    )
+  const view = () => ctxOf(editor).get(editorViewCtx)
   const link = (target: string) =>
     [...root.querySelectorAll<HTMLElement>('.inkkit-wiki-link')].find(
       (element) => element.textContent === target,

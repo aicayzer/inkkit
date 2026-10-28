@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { remarkCtx, parserCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { preservationWork } from '../src/preserve'
 import { edit } from './edit-source'
 import { SearchQuery } from 'prosemirror-search'
@@ -105,7 +105,7 @@ test.each(['\n', '\r\n', '\r'])(
           .map(({ text, level }) => ({ text, level }))
         editor.setEditingMode('formatted')
         expect(editor.snapshot().text).toBe(expected)
-        const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+        const ctx = ctxOf(editor)
         const shape = (doc: typeof view.state.doc) =>
           JSON.stringify(doc.toJSON(), (key, value) =>
             key === 'id' ? undefined : value,
@@ -128,7 +128,7 @@ test('source outline caches unchanged text and reuses safe unchanged blocks', as
     ).join('\n\n') + '\n'
   await edit(source, ({ editor }) => {
     editor.setEditingMode('source')
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const parse = vi.spyOn(ctx.get(remarkCtx), 'parse')
     const first = editor.headings()
     parse.mockClear()

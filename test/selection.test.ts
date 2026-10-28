@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -16,10 +17,7 @@ async function withEditor(
     copy() {},
   })
   try {
-    await run(
-      editor,
-      (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx,
-    )
+    await run(editor, ctxOf(editor))
   } finally {
     await editor.destroy()
     root.remove()

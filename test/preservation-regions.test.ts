@@ -1,3 +1,10 @@
+import { ctxOf, withFacade } from './editor-access'
+import { expectFacadeSave } from './facade-preservation'
+import {
+  localEditsOf,
+  regionsOf,
+  withoutFastPaths,
+} from './preservation-access'
 import { expect, test } from 'vitest'
 import { parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -22,20 +29,6 @@ import { liftListItem, splitListItem } from '@milkdown/kit/prose/schema-list'
 import { Preservation, semanticSignature } from '../src/preserve'
 import { withEditor } from './harness'
 import { blocks, definitions, snippets } from './preservation-documents'
-
-interface Paths {
-  baseline: ProseNode
-  localEdits(doc: ProseNode): string | undefined
-  regions(doc: ProseNode): string | undefined
-}
-
-// Preservation with only the whole-document path.
-function wholeOnly(ctx: Ctx, source: string): Preservation {
-  const full = new Preservation(ctx, source) as unknown as Paths
-  full.localEdits = () => undefined
-  full.regions = () => undefined
-  return full as unknown as Preservation
-}
 
 // Blocks a long note is mostly made of, including repeated ones, which make
 // pairing ambiguous.
@@ -66,7 +59,7 @@ interface Step {
   kind: string
   source: string
   doc: ProseNode
-  local: Paths
+  local: Preservation
   full: Preservation
 }
 
@@ -94,8 +87,8 @@ function replay(
     (random() < 0.1 ? '\uFEFF' : '') +
     parts.join('\n\n').replaceAll('\n', ending) +
     (random() < 0.8 ? ending : '')
-  const local = new Preservation(ctx, source) as unknown as Paths
-  const full = wholeOnly(ctx, source)
+  const local = new Preservation(ctx, source)
+  const full = withoutFastPaths(new Preservation(ctx, source))
   // The editor shows the baseline's own nodes.
   let doc = local.baseline
   for (let step = 0; step < 8; step++) {
@@ -109,17 +102,17 @@ function replay(
 test(
   'structural edits validated in place save exactly what whole-document preservation saves',
   () =>
-    withEditor('x\n', (editor) => {
-      const ctx = editor.ctx
+    withFacade('x\n', (editor) => {
+      const ctx = ctxOf(editor)
       const parse = ctx.get(parserCtx)
       const accepted = new Map<string, number>()
       let structural = 0
       for (let seed = 1; seed <= Number(process.env.SEEDS ?? 300); seed++)
         replay(ctx, seed, parse, ({ step, kind, source, doc, local, full }) => {
-          const fromLocal = local.localEdits(doc)
+          const fromLocal = localEditsOf(local, doc)
           let fast = fromLocal
           try {
-            fast ??= local.regions(doc)
+            fast ??= regionsOf(local, doc)
           } catch {
             // Preservation then takes the whole-document path.
           }
@@ -132,6 +125,7 @@ test(
           }
           const label = `seed ${seed} step ${step} ${kind}: ${JSON.stringify(source)}`
           expect(whole, label).toBe(fast)
+          expectFacadeSave(editor, source, doc, fast, label)
           // The whole-document path's own test of what reopening must keep.
           expect(semanticSignature(parse(fast)), label).toBe(
             semanticSignature(doc),

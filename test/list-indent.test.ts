@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { describe, expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { InkKitEditor, type KeyInput } from '../src/index'
 
@@ -41,9 +41,7 @@ async function withNote(
       format: 'md',
       text: source,
     })
-    const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-      editorViewCtx,
-    )
+    const view = ctxOf(editor).get(editorViewCtx)
     await run({
       editor,
       errors,

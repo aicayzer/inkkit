@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { afterEach, expect, test, vi } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -30,7 +31,7 @@ async function run(
     },
     {},
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     await callback(editor, root.querySelector('textarea')!, ctx, changes)
   } finally {

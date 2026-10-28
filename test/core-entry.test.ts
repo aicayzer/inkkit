@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -31,7 +32,7 @@ async function run(
     },
     { rendering: { diagramPreview: true } },
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     editor.loadDocument({ ...input, text })
     await callback(editor, root, ctx)

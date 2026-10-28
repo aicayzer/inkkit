@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { undo } from '@milkdown/kit/prose/history'
@@ -190,7 +191,7 @@ async function withFacade(
     },
     { images },
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     await run(editor, ctx)
   } finally {
@@ -490,9 +491,7 @@ async function typedIntoComment(
       format: 'md',
       text: source,
     })
-    const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-      editorViewCtx,
-    )
+    const view = ctxOf(editor).get(editorViewCtx)
     let position = 0
     view.state.doc.descendants((node, pos) => {
       if (isComment(node)) position = pos
@@ -588,9 +587,7 @@ async function withComments<T>(
       format: 'md',
       text: source,
     })
-    const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-      editorViewCtx,
-    )
+    const view = ctxOf(editor).get(editorViewCtx)
     const commentRange = () => {
       let found = { from: 0, to: 0 }
       view.state.doc.descendants((node, pos) => {

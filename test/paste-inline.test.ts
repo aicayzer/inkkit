@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor, type ClipboardInput } from '../src/index'
@@ -20,7 +20,7 @@ async function pasteAt(
     copy() {},
     openLink() {},
   })
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   const view = () => ctx.get(editorViewCtx) as EditorView
   try {
     const [head, middle, tail] = source.split('‸')

@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { undo } from '@milkdown/kit/prose/history'
 import { InkKitEditor } from '../src/index'
 
@@ -34,7 +34,7 @@ for (const spacing of [
         markdown: '[Revised][Original]\n\n[Original]: /incoming\n',
       })
       const saved = editor.snapshot().text
-      const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+      const ctx = ctxOf(editor)
       const view = ctx.get(editorViewCtx)
       const paragraphs: string[] = []
       view.state.doc.forEach((node) => {
@@ -80,7 +80,7 @@ test('an authored space entity before a newly exposed trailing space is not dupl
   try {
     editor.loadDocument({ ...input, text: source })
     editor.find('Destination')
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const view = ctx.get(editorViewCtx)
     view.dispatch(view.state.tr.deleteSelection())
     const saved = editor.snapshot().text

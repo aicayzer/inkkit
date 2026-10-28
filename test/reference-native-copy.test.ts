@@ -1,5 +1,5 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { NodeSelection } from '@milkdown/kit/prose/state'
 import { InkKitEditor, type ClipboardOutput } from '../src/index'
@@ -48,7 +48,7 @@ for (const operation of ['copy', 'cut']) {
         format: 'md',
         text: source,
       })
-      const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+      const ctx = ctxOf(editor)
       const view = ctx.get(editorViewCtx)
       let reference = -1
       view.state.doc.descendants((node, pos) => {

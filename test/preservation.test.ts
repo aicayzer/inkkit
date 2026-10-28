@@ -1,3 +1,4 @@
+import { ctxOf, withFacade } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -20,16 +21,15 @@ const sources = [
 ]
 for (const source of sources) {
   test(`preserves untouched source beside an edit: ${JSON.stringify(source)}`, async () => {
-    await withEditor(source, (editor) => {
-      const view = editor.ctx.get(editorViewCtx)
-      const preservation = new Preservation(editor.ctx, source)
-      expect(preservation.serialize(view.state.doc)).toBe(source)
+    await withFacade(source, (editor) => {
+      const view = ctxOf(editor).get(editorViewCtx)
+      expect(editor.snapshot().text).toBe(source)
       view.dispatch(
         view.state.tr.insertText('!', view.state.doc.content.size - 1),
       )
-      const result = preservation.serialize(view.state.doc)
+      const result = editor.snapshot().text
       expect(result).toBe(source.replace('EDIT', 'EDIT!'))
-      expect(editor.ctx.get(parserCtx)(result).eq(view.state.doc)).toBe(true)
+      expect(ctxOf(editor).get(parserCtx)(result).eq(view.state.doc)).toBe(true)
     })
   })
 }
@@ -42,33 +42,29 @@ for (const source of [
   'Unresolved [x][missing] EDIT\r\nnext\r\n\r\nBody\r\n',
 ])
   test(`typing in a CRLF literal block keeps CRLF: ${JSON.stringify(source)}`, () =>
-    withEditor(source, (editor) => {
-      const view = editor.ctx.get(editorViewCtx)
-      const preservation = new Preservation(editor.ctx, source)
+    withFacade(source, (editor) => {
+      const view = ctxOf(editor).get(editorViewCtx)
       let at = -1
       view.state.doc.descendants((node, position) => {
         if (at < 0 && node.text?.includes('EDIT'))
           at = position + node.text.indexOf('EDIT') + 'EDIT'.length
       })
       view.dispatch(view.state.tr.insertText('!', at))
-      expect(preservation.serialize(view.state.doc)).toBe(
-        source.replace('EDIT', 'EDIT!'),
-      )
+      expect(editor.snapshot().text).toBe(source.replace('EDIT', 'EDIT!'))
       view.dispatch(view.state.tr.insertText('\nmore', at + 1))
-      expect(preservation.serialize(view.state.doc)).toBe(
+      expect(editor.snapshot().text).toBe(
         source.replace('EDIT', 'EDIT!\r\nmore'),
       )
     }))
 
 test('a rule inserted at the start of a document with a later --- line does not read back as front matter', () =>
-  withEditor('Intro\n\nTitle\n---\n', (editor) => {
-    const view = editor.ctx.get(editorViewCtx)
-    const preservation = new Preservation(editor.ctx, 'Intro\n\nTitle\n---\n')
+  withFacade('Intro\n\nTitle\n---\n', (editor) => {
+    const view = ctxOf(editor).get(editorViewCtx)
     view.dispatch(view.state.tr.insert(0, view.state.schema.nodes.hr!.create()))
-    const result = preservation.serialize(view.state.doc)
+    const result = editor.snapshot().text
     expect(result).toBe('***\n\nIntro\n\nTitle\n---\n')
     const types = (doc: ProseNode) => doc.children.map((node) => node.type.name)
-    expect(types(editor.ctx.get(parserCtx)(result))).toEqual(
+    expect(types(ctxOf(editor).get(parserCtx)(result))).toEqual(
       types(view.state.doc),
     )
   }))
@@ -104,40 +100,39 @@ test('an authored --- rule that comes to open the document with a later --- line
 
 test('undo restores original bytes and an inserted block preserves previous source', async () => {
   const source = '__bold__\n\n_last_'
-  await withEditor(source, (editor) => {
-    const view = editor.ctx.get(editorViewCtx)
-    const preservation = new Preservation(editor.ctx, source)
-    const original = view.state.doc
+  await withFacade(source, (editor) => {
+    const view = ctxOf(editor).get(editorViewCtx)
     const paragraph = view.state.schema.nodes.paragraph!.create(
       null,
       view.state.schema.text('New'),
     )
     view.dispatch(view.state.tr.insert(view.state.doc.content.size, paragraph))
-    expect(preservation.serialize(view.state.doc)).toBe(source + '\n\nNew\n')
-    expect(preservation.serialize(original)).toBe(source)
+    expect(editor.snapshot().text).toBe(source + '\n\nNew\n')
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot().text).toBe(source)
+    expect(editor.redo()).toBe(true)
+    expect(editor.snapshot().text).toBe(source + '\n\nNew\n')
   })
 })
 
 test('deleting a block does not alter identical neighbours', async () => {
   const source = '__same__\n\nREMOVE\n\n__same__\n'
-  await withEditor(source, (editor) => {
-    const view = editor.ctx.get(editorViewCtx)
-    const preservation = new Preservation(editor.ctx, source)
+  await withFacade(source, (editor) => {
+    const view = ctxOf(editor).get(editorViewCtx)
     const from = view.state.doc.firstChild!.nodeSize
     view.dispatch(
       view.state.tr.delete(from, from + view.state.doc.child(1).nodeSize),
     )
-    expect(preservation.serialize(view.state.doc)).toBe(
-      '__same__\n\n__same__\n',
-    )
+    expect(editor.snapshot().text).toBe('__same__\n\n__same__\n')
   })
 })
 
 test('clearing a document produces empty Markdown and preserves a BOM', async () => {
   for (const source of ['Text\n', '\uFEFFText\r\n']) {
-    await withEditor(source, (editor) => {
-      const empty = editor.ctx.get(parserCtx)('')
-      expect(new Preservation(editor.ctx, source).serialize(empty)).toBe(
+    await withFacade(source, (editor) => {
+      const view = ctxOf(editor).get(editorViewCtx)
+      view.dispatch(view.state.tr.delete(0, view.state.doc.content.size))
+      expect(editor.snapshot().text).toBe(
         source.startsWith('\uFEFF') ? '\uFEFF' : '',
       )
     })

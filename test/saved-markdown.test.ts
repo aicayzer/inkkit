@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import {
   Editor,
@@ -7,7 +8,6 @@ import {
   remarkStringifyOptionsCtx,
   rootCtx,
 } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { createDialect, serialize, stringifyOptions } from '../src/dialect'
 import { InkKitEditor } from '../src/editor'
@@ -182,7 +182,7 @@ test('editing a reference definition through the API saves one definition', asyn
     expect(text).toContain(
       '[ref]: https://example.test/next "Title [l](https://example.test/q) <b>h</b> "',
     )
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const reread = shape(ctx.get(parserCtx)(text))
     expect(
       reread.filter((name) => name === 'reference_definition'),

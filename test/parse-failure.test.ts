@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { describe, expect, test } from 'vitest'
 import { editorViewCtx, remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -52,7 +53,7 @@ async function run(
     copy() {},
     openLink() {},
   })
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   ctx.set(remarkCtx, ctx.get(remarkCtx).copy().use(forceFailures))
   try {
     action(editor, ctx, root)

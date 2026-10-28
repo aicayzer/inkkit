@@ -1,3 +1,4 @@
+import { ctxOf, optionsOf } from './editor-access'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -135,7 +136,7 @@ async function run(
     { changed() {}, copy() {}, openLink() {} },
     { images: adapter, files },
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     await callback(editor, root, ctx)
   } finally {
@@ -416,9 +417,7 @@ for (const mutation of [
         })
         let release!: (image: PortableImage) => void
         let releaseImport!: (value: { reference: string }) => void
-        const adapter = (
-          editor as unknown as { options: { images: ImageAdapter } }
-        ).options.images
+        const adapter = optionsOf(editor).images!
         adapter.exportImage = () =>
           new Promise((resolve) => {
             release = resolve
@@ -565,9 +564,7 @@ test('a failed awaited image export still reports a changed document', () =>
   run(
     async (editor, _root, ctx) => {
       let fail!: (error: Error) => void
-      const adapter = (
-        editor as unknown as { options: { images: ImageAdapter } }
-      ).options.images
+      const adapter = optionsOf(editor).images!
       adapter.exportImage = () =>
         new Promise((_resolve, reject) => {
           fail = reject

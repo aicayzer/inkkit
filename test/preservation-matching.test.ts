@@ -1,3 +1,5 @@
+import { ctxOf, withFacade } from './editor-access'
+import { expectFacadeSave } from './facade-preservation'
 import { expect, test } from 'vitest'
 import { editorViewCtx, parserCtx, remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -54,7 +56,7 @@ async function mount(
     copy() {},
     openLink() {},
   })
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   editor.loadDocument({
     documentId: 'matching',
     generation: 1,
@@ -443,9 +445,9 @@ function randomEdit(seed: number) {
 test(
   'random edits keep every unchanged block and the authored syntax of edited ones',
   () =>
-    withEditor('x\n', (editor) => {
-      const parse = editor.ctx.get(parserCtx)
-      const processor = editor.ctx.get(remarkCtx)
+    withFacade('x\n', (editor) => {
+      const parse = ctxOf(editor).get(parserCtx)
+      const processor = ctxOf(editor).get(remarkCtx)
       const blocks = (text: string) =>
         (processor.runSync(processor.parse(text), { value: text }) as Root)
           .children
@@ -459,9 +461,10 @@ test(
         )
           continue
         checked++
-        const saved = new Preservation(editor.ctx, source).serialize(
+        const saved = new Preservation(ctxOf(editor), source).serialize(
           parse(edited),
         )
+        expectFacadeSave(editor, source, parse(edited), saved, `seed ${seed}`)
         const nodes = blocks(saved)
         expect(nodes).toHaveLength(after.length)
         const ending = source.includes('\r\n') ? '\r\n' : '\n'

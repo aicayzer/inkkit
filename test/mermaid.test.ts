@@ -1,3 +1,4 @@
+import { ctxOf, optionsOf } from './editor-access'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -92,7 +93,7 @@ async function run(
     },
     { images },
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     await callback(editor, root, ctx)
   } finally {
@@ -467,12 +468,8 @@ test('diagram-rich HTML roundtrip retains editable source and surrounding conten
     expect(editor.snapshot().text).toContain('Before')
     expect(editor.snapshot().text).toContain('After')
     undo(
-      (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-        editorViewCtx,
-      ).state,
-      (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-        editorViewCtx,
-      ).dispatch,
+      ctxOf(editor).get(editorViewCtx).state,
+      ctxOf(editor).get(editorViewCtx).dispatch,
     )
     expect(editor.snapshot().text).toBe('')
   }))
@@ -650,9 +647,7 @@ test('pending authored-image import prevents exporting a document containing dia
   run(
     async (editor) => {
       let finish!: (value: { reference: string }) => void
-      const deferred: ImageAdapter = (
-        editor as unknown as { options: { images: ImageAdapter } }
-      ).options.images
+      const deferred: ImageAdapter = optionsOf(editor).images!
       deferred.importImage = () =>
         new Promise((resolve) => {
           finish = resolve

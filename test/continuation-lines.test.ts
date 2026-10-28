@@ -1,3 +1,5 @@
+import { withoutLocalEdits } from './preservation-access'
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -21,7 +23,7 @@ async function run(
     },
     {},
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     callback(editor, ctx, errors)
   } finally {
@@ -149,9 +151,7 @@ for (const [name, source, word, saved] of cases)
       const text = editor.snapshot().text
       expect(text).toBe(saved)
       // The whole-document path writes the same text as the local one.
-      const whole = new Preservation(ctx, source)
-      ;(whole as unknown as { localEdits(): undefined }).localEdits = () =>
-        undefined
+      const whole = withoutLocalEdits(new Preservation(ctx, source))
       expect(whole.serialize(ctx.get(editorViewCtx).state.doc)).toBe(saved)
       editor.loadDocument({ ...input, generation: 2, text })
       expect(content(ctx.get(editorViewCtx).state.doc)).toBe(edited)

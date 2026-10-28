@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { InkKitEditor } from '../src/index'
 import { semanticSignature } from '../src/preserve'
 import { cleanSourceDoc } from '../src/source'
@@ -21,9 +21,7 @@ async function session(
       openLink() {},
       error: (error) => errors.push(error),
     })
-    const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-      editorViewCtx,
-    )
+    const view = ctxOf(editor).get(editorViewCtx)
     return { root, editor, view }
   }
   const main = await mount(),

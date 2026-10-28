@@ -1,3 +1,6 @@
+import { ctxOf, withFacade } from './editor-access'
+import { expectFacadeSave } from './facade-preservation'
+import { localEditsOf, withoutLocalEdits } from './preservation-access'
 import { pathToFileURL } from 'node:url'
 import { expect, test } from 'vitest'
 import { parserCtx, remarkCtx } from '@milkdown/kit/core'
@@ -16,9 +19,7 @@ import { blocks, definitions, snippets } from './preservation-documents'
 // Saves `doc` twice: as typing does, and with local validation disabled, which
 // serializes and reopens the whole document.
 function compare(local: Preservation, full: Preservation, doc: ProseNode) {
-  const fast = (
-    local as unknown as { localEdits(doc: ProseNode): string | undefined }
-  ).localEdits(doc)
+  const fast = localEditsOf(local, doc)
   let whole: string | Error
   try {
     whole = full.serialize(doc)
@@ -46,16 +47,14 @@ const reopen = (doc: ProseNode) =>
   )
 
 function wholeOnly(ctx: Ctx, source: string): Preservation {
-  const full = new Preservation(ctx, source)
-  ;(full as unknown as { localEdits(): undefined }).localEdits = () => undefined
-  return full
+  return withoutLocalEdits(new Preservation(ctx, source))
 }
 
 test(
   'local validation saves exactly what whole-document preservation saves',
   () =>
-    withEditor('x\n', (editor) => {
-      const ctx = editor.ctx
+    withFacade('x\n', (editor) => {
+      const ctx = ctxOf(editor)
       const parse = ctx.get(parserCtx)
       let localSaves = 0
       const kinds = new Map<string, number>()
@@ -175,6 +174,13 @@ test(
           doc = tr.doc
           const { fast, whole } = compare(local, full, doc)
           if (fast === undefined) continue
+          expectFacadeSave(
+            editor,
+            source,
+            doc,
+            fast,
+            `seed ${seed} step ${step}`,
+          )
           localSaves++
           const kind = doc.child(target.top).type.name
           if (!doc.child(target.top).eq(before.child(target.top)))

@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { describe, expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor, InkKitError } from '../src/index'
@@ -40,7 +40,7 @@ async function edit(
       format: 'md',
       text: source,
     })
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const view = ctx.get(editorViewCtx)
     const find = (text: string) => {
       let at = -1
@@ -269,7 +269,7 @@ test('front matter stays literal while its delimiter is edited', async () => {
       format: 'md',
       text: source,
     })
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const view = ctx.get(editorViewCtx)
     view.dispatch(
       view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 2)),
@@ -367,7 +367,7 @@ test('an edit whose blocks would change other blocks is still refused', async ()
       format: 'md',
       text: source,
     })
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const view = ctx.get(editorViewCtx)
     view.dispatch(
       view.state.tr.setSelection(

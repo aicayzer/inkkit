@@ -1,3 +1,4 @@
+import { ctxOf, optionsOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -31,7 +32,7 @@ async function run(
     { changed() {}, copy() {}, openLink() {}, ...events },
     { images },
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     await callback(editor, root, ctx)
   } finally {
@@ -125,9 +126,7 @@ test('pending image import blocks snapshot and stale completion cannot change a 
     async (editor, _root, ctx) => {
       editor.loadDocument({ ...input, text: 'original' })
       let finish!: (value: { reference: string }) => void
-      const adapter = (
-        editor as unknown as { options: { images: ImageAdapter } }
-      ).options.images
+      const adapter = optionsOf(editor).images!
       adapter.importImage = () =>
         new Promise((resolve) => {
           finish = resolve
@@ -225,9 +224,7 @@ test('loading the same document again cancels a pending import and releases snap
     async (editor) => {
       editor.loadDocument({ ...input, text: 'old' })
       let finish!: (value: { reference: string }) => void
-      const adapter = (
-        editor as unknown as { options: { images: ImageAdapter } }
-      ).options.images
+      const adapter = optionsOf(editor).images!
       adapter.importImage = () =>
         new Promise((resolve) => {
           finish = resolve
@@ -250,9 +247,7 @@ test('loading the same document again rejects a pending clipboard export', () =>
     async (editor) => {
       editor.loadDocument({ ...input, text: '![Photo](images/photo.png)' })
       let finish!: (value: { bytes: Uint8Array; mimeType: string }) => void
-      const adapter = (
-        editor as unknown as { options: { images: ImageAdapter } }
-      ).options.images
+      const adapter = optionsOf(editor).images!
       adapter.exportImage = () =>
         new Promise((resolve) => {
           finish = resolve

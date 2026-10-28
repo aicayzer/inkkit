@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { afterEach, expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import {
@@ -224,7 +224,7 @@ test('brackets typed across a link or a formatting change stay text', async () =
 const afterCompositionRules = () =>
   new Promise((resolve) => setTimeout(resolve))
 const viewOf = (editor: InkKitEditor): EditorView =>
-  (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(editorViewCtx)
+  ctxOf(editor).get(editorViewCtx)
 function caretAtEnd(view: EditorView) {
   const end = view.state.doc.firstChild!.content.size
   view.dispatch(
