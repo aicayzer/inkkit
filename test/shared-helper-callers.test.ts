@@ -116,6 +116,26 @@ test('clipboard retains MIME spelling and all byte values in a large portable im
   )
 })
 
+test('clipboard coerces adapter MIME for validation without replacing its value', () => {
+  const mimeType = { toString: () => 'IMAGE/PNG' } as unknown as string
+  return run(
+    async (editor) => {
+      editor.loadDocument({ ...input, text: '![Asset](opaque.png)\n' })
+      const copied = await editor.clipboardSnapshot()
+      expect(copied.images[0]?.error).toBeUndefined()
+      expect(copied.images[0]?.image?.mimeType).toBe(mimeType)
+      const html = new DOMParser().parseFromString(copied.html, 'text/html')
+      expect(html.querySelector('img')?.getAttribute('src')).toBe(
+        'data:IMAGE/PNG;base64,AP8=',
+      )
+    },
+    {
+      ...adapter,
+      exportImage: async () => ({ bytes: new Uint8Array([0, 255]), mimeType }),
+    },
+  )
+})
+
 test.each([
   'image/svg+xml',
   'image/unknown',

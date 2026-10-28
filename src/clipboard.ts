@@ -308,7 +308,7 @@ export async function portableClipboard(
             )
         signal.throwIfAborted()
         const image = { ...input, bytes: new Uint8Array(input.bytes) }
-        if (!isPortableImageMIME(image.mimeType.toLowerCase()))
+        if (!isPortableImageMIME(`${image.mimeType}`.toLowerCase()))
           throw new Error('The image format cannot be exported.')
         const portable = bytesToDataURL(image.bytes, image.mimeType)
         element.setAttribute('src', portable)
