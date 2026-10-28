@@ -52,6 +52,12 @@ For fixtures that require separate history steps, `historyClock: true` fixes `Da
 
 Assertions accept `equals`, `includes`, `excludes`, `truthy` and `equalsFrom: {name, path}`. An empty path addresses a whole named result. `expectedError` requires a matching code or message. Source selections use normalized textarea UTF-16 offsets; snapshots retain authored CRLF bytes.
 
+The host parses fixture JSON in JavaScript to preserve literal leading BOMs inside strings. `JSONSerialization` can remove them before the editor receives its input, including from assertion expectations. The input fidelity probe checks scenario, load, selection and paste inputs against independent Node.js expectations, including BOMs, mixed line endings, combining characters, emoji and malformed JSON. It uses a small offline page without the editor and does not access the clipboard:
+
+```sh
+node scripts/interop/verify-input.mjs _local/interop/webkit-host _local/interop/input-fidelity
+```
+
 Facade calls travel through JSON-compatible inputs and returned values. DOM helpers exercise event handling but do not establish trusted native input. The native keyboard helper posts explicit AppKit events and requires corresponding trusted DOM key events and expected saved bytes; its composition variant uses WebKit's text input client. Neither establishes a particular hardware keyboard, input method candidate window or layout.
 
 For an independently retained failure demonstration:
