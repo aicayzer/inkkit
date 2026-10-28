@@ -1,26 +1,3 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { resolve, join } from 'node:path'
-import { createHash } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
-
-if (process.argv.length !== 6)
-  throw Error('Usage: verify-paste-caret.mjs ARCHIVE BUNDLE OUTPUT HOST')
-const [archive, bundle, output, host] = process.argv
-  .slice(2)
-  .map((p) => resolve(p))
-mkdirSync(output, { recursive: true })
-const hash = (p) => createHash('sha256').update(readFileSync(p)).digest('hex')
-const evidence = {
-  contract:
-    'Public paste facade and trusted AppKit X typing in WKWebView. DOM clicks establish reader fold state only. No native paste shortcut, native pointer or system clipboard claim.',
-  archive,
-  archiveSha256: hash(archive),
-  bundle,
-  bundleSha256: hash(bundle),
-  host,
-  hostSha256: hash(host),
-  cases: [],
-}
 const assert = (path, equals, name) => ({
   op: 'assert',
   path,
@@ -84,6 +61,7 @@ const fixtures = [
     },
   ),
 ]
+export const scenarios = {}
 for (const f of fixtures) {
   const visibility = () => [
     { op: 'dom', selector: f.visible, name: 'visible' },
@@ -118,9 +96,7 @@ for (const f of fixtures) {
     { op: 'paste', input: { text: f.text } },
     assert('snapshot.text', f.pasted),
     ...healthy(),
-    // Each host operation settles for 100 ms; these six operations create a
-    // history boundary longer than ProseMirror's 500 ms typing group delay.
-    ...Array.from({ length: 6 }, () => assert('snapshot.text', f.pasted)),
+    { op: 'historyBoundary' },
     { op: 'nativeInput', keyCode: 7, characters: 'X', shiftKey: true },
     assert('snapshot.text', f.typed),
     ...healthy(),
@@ -147,55 +123,10 @@ for (const f of fixtures) {
     { op: 'textSnapshot', name: 'reopenedReadable' },
     assert('text', f.readable, 'reopenedReadable'),
   ]
-  const input = join(output, f.name + '.input.json'),
-    resultPath = join(output, f.name + '.result.json')
-  writeFileSync(
-    input,
-    JSON.stringify({ source: f.source, operations }, null, 2),
-  )
-  const run = spawnSync(host, [bundle, 'scenario', input, resultPath], {
-    encoding: 'utf8',
-    timeout: 60000,
-  })
-  let result
-  try {
-    result = JSON.parse(readFileSync(resultPath))
-  } catch {}
-  const nativeSteps =
-    result?.steps?.filter((s) => s.operation === 'nativeInput') ?? []
-  evidence.cases.push({
-    name: f.name,
-    status: run.status,
-    error: run.error?.message,
-    stderr: run.stderr,
-    failedStep: result?.steps?.find((s) => !s.passed),
-    nativeSteps,
-    passed:
-      run.status === 0 &&
-      result?.passed === true &&
-      !result.final?.error &&
-      !result.final?.diagnostics?.length &&
-      !run.stderr?.includes('WKWebView:') &&
-      nativeSteps.length === 1 &&
-      nativeSteps.every(
-        (s) =>
-          s.result?.keyWindow &&
-          s.result?.active &&
-          s.result?.events?.some(
-            (e) => e.type === 'keydown' && e.trusted && e.key === 'X',
-          ),
-      ),
-  })
+
+  scenarios['native-paste-caret-' + f.name] = {
+    fixture: { source: f.source, historyClock: true, operations },
+    native: [{ key: 'X' }],
+    strict: true,
+  }
 }
-evidence.passed =
-  evidence.cases.length === fixtures.length &&
-  evidence.cases.every((c) => c.passed)
-writeFileSync(join(output, 'evidence.json'), JSON.stringify(evidence, null, 2))
-console.log(
-  JSON.stringify(
-    { ...evidence, cases: evidence.cases.map(({ nativeSteps, ...c }) => c) },
-    null,
-    2,
-  ),
-)
-process.exitCode = evidence.passed ? 0 : 1

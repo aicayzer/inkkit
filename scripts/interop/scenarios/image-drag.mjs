@@ -1,47 +1,19 @@
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
-import { resolve, join } from 'node:path'
-import { createHash } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
+export const scenarios = Object.fromEntries(
+  ['block', 'inline'].map((variant) => [
+    'native-image-drag-' + variant,
+    {
+      hostKind: 'image-drag',
+      timeout: 25_000,
+      fixture: { variant },
+      validate: validateImageDrag,
+    },
+  ]),
+)
 
-const [archiveArg, bundleArg, outputArg, hostArg] = process.argv.slice(2)
-if (!archiveArg || !bundleArg || !outputArg || !hostArg)
-  throw Error('Usage: verify-image-drag.mjs ARCHIVE BUNDLE OUTPUT HOST')
-const [archive, bundle, output, host] = [
-  archiveArg,
-  bundleArg,
-  outputArg,
-  hostArg,
-].map((path) => resolve(path))
-mkdirSync(output, { recursive: true })
-const hash = (path) =>
-  createHash('sha256').update(readFileSync(path)).digest('hex')
-const evidence = {
-  archive,
-  archiveSha256: hash(archive),
-  bundle,
-  bundleSha256: hash(bundle),
-  host,
-  hostSha256: hash(host),
-  scope: 'WKWebView drag data observed by an AppKit destination; drop refused',
-  cases: [],
-}
-for (const name of ['block', 'inline']) {
-  const resultPath = join(output, `${name}.json`)
-  rmSync(resultPath, { force: true })
-  const run = spawnSync(host, [bundle, resultPath, name], {
-    encoding: 'utf8',
-    timeout: 25000,
-  })
-  writeFileSync(
-    join(output, `${name}.log`),
-    `${run.stdout ?? ''}${run.stderr ?? ''}`,
-  )
+export function validateImageDrag(result, fixture) {
   const failures = []
-  let result
+  const name = fixture.variant
   try {
-    if (run.error || run.status !== 0)
-      throw Error(`Native host failed: ${run.error?.message ?? run.status}`)
-    result = JSON.parse(readFileSync(resultPath, 'utf8'))
     if (result.error) throw Error(result.error)
     if (
       !result.events?.some(
@@ -99,18 +71,5 @@ for (const name of ['block', 'inline']) {
   } catch (error) {
     failures.push(error.message)
   }
-  evidence.cases.push({
-    name,
-    passed: failures.length === 0,
-    failures,
-    resultPath,
-  })
+  return failures
 }
-evidence.passed =
-  evidence.cases.length === 2 && evidence.cases.every((entry) => entry.passed)
-writeFileSync(
-  join(output, 'results.json'),
-  JSON.stringify(evidence, null, 2) + '\n',
-)
-console.log(JSON.stringify(evidence, null, 2))
-if (!evidence.passed) process.exitCode = 1

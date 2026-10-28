@@ -29,6 +29,7 @@ await writeFile(
 for (const filename of [
   'main.ts',
   'fixtures.ts',
+  'history-clock.mjs',
   'index.html',
   'vite.config.mjs',
 ])
