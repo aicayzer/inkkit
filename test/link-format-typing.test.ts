@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor } from '../src/index'
@@ -12,8 +12,7 @@ let reader: InkKitEditor
 let readerRoot: HTMLElement
 let view: EditorView
 
-const viewOf = (target: InkKitEditor) =>
-  (target as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(editorViewCtx)
+const viewOf = (target: InkKitEditor) => ctxOf(target).get(editorViewCtx)
 
 beforeEach(async () => {
   const host = { changed() {}, copy() {}, openLink() {} }

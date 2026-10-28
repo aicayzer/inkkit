@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { blockDropRange } from '../src/drop-placement'
 import { InkKitEditor } from '../src/editor'
@@ -18,7 +18,7 @@ async function mounted() {
     },
     {},
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   return { editor, root, view: ctx.get(editorViewCtx) }
 }
 

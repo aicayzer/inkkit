@@ -1,3 +1,5 @@
+import { ctxOf, withFacade } from './editor-access'
+import { expectFacadeSave } from './facade-preservation'
 import { expect, test } from 'vitest'
 import { editorViewCtx, parserCtx, remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -216,7 +218,7 @@ for (const [source, expected] of [
         format: 'md',
         text: source,
       })
-      const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+      const ctx = ctxOf(editor)
       const view = ctx.get(editorViewCtx)
       const end = view.state.doc.child(0).nodeSize - 3
       view.dispatch(
@@ -316,8 +318,8 @@ const seeds = Number(process.env.PRESERVATION_LIST_SEEDS) || 400
 test(
   'random list insertions, moves, swaps, deletions and edits save unless an unchanged list would change',
   () =>
-    withEditor('x\n', (editor) => {
-      const processor = editor.ctx.get(remarkCtx)
+    withFacade('x\n', (editor) => {
+      const processor = ctxOf(editor).get(remarkCtx)
       const count = (text: string) =>
         (processor.parse(text) as Root).children.length
       let saved = 0
@@ -421,7 +423,7 @@ test(
           )
         let text: string
         try {
-          text = save(editor.ctx, source, edited)
+          text = save(ctxOf(editor), source, edited)
         } catch (error) {
           expect(error, `seed ${seed}`).toBeInstanceOf(PreservationError)
           expect(
@@ -431,6 +433,13 @@ test(
           refused++
           continue
         }
+        expectFacadeSave(
+          editor,
+          source,
+          ctxOf(editor).get(parserCtx)(edited),
+          text,
+          `seed ${seed}`,
+        )
         saved++
         const nodes = (processor.parse(text) as Root).children
         expect(nodes).toHaveLength(after.length)

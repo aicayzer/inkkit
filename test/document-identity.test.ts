@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { readFileSync } from 'node:fs'
 import { expect, test, vi } from 'vitest'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -44,9 +44,7 @@ async function open(
     },
     options,
   )
-  const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-    editorViewCtx,
-  )
+  const view = ctxOf(editor).get(editorViewCtx)
   try {
     await run({ editor, root, view, errors, changes, states })
   } finally {

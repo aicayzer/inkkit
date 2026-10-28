@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { undo } from '@milkdown/kit/prose/history'
 import { InkKitEditor } from '../src/index'
 import { normalizeTableAlignment } from '../src/table-alignment'
@@ -22,7 +22,7 @@ async function run(
     copy() {},
     openLink() {},
   })
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     editor.loadDocument({ ...input, text: '' })
     await editor.paste({ text: `${text}\ncell`, html })

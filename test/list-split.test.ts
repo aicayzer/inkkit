@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { InkKitEditor } from '../src/editor'
 import { semanticSignature } from '../src/preserve'
@@ -29,7 +29,7 @@ async function press(
       format: 'md',
       text: source,
     })
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const view = ctx.get(editorViewCtx)
     const caret = (text: string, end: boolean) => {
       editor.find(text)
@@ -417,7 +417,7 @@ test('undo after ending a list restores the authored list', async () => {
       format: 'md',
       text: source,
     })
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const view = ctx.get(editorViewCtx)
     editor.find('a one')
     view.dispatch(

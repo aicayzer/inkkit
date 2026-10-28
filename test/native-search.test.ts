@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -34,7 +35,7 @@ async function run(
     },
     options,
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     // An earlier generation, so that a test can load `input` again.
     editor.loadDocument({ ...input, generation: 1 })

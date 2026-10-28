@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -20,7 +21,7 @@ async function run(
     copy() {},
     openLink() {},
   })
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     editor.loadDocument({
       documentId: 'callouts',

@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -44,7 +44,7 @@ async function run(
     { changed, copy() {}, openLink() {} },
     { images },
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   const view = () => ctx.get(editorViewCtx)
   try {
     editor.loadDocument({

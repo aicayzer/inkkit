@@ -1,3 +1,4 @@
+import { ctxOf, importsOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -47,7 +48,7 @@ async function withEditor<T>(
     options,
   )
   try {
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     return await run({ editor, ctx, view: ctx.get(editorViewCtx), errors })
   } finally {
     await editor.destroy()
@@ -150,9 +151,7 @@ async function drop(session: Session, html: string, files: File[] = []) {
     clientY: { value: 0 },
   })
   session.view.dom.dispatchEvent(event)
-  const controller = (
-    session.editor as unknown as { pasteController: { pending: boolean } }
-  ).pasteController
+  const controller = importsOf(session.editor)
   for (let tick = 0; tick < 100 && controller.pending; tick++)
     await new Promise((resolve) => setTimeout(resolve, 0))
 }

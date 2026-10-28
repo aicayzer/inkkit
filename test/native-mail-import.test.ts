@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { undo } from '@milkdown/kit/prose/history'
 import { InkKitEditor } from '../src/index'
 import { footnoteDefinitions, referenceDefinitions } from '../src/references'
@@ -41,7 +41,7 @@ async function verifyImport(source: string, html: string, count: number) {
     editor.loadDocument({ ...input, text: source })
     if (source) editor.find('Destination')
     await editor.paste({ text: 'Readable Mail content', html })
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const view = ctx.get(editorViewCtx)
     const targets = () => {
       const links: string[] = []

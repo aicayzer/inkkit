@@ -1,5 +1,5 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { redoDepth, undoDepth } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -263,9 +263,7 @@ test.each(scenarios)(
         },
       },
     )
-    const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-      editorViewCtx,
-    )
+    const view = ctxOf(editor).get(editorViewCtx)
     const internals = editor as unknown as {
       assertPreserved(
         before: ProseNode,

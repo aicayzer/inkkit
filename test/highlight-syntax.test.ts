@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import {
   Editor,
@@ -255,7 +256,7 @@ async function withFacade(
     copy() {},
     openLink() {},
   })
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     await run(editor, ctx, states)
   } finally {

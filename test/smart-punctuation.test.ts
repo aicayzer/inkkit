@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { describe, expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor, InkKitError, type DocumentInput } from '../src/index'
@@ -40,12 +40,8 @@ async function withNote(
   })
   const reader = await InkKitEditor.mount(check, handlers)
   const format = options.format ?? 'md'
-  const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-    editorViewCtx,
-  )
-  const readerView = (
-    reader as unknown as { editor: { ctx: Ctx } }
-  ).editor.ctx.get(editorViewCtx)
+  const view = ctxOf(editor).get(editorViewCtx)
+  const readerView = ctxOf(reader).get(editorViewCtx)
   let reads = 0
   try {
     editor.loadDocument({

@@ -1,4 +1,6 @@
-import { expect, test } from 'vitest'
+import { ctxOf, withFacade, facadeFixture } from './editor-access'
+import { expectFacadeSave } from './facade-preservation'
+import { afterAll, describe, expect, test } from 'vitest'
 import { editorViewCtx, parserCtx, remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -54,7 +56,7 @@ async function mount(
     copy() {},
     openLink() {},
   })
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   editor.loadDocument({
     documentId: 'matching',
     generation: 1,
@@ -440,56 +442,64 @@ function randomEdit(seed: number) {
   return { before, after, source: markdown(before), edited: markdown(after) }
 }
 
-test(
-  'random edits keep every unchanged block and the authored syntax of edited ones',
-  () =>
-    withEditor('x\n', (editor) => {
-      const parse = editor.ctx.get(parserCtx)
-      const processor = editor.ctx.get(remarkCtx)
+describe('random edits keep every unchanged block and the authored syntax of edited ones', () => {
+  const facade = facadeFixture('x\n')
+  let checked = 0
+  let visited = 0
+  afterAll(() => {
+    // A focused seed run does not claim coverage of the whole sample.
+    if (visited === 800) expect(checked).toBeGreaterThan(500)
+  })
+  test.for(Array.from({ length: 800 }, (_, index) => index + 1))(
+    'seed %i',
+    (seed, context) => {
+      visited++
+      const editor = facade()
+      const parse = ctxOf(editor).get(parserCtx)
+      const processor = ctxOf(editor).get(remarkCtx)
       const blocks = (text: string) =>
         (processor.runSync(processor.parse(text), { value: text }) as Root)
           .children
-      let checked = 0
-      for (let seed = 1; seed <= 800; seed++) {
-        const { before, after, source, edited } = randomEdit(seed)
-        // Adjacent lists of one kind merge into one block; skip those documents.
-        if (
-          blocks(source).length !== before.length ||
-          blocks(edited).length !== after.length
+      const { before, after, source, edited } = randomEdit(seed)
+      // Adjacent lists of one kind merge into one block; skip those documents.
+      if (
+        blocks(source).length !== before.length ||
+        blocks(edited).length !== after.length
+      )
+        context.skip(
+          'Adjacent lists merge, so block correspondence is ambiguous',
         )
-          continue
-        checked++
-        const saved = new Preservation(editor.ctx, source).serialize(
-          parse(edited),
-        )
-        const nodes = blocks(saved)
-        expect(nodes).toHaveLength(after.length)
-        const ending = source.includes('\r\n') ? '\r\n' : '\n'
-        // Which copy of a repeated block was kept, inserted or moved is ambiguous,
-        // and a moved block is rewritten by design.
-        const ambiguous = after.some(
-          (block) =>
-            block.moved ||
-            (block.origin === undefined &&
-              before.some((original) => original.text === block.text)) ||
-            (block.edited &&
-              before.filter(
-                (original) => original.text === before[block.origin!]?.text,
-              ).length > 1),
-        )
-        const inserted = after.some((block) => block.origin === undefined)
-        after.forEach((block, index) => {
-          if (ambiguous || block.origin === undefined) return
-          // A new block that resembles a deleted one can take its place.
-          if (block.edited && inserted) return
-          const node = nodes[index]!.position!
-          expect(
-            saved.slice(node.start.offset, node.end.offset),
-            `seed ${seed}`,
-          ).toBe(block.text.replaceAll('\n', ending))
-        })
-      }
-      expect(checked).toBeGreaterThan(500)
-    }),
-  60_000,
-)
+      checked++
+      const saved = new Preservation(ctxOf(editor), source).serialize(
+        parse(edited),
+      )
+      expectFacadeSave(editor, source, parse(edited), saved, `seed ${seed}`)
+      const nodes = blocks(saved)
+      expect(nodes).toHaveLength(after.length)
+      const ending = source.includes('\r\n') ? '\r\n' : '\n'
+      // Which copy of a repeated block was kept, inserted or moved is ambiguous,
+      // and a moved block is rewritten by design.
+      const ambiguous = after.some(
+        (block) =>
+          block.moved ||
+          (block.origin === undefined &&
+            before.some((original) => original.text === block.text)) ||
+          (block.edited &&
+            before.filter(
+              (original) => original.text === before[block.origin!]?.text,
+            ).length > 1),
+      )
+      const inserted = after.some((block) => block.origin === undefined)
+      after.forEach((block, index) => {
+        if (ambiguous || block.origin === undefined) return
+        // A new block that resembles a deleted one can take its place.
+        if (block.edited && inserted) return
+        const node = nodes[index]!.position!
+        expect(
+          saved.slice(node.start.offset, node.end.offset),
+          `seed ${seed}`,
+        ).toBe(block.text.replaceAll('\n', ending))
+      })
+    },
+  )
+})

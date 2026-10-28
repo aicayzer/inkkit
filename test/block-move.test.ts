@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { describe, expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor, type Keymap } from '../src/index'
@@ -49,7 +49,7 @@ async function withNote(
       format: 'md',
       text: source,
     })
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     const view = ctx.get(editorViewCtx)
     const find = (text: string) => {
       let found: { pos: number; at: number } | undefined
@@ -118,7 +118,7 @@ async function reopens(text: string, signature: string): Promise<void> {
       format: 'md',
       text,
     })
-    const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+    const ctx = ctxOf(editor)
     expect(editor.snapshot().text).toBe(text)
     expect(semanticSignature(ctx.get(editorViewCtx).state.doc)).toBe(signature)
   } finally {

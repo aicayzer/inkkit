@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { GapCursor } from '@milkdown/kit/prose/gapcursor'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import {
@@ -47,7 +47,7 @@ async function run(
     { changed() {}, copy() {}, openLink() {} },
     options,
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     editor.loadDocument({
       documentId: 'note',

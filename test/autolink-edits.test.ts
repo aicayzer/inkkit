@@ -1,6 +1,6 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { InkKitEditor } from '../src/index'
 
 const input = { documentId: 'urls', format: 'md' as const }
@@ -23,9 +23,7 @@ async function edit(
   })
   try {
     editor.loadDocument({ ...input, generation: 1, text: source })
-    const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-      editorViewCtx,
-    )
+    const view = ctxOf(editor).get(editorViewCtx)
     let start = -1,
       text = ''
     view.state.doc.descendants((node, pos) => {
@@ -208,9 +206,7 @@ test('text typed after a bare URL without its link joins the URL', async () => {
       generation: 1,
       text: `Visit ${url} today.\n`,
     })
-    const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-      editorViewCtx,
-    )
+    const view = ctxOf(editor).get(editorViewCtx)
     const end = 1 + 'Visit '.length + url.length
     view.dispatch(view.state.tr.insert(end, view.state.schema.text('s')))
     expect(editor.snapshot().text).toBe(`Visit ${url}s today.\n`)
@@ -236,9 +232,7 @@ test('undoing an edit inside a bare URL restores its source', async () => {
   try {
     const source = `Visit ${url} today.\n`
     editor.loadDocument({ ...input, generation: 1, text: source })
-    const view = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx.get(
-      editorViewCtx,
-    )
+    const view = ctxOf(editor).get(editorViewCtx)
     const end = 1 + 'Visit '.length + url.length
     view.dispatch(view.state.tr.insertText('s', end))
     expect(editor.snapshot().text).toBe(`Visit ${url}s today.\n`)

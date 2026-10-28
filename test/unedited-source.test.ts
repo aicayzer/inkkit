@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx, serializerCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -27,7 +28,7 @@ async function run(callback: (editor: InkKitEditor, ctx: Ctx) => void) {
     { changed() {}, copy() {}, openLink() {} },
     {},
   )
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   try {
     callback(editor, ctx)
   } finally {

@@ -1,3 +1,4 @@
+import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -18,11 +19,7 @@ async function withNote(
     error: (error) => errors.push(error),
   })
   try {
-    await run(
-      editor,
-      (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx,
-      errors,
-    )
+    await run(editor, ctxOf(editor), errors)
   } finally {
     await editor.destroy()
     root.remove()

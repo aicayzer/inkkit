@@ -1,7 +1,7 @@
+import { ctxOf } from './editor-access'
 import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { InkKitEditor } from '../src/index'
 import { tableAvailability, tableContext, tableCommands } from '../src/tables'
@@ -13,7 +13,7 @@ async function mount(labels: Partial<EditorLabels> = {}) {
   const root = document.createElement('div')
   document.body.append(root)
   const editor = await InkKitEditor.mount(root, events, { labels })
-  const ctx = (editor as unknown as { editor: { ctx: Ctx } }).editor.ctx
+  const ctx = ctxOf(editor)
   return {
     root,
     editor,
