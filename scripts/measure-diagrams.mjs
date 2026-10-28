@@ -72,7 +72,12 @@ try {
         encoding: 'utf8',
       }).trim(),
       pageSha256: createHash('sha256').update(bytes).digest('hex'),
-      checkoutDirty: Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: root, encoding: 'utf8' }).trim()),
+      checkoutDirty: Boolean(
+        execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+          cwd: root,
+          encoding: 'utf8',
+        }).trim(),
+      ),
       pageBytes: bytes.length,
       gzipBytes: gzipSync(bytes, { level: 9 }).length,
       samples: [],
