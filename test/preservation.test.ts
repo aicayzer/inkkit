@@ -21,7 +21,7 @@ const sources = [
 ]
 for (const source of sources) {
   test(`preserves untouched source beside an edit: ${JSON.stringify(source)}`, async () => {
-    await withFacade(source, (editor) => {
+    await withFacade(source, async (editor) => {
       const view = ctxOf(editor).get(editorViewCtx)
       expect(editor.snapshot().text).toBe(source)
       view.dispatch(
@@ -29,7 +29,13 @@ for (const source of sources) {
       )
       const result = editor.snapshot().text
       expect(result).toBe(source.replace('EDIT', 'EDIT!'))
-      expect(ctxOf(editor).get(parserCtx)(result).eq(view.state.doc)).toBe(true)
+      const edited = view.state.doc
+      await withFacade(result, (reader) => {
+        expect(reader.snapshot().text).toBe(result)
+        expect(ctxOf(reader).get(editorViewCtx).state.doc.toJSON()).toEqual(
+          edited.toJSON(),
+        )
+      })
     })
   })
 }
