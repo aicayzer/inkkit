@@ -11,6 +11,8 @@ import {
   type SourceProvenance,
 } from './source'
 
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
 interface SourceRuntime {
   ready(): boolean
   literal(): boolean
@@ -217,17 +219,16 @@ export class SourceSurface {
       const start = this.element.selectionStart,
         end = this.element.selectionEnd
       if (start === end) {
-        if (key === 'Backspace' && start > 0)
-          this.element.setSelectionRange(
-            start - [...this.element.value.slice(0, start)].at(-1)!.length,
-            end,
-          )
-        else if (key === 'Delete' && end < this.element.value.length)
-          this.element.setSelectionRange(
-            start,
-            end + [...this.element.value.slice(end)][0]!.length,
-          )
-        else return false
+        // Segment the whole value: an interior caret and regional-indicator
+        // pairing both need context beyond the direction of deletion.
+        const segment = graphemes
+          .segment(this.element.value)
+          .containing(key === 'Backspace' ? start - 1 : start)
+        if (!segment) return false
+        this.element.setSelectionRange(
+          segment.index,
+          segment.index + segment.segment.length,
+        )
       }
       this.replaceLiteralSelection('', false)
       return true
