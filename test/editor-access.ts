@@ -6,6 +6,8 @@ import type { InkKitEditor } from '../src/core'
 export const ctxOf = (editor: InkKitEditor) => editor['editor'].ctx
 export const optionsOf = (editor: InkKitEditor) => editor['options']
 export const importsOf = (editor: InkKitEditor) => editor['pasteController']
+export const documentOf = (editor: InkKitEditor) => editor['document']
+export const historyOf = (editor: InkKitEditor) => editor['history']
 
 async function mountFacade(text: string) {
   const { InkKitEditor } = await import('../src/core')

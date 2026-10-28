@@ -1,4 +1,4 @@
-import { ctxOf } from './editor-access'
+import { ctxOf, documentOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
@@ -827,9 +827,7 @@ test('a preservation refusal during angle completion keeps the document, revisio
     const snapshot = s.editor.snapshot()
     const undo = undoDepth(state)
     const redo = redoDepth(state)
-    const internal = s.editor as unknown as {
-      assertPreserved: (...args: unknown[]) => void
-    }
+    const internal = documentOf(s.editor)
     const original = internal.assertPreserved
     // Refuse the final normalized document, as an unrepresentable edit is refused.
     internal.assertPreserved = () => {

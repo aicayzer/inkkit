@@ -1,4 +1,4 @@
-import { ctxOf } from './editor-access'
+import { ctxOf, documentOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { redoDepth, undoDepth } from '@milkdown/kit/prose/history'
@@ -264,13 +264,7 @@ test.each(scenarios)(
       },
     )
     const view = ctxOf(editor).get(editorViewCtx)
-    const internals = editor as unknown as {
-      assertPreserved(
-        before: ProseNode,
-        after: ProseNode,
-        written?: boolean,
-      ): void
-    }
+    const internals = documentOf(editor)
     const assertPreserved = internals.assertPreserved
     // Counts each check of a real edit, and refuses the one numbered `refuse`.
     let checks = 0

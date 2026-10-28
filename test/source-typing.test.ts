@@ -1,4 +1,4 @@
-import { ctxOf } from './editor-access'
+import { ctxOf, documentOf, historyOf } from './editor-access'
 import { afterEach, expect, test, vi } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -182,10 +182,7 @@ test('a rejected parse during settling keeps the typed source', () =>
     type(plain, 'a')
     const typed = plain.value
     const settle = vi
-      .spyOn(
-        editor as unknown as { commitSource: () => boolean },
-        'commitSource',
-      )
+      .spyOn(historyOf(editor), 'commitSource')
       .mockImplementationOnce(() => {
         throw new Error('parse failed')
       })
@@ -688,9 +685,7 @@ test('refused formatted history does not consume the permitted redo', () =>
     editor.replaceSource('BaseAn')
     editor.undo()
     editor.setEditingMode('formatted')
-    const internals = editor as unknown as {
-      assertPreserved: (...args: unknown[]) => void
-    }
+    const internals = documentOf(editor)
     const refuse = () => {
       throw new InkKitError('preservation', 'Refused for regression test')
     }
@@ -722,9 +717,7 @@ test('refused formatted redo in source mode keeps its place before literal redo'
     editor.undo()
     editor.undo()
     const before = editor.snapshot()
-    const internals = editor as unknown as {
-      assertPreserved: (...args: unknown[]) => void
-    }
+    const internals = documentOf(editor)
     const spy = vi
       .spyOn(internals, 'assertPreserved')
       .mockImplementation(() => {
@@ -778,9 +771,7 @@ for (const earlierUndo of [false, true]) {
         editor.setEditingMode('formatted')
         if (earlierUndo) editor.undo()
         const before = editor.snapshot()
-        const internals = editor as unknown as {
-          assertPreserved: (...args: unknown[]) => void
-        }
+        const internals = documentOf(editor)
         const original = internals.assertPreserved
         let checks = 0
         const spy = vi

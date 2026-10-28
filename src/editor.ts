@@ -1,3 +1,6 @@
+import { SourceSurface } from './editor-source'
+import { EditorDocument } from './editor-document'
+import { SourceHistory } from './editor-history'
 import { $prose } from '@milkdown/kit/utils'
 import { applyFormat, formatAvailability } from './editor-commands'
 import { createEditorKeymap, tableShortcut } from './editor-keymap'
@@ -19,16 +22,10 @@ import {
   schemaCtx,
 } from '@milkdown/kit/core'
 import { portableClipboard, clipboardText, clipboardContent } from './clipboard'
-import {
-  closeHistory,
-  redoDepth,
-  undo as undoHistory,
-  redo as redoHistory,
-} from '@milkdown/kit/prose/history'
+import { closeHistory } from '@milkdown/kit/prose/history'
 import { replacementMarks } from './text-input'
 import { blockDropRange } from './drop-placement'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
-import { undoSmartPunctuation } from './smart-punctuation'
 import {
   Fragment,
   Mark as ProseMark,
@@ -50,11 +47,8 @@ import { defaultLabels } from './labels'
 import { serialize } from './dialect'
 import { extraLinkSchemes, isSafeLinkTarget } from './link-safety'
 import { Preservation } from './preserve'
-import { modeSelectionMap } from './mode-selection'
 import {
   sourceAttribute,
-  cleanSourceDoc,
-  editedPlainSource,
   sourceSelection,
   rawOffset,
   normalizedOffset,
@@ -124,14 +118,12 @@ import {
 } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
 import {
-  assertCommentsEndWhereWritten,
   commentSelectionContent,
   commentProvenance,
   literalCommentSpans,
   isComment,
   isWrittenEdit,
   setCommentVisibility,
-  sourceReplacement,
 } from './comments'
 import {
   assertHiddenCommentsKept,
@@ -715,34 +707,56 @@ const stateEvents: readonly (string | symbol)[] = [
   'commandStateChanged',
 ]
 
-// A pause in source typing longer than this ends an undo step, as in the
-// formatted editor's history.
-const sourceGroupDelay = 500
-// Earlier undo steps of typed source that the formatted document has not taken
-// in; the oldest merge into the next beyond this many.
-const sourceStepLimit = 100
-
-interface TypedSource {
-  text: string
-  from: number
-  to: number
-  // Where the caret and selection were before this step began.
-  before: { from: number; to: number }
-  // An edit that is not typing, which later typing does not join.
-  closed: boolean
-}
-
 /**
  * The editor. Create it with `InkKitEditor.mount`, load a document, and read it back with
  * `snapshot`. The reference is https://inkkit.cyzr.me/reference/editor.
  */
 export class InkKitEditor {
   private editor!: Editor
+  private readonly document = new EditorDocument({
+    ctx: () => this.editor.ctx,
+    literal: () => this.literalSurface,
+    pending: () => this.history.pendingText,
+  })
+  private readonly history = new SourceHistory({
+    ctx: () => this.editor.ctx,
+    format: () => this.document.format,
+    literal: () => this.literalSurface,
+    writable: () => this.writable,
+    currentText: (doc) => this.document.currentText(doc),
+    parseSource: (text, provenance) =>
+      this.document.parseSource(text, provenance),
+    remember: (doc, text) => this.document.remember(doc, text),
+    selection: () => ({
+      from: this.source.element.selectionStart,
+      to: this.source.element.selectionEnd,
+    }),
+    beforeInput: () => this.source.beforeInput,
+    showSource: (text, from, to) => this.source.showTypedSource(text, from, to),
+    changed: () => {
+      this.session.changed()
+      this.cancelExports()
+      this.literalMatch = undefined
+    },
+    publish: (text) => {
+      if (text !== this.lastMarkdown) {
+        this.lastMarkdown = text
+        this.events.changed(this.changeSnapshot(text))
+      }
+      this.publishCommandState()
+    },
+    loading: (operation) => {
+      this.loading = true
+      try {
+        operation()
+      } finally {
+        this.loading = false
+      }
+    },
+  })
   private lastMarkdown = ''
-  private formatType: 'md' | 'txt' = 'md'
   private readonly session = new DocumentSession()
   private exportControllers = new Set<AbortController>()
-  private plainComposing = false
   private plainSearch = ''
   private literalMatch?: {
     query: string
@@ -752,37 +766,11 @@ export class InkKitEditor {
     displayedTo: number
     version: SessionCapture
   }
-  private beforePlainInput?: { from: number; to: number }
-  // Source typed in the source editor that the hidden formatted document has
-  // not taken in yet. The text is already authoritative: snapshots, change
-  // events and the textarea use it, and anything that reads the formatted
-  // document first settles it. Undo steps taken inside it need no document,
-  // so they run on the text alone: `typedSteps` hold the states at the end of
-  // earlier typing, `pendingSource` the latest, and `undoneSteps` what undo
-  // set aside.
-  private pendingSource?: TypedSource
-  private typedSteps: TypedSource[] = []
-  private undoneSteps: TypedSource[] = []
-  // Formatted-history undos taken while source steps were undone, which a
-  // redo replays before it reaches those steps.
-  private formattedUndone = 0
-  // A source edit invalidates the existing formatted redo tail without
-  // removing earlier undo steps. Only subsequent formatted undos can be redone.
-  private formattedRedoLimit?: number
-  private historyDirection?: 'undo' | 'redo'
-  private lastSourceInput = 0
-  private syncingSource = false
   private mode: EditingMode = 'formatted'
-  private sourcePreservations = new WeakMap<SourceProvenance, Preservation>()
-  private sourceTexts = new WeakMap<ProseNode, string>()
   private ready = false
   private destroyed = false
-  private preservation?: Preservation
-  // The blocks moves have carried since the document loaded, whose source goes
-  // with them.
-  private carried?: WeakSet<ProseNode>
   private pasteController!: PasteController
-  private plain!: HTMLTextAreaElement
+  private source!: SourceSurface
   private root!: HTMLElement
   private ownsRootClass = false
   private clickHandler?: (event: MouseEvent) => void
@@ -873,7 +861,6 @@ export class InkKitEditor {
   }
 
   private copyHandler?: (event: ClipboardEvent) => void
-  private originalSource = ''
   private reportingSuppressed = false
   private loading = false
   private readonly textIdentity = ++editorSequence
@@ -903,11 +890,14 @@ export class InkKitEditor {
         key: new PluginKey('documentChanges'),
         view: () => ({
           update: (view, previous) => {
-            if (this.loading || this.sameDocument(view.state.doc, previous.doc))
+            if (
+              this.loading ||
+              this.document.sameDocument(view.state.doc, previous.doc)
+            )
               return
             // Settling typed source brings the document up to a revision and a
             // change event that were already reported.
-            if (this.syncingSource) {
+            if (this.history.syncing) {
               this.mediaPolicy()
               return
             }
@@ -917,7 +907,7 @@ export class InkKitEditor {
             this.literalMatch = undefined
             let markdown: string
             try {
-              markdown = this.currentText(view.state.doc)
+              markdown = this.document.currentText(view.state.doc)
             } catch (error) {
               this.events.error?.(coded(error, 'preservation'))
               return
@@ -926,13 +916,13 @@ export class InkKitEditor {
               const anchor = view.state.doc.attrs[
                 sourceAttribute
               ] as SourceProvenance | null
-              const from = anchor?.from ?? this.plain.selectionStart
-              const to = anchor?.to ?? this.plain.selectionEnd
-              if (!this.plainComposing) this.setSourceValue(markdown)
-              if (!this.plainComposing) {
-                this.plain.setSelectionRange(
-                  Math.min(from, this.plain.value.length),
-                  Math.min(to, this.plain.value.length),
+              const from = anchor?.from ?? this.source.element.selectionStart
+              const to = anchor?.to ?? this.source.element.selectionEnd
+              if (!this.source.composing) this.source.setSourceValue(markdown)
+              if (!this.source.composing) {
+                this.source.element.setSelectionRange(
+                  Math.min(from, this.source.element.value.length),
+                  Math.min(to, this.source.element.value.length),
                 )
                 this.revealLiteralSelection()
               }
@@ -997,9 +987,9 @@ export class InkKitEditor {
   private changeSnapshot(text: string): DocumentSnapshot {
     return {
       ...this.session.version(),
-      format: this.formatType,
+      format: this.document.format,
       text,
-      dirty: text !== this.originalSource,
+      dirty: text !== this.document.original,
     }
   }
 
@@ -1090,7 +1080,7 @@ export class InkKitEditor {
     this.assertReady(expectedGeneration)
     if (
       this.literalSurface
-        ? this.plainComposing
+        ? this.source.composing
         : this.editor.ctx.get(editorViewCtx).composing
     )
       throw new InkKitError('composition', 'Text composition is in progress')
@@ -1168,8 +1158,7 @@ export class InkKitEditor {
       lastMarkdown: this.lastMarkdown,
       literalMatch: this.literalMatch,
       textScope: this.textScope,
-      formattedRedoLimit: this.formattedRedoLimit,
-      formattedUndone: this.formattedUndone,
+      history: this.history.capture(),
     }
   }
 
@@ -1197,8 +1186,7 @@ export class InkKitEditor {
     this.lastMarkdown = before.lastMarkdown
     this.literalMatch = before.literalMatch
     this.textScope = before.textScope
-    this.formattedRedoLimit = before.formattedRedoLimit
-    this.formattedUndone = before.formattedUndone
+    this.history.restore(before.history)
   }
 
   /** Reports a refused edit to the facade call that made it, or else to `events.error`. */
@@ -1226,7 +1214,7 @@ export class InkKitEditor {
 
   private get composing(): boolean {
     return this.literalSurface
-      ? this.plainComposing
+      ? this.source.composing
       : this.editor.ctx.get(editorViewCtx).composing
   }
 
@@ -1305,8 +1293,8 @@ export class InkKitEditor {
           this.options.labels?.formattedEditor ?? defaultLabels.formattedEditor,
       },
     })
-    this.plain.readOnly = !this.writable
-    for (const surface of [view.dom, this.plain]) {
+    this.source.element.readOnly = !this.writable
+    for (const surface of [view.dom, this.source.element]) {
       for (const name of [
         'spellcheck',
         'autocorrect',
@@ -1352,7 +1340,7 @@ export class InkKitEditor {
         ) as Record<TableCommand, boolean>)
     return {
       ...this.session.version(),
-      format: this.formatType,
+      format: this.document.format,
       mode: this.editingMode,
       editable: this.writable,
       composing: this.composing,
@@ -1362,13 +1350,8 @@ export class InkKitEditor {
         : caretState(state),
       table: this.literalSurface ? undefined : tableContext(state),
       commands: {
-        undo: mutable && (!!this.pendingSource || undoHistory(state)),
-        redo:
-          mutable &&
-          (this.undoneSteps.length > 0 ||
-            (!this.pendingSource &&
-              this.formattedRedoLimit !== 0 &&
-              redoHistory(state))),
+        undo: mutable && this.history.canUndo(state),
+        redo: mutable && this.history.canRedo(state),
         insertText: mutable,
         paste: mutable,
         replace: mutable,
@@ -1429,7 +1412,7 @@ export class InkKitEditor {
           this.loading ||
           this.writable ||
           // Source that was typed while the editor was writable.
-          this.syncingSource ||
+          this.history.syncing ||
           (!tr.docChanged && !tr.storedMarksSet),
         props: {
           editable: () => this.writable && !this.literalSurface,
@@ -1466,7 +1449,7 @@ export class InkKitEditor {
   )
 
   private get literalSurface(): boolean {
-    return this.formatType === 'txt' || this.mode === 'source'
+    return this.document.format === 'txt' || this.mode === 'source'
   }
 
   /** `formatted` or `source`. A TXT document is always `source`. */
@@ -1475,140 +1458,49 @@ export class InkKitEditor {
     return this.literalSurface ? 'source' : 'formatted'
   }
 
-  private currentText(doc?: ProseNode): string {
-    if (!doc && this.pendingSource) return this.pendingSource.text
-    doc ??= this.editor.ctx.get(editorViewCtx).state.doc
-    const cached = this.sourceTexts.get(doc)
-    if (cached !== undefined) return cached
-    const provenance = doc.attrs[sourceAttribute] as SourceProvenance | null
-    if (this.formatType === 'txt')
-      return provenance?.text ?? this.originalSource
-    let text: string
-    try {
-      let preservation = this.preservation
-      if (provenance) {
-        preservation = this.sourcePreservations.get(provenance)
-        if (!preservation) {
-          preservation = Preservation.read(this.editor.ctx, provenance.text)
-          this.sourcePreservations.set(provenance, preservation)
-        }
-      }
-      text = preservation!.serialize(cleanSourceDoc(doc), this.carried)
-    } catch (error) {
-      throw coded(error, 'preservation')
-    }
-    this.sourceTexts.set(doc, text)
-    return text
-  }
-
   /** Switches between formatted and source editing. Returns false when the mode is already set, and
    *  for TXT. */
   setEditingMode(mode: EditingMode, expectedGeneration?: number): boolean {
     this.assertAlive()
     expectOneOf(mode, editingModes, 'mode')
     this.assertCurrent(expectedGeneration)
-    if (this.formatType === 'txt' || this.mode === mode) return false
-    const wasSource = this.literalSurface
-    const view = this.editor.ctx.get(editorViewCtx)
-    const focused = wasSource
-      ? this.plain.ownerDocument.activeElement === this.plain
-      : view.hasFocus()
-    const container = this.viewportContainer ?? this.root
-    const previousSurface = wasSource ? this.plain : container
-    const fraction =
-      previousSurface.scrollTop /
-      Math.max(1, previousSurface.scrollHeight - previousSurface.clientHeight)
-    const left = previousSurface.scrollLeft
-    const sourceSelection = wasSource
-      ? {
-          anchor:
-            this.plain.selectionDirection === 'backward'
-              ? this.plain.selectionEnd
-              : this.plain.selectionStart,
-          head:
-            this.plain.selectionDirection === 'backward'
-              ? this.plain.selectionStart
-              : this.plain.selectionEnd,
+    if (this.document.format === 'txt' || this.mode === mode) return false
+    return this.source.setMode(mode, {
+      ctx: this.editor.ctx,
+      wasSource: this.literalSurface,
+      container: this.viewportContainer ?? this.root,
+      settle: () => {
+        this.history.settleSource()
+        // Source steps that were undone cannot be redone from the other mode.
+        this.history.modeChanged()
+      },
+      text: () => this.snapshot().text,
+      changed: () => {
+        this.mode = mode
+        this.session.modeChanged()
+        this.cancelExports()
+        this.plainSearch = ''
+        this.literalMatch = undefined
+      },
+      update: () => {
+        const suppressed = this.reportingSuppressed
+        this.reportingSuppressed = true
+        try {
+          this.updateSurface()
+        } finally {
+          this.reportingSuppressed = suppressed
         }
-      : undefined
-    this.settleSource()
-    // Source steps that were undone cannot be redone from the other mode.
-    this.undoneSteps = []
-    this.formattedUndone = 0
-    const text = this.snapshot().text
-    const mapping = modeSelectionMap(this.editor.ctx, text, view.state.doc)
-    const anchor = sourceSelection
-      ? mapping.formatted(rawOffset(text, sourceSelection.anchor))
-      : normalizedOffset(
-          text,
-          mapping.source(
-            view.state.selection.anchor,
-            view.state.selection.anchor < view.state.selection.head ? 1 : -1,
-          ),
-        )
-    const head = sourceSelection
-      ? mapping.formatted(rawOffset(text, sourceSelection.head))
-      : normalizedOffset(
-          text,
-          mapping.source(
-            view.state.selection.head,
-            view.state.selection.head < view.state.selection.anchor ? 1 : -1,
-          ),
-        )
-    this.mode = mode
-    this.session.modeChanged()
-    this.cancelExports()
-    this.plainSearch = ''
-    this.literalMatch = undefined
-    if (mode === 'source') {
-      this.setSourceValue(text)
-      this.plain.setSelectionRange(
-        Math.min(anchor, head),
-        Math.max(anchor, head),
-        anchor > head ? 'backward' : 'forward',
-      )
-    } else {
-      view.dispatch(
-        view.state.tr
-          .setSelection(
-            TextSelection.between(
-              view.state.doc.resolve(
-                Math.min(anchor, view.state.doc.content.size),
-              ),
-              view.state.doc.resolve(
-                Math.min(head, view.state.doc.content.size),
-              ),
-            ),
-          )
-          .setMeta('addToHistory', false),
-      )
-    }
-    const suppressed = this.reportingSuppressed
-    this.reportingSuppressed = true
-    try {
-      this.updateSurface()
-    } finally {
-      this.reportingSuppressed = suppressed
-    }
-    const surface = this.literalSurface ? this.plain : container
-    surface.scrollTop =
-      fraction * Math.max(0, surface.scrollHeight - surface.clientHeight)
-    surface.scrollLeft = left
-    if (focused) {
-      if (this.literalSurface) this.plain.focus({ preventScroll: true })
-      else view.dom.focus({ preventScroll: true })
-      this.revealCurrentSelection()
-    }
-    this.publishCommandState()
-    return true
+      },
+      reveal: () => this.revealCurrentSelection(),
+    })
   }
 
   private updateSurface(): void {
-    this.plain.hidden = !this.literalSurface
+    this.source.element.hidden = !this.literalSurface
     this.applyInputPolicy()
-    this.plain.setAttribute(
+    this.source.element.setAttribute(
       'aria-label',
-      this.formatType === 'txt'
+      this.document.format === 'txt'
         ? (this.options.labels?.plainTextEditor ??
             defaultLabels.plainTextEditor)
         : (this.options.labels?.sourceEditor ?? defaultLabels.sourceEditor),
@@ -1623,343 +1515,33 @@ export class InkKitEditor {
     this.assertAlive()
     expectString(text, 'text')
     this.assertMutation(expectedGeneration)
-    const changed = this.applySource(text, true)
+    const changed = this.history.applySource(text, true)
     if (changed) this.localCopies.clear()
     return changed
-  }
-
-  private applySource(
-    text: string,
-    isolated: boolean,
-    from?: number,
-    to?: number,
-    native = false,
-  ): boolean {
-    if (!this.writable)
-      throw new InkKitError('read-only', 'The editor is read-only')
-    // Source edits take the same steps whether typed or not; an edit that is
-    // not typing ends the typing step before it and is closed to the next.
-    if (this.literalSurface)
-      return this.deferSource(text, from, to, native, isolated)
-    return this.commitSource(text, isolated, from, to, this.beforePlainInput)
-  }
-
-  /**
-   * Takes typed source without parsing it. Parsing, preservation and replacing
-   * the formatted document cost as much as a document load, so they wait for
-   * the next thing that needs them.
-   */
-  private deferSource(
-    text: string,
-    from: number | undefined,
-    to: number | undefined,
-    native: boolean,
-    closed: boolean,
-  ): boolean {
-    if (text === this.currentText()) return false
-    const length =
-      from === undefined ? text.replace(/\r\n?/g, '\n').length : from
-    const now = Date.now()
-    const previous = this.pendingSource
-    const continuing =
-      previous &&
-      !previous.closed &&
-      !closed &&
-      now - this.lastSourceInput <= sourceGroupDelay
-    if (previous && !continuing) this.rememberTypedStep(previous)
-    this.formattedRedoLimit = 0
-    this.lastSourceInput = now
-    this.undoneSteps = []
-    this.formattedUndone = 0
-    const pending: TypedSource = {
-      text,
-      from: length,
-      to: to ?? length,
-      before: (continuing ? previous.before : undefined) ??
-        this.beforePlainInput ?? {
-          from: this.plain.selectionStart,
-          to: this.plain.selectionEnd,
-        },
-      closed,
-    }
-    this.pendingSource = pending
-    this.session.changed()
-    this.cancelExports()
-    this.literalMatch = undefined
-    // Text that did not come from the textarea is shown there.
-    if (!native) this.showTypedSource(pending.text, pending.from, pending.to)
-    if (text !== this.lastMarkdown) {
-      this.lastMarkdown = text
-      this.events.changed(this.changeSnapshot(text))
-    }
-    this.publishCommandState()
-    return true
-  }
-
-  private rememberTypedStep(step: TypedSource): void {
-    this.typedSteps.push(step)
-    if (this.typedSteps.length > sourceStepLimit) this.typedSteps.shift()
-  }
-
-  private showTypedSource(text: string, from: number, to: number): void {
-    this.setSourceValue(text)
-    this.plain.setSelectionRange(
-      Math.min(from, this.plain.value.length),
-      Math.min(to, this.plain.value.length),
-    )
-    this.revealLiteralSelection()
-  }
-
-  // WebKit lays out a large textarea incrementally only when its initial
-  // value was assigned off-tree. An attached whole-value replacement also
-  // loses that state after undo or paste, so every replacement uses this path.
-  private setSourceValue(text: string): void {
-    const plain = this.plain
-    if (text.length < 65_536 || !plain.isConnected || this.plainComposing) {
-      plain.value = text
-      return
-    }
-    const focused = plain.ownerDocument.activeElement === plain
-    const {
-      selectionStart,
-      selectionEnd,
-      selectionDirection,
-      scrollTop,
-      scrollLeft,
-    } = plain
-    const marker = plain.ownerDocument.createComment('source')
-    plain.replaceWith(marker)
-    plain.value = text
-    marker.replaceWith(plain)
-    plain.setSelectionRange(selectionStart, selectionEnd, selectionDirection)
-    if (focused) plain.focus({ preventScroll: true })
-    plain.scrollTop = scrollTop
-    plain.scrollLeft = scrollLeft
-  }
-
-  /**
-   * Undoes or redoes typed source that the formatted document has not taken
-   * in, on the text alone. Returns whether there was a step to take.
-   */
-  private stepTypedSource(direction: 'undo' | 'redo'): boolean {
-    const current = this.pendingSource
-    let text: string, from: number, to: number
-    if (direction === 'undo') {
-      if (!current) return false
-      this.undoneSteps.push(current)
-      this.pendingSource = this.typedSteps.pop()
-      text = this.pendingSource?.text ?? this.currentText()
-      ;({ from, to } = current.before)
-    } else {
-      const next = this.undoneSteps.pop()
-      if (!next) return false
-      if (current) this.rememberTypedStep(current)
-      this.pendingSource = next
-      text = next.text
-      ;({ from, to } = next)
-    }
-    this.lastSourceInput = 0
-    this.session.changed()
-    this.cancelExports()
-    this.literalMatch = undefined
-    this.showTypedSource(text, from, to)
-    if (text !== this.lastMarkdown) {
-      this.lastMarkdown = text
-      this.events.changed(this.changeSnapshot(text))
-    }
-    this.publishCommandState()
-    return true
-  }
-
-  /** Brings the formatted document up to the source that was typed. */
-  private settleSource(): void {
-    const pending = this.pendingSource
-    if (!pending) return
-    const steps = this.typedSteps,
-      undone = this.undoneSteps
-    this.pendingSource = undefined
-    this.typedSteps = []
-    this.undoneSteps = []
-    this.syncingSource = true
-    try {
-      if (
-        this.commitSource(
-          pending.text,
-          // A step of its own, whatever edit follows within the group delay.
-          true,
-          pending.from,
-          pending.to,
-          steps[0]?.before ?? pending.before,
-        )
-      ) {
-        const { doc } = this.editor.ctx.get(editorViewCtx).state
-        const applied = doc.attrs[sourceAttribute] as SourceProvenance | null
-        // A plugin that refuses the change must not lose what was typed.
-        if (applied?.text !== pending.text)
-          throw new InkKitError(
-            'preservation',
-            'The typed source could not be applied',
-          )
-        this.sourceTexts.set(doc, pending.text)
-      }
-    } catch (error) {
-      this.pendingSource = pending
-      this.typedSteps = steps
-      this.undoneSteps = undone
-      throw error
-    } finally {
-      this.syncingSource = false
-    }
-  }
-
-  private commitSource(
-    text: string,
-    isolated: boolean,
-    from: number | undefined,
-    to: number | undefined,
-    before: { from: number; to: number } | undefined,
-  ): boolean {
-    if (text === this.currentText()) return false
-    const view = this.editor.ctx.get(editorViewCtx)
-    const normalizedLength = text.replace(/\r\n?/g, '\n').length
-    const provenance: SourceProvenance = Object.freeze({
-      text,
-      format: this.formatType,
-      from: from ?? normalizedLength,
-      to: to ?? from ?? normalizedLength,
-    })
-    let parsed: ProseNode
-    try {
-      if (this.formatType === 'txt')
-        parsed = view.state.schema.topNodeType.create(
-          null,
-          view.state.schema.nodes.paragraph!.create(
-            null,
-            text ? view.state.schema.text(text) : undefined,
-          ),
-        )
-      else {
-        const preservation = Preservation.read(this.editor.ctx, text)
-        this.sourcePreservations.set(provenance, preservation)
-        parsed = preservation.baseline
-      }
-    } catch (error) {
-      throw coded(error, 'preservation')
-    }
-    if (this.literalSurface) {
-      const previous: SourceProvenance = Object.freeze({
-        text: this.currentText(),
-        format: this.formatType,
-        from: before?.from ?? this.plain.selectionStart,
-        to: before?.to ?? this.plain.selectionEnd,
-      })
-      // History must retain the source caret even when the formatted document has no corresponding position.
-      this.loading = true
-      try {
-        view.dispatch(
-          view.state.tr
-            .setDocAttribute(sourceAttribute, previous)
-            .setMeta('addToHistory', false),
-        )
-      } finally {
-        this.loading = false
-      }
-    }
-    let tr = view.state.tr
-      .replaceWith(0, view.state.doc.content.size, parsed.content)
-      .setDocAttribute(sourceAttribute, provenance)
-      .setMeta(sourceReplacement, true)
-    tr.setSelection(terminalSelection(tr.doc))
-    if (isolated) tr = closeHistory(tr)
-    view.dispatch(tr)
-    if (isolated)
-      view.dispatch(closeHistory(view.state.tr).setMeta('addToHistory', false))
-    return true
   }
 
   /** Returns whether a history step applied. */
   undo(expectedGeneration?: number): boolean {
     this.assertMutation(expectedGeneration)
-    if (this.literalSurface && this.stepTypedSource('undo')) return true
-    const view = this.editor.ctx.get(editorViewCtx)
-    const undone =
-      (!this.literalSurface &&
-        undoSmartPunctuation(view.state, view.dispatch)) ||
-      this.stepFormattedHistory('undo')
-    if (undone) {
-      // Source steps that were undone come back after the formatted ones.
-      if (this.literalSurface && this.undoneSteps.length) this.formattedUndone++
-      else this.undoneSteps = []
-    }
-    return undone
+    return this.history.undo()
   }
 
   /** Returns whether a history step applied. */
   redo(expectedGeneration?: number): boolean {
     this.assertMutation(expectedGeneration)
-    const view = this.editor.ctx.get(editorViewCtx)
-    if (this.literalSurface) {
-      if (this.formattedUndone > 0) {
-        if (this.formattedRedoLimit !== 0 && redoHistory(view.state)) {
-          const redone = this.stepFormattedHistory('redo')
-          if (redone) this.formattedUndone--
-          return redone
-        }
-        this.formattedUndone = 0
-      }
-      if (this.stepTypedSource('redo')) return true
-      // Typing after an undo ended the formatted history's redo steps.
-      if (this.pendingSource) return false
-    }
-    return this.stepFormattedHistory('redo')
-  }
-
-  private stepFormattedHistory(direction: 'undo' | 'redo'): boolean {
-    if (direction === 'redo' && this.formattedRedoLimit === 0) return false
-    const view = this.editor.ctx.get(editorViewCtx)
-    const before = view.state
-    const previous = this.historyDirection
-    this.historyDirection = direction
-    try {
-      const command = direction === 'undo' ? undoHistory : redoHistory
-      command(before, view.dispatch)
-      // A history command can return true even if dispatch refused its edit.
-      return view.state !== before
-    } finally {
-      this.historyDirection = previous
-    }
-  }
-
-  private replaceLiteralSelection(
-    text: string,
-    isolated = true,
-    retainEndings = false,
-  ): void {
-    const value = this.plain.value
-    const start = this.plain.selectionStart,
-      end = this.plain.selectionEnd
-    const next =
-      value.slice(0, start) + text.replace(/\r\n?/g, '\n') + value.slice(end)
-    const caret = start + text.replace(/\r\n?/g, '\n').length
-    const previous = this.currentText()
-    const source = retainEndings
-      ? previous.slice(0, rawOffset(previous, start)) +
-        text +
-        previous.slice(rawOffset(previous, end))
-      : editedPlainSource(previous, next)
-    this.applySource(source, isolated, caret, caret)
+    return this.history.redo()
   }
 
   /** The complete current text, which is what a host saves. It throws rather than return partial
    *  text. */
   snapshot(expectedGeneration?: number): DocumentSnapshot {
     this.assertCurrent(expectedGeneration)
-    const text = this.currentText()
+    const text = this.document.currentText()
     return {
       ...this.session.version(),
-      format: this.formatType,
+      format: this.document.format,
       text,
-      dirty: text !== this.originalSource,
+      dirty: text !== this.document.original,
     }
   }
 
@@ -1971,7 +1553,7 @@ export class InkKitEditor {
     const snapshot = this.snapshot(expectedGeneration)
     const captured = this.session.capture()
     const state = this.editor.ctx.get(editorViewCtx).state
-    const doc = this.exportDocument(snapshot.text)
+    const doc = this.document.exportDocument(snapshot.text)
     const output = await this.exportContent(captured, async (signal) => {
       if (
         snapshot.format === 'md' &&
@@ -2017,18 +1599,6 @@ export class InkKitEditor {
     })
   }
 
-  /**
-   * The document to export. Source typed in the source editor has not reached
-   * the formatted document, which would merge its undo steps, so a document
-   * read from the text stands in without touching history.
-   */
-  private exportDocument(text: string): ProseNode {
-    const { doc } = this.editor.ctx.get(editorViewCtx).state
-    return this.pendingSource && this.formatType === 'md'
-      ? this.editor.ctx.get(parserCtx)(text)
-      : doc
-  }
-
   /** Prepares the document or the selection for the native clipboard. Rejects with `stale-document`
    *  if the document changes first. */
   async clipboardSnapshot(
@@ -2044,12 +1614,12 @@ export class InkKitEditor {
     const captured = this.session.capture()
     const { documentId, generation, revision } = captured
     const version = { documentId, generation, revision }
-    if (this.formatType === 'txt') {
+    if (this.document.format === 'txt') {
       const text = all
         ? snapshot.text
         : snapshot.text.slice(
-            rawOffset(snapshot.text, this.plain.selectionStart),
-            rawOffset(snapshot.text, this.plain.selectionEnd),
+            rawOffset(snapshot.text, this.source.element.selectionStart),
+            rawOffset(snapshot.text, this.source.element.selectionEnd),
           )
       const pre = document.createElement('pre')
       pre.textContent = text
@@ -2066,14 +1636,14 @@ export class InkKitEditor {
     // A partial copy in the source editor reads only the selected source.
     const doc =
       all || this.mode !== 'source'
-        ? this.exportDocument(snapshot.text)
+        ? this.document.exportDocument(snapshot.text)
         : this.editor.ctx.get(editorViewCtx).state.doc
     const selectedSource =
       !all && this.mode === 'source'
         ? sourceSelection(
             snapshot.text,
-            this.plain.selectionStart,
-            this.plain.selectionEnd,
+            this.source.element.selectionStart,
+            this.source.element.selectionEnd,
           )
         : undefined
     const selectedDoc = selectedSource
@@ -2167,7 +1737,7 @@ export class InkKitEditor {
     this.assertMutation(expectedGeneration)
     if (this.literalSurface) {
       this.pasteAsPlainText(
-        this.mode === 'source' && this.formatType === 'md'
+        this.mode === 'source' && this.document.format === 'md'
           ? (input.markdown ?? input.text)
           : input.text,
       )
@@ -2196,7 +1766,11 @@ export class InkKitEditor {
 
   private insertPlainText(text: string): void {
     if (this.literalSurface) {
-      this.replaceLiteralSelection(text, true, this.formatType === 'md')
+      this.source.replaceLiteralSelection(
+        text,
+        true,
+        this.document.format === 'md',
+      )
     } else {
       const view = this.editor.ctx.get(editorViewCtx)
       const inHiddenComment = hiddenCommentExit(view.state) !== undefined
@@ -2280,11 +1854,7 @@ export class InkKitEditor {
     this.localCopies.clear()
     this.ready = false
     this.session.close()
-    this.pendingSource = undefined
-    this.typedSteps = []
-    this.undoneSteps = []
-    this.formattedUndone = 0
-    this.formattedRedoLimit = undefined
+    this.history.reset()
     this.cancelExports()
     this.mediaPolicy()
     this.pasteController.destroy()
@@ -2299,7 +1869,7 @@ export class InkKitEditor {
       this.root.removeEventListener('copy', this.copyHandler, true)
       this.root.removeEventListener('cut', this.copyHandler, true)
     }
-    this.plain.remove()
+    this.source.destroy()
     await this.editor.destroy()
     if (this.ownsRootClass) this.root.classList.remove('inkkit-root')
   }
@@ -2349,8 +1919,8 @@ export class InkKitEditor {
     event.stopPropagation()
     try {
       const snapshot = this.snapshot()
-      const from = this.plain.selectionStart,
-        to = this.plain.selectionEnd
+      const from = this.source.element.selectionStart,
+        to = this.source.element.selectionEnd
       const selected = sourceSelection(snapshot.text, from, to)
       const parsed = this.editor.ctx.get(parserCtx)(selected.shareable)
       let portable = false
@@ -2367,8 +1937,8 @@ export class InkKitEditor {
             this.retainCopy(content.html)
             if (cut) {
               this.assertCut(captured)
-              this.plain.setSelectionRange(from, to)
-              this.replaceLiteralSelection('')
+              this.source.element.setSelectionRange(from, to)
+              this.source.replaceLiteralSelection('')
             }
           })
           .catch((error) => this.report(error))
@@ -2392,7 +1962,7 @@ export class InkKitEditor {
           this.report(noClipboardHandler())
           return
         }
-        if (cut) this.replaceLiteralSelection('')
+        if (cut) this.source.replaceLiteralSelection('')
       }
     } catch (error) {
       this.report(error)
@@ -2402,8 +1972,7 @@ export class InkKitEditor {
   private dispatchTransaction(view: EditorView, tr: Transaction): void {
     // A call whose edit was refused changes nothing more; it throws when it returns.
     if (this.call?.refusal && tr.docChanged) return
-    for (const node of tr.getMeta(carriedBlocks) ?? [])
-      (this.carried ??= new WeakSet()).add(node)
+    this.document.carry(tr.getMeta(carriedBlocks) ?? [])
     this.suggestions?.beforeTransaction(tr)
     const base = this.suggestionBase ?? view.state
     const applied = base.applyTransaction(tr)
@@ -2411,7 +1980,7 @@ export class InkKitEditor {
     if (!this.loading) {
       const check = (doc: ProseNode) => {
         if (!this.literalSurface) assertHiddenCommentsKept(base, tr, doc)
-        this.assertPreserved(view.state.doc, doc, isWrittenEdit(tr))
+        this.document.assertPreserved(view.state.doc, doc, isWrittenEdit(tr))
       }
       try {
         try {
@@ -2438,16 +2007,7 @@ export class InkKitEditor {
         return
       }
     }
-    if (this.formattedRedoLimit !== undefined) {
-      const depth = redoDepth(next)
-      if (depth === 0) this.formattedRedoLimit = undefined
-      else if (next !== view.state) {
-        if (this.historyDirection === 'undo')
-          this.formattedRedoLimit = Math.min(depth, this.formattedRedoLimit + 1)
-        else if (this.historyDirection === 'redo')
-          this.formattedRedoLimit = Math.max(0, this.formattedRedoLimit - 1)
-      }
-    }
+    this.history.didApply(view.state, next)
     view.updateState(next)
   }
 
@@ -2519,7 +2079,7 @@ export class InkKitEditor {
         policy: instance.policyPlugin,
       },
       authoredSources: (doc, positions) =>
-        instance.authoredSources(doc, positions),
+        instance.document.authoredSources(doc, positions),
       smartPunctuation: () =>
         instance.inputPreferences.smartPunctuation === true,
       linkSchemes: instance.linkSchemes,
@@ -2560,73 +2120,19 @@ export class InkKitEditor {
         return false
       }
     })
-    instance.plain = document.createElement('textarea')
-    instance.plain.className = 'inkkit-plain'
-    instance.plain.setAttribute('aria-label', 'Plain text editor')
-    instance.plain.hidden = true
-    root.append(instance.plain)
-    instance.plain.addEventListener('beforeinput', (event) => {
-      if (!instance.writable) {
-        event.preventDefault()
-        return
-      }
-      if (instance.ready && instance.literalSurface)
-        instance.beforePlainInput = {
-          from: instance.plain.selectionStart,
-          to: instance.plain.selectionEnd,
-        }
-    })
-    instance.plain.addEventListener('input', () => {
-      if (!instance.ready || !instance.literalSurface) return
-      if (!instance.writable) {
-        instance.setSourceValue(instance.currentText())
-        return
-      }
-      try {
-        instance.applySource(
-          editedPlainSource(instance.currentText(), instance.plain.value),
-          false,
-          instance.plain.selectionStart,
-          instance.plain.selectionEnd,
-          true,
-        )
-      } catch (error) {
-        instance.report(error)
-      } finally {
-        instance.beforePlainInput = undefined
-      }
-    })
-    instance.plain.addEventListener('keydown', (event) => {
-      if (instance.plainComposing) return
-      if (instance.literalKeys(instance.editor.ctx.get(editorViewCtx), event))
-        event.preventDefault()
-    })
-    for (const event of ['select', 'keyup', 'click'])
-      instance.plain.addEventListener(event, () =>
-        instance.publishCommandState(),
-      )
-    instance.plain.addEventListener('paste', (event) => {
-      if (!instance.writable) {
-        event.preventDefault()
-        return
-      }
-      if (!event.clipboardData) return
-      event.preventDefault()
-      void instance
-        .paste({
-          text: event.clipboardData.getData('text/plain'),
-          html: event.clipboardData.getData('text/html'),
-          markdown: event.clipboardData.getData('text/markdown') || undefined,
-        })
-        .catch((error) => instance.report(error))
-    })
-    instance.plain.addEventListener('compositionstart', () => {
-      instance.plainComposing = true
-      instance.publishCommandState()
-    })
-    instance.plain.addEventListener('compositionend', () => {
-      instance.plainComposing = false
-      instance.publishCommandState()
+    instance.source = new SourceSurface(root, {
+      ready: () => instance.ready,
+      literal: () => instance.literalSurface,
+      writable: () => instance.writable,
+      currentText: () => instance.document.currentText(),
+      applySource: (text, isolated, from, to, native) =>
+        instance.history.applySource(text, isolated, from, to, native),
+      keyDown: (event) =>
+        instance.literalKeys(instance.editor.ctx.get(editorViewCtx), event),
+      publish: () => instance.publishCommandState(),
+      paste: (input) => instance.paste(input),
+      report: (error) => instance.report(error),
+      reveal: () => instance.revealLiteralSelection(),
     })
     const activateFootnote = (event: MouseEvent | KeyboardEvent): boolean => {
       const element = (event.target as HTMLElement).closest(
@@ -2686,7 +2192,7 @@ export class InkKitEditor {
     }
     root.addEventListener('auxclick', instance.auxClickHandler)
     instance.copyHandler = (event) => {
-      if (instance.formatType === 'txt') return
+      if (instance.document.format === 'txt') return
       if (instance.mode === 'source') {
         instance.copySourceSelection(event)
         return
@@ -2806,26 +2312,20 @@ export class InkKitEditor {
     this.pasteController.cancelPending()
     // Views made while the new document loads capture its generation.
     this.session.load(input.documentId, input.generation)
-    this.sourcePreservations = new WeakMap()
-    this.sourceTexts = new WeakMap()
-    this.pendingSource = undefined
-    this.typedSteps = []
-    this.undoneSteps = []
-    this.formattedUndone = 0
-    this.formattedRedoLimit = undefined
+    this.document.resetCaches()
+    this.history.reset()
     this.mode = 'formatted'
-    this.plainComposing = false
-    this.beforePlainInput = undefined
+    this.source.reset()
     this.plainSearch = ''
     this.literalMatch = undefined
-    this.formatType = input.format
-    this.setSourceValue(input.text)
-    this.plain.setSelectionRange(
-      this.plain.value.length,
-      this.plain.value.length,
+    this.document.format = input.format
+    this.source.setSourceValue(input.text)
+    this.source.element.setSelectionRange(
+      this.source.element.value.length,
+      this.source.element.value.length,
     )
     this.load(markdown, preservation)
-    this.originalSource = input.text
+    this.document.original = input.text
     this.lastMarkdown = input.text
     this.updateSurface()
     this.ready = true
@@ -2840,8 +2340,8 @@ export class InkKitEditor {
     const document = this.root.ownerDocument
     const surface = this.editor.ctx.get(editorViewCtx).dom
     const active = document.activeElement
-    if (active === this.plain) {
-      this.plain.blur()
+    if (active === this.source.element) {
+      this.source.element.blur()
       return
     }
     if (active === surface) surface.blur()
@@ -2864,24 +2364,26 @@ export class InkKitEditor {
     const view = this.editor.ctx.get(editorViewCtx)
     const wasLiteral = this.literalSurface
     const previousMode = this.editingMode
-    const previousFormat = this.formatType
+    const previousFormat = this.document.format
     const selectedNode =
       !wasLiteral && view.state.selection instanceof NodeSelection
         ? view.state.selection.node
         : undefined
     const at = wasLiteral
-      ? this.plain.selectionStart
+      ? this.source.element.selectionStart
       : view.state.selection.anchor
-    const end = wasLiteral ? this.plain.selectionEnd : view.state.selection.head
-    const direction = this.plain.selectionDirection
+    const end = wasLiteral
+      ? this.source.element.selectionEnd
+      : view.state.selection.head
+    const direction = this.source.element.selectionDirection
     const container = this.viewportContainer ?? this.root
     const top = container.scrollTop,
       left = container.scrollLeft
     const focused = wasLiteral
-      ? document.activeElement === this.plain
+      ? document.activeElement === this.source.element
       : view.hasFocus()
-    const plainTop = this.plain.scrollTop,
-      plainLeft = this.plain.scrollLeft
+    const plainTop = this.source.element.scrollTop,
+      plainLeft = this.source.element.scrollLeft
     this.reportingSuppressed = true
     try {
       this.loadDocument(input)
@@ -2892,9 +2394,9 @@ export class InkKitEditor {
       )
         this.setEditingMode('source', input.generation)
       if (this.literalSurface)
-        this.plain.setSelectionRange(
-          Math.min(at, this.plain.value.length),
-          Math.min(end, this.plain.value.length),
+        this.source.element.setSelectionRange(
+          Math.min(at, this.source.element.value.length),
+          Math.min(end, this.source.element.value.length),
           direction,
         )
       else {
@@ -2916,14 +2418,15 @@ export class InkKitEditor {
         )
       }
       if (focused) {
-        if (this.literalSurface) this.plain.focus({ preventScroll: true })
+        if (this.literalSurface)
+          this.source.element.focus({ preventScroll: true })
         else view.focus()
       }
       container.scrollTop = top
       container.scrollLeft = left
       if (wasLiteral && this.literalSurface) {
-        this.plain.scrollTop = plainTop
-        this.plain.scrollLeft = plainLeft
+        this.source.element.scrollTop = plainTop
+        this.source.element.scrollLeft = plainLeft
       }
     } finally {
       this.reportingSuppressed = false
@@ -2991,12 +2494,15 @@ export class InkKitEditor {
     )
     let rect = textRect({ left, top, right, bottom })
     if (this.literalSurface) {
-      const plain = this.plain.getBoundingClientRect()
+      const plain = this.source.element.getBoundingClientRect()
       const literalLeft = Math.max(
         rect.left,
-        plain.left + this.plain.clientLeft,
+        plain.left + this.source.element.clientLeft,
       )
-      const literalTop = Math.max(rect.top, plain.top + this.plain.clientTop)
+      const literalTop = Math.max(
+        rect.top,
+        plain.top + this.source.element.clientTop,
+      )
       rect = textRect({
         left: literalLeft,
         top: literalTop,
@@ -3004,14 +2510,18 @@ export class InkKitEditor {
           literalLeft,
           Math.min(
             rect.right,
-            plain.left + this.plain.clientLeft + this.plain.clientWidth,
+            plain.left +
+              this.source.element.clientLeft +
+              this.source.element.clientWidth,
           ),
         ),
         bottom: Math.max(
           literalTop,
           Math.min(
             rect.bottom,
-            plain.top + this.plain.clientTop + this.plain.clientHeight,
+            plain.top +
+              this.source.element.clientTop +
+              this.source.element.clientHeight,
           ),
         ),
       })
@@ -3028,10 +2538,11 @@ export class InkKitEditor {
       rect: Object.freeze(rect),
       insets: Object.freeze({ ...insets }),
       scrollTop:
-        container.scrollTop + (this.literalSurface ? this.plain.scrollTop : 0),
+        container.scrollTop +
+        (this.literalSurface ? this.source.element.scrollTop : 0),
       scrollLeft:
         container.scrollLeft +
-        (this.literalSurface ? this.plain.scrollLeft : 0),
+        (this.literalSurface ? this.source.element.scrollLeft : 0),
     })
   }
 
@@ -3042,7 +2553,7 @@ export class InkKitEditor {
         key,
         id: `${this.textIdentity}:${key}`,
         projection: this.literalSurface
-          ? { text: this.plain.value, spans: [] }
+          ? { text: this.source.element.value, spans: [] }
           : readableProjection(this.editor.ctx.get(editorViewCtx).state.doc),
       }
     return this.textScope
@@ -3057,16 +2568,16 @@ export class InkKitEditor {
     return Object.freeze({
       snapshotId: scope.id,
       ...this.session.version(),
-      format: this.formatType,
+      format: this.document.format,
       mode: this.editingMode,
       text: scope.projection.text,
       selection: Object.freeze({
         snapshotId: scope.id,
         from: this.literalSurface
-          ? this.plain.selectionStart
+          ? this.source.element.selectionStart
           : projectionOffset(scope.projection, selection.from),
         to: this.literalSurface
-          ? this.plain.selectionEnd
+          ? this.source.element.selectionEnd
           : projectionOffset(scope.projection, selection.to),
       }),
     })
@@ -3095,7 +2606,8 @@ export class InkKitEditor {
     const focus = optionalBoolean(choices?.focus, 'options.focus')
     const reveal = optionalBoolean(choices?.reveal, 'options.reveal')
     const projection = this.validateTextRange(range)
-    if (this.literalSurface) this.plain.setSelectionRange(range.from, range.to)
+    if (this.literalSurface)
+      this.source.element.setSelectionRange(range.from, range.to)
     else {
       for (const span of projection.spans)
         if (
@@ -3132,38 +2644,12 @@ export class InkKitEditor {
       )
     }
     if (focus) {
-      if (this.literalSurface) this.plain.focus({ preventScroll: true })
+      if (this.literalSurface)
+        this.source.element.focus({ preventScroll: true })
       else this.editor.ctx.get(editorViewCtx).focus()
     }
     if (reveal) this.revealTextRange(range)
     this.publishCommandState()
-  }
-
-  /** Whether two documents are the same note. A move of blocks that read alike, such as a setext
-   *  heading and the same heading written with `#`, gives an equal document with other source. */
-  private sameDocument(after: ProseNode, before: ProseNode): boolean {
-    if (after === before) return true
-    if (!after.eq(before)) return false
-    if (!this.carried || !this.preservation) return true
-    try {
-      return this.currentText(after) === this.currentText(before)
-    } catch {
-      return false
-    }
-  }
-
-  /** Throws when a document reached by an edit, after every appended normalisation, cannot be
-   *  saved as preserved Markdown. Dispatch and the replacement commands share this check.
-   *  `written` is false for history steps and source replacement, which restore or supply a
-   *  document that may hold comment text the formatted editor would refuse to accept typed. */
-  private assertPreserved(
-    before: ProseNode,
-    after: ProseNode,
-    written = true,
-  ): void {
-    if (this.literalSurface || this.sameDocument(after, before)) return
-    if (written) assertCommentsEndWhereWritten(before, after)
-    if (this.preservation) this.currentText(after)
   }
 
   /** Replaces `range` with literal text as one undo step. Returns whether the text changed. */
@@ -3173,14 +2659,14 @@ export class InkKitEditor {
     const projection = this.validateTextRange(range)
     this.assertMutation()
     if (this.literalSurface) {
-      const raw = this.currentText()
+      const raw = this.document.currentText()
       const from = rawOffset(raw, range.from),
         to = rawOffset(raw, range.to)
       const ending = /\r\n|\r|\n/.exec(raw)?.[0] ?? '\n'
       const value = text.replace(/\r\n?/g, '\n')
       const replaced =
         raw.slice(0, from) + value.replaceAll('\n', ending) + raw.slice(to)
-      return this.applySource(
+      return this.history.applySource(
         replaced,
         true,
         range.from,
@@ -3213,7 +2699,7 @@ export class InkKitEditor {
     )
     const view = this.editor.ctx.get(editorViewCtx)
     return replaceFormattedRange(view, from, to, text, (tr) =>
-      this.assertPreserved(view.state.doc, view.state.apply(tr).doc),
+      this.document.assertPreserved(view.state.doc, view.state.apply(tr).doc),
     )
   }
 
@@ -3230,7 +2716,7 @@ export class InkKitEditor {
     const projections = ranges.map((range) => this.validateTextRange(range))
     if (!ranges.length) return Object.freeze([])
     const results = this.literalSurface
-      ? literalRangesRects(this.plain, ranges)
+      ? literalRangesRects(this.source.element, ranges)
       : ranges.map((range, index) =>
           formattedRects(
             this.editor.ctx.get(editorViewCtx),
@@ -3255,7 +2741,7 @@ export class InkKitEditor {
     const viewport = this.viewport().rect
     if (this.literalSurface)
       return Object.freeze(
-        literalVisibleRanges(this.plain, viewport).map((range) =>
+        literalVisibleRanges(this.source.element, viewport).map((range) =>
           Object.freeze({ snapshotId, ...range }),
         ),
       )
@@ -3352,16 +2838,21 @@ export class InkKitEditor {
       remainingLeft = horizontal
     if (this.literalSurface) {
       const style = this.root.ownerDocument.defaultView!.getComputedStyle(
-        this.plain,
+        this.source.element,
       )
       // The first or last line sits within the padding plus its own leading,
       // under half the height of its first rect, so a reveal that ends there
       // shows the edge. A range of many lines does not count as one line.
       const halfCaret = (leading.bottom - leading.top) / 2
-      const remaining = scrollWholePixels(this.plain, vertical, horizontal, {
-        top: (Number.parseFloat(style.paddingTop) || 0) + halfCaret,
-        bottom: (Number.parseFloat(style.paddingBottom) || 0) + halfCaret,
-      })
+      const remaining = scrollWholePixels(
+        this.source.element,
+        vertical,
+        horizontal,
+        {
+          top: (Number.parseFloat(style.paddingTop) || 0) + halfCaret,
+          bottom: (Number.parseFloat(style.paddingBottom) || 0) + halfCaret,
+        },
+      )
       remainingTop = remaining.vertical
       remainingLeft = remaining.horizontal
     }
@@ -3406,10 +2897,10 @@ export class InkKitEditor {
 
   private revealLiteralSelection(): void {
     this.revealRects(
-      literalRangesRects(this.plain, [
+      literalRangesRects(this.source.element, [
         {
-          from: this.plain.selectionStart,
-          to: this.plain.selectionEnd,
+          from: this.source.element.selectionStart,
+          to: this.source.element.selectionEnd,
         },
       ])[0]!,
     )
@@ -3417,7 +2908,7 @@ export class InkKitEditor {
 
   private load(markdown: string, preservation: Preservation): void {
     this.localCopies.clear()
-    this.originalSource = markdown
+    this.document.original = markdown
     const { ctx } = this.editor
     const view = ctx.get(editorViewCtx)
     this.loading = true
@@ -3434,8 +2925,7 @@ export class InkKitEditor {
     } finally {
       this.loading = false
     }
-    this.preservation = preservation
-    this.carried = undefined
+    this.document.loaded(preservation)
     this.lastMarkdown = markdown
     const end = terminalSelection(view.state.doc)
     view.dispatch(
@@ -3454,9 +2944,9 @@ export class InkKitEditor {
     if (this.literalSurface) {
       const from =
         this.plainSearch === text
-          ? this.plain.selectionEnd
-          : this.plain.selectionStart
-      const raw = this.currentText()
+          ? this.source.element.selectionEnd
+          : this.source.element.selectionStart
+      const raw = this.document.currentText()
       const match = findLiteral(raw, text, rawOffset(raw, from))
       this.literalMatch = undefined
       if (match) {
@@ -3467,7 +2957,7 @@ export class InkKitEditor {
             : match.from
         const displayedFrom = normalizedOffset(raw, start),
           displayedTo = normalizedOffset(raw, match.to)
-        this.plain.setSelectionRange(displayedFrom, displayedTo)
+        this.source.element.setSelectionRange(displayedFrom, displayedTo)
         this.literalMatch = {
           ...match,
           query: text,
@@ -3476,9 +2966,9 @@ export class InkKitEditor {
           version: this.session.capture(),
         }
       } else if (this.plainSearch)
-        this.plain.setSelectionRange(
-          this.plain.selectionEnd,
-          this.plain.selectionEnd,
+        this.source.element.setSelectionRange(
+          this.source.element.selectionEnd,
+          this.source.element.selectionEnd,
         )
       this.plainSearch = text
       this.revealLiteralSelection()
@@ -3521,23 +3011,23 @@ export class InkKitEditor {
     all: boolean,
   ): number {
     if (this.literalSurface) {
-      const raw = this.currentText()
+      const raw = this.document.currentText()
       const remembered = this.literalMatch
       const selection =
         remembered &&
         remembered.query === search &&
         remembered.version.isCurrent() &&
-        remembered.displayedFrom === this.plain.selectionStart &&
-        remembered.displayedTo === this.plain.selectionEnd
+        remembered.displayedFrom === this.source.element.selectionStart &&
+        remembered.displayedTo === this.source.element.selectionEnd
           ? { from: remembered.from, to: remembered.to }
           : {
-              from: rawOffset(raw, this.plain.selectionStart),
-              to: rawOffset(raw, this.plain.selectionEnd),
+              from: rawOffset(raw, this.source.element.selectionStart),
+              to: rawOffset(raw, this.source.element.selectionEnd),
             }
       if (remembered?.query !== search) this.literalMatch = undefined
       const result = replaceLiteral(raw, search, replacement, selection, all)
       if (result.count)
-        this.applySource(
+        this.history.applySource(
           result.text,
           true,
           normalizedOffset(result.text, result.from),
@@ -3551,7 +3041,8 @@ export class InkKitEditor {
       view,
       search,
       replacement,
-      (tr) => this.assertPreserved(view.state.doc, view.state.apply(tr).doc),
+      (tr) =>
+        this.document.assertPreserved(view.state.doc, view.state.apply(tr).doc),
       all,
     )
   }
@@ -3564,11 +3055,11 @@ export class InkKitEditor {
   /** The outline in document order. Entries go stale when the document changes. */
   headings(expectedGeneration?: number): readonly Heading[] {
     this.assertCurrent(expectedGeneration)
-    if (this.formatType === 'txt') return Object.freeze([])
+    if (this.document.format === 'txt') return Object.freeze([])
     return this.mode === 'source'
       ? collectSourceHeadings(
           this.editor.ctx,
-          this.plain.value,
+          this.source.element.value,
           this.outlineContext(),
         )
       : collectFormattedHeadings(
@@ -3582,7 +3073,7 @@ export class InkKitEditor {
     this.assertAlive()
     headingEntry(heading)
     this.assertCurrent(heading.generation)
-    if (this.formatType === 'txt')
+    if (this.document.format === 'txt')
       throw new InkKitError(
         'stale-document',
         'The heading is no longer current',
@@ -3590,12 +3081,12 @@ export class InkKitEditor {
     if (this.mode === 'source') {
       const position = sourceHeadingPosition(
         this.editor.ctx,
-        this.plain.value,
+        this.source.element.value,
         heading,
         this.outlineContext(),
       )
-      this.plain.setSelectionRange(position, position)
-      this.plain.focus({ preventScroll: true })
+      this.source.element.setSelectionRange(position, position)
+      this.source.element.focus({ preventScroll: true })
       this.revealLiteralSelection()
       return true
     }
@@ -3613,14 +3104,14 @@ export class InkKitEditor {
     expectGeneration(generation)
     if (
       (this.literalSurface
-        ? this.plainComposing
+        ? this.source.composing
         : this.editor.ctx.get(editorViewCtx).composing) &&
       generation === this.generation
     )
       return false
     this.assertMutation(generation)
     if (this.literalSurface) {
-      this.replaceLiteralSelection(text, false)
+      this.source.replaceLiteralSelection(text, false)
       return true
     }
     if (/[\r\n]/.test(text)) {
@@ -3691,31 +3182,7 @@ export class InkKitEditor {
     if (this.literalSurface) {
       if (this.literalKeys(this.editor.ctx.get(editorViewCtx), event))
         return true
-      if (metaKey || ctrlKey || altKey) return false
-      if (key === 'Enter' || key === 'Tab') {
-        this.replaceLiteralSelection(key === 'Enter' ? '\n' : '\t', false)
-        return true
-      }
-      if (key === 'Backspace' || key === 'Delete') {
-        const start = this.plain.selectionStart,
-          end = this.plain.selectionEnd
-        if (start === end) {
-          if (key === 'Backspace' && start > 0)
-            this.plain.setSelectionRange(
-              start - [...this.plain.value.slice(0, start)].at(-1)!.length,
-              end,
-            )
-          else if (key === 'Delete' && end < this.plain.value.length)
-            this.plain.setSelectionRange(
-              start,
-              end + [...this.plain.value.slice(end)][0]!.length,
-            )
-          else return false
-        }
-        this.replaceLiteralSelection('', false)
-        return true
-      }
-      return false
+      return this.source.keyDown(event)
     }
     const view = this.editor.ctx.get(editorViewCtx)
     return Boolean(
@@ -3725,7 +3192,7 @@ export class InkKitEditor {
 
   focus(expectedGeneration?: number): void {
     this.assertReady(expectedGeneration)
-    if (this.literalSurface) this.plain.focus()
+    if (this.literalSurface) this.source.element.focus()
     else {
       const view = this.editor.ctx.get(editorViewCtx)
       // ProseMirror focuses its DOM only while editable.
@@ -3911,7 +3378,7 @@ export class InkKitEditor {
       doc.childCount === 1 &&
       doc.firstChild!.type.name === 'paragraph' &&
       doc.firstChild!.content.size === 0 &&
-      this.currentText().trim() === ''
+      this.document.currentText().trim() === ''
     if (empty) tr.replaceWith(0, doc.content.size, blocks)
     else tr.insert(doc.content.size, blocks)
     // A step of its own, so neither earlier nor later typing joins it.
@@ -3963,65 +3430,6 @@ export class InkKitEditor {
       tr.setSelection(TextSelection.create(tr.doc, end)).scrollIntoView(),
     )
     this.focus()
-  }
-
-  /**
-   * The authored Markdown of the textblocks at `positions`, found by saving
-   * the document once with each block's content replaced by a numbered mark
-   * no one writes. The saved text between the marks is the current text
-   * between those blocks, so what lies between the same pieces of the current
-   * text is each block's source.
-   */
-  private authoredSources(
-    doc: ProseNode,
-    positions: readonly number[],
-  ): Map<number, string> {
-    const none = new Map<number, string>()
-    if (this.literalSurface || !positions.length) return none
-    try {
-      let marked = doc
-      // Positions are in document order, so marking the last first leaves
-      // the earlier ones where they are.
-      for (let index = positions.length - 1; index >= 0; index--) {
-        const pos = positions[index]!
-        const node = doc.nodeAt(pos)
-        if (!node?.isTextblock) return none
-        marked = marked.replace(
-          pos + 1,
-          pos + node.nodeSize - 1,
-          new Slice(
-            Fragment.from(doc.type.schema.text(`\uE000${index}\uE001`)),
-            0,
-            0,
-          ),
-        )
-      }
-      const text = this.currentText(doc)
-      const pieces = this.currentText(marked).split(/\uE000(\d+)\uE001/)
-      // Pieces alternate between saved text and a mark's number.
-      if (pieces.length !== positions.length * 2 + 1) return none
-      for (let index = 0; index < positions.length; index++)
-        if (pieces[index * 2 + 1] !== String(index)) return none
-      const first = pieces[0]!
-      const last = pieces.at(-1)!
-      if (!text.startsWith(first) || !text.endsWith(last)) return none
-      const found = new Map<number, string>()
-      let cursor = first.length
-      const end = text.length - last.length
-      for (let index = 0; index < positions.length; index++) {
-        const lastBlock = index + 1 === positions.length
-        const next = lastBlock ? '' : pieces[index * 2 + 2]!
-        // Saved text always separates two blocks.
-        if (!lastBlock && !next) return none
-        const at = lastBlock ? end : text.indexOf(next, cursor)
-        if (at < 0 || at > end) return none
-        found.set(positions[index]!, text.slice(cursor, at))
-        cursor = at + next.length
-      }
-      return cursor === end ? found : none
-    } catch {
-      return none
-    }
   }
 
   private chooseWiki(session: SuggestionSession, name: string): void {

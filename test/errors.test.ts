@@ -1,4 +1,4 @@
-import { ctxOf } from './editor-access'
+import { ctxOf, documentOf, historyOf } from './editor-access'
 import { readFileSync } from 'node:fs'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -634,7 +634,7 @@ test('an unexpected exception arrives as internal, with the original as its caus
     expect(() => editor.headings()).toThrow(
       expect.objectContaining({ cause: fault }),
     )
-    internals.exportDocument = () => {
+    documentOf(editor).exportDocument = () => {
       throw fault
     }
     await expect(editor.printableSnapshot()).rejects.toMatchObject({
@@ -642,7 +642,7 @@ test('an unexpected exception arrives as internal, with the original as its caus
       cause: fault,
     })
     editor.setEditingMode('source')
-    internals.applySource = () => {
+    historyOf(editor).applySource = () => {
       throw fault
     }
     const textarea = root.querySelector('textarea')!
