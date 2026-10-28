@@ -236,11 +236,14 @@ for (const [repository, sourcePrefix] of [
               ? [sourcePrefix + source, `/_test/${entry}`]
               : [`/_test/${entry}`, sourcePrefix + source]
           const response = await fetch(base + from, { redirect: 'manual' })
-          assert.equal(response.status, 307)
-          assert.equal(response.headers.get('location'), to)
-          const target = await fetch(
-            new URL(response.headers.get('location'), base),
+          assert.equal(response.status, 200)
+          assert.equal(response.headers.get('content-type'), 'text/javascript')
+          assert.equal(response.headers.get('location'), null)
+          assert.equal(
+            await response.text(),
+            `export * from ${JSON.stringify(to)};`,
           )
+          const target = await fetch(new URL(to, base))
           assert.equal(await target.text(), 'static file')
         }
         const refused = ['/@fs/%', '/@fs/%ZZ', '/@fs/%E0%A4%A', '/_test/%C0%AF']

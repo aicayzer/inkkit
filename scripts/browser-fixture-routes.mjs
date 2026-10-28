@@ -17,9 +17,13 @@ export function fixtureRoutes(repository) {
     response.writeHead(404)
     response.end('Unknown browser fixture module')
   }
-  const redirect = (response, location) => {
-    response.writeHead(307, { Location: location, 'Cache-Control': 'no-store' })
-    response.end()
+  const reexport = (response, location) => {
+    // Redirected module URLs can instantiate a second copy of the target class.
+    response.writeHead(200, {
+      'Content-Type': 'text/javascript',
+      'Cache-Control': 'no-store',
+    })
+    response.end(`export * from ${JSON.stringify(location)};`)
   }
   return {
     name: 'browser-fixture-entries',
@@ -29,7 +33,7 @@ export function fixtureRoutes(repository) {
         if (path === undefined) return refuse(response)
         for (const [source, entry] of entries) {
           if (path === entry)
-            return redirect(
+            return reexport(
               response,
               `/@fs${pathToFileURL(source.slice('/@fs'.length)).pathname}`,
             )
@@ -42,7 +46,7 @@ export function fixtureRoutes(repository) {
         const path = requestPath(request)
         if (path === undefined) return refuse(response)
         const entry = entries.get(path)
-        if (entry) return redirect(response, entry)
+        if (entry) return reexport(response, entry)
         // Never turn an unexpected source import into a filesystem read or HTML.
         if (
           path.startsWith('/@fs') ||
