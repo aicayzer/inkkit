@@ -1,21 +1,18 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { afterEach, beforeAll, expect, test, vi } from 'vitest'
-import mermaid from 'mermaid'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import * as pele from 'pele'
 import { renderDiagram } from '../src/mermaid'
-// The package entry registers Mermaid with the renderer.
+// The package entry registers Pele with the renderer.
 import '../src/index'
 
-// These cases use the pinned Mermaid itself. jsdom lays nothing out, so text
-// gets a plausible size and Mermaid can complete a real render.
-beforeAll(() => {
-  const prototype = SVGElement.prototype as unknown as SVGTextContentElement
-  prototype.getBBox = function (this: SVGElement) {
-    return new DOMRect(0, 0, (this.textContent?.length ?? 1) * 8, 16)
-  }
-  prototype.getComputedTextLength = function (this: SVGElement) {
-    return (this.textContent?.length ?? 1) * 8
-  }
+vi.mock('pele', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('pele')>()
+  return { ...actual, render: vi.fn(actual.render) }
+})
+
+beforeEach(() => {
+  vi.mocked(pele.render).mockClear()
 })
 
 afterEach(() => {
@@ -25,7 +22,7 @@ afterEach(() => {
 const refusal = /actions, resources/
 
 async function refusedBeforeRendering(diagram: string, message?: RegExp) {
-  const render = vi.spyOn(mermaid, 'render')
+  const render = vi.mocked(pele.render)
   await expect(renderDiagram(diagram)).rejects.toThrow(message)
   expect(render).not.toHaveBeenCalled()
 }
@@ -69,9 +66,9 @@ const accepted = [
 ]
 
 for (const diagram of accepted)
-  test(`renders directive words and plain syntax with Mermaid: ${diagram.replace(/\n/g, ' | ')}`, async () => {
+  test(`renders directive words and plain syntax with Pele: ${diagram.replace(/\n/g, ' | ')}`, async () => {
     const svg = await renderDiagram(diagram)
-    expect(svg).toMatch(/^<svg[\s\S]*<style>/)
+    expect(svg).toMatch(/^<svg[^>]*class="pele /)
   })
 
 const refused: [string, string][] = [
@@ -281,13 +278,13 @@ for (const statement of statements)
     test(`never renders "${statement.split(' ')[0]}" ${position}`, () =>
       refusedBeforeRendering(build(statement)))
 
-test('the directive check was verified against the installed Mermaid', () => {
+test('the directive check was verified against the installed Pele', () => {
   const require = createRequire(import.meta.url)
-  const manifest = require.resolve('mermaid/package.json')
+  const manifest = require.resolve('pele/package.json')
   const { version } = JSON.parse(readFileSync(manifest, 'utf8')) as {
     version: string
   }
   // refuseDirectives reads each diagram type's own fields; check them again
   // against the new version's parsers before changing this.
-  expect(version).toBe('12.1.0')
+  expect(version).toBe('1.12.0')
 })

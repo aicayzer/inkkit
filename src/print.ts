@@ -6,7 +6,8 @@ import { shareableFragment } from './comments'
 import { isSafeLinkTarget } from './link-safety'
 import { fileReference } from './linked-syntax'
 import { sourceFrontmatter } from './literals'
-import { diagramImage, renderDiagram } from './mermaid'
+import { diagramImage, renderDiagram, type DiagramStore } from './mermaid'
+import { captureDiagramTheme } from './diagram-theme'
 import { portableFile, portableFileImage } from './portable-files'
 import { withFileSignal } from './files'
 import {
@@ -332,8 +333,11 @@ export async function printableMarkdown(
   context: DocumentContext,
   files?: FileAdapter,
   signal: AbortSignal = new AbortController().signal,
+  diagrams?: DiagramStore,
+  diagramRoot?: HTMLElement,
 ): Promise<PrintableContent> {
   signal.throwIfAborted()
+  const diagramTheme = captureDiagramTheme(diagramRoot)
   content = shareableFragment(content)
   const container = document.createElement('div')
   container.innerHTML = clipboardContent(content, schema).html
@@ -440,7 +444,10 @@ export async function printableMarkdown(
   )) {
     const source = code.textContent ?? ''
     try {
-      await withFileSignal(renderDiagram(source), signal)
+      await withFileSignal(
+        diagrams ? diagrams.render(source) : renderDiagram(source),
+        signal,
+      )
     } catch (error) {
       signal.throwIfAborted()
       const message = `${error instanceof Error ? error.message : 'This diagram could not be rendered.'} The source is printed below.`
@@ -452,7 +459,10 @@ export async function printableMarkdown(
     }
     try {
       const image = await validatedImage(
-        await withFileSignal(diagramImage(source), signal),
+        await withFileSignal(
+          diagramImage(source, diagrams, diagramRoot, diagramTheme),
+          signal,
+        ),
         signal,
       )
       const figure = document.createElement('figure')

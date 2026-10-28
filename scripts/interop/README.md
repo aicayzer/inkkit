@@ -17,7 +17,7 @@ node scripts/interop/verify-native.mjs _local/interop/consumer/dist/index.html _
 
 The runner has three optional positional arguments: bundle, result directory and host binary, with the paths above as defaults except that results default to `_local/interop/regression`. There is no fixture-version argument. It runs the current scenario set and reads the installed package version, entry point and archive hash from `consumer-evidence.json` beside the bundle. A missing sidecar or mismatched bundle hash fails before a host launches. Keep the sidecar with the bundle.
 
-To check the entry without Mermaid, build a second consumer with the literal fourth command-line argument `core` and run its core group:
+To check the entry without Pele and DOMPurify, build a second consumer with the literal fourth command-line argument `core` and run its core group:
 
 ```sh
 node scripts/interop/build-consumer.mjs CANDIDATE_ARCHIVE _local/interop/core-consumer core

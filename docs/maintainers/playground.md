@@ -7,7 +7,7 @@ pnpm dev
 pnpm build:playground
 ```
 
-Vite prints the local URL; it does not open a browser. The build produces the single-file offline page `_local/playground/index.html` (about 6 MB with Mermaid). If the page is about 1 MB, Mermaid was dropped and diagrams render as code: `pnpm test:built-playground` opens the built page as a file and fails in that case. Select a fixture and a minimal or rich configuration, then edit, change modes, invoke host controls or inspect observations. The minimal configuration omits optional adapters and input overrides; rich adds the controlled image adapter and explicit input preferences. In the `linked-files` fixture, rich also enables controlled file and wiki-link adapters; minimal leaves the optional syntax literal.
+Vite prints the local URL; it does not open a browser. The build produces the single-file offline page `_local/playground/index.html`. `pnpm test:built-playground` opens that file and fails if the renderer registration was dropped or a diagram cannot render. Select a fixture and a minimal or rich configuration, then edit, change modes, invoke host controls or inspect observations. The minimal configuration omits optional adapters and input overrides; rich adds the controlled image adapter and explicit input preferences. In the `linked-files` fixture, rich also enables controlled file and wiki-link adapters; minimal leaves the optional syntax literal.
 
 ## Reproducible fixtures
 

@@ -9,7 +9,7 @@ Inkkit owns what happens to the document inside the editor root:
 - Markdown parsing, the supported dialect and source preservation ([preservation](docs/concepts/preservation.mdx), [Markdown support](docs/concepts/markdown.mdx)).
 - Editing behavior in formatted, source and TXT modes: formatting, tables, footnotes, references, callouts, comments, image placement, find and replace, undo history, and the composition, generation and read-only guards.
 - Paste and drop import and its safety: web HTML, spreadsheets, plain text and link schemes.
-- What it draws: code highlighting, Mermaid validation and previews, file and media cards, and their labels, focus and keyboard access.
+- What it draws: code highlighting, diagram validation and Pele previews, file and media cards, and their labels, focus and keyboard access.
 - Portable output: clipboard text, HTML and Markdown, and printable HTML with embedded assets.
 - The public facade in `src/core.ts`: exports, events, adapter interfaces, `InkKitError` codes, labels and `--inkkit-*` tokens, each documented in [the API reference](docs/reference/).
 
@@ -26,9 +26,9 @@ To place a new case: if two hosts would build it the same way and it needs no st
 Rules that follow from the boundary:
 
 - Keep the facade free of native storage, Marfa, app names and app UI. Hosts import only `@aicayzer/inkkit`, `@aicayzer/inkkit/core` and `@aicayzer/inkkit/style.css`. Internal classes and markup are not a styling API.
-- The package bundles every runtime dependency except Mermaid, so hosts run the tree Inkkit tested; a dependency update is a lockfile change in a pull request ([development](docs/maintainers/development.md#dependencies)).
+- The package bundles every runtime dependency, so hosts run the tree Inkkit tested; a dependency update is a lockfile change in a pull request ([development](docs/maintainers/development.md#dependencies)).
 - Keep image and file references opaque. Never infer a storage path, fetch from the network or export a private display URL.
-- Everything runs offline from one bundled page. Prefer maintained libraries that bundle offline and do not rewrite source. Only `src/index.ts` registers Mermaid; the `core` entry must bundle without it.
+- Everything runs offline from one bundled page. Prefer maintained libraries that bundle offline and do not rewrite source. Only `src/index.ts` registers Pele and DOMPurify; the `core` entry must bundle without either.
 - A failed operation changes nothing and reports an `InkKitError` with a documented code. A failed snapshot is never an unchanged document.
 - Ordinary copy is readable text and semantic HTML. Markdown source is an explicit operation.
 
@@ -68,11 +68,11 @@ Report problems that a host or a person would meet: changed source, unsafe impor
 ### Import safety
 
 - Flag HTML paste or drop that inserts content without `importableSlice` in `src/html-import.ts`. HTML import keeps only what reads back as the same structure in GitHub Flavored Markdown, strict CommonMark and CommonMark without raw HTML, with no refused link address. Safe path: import the simpler form. Markdown and plain-text paste keep their text as authored and are exempt.
-- Flag a scheme added to `src/link-safety.ts`, a loosened Mermaid check in `src/mermaid.ts`, or any path that executes pasted or authored HTML.
+- Flag a scheme added to `src/link-safety.ts`, a loosened diagram check in `src/diagram-validation.ts` or `src/pele.ts`, or any path that executes pasted or authored HTML.
 
 ### Boundary and public API
 
-- Flag host knowledge in `src/`: app names, Marfa, storage paths, network access, `window.webkit`, or a private display URL in exported output. Flag an import of the `mermaid` package reachable from `src/core.ts`.
+- Flag host knowledge in `src/`: app names, Marfa, storage paths, network access, `window.webkit`, or a private display URL in exported output. Flag an import of `pele` or `dompurify` reachable from `src/core.ts`.
 - Flag a change to the exports, options, adapter types, events, error codes, labels or tokens without the matching change in `docs/reference/`, and a removal or rename without migration notes for current hosts.
 - Flag a new failure reported to the host as a plain `Error` instead of an `InkKitError` code.
 

@@ -48,7 +48,7 @@ import { highlightKeymap } from './inline-highlight'
 import { taskListPlugin } from './tasks'
 import { literalEnter, literalReread } from './literal-edits'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
-import { diagramsAvailable, mermaidPreview } from './mermaid'
+import { diagramsAvailable, mermaidPreview, type DiagramStore } from './mermaid'
 import { selectionPlugin } from './selection'
 import { search } from './search'
 import { wikiLinkView } from './wiki-view'
@@ -67,6 +67,7 @@ import type { EditorOptions } from './editor'
 import type { DocumentContext } from './types'
 
 interface MilkdownRuntime {
+  diagrams: DiagramStore
   plugins: {
     indent: Plugin
     paste: MilkdownPlugin
@@ -205,7 +206,7 @@ export async function createMilkdownEditor(
     .use(
       options.rendering?.diagramPreview === false || !diagramsAvailable()
         ? []
-        : mermaidPreview((error) => runtime.report(error)),
+        : mermaidPreview(runtime.diagrams, (error) => runtime.report(error)),
     )
     .use(selectionPlugin)
     .use($prose(() => search()))

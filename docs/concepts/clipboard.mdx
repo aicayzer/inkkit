@@ -180,11 +180,11 @@ The Markdown source keeps every address as written. Pasted Markdown and typed te
 
 Degraded content prints and adds a warning to `warnings`:
 
-| Warning code             | What prints                                                                   |
-| ------------------------ | ----------------------------------------------------------------------------- |
-| `diagram-unavailable`    | A diagram that can't render, or any diagram without Mermaid, as readable code |
-| `attachment-fallback`    | An audio, video, PDF or other file, as a description                          |
-| `attachment-unavailable` | A missing or failed file, as a description                                    |
+| Warning code             | What prints                                                                      |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| `diagram-unavailable`    | A diagram that can't render, or any diagram without a renderer, as readable code |
+| `attachment-fallback`    | An audio, video, PDF or other file, as a description                             |
+| `attachment-unavailable` | A missing or failed file, as a description                                       |
 
 The export never returns partial content. It rejects with `image-unavailable` when an authored image has no adapter or its bytes don't decode, with `diagram-unavailable` when a diagram that rendered can't be turned into an image, and with `stale-document` when the document is edited, undone or reloaded during the export. Like `clipboardSnapshot`, it needs `blob:` image URLs.
 

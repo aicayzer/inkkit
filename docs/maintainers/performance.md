@@ -121,3 +121,39 @@ Deterministic regressions also bound parser work and search calls, verify unchan
 The source parser reuses a checked syntax tree and unchanged blocks only for safe paragraph/heading documents. References, HTML, comments and other block structures retain the complete parse path. Root document metadata no longer forces ProseMirror to destroy unchanged child views: the root keeps the host DOM, updates outer decorations and still rebuilds for a different node type. The patch is covered by explicit attribute and node-type tests. See [Preservation](../concepts/preservation.mdx) for the preservation contract.
 
 Long single lists and diagram-heavy documents have separate costs and are outside this optimisation. These development-page results do not replace packed-package checks, native input evidence or host-app verification. Historical measurements, including earlier structural-edit and package-size evidence, remain in [the dated archive](performance-history.md); they describe the versions measured there.
+
+## Pele diagram rendering
+
+On 28 October 2026, `scripts/measure-diagrams.mjs` compared released 0.3.4 (`ce0e648`) with the clean 0.3.5 candidate (`bfbbd01`) on an Apple M4 running macOS 27.0, Node.js 26.11.0, Chromium 156.0.8078.4 and WebKit 27.2. No other test or build job ran during measurement. Each result is the median of three fresh-page samples using the built offline playground and 100 distinct two-node flowcharts.
+
+Build the playground in both checkouts, then run from the candidate:
+
+```sh
+MEASURE_BROWSER=chromium node scripts/measure-diagrams.mjs BASELINE_CHECKOUT OUTPUT_JSON
+MEASURE_BROWSER=webkit node scripts/measure-diagrams.mjs BASELINE_CHECKOUT OUTPUT_JSON
+```
+
+| Measure                                      |              Mermaid / Pele |
+| -------------------------------------------- | --------------------------: |
+| Offline playground HTML                      | 6,231,536 / 1,834,713 bytes |
+| Same page, gzip level 9                      |   1,757,231 / 605,214 bytes |
+| Reveal and settle 100 previews, Chromium     |          1,001.7 / 854.1 ms |
+| Reveal and settle 100 previews, WebKit       |              1,950 / 861 ms |
+| Clipboard export of 100 diagrams, Chromium   |          1,316.9 / 170.4 ms |
+| Clipboard export of 100 diagrams, WebKit     |              6,747 / 366 ms |
+| Printable snapshot of 100 diagrams, Chromium |          1,350.9 / 177.9 ms |
+| Printable snapshot of 100 diagrams, WebKit   |              6,747 / 296 ms |
+
+The offline page is 70.6% smaller before compression and 65.6% smaller after compression. Preview timing includes document replacement and sequentially scrolling every card into view. It includes browser frames and scrolling, not just layout computation. Clipboard follows settled previews; print follows clipboard. All samples exported all 100 diagrams and preserved the exact source. Printable snapshot timing measures preparation of portable output, not a native print dialog or printer.
+
+The candidate's separate trusted-keyboard samples reached the next frame in a median 8.2 ms in Chromium and 7 ms in WebKit, with 98 previews still pending. Mermaid had finished its previews before those keystrokes were delivered, so its keyboard samples do not establish responsiveness during rendering. The input clock begins at `beforeinput` and excludes delivery time before that event.
+
+The browser regressions separately count layout calls when printing 100 settled previews, and exercise input after revealing a hidden editor and after scrolling to its middle. They require zero additional layout calls, every input sample below 100 ms, pending previews at each keystroke, exact saved bytes, and a WebKit printable snapshot below two seconds:
+
+```sh
+INKKIT_BROWSER_FIXTURE=built pnpm exec playwright test test/browser/diagrams.spec.ts --project=chromium --project=webkit --grep 'printing 100|keyboard input reaches'
+```
+
+The final six-case regression run passed: printing added zero layout calls in each engine and took 190.6 ms in Chromium and 358 ms in WebKit. All twelve trusted input samples passed, with a maximum of 9.5 ms in Chromium and 15 ms in WebKit while 97–99 previews remained pending.
+
+These browser results do not establish native input latency or consumer-app adoption. Selected WKWebView core, diagram and print scenarios are verified separately against the actual package archive.

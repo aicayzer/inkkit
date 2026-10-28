@@ -10,7 +10,7 @@ if (!process.argv[2])
   )
 const tarball = resolve(process.argv[2])
 const destination = resolve(process.argv[3] ?? '_local/interop/consumer')
-// `core` builds the consumer against the core entry, without Mermaid.
+// `core` builds the consumer against the core entry, without Pele or DOMPurify.
 const core = process.argv[4] === 'core'
 const archive = await readFile(tarball)
 const tarballSha256 = createHash('sha256').update(archive).digest('hex')

@@ -9,7 +9,8 @@ import { schemaCtx } from '@milkdown/kit/core'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
 import { shareableFragment } from './comments'
-import { diagramImage } from './mermaid'
+import { diagramImage, type DiagramStore } from './mermaid'
+import { captureDiagramTheme } from './diagram-theme'
 import { fileFields } from './linked-syntax'
 import { definitionText } from './references'
 import { editorLinkSchemes, isSafeLinkTarget } from './link-safety'
@@ -257,6 +258,8 @@ export async function portableClipboard(
   files?: FileAdapter,
   signal: AbortSignal = new AbortController().signal,
   linkSchemes?: ReadonlySet<string>,
+  diagramStore?: DiagramStore,
+  diagramRoot?: HTMLElement,
 ): Promise<Omit<ClipboardOutput, keyof DocumentVersion>> {
   signal.throwIfAborted()
   content = shareableFragment(content)
@@ -327,6 +330,7 @@ export async function portableClipboard(
       }
     }),
   )
+  const diagramTheme = captureDiagramTheme(diagramRoot)
   const diagrams: ClipboardDiagram[] = []
   for (const code of container.querySelectorAll(
     'pre[data-language="mermaid"] > code',
@@ -336,7 +340,10 @@ export async function portableClipboard(
     const result: ClipboardDiagram = { source }
     diagrams.push(result)
     try {
-      const image = await withFileSignal(diagramImage(source), signal)
+      const image = await withFileSignal(
+        diagramImage(source, diagramStore, diagramRoot, diagramTheme),
+        signal,
+      )
       const figure = document.createElement('figure')
       figure.setAttribute('data-inkkit-mermaid', source)
       const fence = code.parentElement!.getAttribute('data-inkkit-fence')

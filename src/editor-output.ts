@@ -13,7 +13,7 @@ import {
   referenceMetadata,
   withReferenceMetadata,
 } from './reference-clipboard'
-import { isMermaid } from './mermaid'
+import { isMermaid, type DiagramStore } from './mermaid'
 import {
   hasAuthoredImagesInLiterals,
   printableText,
@@ -31,6 +31,8 @@ import {
 import type { SessionCapture } from './session'
 
 interface OutputRuntime {
+  diagrams(): DiagramStore
+  root(): HTMLElement
   ctx(): Ctx
   exportDocument(text: string): ProseNode
   sourceMode(): boolean
@@ -83,6 +85,7 @@ export class EditorOutput {
   ): Promise<PrintableDocument> {
     const state = this.runtime.ctx().get(editorViewCtx).state
     const doc = this.runtime.exportDocument(snapshot.text)
+    this.runtime.diagrams().reconcile(doc)
     const output = await this.exportContent(captured, async (signal) => {
       if (
         snapshot.format === 'md' &&
@@ -105,6 +108,8 @@ export class EditorOutput {
             this.runtime.context(),
             this.runtime.files(),
             signal,
+            this.runtime.diagrams(),
+            this.runtime.root(),
           )
     })
     return Object.freeze({
@@ -159,6 +164,8 @@ export class EditorOutput {
       all || !this.runtime.sourceMode()
         ? this.runtime.exportDocument(snapshot.text)
         : this.runtime.ctx().get(editorViewCtx).state.doc
+    if (all || !this.runtime.sourceMode())
+      this.runtime.diagrams().reconcile(doc)
     const selectedSource =
       !all && this.runtime.sourceMode()
         ? sourceSelection(
@@ -221,6 +228,8 @@ export class EditorOutput {
         this.runtime.files(),
         signal,
         this.runtime.linkSchemes(),
+        this.runtime.diagrams(),
+        this.runtime.root(),
       ),
     )
     const metadata = referenceMetadata(

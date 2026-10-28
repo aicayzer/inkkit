@@ -1,404 +1,107 @@
 import { editorLabels } from './labels'
-import DOMPurify from 'dompurify'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { InkKitError, type PortableImage } from './types'
+import { themedDiagram, type DiagramTheme } from './diagram-theme'
 
 export function isMermaid(node: ProseNode): boolean {
   return node.type.name === 'code_block' && node.attrs.language === 'mermaid'
 }
 
-const refusal =
-  'HTML, styles, actions, resources and diagram configuration are disabled. The source is retained.'
+type DiagramRenderer = (source: string) => string | Promise<string>
+let renderer: DiagramRenderer | undefined
 
-// CSS functions that can load an image or display another element. Mermaid's
-// own styles use none of them apart from url() for in-document markers.
-const cssResource =
-  /url\s*\(\s*[^#\s]|(?:image-set|cross-fade|image|element|src)\s*\(/i
-
-// Annotation syntax in the positions the pinned grammars read it: class
-// annotations on their own line, before a class name or after `class Name`, and
-// the state diagram fork, join and choice markers after `state Name`.
-const annotationName = String.raw`\w(?:[\w -]*\w)?`
-const classAnnotation = new RegExp(
-  String.raw`(?<=^[ \t]*(?:class[ \t]+[^\s<>"]+(?:\["[^"\n<>]*"\])?[ \t]+)?)<<(${annotationName})>>(?=[ \t{]|$)`,
-  'gm',
-)
-const stateAnnotation =
-  /(?<=^[ \t]*state[ \t]+[^\s<>"]+[ \t]+)<<(fork|join|choice)>>(?=[ \t]*$)/gim
-const stateBrackets = /^[ \t]*state[ \t].*\[\[(fork|join|choice)\]\]/gim
-
-interface Annotations {
-  names: string[]
-  rest: string
+// Only the main entry registers the renderer and its sanitiser.
+export function registerDiagram(render: DiagramRenderer): void {
+  renderer = render
 }
+export const diagramsAvailable = (): boolean => renderer !== undefined
 
-// Separates the annotations that Mermaid may read from the rest of the source,
-// which must pass the HTML check. Whether each one became an annotation is
-// checked in the parse result.
-function annotations(source: string): Annotations {
-  const header = /^\s*(?:%%[^\n]*\n\s*)*(classDiagram|stateDiagram)/.exec(
-    source,
-  )?.[1]
-  const pattern =
-    header === 'classDiagram'
-      ? classAnnotation
-      : header === 'stateDiagram'
-        ? stateAnnotation
-        : undefined
-  if (!pattern) return { names: [], rest: source }
-  const names: string[] = []
-  const rest = source.replace(pattern, (_, name: string) => {
-    names.push(header === 'stateDiagram' ? name.toLowerCase() : name)
-    return ''
-  })
-  // The class lexer skips comments, so a comment after << would hide an
-  // annotation name from the HTML check.
-  if (header === 'classDiagram' && /<<\s*%%/.test(rest))
-    throw new Error(refusal)
-  return { names, rest }
-}
-
-export function validateDiagram(source: string): Annotations {
-  if (source.length > 30000)
-    throw new Error('The diagram exceeds the 30,000 character rendering limit.')
-  if (
-    !/^\s*(?:%%[^\n]*\n\s*)*(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|pie)\b/.test(
-      source,
-    )
-  )
+export async function renderDiagram(source: string): Promise<string> {
+  if (!renderer)
     throw new Error(
-      'This diagram type is not supported. The source is retained.',
+      'Diagram rendering is not included in this build. The source is retained.',
     )
-  const found = annotations(source)
-  // Mermaid can load image bytes before sanitising its result, so resource and
-  // configuration syntax is refused anywhere in the source, labels included.
-  // Statements are checked separately, in Mermaid's parse result. The `---`
-  // check reads only its own line's indent: `^\s*---` refuses the same sources
-  // but rescans every following blank line from each line start.
-  if (
-    /%%\{|^[^\S\n\r\u2028\u2029]*---|<\s*[a-z!/?]|&(?:#\w+|[a-z]+);|@\{|\$\$|(?:https?|data|file|javascript|vbscript|blob):|\/\/|url\s*\(|image-set\s*\(|cross-fade\s*\(|@import|\\/im.test(
-      found.rest,
-    )
-  )
-    throw new Error(refusal)
-  return found
+  return renderer(source)
 }
 
-type Entry = Record<string, unknown>
-interface ParsedDiagram {
-  type: string
-  db: unknown
-}
+/** Geometry belongs to one document, independently of its visible previews. */
+export class DiagramStore {
+  private readonly entries = new Map<string, Promise<string>>()
+  private generation = 0
+  private destroyed = false
 
-const entries = (value: unknown): Entry[] =>
-  value instanceof Map ? [...value.values()] : Array.isArray(value) ? value : []
-const filled = (value: unknown): boolean =>
-  value instanceof Map
-    ? value.size > 0
-    : Array.isArray(value)
-      ? value.length > 0
-      : typeof value === 'object' && value !== null
-        ? Object.keys(value).length > 0
-        : Boolean(value)
-// In strict mode a flowchart records a click handler only as this class.
-const clickable = (classes: unknown) =>
-  (Array.isArray(classes) ? classes : String(classes ?? '').split(/\s+/))
-    .map(String)
-    .includes('clickable')
-
-const unchecked = () =>
-  new Error('The diagram could not be checked. The source is retained.')
-
-// Visits each object reachable from node once, until visit returns true.
-function walk(
-  node: unknown,
-  visit: (entry: Entry) => boolean | void,
-  seen = new Set(),
-): boolean {
-  if (typeof node !== 'object' || node === null || seen.has(node)) return false
-  seen.add(node)
-  if (visit(node as Entry)) return true
-  return Object.values(node).some((value) => walk(value, visit, seen))
-}
-
-const statementIn = (node: unknown, kinds: string[]): boolean =>
-  walk(node, (entry) => kinds.includes(String(entry.stmt)))
-
-// Refuses styles, class definitions, link styles, links, click handlers,
-// tooltips, icons and images wherever the grammar accepted them. The names are
-// those of the pinned Mermaid's diagram databases; if one is missing, the
-// diagram is refused rather than passed unchecked.
-function refuseDirectives({ type, db }: ParsedDiagram): void {
-  const store = db as Entry
-  const field = (name: string): unknown => {
-    if (!(name in store)) throw unchecked()
-    return store[name]
+  get epoch(): number {
+    return this.generation
   }
-  const read = (name: string): unknown => {
-    const accessor = field(name)
-    if (typeof accessor !== 'function') throw unchecked()
-    return (accessor as () => unknown).call(db)
-  }
-  let found: boolean
-  switch (type) {
-    case 'flowchart-v2': {
-      const edges = read('getEdges') as Entry[] & Entry
-      found =
-        filled(read('getClasses')) ||
-        filled(field('tooltips')) ||
-        filled(edges.defaultStyle) ||
-        edges.defaultInterpolate !== undefined ||
-        entries(read('getVertices')).some(
-          (vertex) =>
-            filled(vertex.styles) ||
-            Boolean(
-              vertex.link || vertex.haveCallback || vertex.icon || vertex.img,
-            ) ||
-            clickable(vertex.classes),
-        ) ||
-        entries(edges).some(
-          (edge) =>
-            filled(edge.style) ||
-            edge.interpolate !== undefined ||
-            clickable(edge.classes),
-        ) ||
-        entries(read('getSubGraphs')).some((graph) => clickable(graph.classes))
-      break
-    }
-    case 'stateDiagram':
-      found =
-        statementIn(field('rootDoc'), ['style', 'classDef', 'click']) ||
-        filled(read('getClasses')) ||
-        filled(read('getLinks')) ||
-        entries(read('getStates')).some(
-          (state) => filled(state.styles) || filled(state.textStyles),
+
+  render(source: string): Promise<string> {
+    if (this.destroyed)
+      return Promise.reject(new Error('The diagram document was destroyed.'))
+    const key = source.replace(/\r\n?/g, '\n')
+    const previous = this.entries.get(key)
+    if (previous) return previous
+    const generation = this.generation
+    const pending = Promise.resolve()
+      .then(() => {
+        if (
+          this.destroyed ||
+          generation !== this.generation ||
+          this.entries.get(key) !== pending
         )
-      break
-    case 'classDiagram':
-      found =
-        filled(field('styleClasses')) ||
-        entries(read('getClasses')).some(
-          (node) =>
-            filled(node.styles) ||
-            Boolean(node.link || node.haveCallback || node.tooltip) ||
-            clickable(node.cssClasses),
+          throw new Error('The diagram is no longer current.')
+        return renderDiagram(key)
+      })
+      .then((svg) => {
+        if (
+          this.destroyed ||
+          generation !== this.generation ||
+          this.entries.get(key) !== pending
         )
-      break
-    case 'er':
-      found =
-        filled(read('getClasses')) ||
-        entries(read('getEntities')).some((entity) =>
-          filled(entity.cssStyles),
-        ) ||
-        entries(read('getSubGraphs')).some((graph) => filled(graph.cssStyles))
-      break
-    case 'sequence':
-      found = entries(read('getActors')).some(
-        (actor) => filled(actor.links) || filled(actor.properties),
-      )
-      break
-    case 'pie':
-      found = false
-      break
-    default:
-      throw new Error(
-        'This diagram type is not supported. The source is retained.',
-      )
+          throw new Error('The diagram is no longer current.')
+        return svg
+      })
+    this.entries.set(key, pending)
+    void pending.catch(() => {
+      if (this.entries.get(key) === pending) this.entries.delete(key)
+    })
+    return pending
   }
-  if (found) throw new Error(refusal)
+
+  reconcile(doc: ProseNode): void {
+    const sources = new Set<string>()
+    doc.descendants((node) => {
+      if (isMermaid(node)) sources.add(node.textContent.replace(/\r\n?/g, '\n'))
+    })
+    for (const key of this.entries.keys())
+      if (!sources.has(key)) this.entries.delete(key)
+  }
+
+  clear(): void {
+    this.generation++
+    this.entries.clear()
+  }
+
+  destroy(): void {
+    this.destroyed = true
+    this.clear()
+  }
 }
 
-// Each annotation taken out of the source check must be one that Mermaid read
-// as an annotation. One read as text, in a note or a multi-line label, would
-// put angle brackets in a label.
-function refuseStrayAnnotations(
-  { type, db }: ParsedDiagram,
+export async function diagramImage(
   source: string,
-  names: string[],
-): void {
-  if (names.length === 0) return
-  const store = db as Entry
-  const expected = [...names]
-  const parsed: string[] = []
-  if (type === 'classDiagram') {
-    if (typeof store.getClasses !== 'function') throw unchecked()
-    for (const node of entries((store.getClasses as () => unknown).call(db))) {
-      if (!Array.isArray(node.annotations)) throw unchecked()
-      parsed.push(...node.annotations.map(String))
-    }
-  } else if (type === 'stateDiagram') {
-    if (!('rootDoc' in store)) throw unchecked()
-    walk(store.rootDoc, ({ stmt, type }) => {
-      if (stmt === 'state' && /^(?:fork|join|choice)$/.test(String(type)))
-        parsed.push(String(type))
-    })
-    // [[fork]] syntax on a state line makes the same states without angle
-    // brackets.
-    for (const [, name] of source.matchAll(stateBrackets))
-      expected.push(name!.toLowerCase())
-  } else throw new Error(refusal)
-  if (parsed.sort().join('\n') !== expected.sort().join('\n'))
-    throw new Error(refusal)
-}
-
-// The part of Mermaid's API that InkKit calls, so that InkKit's declarations do
-// not depend on Mermaid's.
-interface Mermaid {
-  initialize(config: object): void
-  render(
-    id: string,
-    text: string,
-    container?: Element,
-  ): Promise<{ svg: string }>
-  mermaidAPI: { getDiagramFromText(text: string): Promise<ParsedDiagram> }
-}
-
-let loadMermaid: (() => Promise<Mermaid>) | undefined
-
-// The package's main entry registers Mermaid. The core entry does not, so a
-// host that imports only the core entry does not bundle it.
-export function registerMermaid(load: () => Promise<Mermaid>): void {
-  loadMermaid = load
-}
-
-export const diagramsAvailable = (): boolean => loadMermaid !== undefined
-
-let sequence = 0
-let queue: Promise<unknown> = Promise.resolve()
-const cache = new Map<string, Promise<string>>()
-
-export function safeDiagramSVG(svg: string): string {
-  const clean = DOMPurify.sanitize(svg, {
-    USE_PROFILES: { svg: true, svgFilters: true },
-    FORBID_TAGS: ['foreignObject', 'image', 'a', 'script', 'animate', 'set'],
-    FORBID_ATTR: ['href', 'xlink:href'],
-  })
-  const template = document.createElement('template')
-  template.innerHTML = clean
-  const root = template.content.querySelector('svg')
-  if (!root) throw new Error('The renderer did not produce a diagram.')
-  for (const element of [root, ...root.querySelectorAll('*')]) {
-    for (const attribute of [...element.attributes]) {
-      if (
-        /^on/i.test(attribute.name) ||
-        /(?:https?|data|file|javascript|blob):|@import|\\/i.test(
-          attribute.value,
-        ) ||
-        cssResource.test(attribute.value)
-      )
-        element.removeAttribute(attribute.name)
-    }
-    if (
-      element.tagName.toLowerCase() === 'style' &&
-      (/@import|(?:https?|data|file):|\\/i.test(element.textContent ?? '') ||
-        cssResource.test(element.textContent ?? ''))
-    )
-      element.remove()
-  }
-  root.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-  return root.outerHTML
-}
-
-export function renderDiagram(source: string): Promise<string> {
-  const load = loadMermaid
-  if (!load)
-    return Promise.reject(
-      new Error(
-        'Diagram rendering is not included in this build. The source is retained.',
-      ),
-    )
-  let names: string[]
-  try {
-    names = validateDiagram(source).names
-  } catch (error) {
-    return Promise.reject(error)
-  }
-  const previous = cache.get(source)
-  if (previous) return previous
-  const rendered = queue.then(async () => {
-    const mermaid = await load()
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: 'strict',
-      htmlLabels: false,
-      suppressErrorRendering: true,
-      fontFamily: 'Arial, sans-serif',
-      altFontFamily: 'Arial, sans-serif',
-      layout: 'dagre',
-      look: 'classic',
-      theme: 'default',
-      maxTextSize: 30000,
-      maxEdges: 500,
-      flowchart: { htmlLabels: false },
-      sequence: {
-        actorFontFamily: 'Arial, sans-serif',
-        noteFontFamily: 'Arial, sans-serif',
-        messageFontFamily: 'Arial, sans-serif',
-      },
-      secure: [
-        'securityLevel',
-        'htmlLabels',
-        'theme',
-        'themeCSS',
-        'themeVariables',
-        'fontFamily',
-        'dompurifyConfig',
-        'flowchart',
-        'startOnLoad',
-        'maxTextSize',
-        'maxEdges',
-        'secure',
-        'altFontFamily',
-        'layout',
-        'look',
-        'sequence',
-        'class',
-        'state',
-        'er',
-        'pie',
-        'suppressErrorRendering',
-      ],
-    })
-    // getDiagramFromText is the pinned Mermaid's own parser, which render runs
-    // again on the same text; the public parse does not return the diagram. It
-    // skips render's configuration step, so the two parse alike only because
-    // the source check refuses %%{ directives and front matter.
-    const parsed = await mermaid.mermaidAPI.getDiagramFromText(source)
-    refuseDirectives(parsed)
-    refuseStrayAnnotations(parsed, source, names)
-    // Mermaid measures text while laying out, so the holder must be attached
-    // and rendered. Such a holder can load CSS resources before sanitising,
-    // which is why the source and the parse result are checked first.
-    const holder = document.createElement('div')
-    holder.style.cssText =
-      'position:fixed;left:-100000px;top:0;width:1200px;pointer-events:none'
-    holder.setAttribute('aria-hidden', 'true')
-    document.body.append(holder)
-    try {
-      const result = await mermaid.render(
-        `inkkitDiagram${++sequence}`,
-        source,
-        holder,
-      )
-      return safeDiagramSVG(result.svg)
-    } finally {
-      holder.remove()
-    }
-  })
-  queue = rendered.catch(() => undefined)
-  cache.set(source, rendered)
-  void rendered.catch(() => {
-    if (cache.get(source) === rendered) cache.delete(source)
-  })
-  if (cache.size > 64) cache.delete(cache.keys().next().value!)
-  return rendered
-}
-
-export async function diagramImage(source: string): Promise<PortableImage> {
-  const svg = await renderDiagram(source)
+  store?: DiagramStore,
+  root?: HTMLElement,
+  theme?: DiagramTheme,
+): Promise<PortableImage> {
+  const svg = themedDiagram(
+    await (store ? store.render(source) : renderDiagram(source)),
+    root,
+    true,
+    theme,
+  )
   const parsed = new DOMParser().parseFromString(
     svg,
     'image/svg+xml',
@@ -450,72 +153,155 @@ export async function diagramImage(source: string): Promise<PortableImage> {
   }
 }
 
-export function mermaidPreview(onError: (error: InkKitError) => void) {
-  return $prose(
-    (ctx) =>
-      new Plugin({
-        key: new PluginKey('mermaidPreview'),
-        props: {
-          decorations(state) {
-            const widgets: Decoration[] = []
-            state.doc.descendants((node, pos) => {
-              if (!isMermaid(node)) return true
-              const source = node.textContent
-              widgets.push(
-                Decoration.widget(
-                  pos + node.nodeSize,
-                  () => {
-                    const preview = document.createElement('div')
-                    preview.className = 'inkkit-mermaid-preview'
-                    preview.contentEditable = 'false'
-                    preview.textContent = editorLabels(ctx).diagramRendering
-                    preview.setAttribute('role', 'status')
-                    preview.setAttribute('aria-live', 'polite')
-                    let active = true
-                    ;(preview as HTMLElement & { cancel?: () => void }).cancel =
-                      () => {
-                        active = false
-                      }
-                    void renderDiagram(source).then(
-                      (svg) => {
-                        if (active) {
-                          preview.innerHTML = svg
-                          preview.dataset.state = 'ready'
-                        }
-                      },
-                      (error: unknown) => {
-                        if (!active) return
-                        const message =
-                          error instanceof Error
-                            ? error.message
-                            : 'The diagram could not be rendered.'
-                        preview.textContent = `${editorLabels(ctx).diagramUnavailable} ${message}`
-                        preview.dataset.state = 'error'
-                        onError(
-                          new InkKitError('diagram-unavailable', message, {
-                            cause: error,
-                          }),
-                        )
-                      },
-                    )
-                    return preview
-                  },
-                  {
-                    key: `mermaid:${source}`,
-                    side: -1,
-                    ignoreSelection: true,
-                    destroy: (node) =>
-                      (
-                        node as HTMLElement & { cancel?: () => void }
-                      ).cancel?.(),
-                  },
-                ),
-              )
-              return false
-            })
-            return DecorationSet.create(state.doc, widgets)
+interface PreviewJob {
+  element: HTMLElement
+  source: string
+  visible: boolean
+  active: boolean
+  running: boolean
+}
+
+export function mermaidPreview(
+  store: DiagramStore,
+  onError: (error: InkKitError) => void,
+) {
+  return $prose((ctx) => {
+    const jobs = new Set<PreviewJob>()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let stopped = false
+    let viewGeneration = 0
+    const schedule = () => {
+      if (!stopped && timer === undefined) timer = setTimeout(run, 0)
+    }
+    // One layout per task lets input run between diagrams, including on WebKit.
+    const run = () => {
+      timer = undefined
+      if (stopped || document.visibilityState === 'hidden') return
+      const job = [...jobs].find(
+        (item) =>
+          item.active &&
+          item.visible &&
+          !item.running &&
+          item.element.isConnected,
+      )
+      if (!job) return
+      job.running = true
+      void store
+        .render(job.source)
+        .then(
+          (svg) => {
+            if (!job.active || stopped) return
+            job.element.innerHTML = themedDiagram(svg)
+            job.element.dataset.state = 'ready'
           },
+          (error: unknown) => {
+            if (!job.active || stopped) return
+            const message =
+              error instanceof Error
+                ? error.message
+                : 'The diagram could not be rendered.'
+            job.element.textContent = `${editorLabels(ctx).diagramUnavailable} ${message}`
+            job.element.dataset.state = 'error'
+            onError(
+              new InkKitError('diagram-unavailable', message, { cause: error }),
+            )
+          },
+        )
+        .finally(() => {
+          jobs.delete(job)
+          observer?.unobserve(job.element)
+          schedule()
+        })
+    }
+    const observer =
+      typeof IntersectionObserver === 'undefined'
+        ? undefined
+        : new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+              const job = [...jobs].find(
+                (item) => item.element === entry.target,
+              )
+              if (job) job.visible = entry.isIntersecting
+            }
+            schedule()
+          })
+    return new Plugin({
+      key: new PluginKey('mermaidPreview'),
+      view: (view) => {
+        const generation = ++viewGeneration
+        stopped = false
+        document.addEventListener('visibilitychange', schedule)
+        store.reconcile(view.state.doc)
+        schedule()
+        return {
+          update(view, previous) {
+            if (view.state.doc !== previous.doc) store.reconcile(view.state.doc)
+            schedule()
+          },
+          destroy() {
+            stopped = true
+            if (timer !== undefined) clearTimeout(timer)
+            timer = undefined
+            document.removeEventListener('visibilitychange', schedule)
+            // ProseMirror recreates plugin views after updating document widgets.
+            // Keep those widgets' jobs when this plugin is immediately rebound.
+            queueMicrotask(() => {
+              if (generation !== viewGeneration || !stopped) return
+              observer?.disconnect()
+              for (const job of jobs) job.active = false
+              jobs.clear()
+            })
+          },
+        }
+      },
+      props: {
+        decorations(state) {
+          const widgets: Decoration[] = []
+          state.doc.descendants((node, pos) => {
+            if (!isMermaid(node)) return true
+            const source = node.textContent
+            widgets.push(
+              Decoration.widget(
+                pos + node.nodeSize,
+                () => {
+                  const preview = document.createElement('div')
+                  preview.className = 'inkkit-mermaid-preview'
+                  preview.contentEditable = 'false'
+                  preview.textContent = editorLabels(ctx).diagramRendering
+                  preview.setAttribute('role', 'status')
+                  preview.setAttribute('aria-live', 'polite')
+                  const job: PreviewJob = {
+                    element: preview,
+                    source,
+                    active: true,
+                    visible: !observer,
+                    running: false,
+                  }
+                  jobs.add(job)
+                  ;(preview as HTMLElement & { cancel?: () => void }).cancel =
+                    () => {
+                      job.active = false
+                      jobs.delete(job)
+                      observer?.unobserve(preview)
+                    }
+                  observer?.observe(preview)
+                  schedule()
+                  return preview
+                },
+                {
+                  key: `mermaid:${store.epoch}:${source}`,
+                  side: -1,
+                  ignoreSelection: true,
+                  destroy: (node) =>
+                    (node as HTMLElement & { cancel?: () => void }).cancel?.(),
+                },
+              ),
+            )
+            return false
+          })
+          return DecorationSet.create(state.doc, widgets)
         },
-      }),
-  )
+      },
+    })
+  })
 }

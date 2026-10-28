@@ -42,6 +42,14 @@ The facade keeps public declarations, argument validation, readiness and mutatio
 
 Output records provenance through a narrow clipboard callback. Neither collaborator owns document freshness, public validation or the facade's atomic/event boundary. The facade cancels output at accepted edits and lifecycle transitions, and destroys clipboard listeners before the source surface and Milkdown.
 
+## Diagram rendering
+
+`src/index.ts` registers the Pele renderer from `pele.ts`. That module validates parsed models against Inkkit's supported diagram policy and sanitizes SVG with DOMPurify. The `core` entry reaches neither dependency. `diagram-validation.ts` retains the supported families, source limits and refusals independently of the renderer.
+
+Each editor owns a `DiagramStore` from `mermaid.ts`. It retains geometry for diagram sources in the current document, removes obsolete entries after edits, and clears the store on document replacement or destruction. Preview jobs yield between diagrams and defer hidden or offscreen cards. Clipboard and print reuse the same geometry.
+
+`diagram-theme.ts` applies presentation separately from layout: it gives each placement unique SVG IDs, maps renderer variables to private theme variables for previews, and embeds the light palette and fonts for portable output. The source and saved Markdown do not contain renderer choices, palette settings or generated SVG.
+
 ## Source preservation
 
 `Preservation` coordinates source retention and decides whether a changed document can be saved. Its extracted algorithms do not own editor state or document generations:

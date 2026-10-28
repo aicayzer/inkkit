@@ -113,13 +113,13 @@ Plain blocks are still editable and save unchanged. Set [`rendering.codeHighligh
 
 ## Mermaid
 
-A fence whose language is `mermaid` stays editable source with an offline preview beside it. Inkkit renders `flowchart` and `graph`, `sequenceDiagram`, `classDiagram`, `stateDiagram` and `stateDiagram-v2`, `erDiagram` and `pie`, with Mermaid 12.1.0, its default theme, and Arial with a sans-serif fallback.
+A fence whose language is `mermaid` stays editable source with an offline preview beside it. Inkkit renders `flowchart` and `graph`, `sequenceDiagram`, `classDiagram`, `stateDiagram` and `stateDiagram-v2`, `erDiagram` and `pie`, using bundled Pele 1.12.0. The default palette uses pale colors with neutral surfaces and connectors; previews follow the editor theme. See [Appearance](/reference/appearance) for colors, fonts and the stronger palette option.
 
 - **Limits:** a diagram renders only up to 30,000 characters and 500 edges. Exported PNG images are at most 4,096 pixels on each side.
-- **Refused:** anything that could load content or run code, or that changes Mermaid's configuration: directives and `---` configuration, HTML, URLs and links, click handlers and tooltips, styles and class definitions, icons and images, and math. Class diagram annotations such as `<<interface>>` and state diagram forks, joins and choices are allowed.
+- **Refused:** anything that could load content or run code, or that changes the diagram configuration: directives and `---` configuration, HTML, URLs and links, click handlers and tooltips, styles and class definitions, icons and images, and math. Class diagram annotations such as `<<interface>>` and state diagram forks, joins and choices are allowed.
 - **Failures:** an unsupported or refused diagram keeps its source, shows that its preview is unavailable, and reports `diagram-unavailable` to `events.error`. Saving never depends on rendering.
 
-The `@aicayzer/inkkit/core` entry leaves Mermaid out: diagram fences stay editable code with no preview. [Compatibility](/compatibility) compares the two entries. Set [`rendering.diagramPreview`](/reference/options) to `false` to skip previews with the main entry. [Copy, paste and print](/concepts/clipboard) describes how diagrams leave the editor.
+The `@aicayzer/inkkit/core` entry excludes Pele and DOMPurify: diagram fences stay editable code with no preview. [Compatibility](/compatibility) compares the two entries. Set [`rendering.diagramPreview`](/reference/options) to `false` to skip previews with the main entry. [Copy, paste and print](/concepts/clipboard) describes how diagrams leave the editor.
 
 ## Links and autolinks
 

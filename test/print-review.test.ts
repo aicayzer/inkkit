@@ -12,14 +12,13 @@ import {
 } from '../src/index'
 import { setCommentVisibility } from '../src/comments'
 
-const renderer = vi.hoisted(() => ({
-  initialize: vi.fn(),
-  render: vi.fn(),
-  mermaidAPI: {
-    getDiagramFromText: vi.fn(async () => ({ type: 'pie', db: {} })),
-  },
-}))
-vi.mock('mermaid', () => ({ default: renderer }))
+import { registerDiagram } from '../src/mermaid'
+import { validateDiagram } from '../src/diagram-validation'
+import { renderPele } from '../src/pele'
+
+const renderer = {
+  render: vi.fn<(source: string) => string | Promise<string>>(),
+}
 const pngBase64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII='
 const pngBytes = Uint8Array.from(atob(pngBase64), (c) => c.charCodeAt(0))
@@ -42,8 +41,12 @@ let sequence = 0
 beforeEach(() => {
   decoderFailure = false
   rasterFailure = false
-  renderer.render.mockResolvedValue({
-    svg: '<svg viewBox="0 0 100 50"><text>Diagram</text></svg>',
+  renderer.render
+    .mockReset()
+    .mockResolvedValue('<svg viewBox="0 0 100 50"><text>Diagram</text></svg>')
+  registerDiagram((source) => {
+    validateDiagram(source)
+    return renderer.render(source)
   })
   const blobs = new Map<string, Blob>()
   vi.stubGlobal(
@@ -102,6 +105,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  registerDiagram(renderPele)
 })
 
 const images: ImageAdapter = {
@@ -536,9 +540,9 @@ test('referenced footnotes have working local targets with complete multi-paragr
     expect(target?.textContent).toContain('Final paragraph.')
   }))
 
-test('editing while Mermaid rendering is awaited rejects rather than returning older printable source', () =>
+test('editing while diagram rendering is awaited rejects rather than returning older printable source', () =>
   run(async (editor, _root, ctx) => {
-    let finish!: (value: { svg: string }) => void
+    let finish!: (value: string) => void
     renderer.render.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -556,7 +560,7 @@ test('editing while Mermaid rendering is awaited rejects rather than returning o
     await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
     const view = ctx.get(editorViewCtx)
     view.dispatch(view.state.tr.insertText('Changed', 1))
-    finish({ svg: '<svg viewBox="0 0 100 50"><text>Diagram</text></svg>' })
+    finish('<svg viewBox="0 0 100 50"><text>Diagram</text></svg>')
     await rejected
   }))
 

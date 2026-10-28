@@ -7,8 +7,8 @@ import { cpus, platform, release } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { chromium, webkit } from '@playwright/test'
 
-// Compares the single-file page with Mermaid (main entry) and without it (core
-// entry). WEBKIT_HOST is the compiled scripts/interop/WebKitHost.swift; without
+// Compares the single-file page with diagrams (main entry) and without the
+// renderer and sanitizer (core entry). WEBKIT_HOST is the compiled scripts/interop/WebKitHost.swift; without
 // it, only the Playwright browsers are measured.
 const [archiveArgument, destinationArgument, hostArgument] =
   process.argv.slice(2)

@@ -21,11 +21,12 @@ export default defineConfig({
         playground: resolve(repository, 'playground/index.html'),
         core: resolve(repository, 'src/core.ts'),
         preservation: resolve(repository, 'src/preserve.ts'),
+        diagrams: resolve(repository, 'test/browser/diagram-probe.ts'),
       },
       preserveEntrySignatures: 'strict',
       output: {
         entryFileNames: (chunk) =>
-          ['core', 'preservation'].includes(chunk.name)
+          ['core', 'preservation', 'diagrams'].includes(chunk.name)
             ? '_test/[name].js'
             : 'assets/[name]-[hash].js',
       },

@@ -192,8 +192,10 @@ test('the diagram annotation fixture renders both diagrams @playground-tools', a
   await openFixture('diagram-annotations')
   const previews = page.locator('.inkkit-mermaid-preview')
   await expect(previews).toHaveCount(2)
-  for (const index of [0, 1])
+  for (const index of [0, 1]) {
+    await previews.nth(index).scrollIntoViewIfNeeded()
     await expect(previews.nth(index)).toHaveAttribute('data-state', 'ready')
+  }
 })
 
 test('the table fixture shows an image in a cell @playground-tools', async ({

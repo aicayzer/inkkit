@@ -1,19 +1,16 @@
-import { afterEach, beforeAll, expect, test, vi } from 'vitest'
-import mermaid from 'mermaid'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import * as pele from 'pele'
 import { renderDiagram } from '../src/mermaid'
-// The package entry registers Mermaid with the renderer.
+// The package entry registers Pele with the renderer.
 import '../src/index'
 
-// These cases use the pinned Mermaid itself. jsdom lays nothing out, so text
-// gets a plausible size and Mermaid can complete a real render.
-beforeAll(() => {
-  const prototype = SVGElement.prototype as unknown as SVGTextContentElement
-  prototype.getBBox = function (this: SVGElement) {
-    return new DOMRect(0, 0, (this.textContent?.length ?? 1) * 8, 16)
-  }
-  prototype.getComputedTextLength = function (this: SVGElement) {
-    return (this.textContent?.length ?? 1) * 8
-  }
+vi.mock('pele', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('pele')>()
+  return { ...actual, render: vi.fn(actual.render) }
+})
+
+beforeEach(() => {
+  vi.mocked(pele.render).mockClear()
 })
 
 afterEach(() => {
@@ -76,10 +73,10 @@ const classAnnotations: [string, string, string][] = [
 for (const [name, diagram, annotation] of classAnnotations)
   test(`renders a class diagram annotation: ${name}`, async () => {
     const svg = await renderDiagram(diagram)
-    expect(svg).toMatch(/^<svg[\s\S]*<style>/)
+    expect(svg).toMatch(/^<svg[^>]*class="pele /)
     const group = new DOMParser()
       .parseFromString(svg, 'image/svg+xml')
-      .querySelector('.annotation-group')
+      .querySelector('.pele-annotation')
     expect(group?.textContent).toBe(`«${annotation}»`)
   })
 
@@ -125,18 +122,18 @@ const labels: [string, string][] = [
 
 for (const [name, diagram] of labels)
   test(`renders angle brackets that are not an annotation in ${name}`, async () => {
-    expect(await renderDiagram(diagram)).toMatch(/^<svg[\s\S]*<style>/)
+    expect(await renderDiagram(diagram)).toMatch(/^<svg[^>]*class="pele /)
   })
 
 for (const [name, diagram] of stateAnnotations)
   test(`renders a state diagram annotation: ${name}`, async () => {
-    expect(await renderDiagram(diagram)).toMatch(/^<svg[\s\S]*<style>/)
+    expect(await renderDiagram(diagram)).toMatch(/^<svg[^>]*class="pele /)
   })
 
 const refusal = /HTML, styles/
 
 async function refusedBeforeRendering(diagram: string) {
-  const render = vi.spyOn(mermaid, 'render')
+  const render = vi.mocked(pele.render)
   await expect(renderDiagram(diagram)).rejects.toThrow(refusal)
   expect(render).not.toHaveBeenCalled()
 }

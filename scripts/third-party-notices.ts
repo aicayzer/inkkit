@@ -45,12 +45,7 @@ export function packageNotice(root: string): { title: string; text: string } {
   const manifest = JSON.parse(
     readFileSync(join(root, 'package.json'), 'utf8'),
   ) as { name: string; version: string; license?: string }
-  // khroma 2.1.0 ships an MIT license but omits the package metadata field.
-  const license =
-    manifest.license ??
-    (manifest.name === 'khroma' && manifest.version === '2.1.0'
-      ? 'MIT'
-      : undefined)
+  const license = manifest.license
   if (!license) throw new Error(`${manifest.name} declares no licence`)
   const files = readdirSync(root, { withFileTypes: true })
     .filter(

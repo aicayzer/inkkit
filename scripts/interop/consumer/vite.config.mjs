@@ -12,14 +12,9 @@ export default defineConfig({
           if (chunk.type !== 'chunk') continue
           for (const [id, module] of Object.entries(chunk.modules)) {
             // Inkkit bundles lowlight and highlight.js into its highlight chunk.
-            const group =
-              /node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?mermaid\//.test(
-                id,
-              )
-                ? 'mermaid'
-                : /@aicayzer\/inkkit\/dist\/chunks\/highlight-/.test(id)
-                  ? 'highlighting'
-                  : 'other'
+            const group = /@aicayzer\/inkkit\/dist\/chunks\/highlight-/.test(id)
+              ? 'highlighting'
+              : 'other'
             sizes[group] = (sizes[group] ?? 0) + module.renderedLength
           }
         }

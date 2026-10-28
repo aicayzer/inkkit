@@ -30,6 +30,10 @@ async function open(
   await expect(
     page.locator('.inkkit-root .inkkit-hljs-attr').first(),
   ).toBeVisible()
+  for (const preview of await page.locator('.inkkit-mermaid-preview').all()) {
+    await preview.scrollIntoViewIfNeeded()
+    await expect(preview).toHaveAttribute('data-state', /ready|error/)
+  }
   await expect(
     page.locator('.inkkit-mermaid-preview[data-state="ready"]'),
   ).toHaveCount(1)
@@ -176,7 +180,7 @@ const previewColors = (page: Page, state: string) =>
     })
 
 for (const system of ['light', 'dark'] as const)
-  test(`diagram previews keep their default colors on a ${system} system @color-scheme @diagrams`, async ({
+  test(`diagram previews follow the host scheme on a ${system} system @color-scheme @diagrams`, async ({
     page,
     openFixture,
   }) => {
@@ -188,12 +192,12 @@ for (const system of ['light', 'dark'] as const)
       system === 'light' ? 'dark' : 'light',
     )
     expect(await previewColors(page, 'ready')).toEqual({
-      background: 'rgb(255, 255, 255)',
-      color: 'rgb(34, 34, 34)',
+      background: system === 'light' ? 'rgb(28, 28, 30)' : 'rgb(255, 255, 255)',
+      color: system === 'light' ? 'rgb(242, 242, 247)' : 'rgb(28, 28, 30)',
     })
     expect(await previewColors(page, 'error')).toEqual({
-      background: 'rgb(255, 255, 255)',
-      color: 'rgb(155, 36, 36)',
+      background: system === 'light' ? 'rgb(28, 28, 30)' : 'rgb(255, 255, 255)',
+      color: system === 'light' ? 'rgb(255, 180, 171)' : 'rgb(155, 36, 36)',
     })
   })
 
