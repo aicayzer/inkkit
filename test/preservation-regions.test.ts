@@ -64,12 +64,11 @@ interface Step {
 }
 
 // The note a seed makes and the edits it makes to it, one after another.
-function replay(
+function* replay(
   ctx: Ctx,
   seed: number,
   parse: (markdown: string) => ProseNode,
-  each: (step: Step) => void,
-): void {
+): Generator<Step | null> {
   let state = seed
   const random = () => (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32
   const pick = <T>(list: T[]) => list[Math.floor(random() * list.length)]!
@@ -93,9 +92,12 @@ function replay(
   let doc = local.baseline
   for (let step = 0; step < 8; step++) {
     const edit = randomEdit(doc, random, parse)
-    if (!edit) continue
+    if (!edit) {
+      yield null
+      continue
+    }
     doc = edit.doc
-    each({ seed, step, kind: edit.kind, source, doc, local, full })
+    yield { seed, step, kind: edit.kind, source, doc, local, full }
   }
 }
 
@@ -105,9 +107,11 @@ describe('structural edits validated in place save exactly what whole-document p
   let structural = 0
   let visited = 0
   const seeds = Number(process.env.SEEDS ?? 300)
+  let current:
+    { seed: number; step: number; edits: Generator<Step | null> } | undefined
   afterAll(() => {
-    // A focused seed run does not claim coverage of the whole sample.
-    if (visited !== seeds) return
+    // A focused seed or step does not claim coverage of the whole sample.
+    if (visited !== seeds * 8) return
     if (process.env.REPORT)
       console.info(`validated in place: ${structural}`, [...accepted])
     // A run that always fell back to the whole document would pass the
@@ -128,42 +132,52 @@ describe('structural edits validated in place save exactly what whole-document p
     ])
       expect(accepted.get(kind), kind).toBeGreaterThan(5)
   })
-  test.each(Array.from({ length: seeds }, (_, index) => index + 1))(
-    'seed %i',
-    (seed) => {
-      visited++
-      const editor = facade()
-      const ctx = ctxOf(editor)
-      const parse = ctx.get(parserCtx)
-      replay(ctx, seed, parse, ({ step, kind, source, doc, local, full }) => {
-        const fromLocal = localEditsOf(local, doc)
-        let fast = fromLocal
-        try {
-          fast ??= regionsOf(local, doc)
-        } catch {
-          // Preservation then takes the whole-document path.
-        }
-        if (fast === undefined) return
-        let whole: string | Error
-        try {
-          whole = full.serialize(doc)
-        } catch (error) {
-          whole = error as Error
-        }
-        const label = `seed ${seed} step ${step} ${kind}: ${JSON.stringify(source)}`
-        expect(whole, label).toBe(fast)
-        expectFacadeSave(editor, source, doc, fast, label)
-        // The whole-document path's own test of what reopening must keep.
-        expect(semanticSignature(parse(fast)), label).toBe(
-          semanticSignature(doc),
-        )
-        if (fromLocal === undefined) {
-          structural++
-          accepted.set(kind, (accepted.get(kind) ?? 0) + 1)
-        }
-      })
-    },
-  )
+  test.each(
+    Array.from({ length: seeds }, (_, index) =>
+      Array.from({ length: 8 }, (_, step) => [index + 1, step] as const),
+    ).flat(),
+  )('seed %i step %i', (seed, step) => {
+    visited++
+    const editor = facade()
+    const ctx = ctxOf(editor)
+    const parse = ctx.get(parserCtx)
+    // Each edit gets an ordinary case budget. Only the current seed's trees
+    // stay live; selecting a later step generates its prerequisites here.
+    if (!current || current.seed !== seed || current.step >= step)
+      current = { seed, step: -1, edits: replay(ctx, seed, parse) }
+    let generated: IteratorResult<Step | null>
+    do {
+      generated = current.edits.next()
+      current.step++
+    } while (current.step < step)
+    if (step === 7) current = undefined
+    expect(generated.done).toBe(false)
+    if (!generated.value) return
+    const { kind, source, doc, local, full } = generated.value
+    const fromLocal = localEditsOf(local, doc)
+    let fast = fromLocal
+    try {
+      fast ??= regionsOf(local, doc)
+    } catch {
+      // Preservation then takes the whole-document path.
+    }
+    if (fast === undefined) return
+    let whole: string | Error
+    try {
+      whole = full.serialize(doc)
+    } catch (error) {
+      whole = error as Error
+    }
+    const label = `seed ${seed} step ${step} ${kind}: ${JSON.stringify(source)}`
+    expect(whole, label).toBe(fast)
+    expectFacadeSave(editor, source, doc, fast, label)
+    // The whole-document path's own test of what reopening must keep.
+    expect(semanticSignature(parse(fast)), label).toBe(semanticSignature(doc))
+    if (fromLocal === undefined) {
+      structural++
+      accepted.set(kind, (accepted.get(kind) ?? 0) + 1)
+    }
+  })
 })
 
 // These seeds type Markdown characters into a paragraph kept as literal
@@ -174,14 +188,16 @@ test('every edit of seeds that type into a literal paragraph saves', () =>
     const parse = ctx.get(parserCtx)
     let edits = 0
     for (const seed of [244, 597])
-      replay(ctx, seed, parse, ({ step, kind, doc, full }) => {
+      for (const generated of replay(ctx, seed, parse)) {
+        if (!generated) continue
+        const { step, kind, doc, full } = generated
         const saved = full.serialize(doc)
         expect(
           semanticSignature(parse(saved)),
           `seed ${seed} step ${step} ${kind}`,
         ).toBe(semanticSignature(doc))
         edits++
-      })
+      }
     expect(edits).toBeGreaterThan(10)
   }))
 
