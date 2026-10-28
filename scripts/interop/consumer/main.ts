@@ -1,3 +1,4 @@
+import { withHistoryClock } from './history-clock.mjs'
 import { InkKitEditor, InkKitError } from '@aicayzer/inkkit'
 import '@aicayzer/inkkit/style.css'
 import {
@@ -315,7 +316,7 @@ window.interop = {
     document.dispatchEvent(new Event('selectionchange'))
   },
   get: capture,
-  async run(input) {
+  async run(input, historyBoundary) {
     if (input.configuration || input.files) {
       if (
         input.configuration &&
@@ -342,6 +343,9 @@ window.interop = {
       let result
       try {
         switch (operation.op) {
+          case 'historyBoundary':
+            result = historyBoundary()
+            break
           case 'insertImages':
             result = editor.insertImages(
               operation.images,
@@ -1541,6 +1545,11 @@ window.interop = {
     }
   },
 }
+const runScenario = window.interop.run
+window.interop.run = (input) =>
+  withHistoryClock(input.historyClock, (historyBoundary) =>
+    runScenario(input, historyBoundary),
+  )
 window.interop.measure = async (
   configuration,
   document,

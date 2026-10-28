@@ -24,7 +24,7 @@ import { commentSource, commentTextEndsEarly } from './comments'
 import { imageBlockName } from './image-blocks'
 import { serialize } from './dialect'
 import { isSafeLinkTarget, isScriptAddress } from './link-safety'
-import { semanticSignature } from './preserve'
+import { semanticSignature } from './preserve-shape'
 import { singleLine } from './references'
 
 // HTML can carry values that the Markdown writer saves as they are, so content

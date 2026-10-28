@@ -10,7 +10,7 @@ import type {
   PortableImage,
 } from './types'
 
-export interface PortableFile {
+interface PortableFile {
   reference: FileReference
   presentation: FilePresentation
   label: string

@@ -50,7 +50,7 @@ declare module 'micromark-util-types' {
   }
 }
 
-export interface LinkedSyntax {
+interface LinkedSyntax {
   raw: string
   target: string
   fragment: string | null

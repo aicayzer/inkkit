@@ -29,7 +29,7 @@ final class DragReceiver: NSView {
   override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { false }
 }
 
-final class DragHost: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler
+final class ImageDragHost: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler
 {
   var window: NSWindow!
   var web: WKWebView!
@@ -195,11 +195,11 @@ final class DragHost: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKS
 
 guard CommandLine.arguments.count == 4, ["block", "inline"].contains(CommandLine.arguments[3])
 else {
-  fputs("Usage: DragHost BUNDLE RESULT block|inline\n", stderr)
+  fputs("Usage: ImageDragHost BUNDLE RESULT block|inline\n", stderr)
   exit(1)
 }
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
-let delegate = DragHost()
+let delegate = ImageDragHost()
 app.delegate = delegate
 app.run()

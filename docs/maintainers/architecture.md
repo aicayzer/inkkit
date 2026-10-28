@@ -58,6 +58,8 @@ The remaining collaborators separate state by responsibility:
 
 `Preservation` selects the local, regional or whole-document path and retains final reparse validation. It also owns the recent-instance cache and cross-check policy. Collaborators receive only the fields and operations they use; they do not receive the coordinator or an editor. Temporary move and link-rewrite state is cleared after each attempt. The extraction keeps fallback eligibility, cache lifetimes, work budgets and exact output unchanged.
 
+Production consumers import shared algorithms from their owning modules. `preserve.ts` also re-exports selected algorithms and instrumentation for direct tests that compare independent paths and count work. These internal test seams are not package exports; facade tests continue to verify saved bytes and reopening.
+
 ## Shared primitives
 
 - `bom.ts` recognises or removes exactly one leading byte-order mark. Callers retain control of parser offsets, incremental-read eligibility and saved output.

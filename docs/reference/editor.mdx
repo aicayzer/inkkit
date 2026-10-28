@@ -3,7 +3,8 @@ title: 'Editor'
 description: 'Every InkKitEditor member: signature, result, the state it checks and the errors it reports, grouped by task.'
 ---
 
-`InkKitEditor` is the one class in Inkkit. You create it with `InkKitEditor.mount`, load a document, and read it back with `snapshot`. Options and events are in [Options and events](/reference/options), adapter interfaces in [Adapters](/reference/adapters), and every error code in [Errors](/reference/errors).
+{/* @api InkKitEditor */}
+`InkKitEditor` is the editor facade. You create it with `InkKitEditor.mount`, load a document, and read it back with `snapshot`. Options and events are in [Options and events](/reference/options), adapter interfaces in [Adapters](/reference/adapters), and every error code in [Errors](/reference/errors).
 
 ## Conventions
 
@@ -61,6 +62,8 @@ import '@aicayzer/inkkit/style.css'
 
 ## Lifecycle
 
+{/* @api InkKitEditor.mount */}
+
 ### mount
 
 `static mount(root: HTMLElement, events: EditorEvents, options?: EditorOptions): Promise<InkKitEditor>`
@@ -68,6 +71,8 @@ import '@aicayzer/inkkit/style.css'
 Builds the editor inside `root` and adds the class `inkkit-root` to it. The editor has no document until you call [`loadDocument`](#loaddocument). Keep the root in the page, and leave its children alone, until `destroy` completes.
 
 `mount` rejects with `invalid-argument` when `root` isn't an `HTMLElement`, when `events` has no `changed` function or names something that isn't an event, or when `options` has an unknown field or a field of the wrong type. See [`EditorEvents`](/reference/options#events) and [`EditorOptions`](/reference/options#editor-options).
+
+{/* @api InkKitEditor.destroy */}
 
 ### destroy
 
@@ -77,24 +82,33 @@ Cancels pending work, releases the editor and removes `inkkit-root` from the roo
 
 ## Documents
 
-Every output names the document it describes with the fields of `DocumentVersion`. `generation` is the host's number for one load; `revision` counts content changes within that load from 0. `DocumentFormat` is `'md'` for Markdown or `'txt'` for literal text. See [documents and saving](/concepts/documents) for how to use them.
+{/* @api DocumentFormat */}
+`DocumentFormat` is `'md'` for Markdown or `'txt'` for literal text. TXT has no formatted mode. See [documents and saving](/concepts/documents) for load and version rules.
 
-```ts
-type DocumentFormat = 'md' | 'txt'
+{/* @api DocumentVersion */}
+A `DocumentVersion` identifies one revision within a loaded document. Outputs and command state carry these fields.
 
-interface DocumentVersion {
-  documentId: string
-  generation: number
-  revision: number
-}
+{/* @api-scope DocumentVersion */}
 
-interface DocumentInput {
-  documentId: string // The host's name. Inkkit never interprets it.
-  generation: number // An integer greater than the loaded generation.
-  format: DocumentFormat // 'txt' is literal text with no formatted mode.
-  text: string // The complete text. '' is an empty document.
-}
-```
+| Field        | Type     | Meaning                                                   |
+| ------------ | -------- | --------------------------------------------------------- |
+| `documentId` | `string` | The host's document identity. Inkkit never interprets it. |
+| `generation` | `number` | The host-assigned integer identifying the current load.   |
+| `revision`   | `number` | The content revision within this load, starting at zero.  |
+
+{/* @api DocumentInput */}
+A `DocumentInput` supplies the complete source and its identity for a load or reload.
+
+{/* @api-scope DocumentInput */}
+
+| Field        | Type             | Meaning                                                                            |
+| ------------ | ---------------- | ---------------------------------------------------------------------------------- |
+| `documentId` | `string`         | The host's document identity, preserved in later snapshots.                        |
+| `generation` | `number`         | An integer greater than the loaded generation; the first load accepts any integer. |
+| `format`     | `DocumentFormat` | The document format: Markdown or literal text.                                     |
+| `text`       | `string`         | The complete authored text. An empty string loads an empty document.               |
+
+{/* @api InkKitEditor.loadDocument */}
 
 ### loadDocument
 
@@ -104,6 +118,8 @@ Replaces the document. The generation must be greater than the loaded one; the f
 
 A load clears the undo history, returns to formatted mode, cancels pending imports and exports, and sends one `commandStateChanged` and no `changed`. [Load a document](/concepts/documents#load-a-document) lists everything it resets.
 
+{/* @api InkKitEditor.reloadDocument */}
+
 ### reloadDocument
 
 `reloadDocument(input: DocumentInput, expectedGeneration?: number): void`
@@ -112,23 +128,28 @@ Replaces the document with a newer version of it, under the same generation rule
 
 With `expectedGeneration`, the loaded document must be that generation, or the call throws `stale-document` and changes nothing. That check comes before the generation rule.
 
+{/* @api InkKitEditor.snapshot */}
+
 ### snapshot
 
 `snapshot(expectedGeneration?: number): DocumentSnapshot`
 
 Returns the complete current text, which is what a host saves. The `text` is the exact source, including line endings; an unedited document returns the bytes that were loaded. In source mode it includes what was typed there.
 
-```ts
-import type { DocumentInput, DocumentVersion } from '@aicayzer/inkkit'
+{/* @api DocumentSnapshot */}
+A `DocumentSnapshot` combines the source fields of `DocumentInput` with `DocumentVersion`, plus its saved-state flag.
 
-interface DocumentSnapshot extends DocumentInput, DocumentVersion {
-  dirty: boolean // The text differs from the text of the last load.
-}
-```
+{/* @api-scope DocumentSnapshot */}
+
+| Field   | Type      | Meaning                                                          |
+| ------- | --------- | ---------------------------------------------------------------- |
+| `dirty` | `boolean` | Whether the current text differs from the text of the last load. |
 
 It throws `preservation` when the current content can't be written as Markdown that reopens as shown. A failed snapshot is not an unchanged document: don't save, and keep the document open. See [the save rules](/concepts/documents).
 
 ## Editability and input
+
+{/* @api InkKitEditor.editable InkKitEditor.setEditable */}
 
 ### editable and setEditable
 
@@ -140,6 +161,8 @@ It throws `preservation` when the current content can't be written as Markdown t
 
 Every member that changes the document throws `read-only` while editing is off, including `undo` and `redo`. The formatted textbox exposes `aria-readonly="true"`; the source and TXT textarea has its native `readonly` attribute. Enabling editing removes those read-only states. [Read-only mode](/concepts/documents#read-only-mode) lists what stays available.
 
+{/* @api InkKitEditor.setHostActive */}
+
 ### setHostActive
 
 `setHostActive(active: boolean | null): void`
@@ -148,17 +171,23 @@ Sets the native host's activation state for selection presentation. Pass `true` 
 
 The method changes only the active or inactive selection color. It does not focus or blur a surface, collapse a selection, change editing permission, emit a document change, or add history. It works before loading and during composition. Invalid values throw `invalid-argument`; a destroyed editor throws `destroyed`.
 
+{/* @api InkKitEditor.setTextInputPreferences */}
+
 ### setTextInputPreferences
 
 `setTextInputPreferences(preferences: TextInputPreferences): void`
 
 Replaces the input preferences on both surfaces. A field you leave out goes back to its default. It throws `composition` during text composition and is a presentation change, not an edit. See [`TextInputPreferences`](/reference/options#editor-options).
 
+{/* @api InkKitEditor.setKeymap */}
+
 ### setKeymap
 
 `setKeymap(keymap: Keymap): void`
 
 Replaces every shortcut binding. A name you leave out returns to its default, and a `null` entry keeps that name's default. An unknown name, or a value that isn't an array of strings, throws `invalid-argument`. A command that fails from a shortcut reports its error to `events.error`. Formatting has no default bindings. See [shortcuts](/reference/appearance#shortcuts) for every name, its default and key notation.
+
+{/* @api InkKitEditor.commandState */}
 
 ### commandState
 
@@ -168,6 +197,8 @@ Returns what the editor can do now, for enabling toolbar buttons and menu items,
 
 ## Formatting
 
+{/* @api InkKitEditor.format */}
+
 ### format
 
 `format(command: FormatCommand, options?: FormatOptions, expectedGeneration?: number): boolean`
@@ -176,13 +207,20 @@ Applies one formatting command to the selection in formatted mode, focuses the e
 
 [Format commands](/reference/options#format-commands) lists what each `FormatCommand` does and the `FormatOptions` it takes. With `link`, a destination that Inkkit wouldn't open or can't save throws `invalid-argument`, and in a reference link the shared definition changes, as [`editReferenceDefinition`](#editreferencedefinition) does. Giving a link the destination it already has returns `false`.
 
+{/* @api InkKitEditor.moveBlock */}
+
 ### moveBlock
 
 `moveBlock(direction: BlockMoveDirection, expectedGeneration?: number): boolean`
 
-`BlockMoveDirection` is `'up'` or `'down'`. Moves the block that holds the caret, or every block the selection touches, one place within its list, quote, callout, footnote or note, as one undo step. In a list, the list item moves with any sublist it holds. Returns whether the blocks moved. It returns `false` at the first or last place, in a table and in source and TXT modes. Front matter stays first. A move that can't be saved and reopened as the same document throws `preservation`.
+Moves the block that holds the caret, or every block the selection touches, one place within its list, quote, callout, footnote or note, as one undo step. In a list, the list item moves with any sublist it holds. Returns whether the blocks moved. It returns `false` at the first or last place, in a table and in source and TXT modes. Front matter stays first. A move that can't be saved and reopened as the same document throws `preservation`.
+
+{/* @api BlockMoveDirection */}
+`BlockMoveDirection` selects the previous position with `'up'` or the next position with `'down'` in the block's container.
 
 ## Tables
+
+{/* @api InkKitEditor.table */}
 
 ### table
 
@@ -194,6 +232,8 @@ Runs one table command in formatted mode and returns whether it applied. It retu
 
 ## History and modes
 
+{/* @api InkKitEditor.editingMode InkKitEditor.setEditingMode */}
+
 ### editingMode and setEditingMode
 
 `get editingMode(): EditingMode`
@@ -204,11 +244,15 @@ Runs one table command in formatted mode and returns whether it applied. It retu
 
 `setEditingMode` switches the current Markdown document without changing its identity, generation, revision or dirty state, and maps the selection to the matching text. It returns `false` when the mode is already set, and for TXT. It works in a read-only editor. Switching to source mode throws `preservation` when the formatted document can't be written. Leaving source mode makes everything edited there one step of the formatted history. The host owns the mode control.
 
+{/* @api InkKitEditor.replaceSource */}
+
 ### replaceSource
 
 `replaceSource(text: string, expectedGeneration?: number): boolean`
 
 Replaces the complete source as one undo step and returns `false` for identical source. It accepts any text, including unsupported or incomplete Markdown, and the snapshot holds it as given.
+
+{/* @api InkKitEditor.undo InkKitEditor.redo */}
 
 ### undo and redo
 
@@ -220,11 +264,15 @@ Each steps through the history and returns whether it applied a step. In source 
 
 ## Find and navigation
 
+{/* @api InkKitEditor.find */}
+
 ### find
 
 `find(text: string, expectedGeneration?: number): boolean`
 
 Selects the next match after the selection, wrapping at the end, and returns whether it found one. Search is literal and case-insensitive. Source and TXT modes search the full text, including syntax; formatted mode searches readable text within one text segment, not link destinations or other attributes. Formatted matches stay highlighted after editing and moving the caret, until another query, `find('')`, or a document load. `replace` and `replaceAll` also set this query. An empty search clears the highlights and finds nothing. It works in a read-only editor and doesn't change the revision. For a host-owned find bar, see [controls](/guides/controls).
+
+{/* @api InkKitEditor.replace InkKitEditor.replaceAll */}
 
 ### replace and replaceAll
 
@@ -234,21 +282,26 @@ Selects the next match after the selection, wrapping at the end, and returns whe
 
 `replace` replaces the selected match, or the next one, selects the inserted text and returns whether text changed. `replaceAll` replaces every non-overlapping match once and returns how many. Each call is one undo step. The replacement is literal: `$&`, `$1` and backslashes stay as typed. In formatted mode a replacement keeps the surrounding formatting, and a newline becomes a line break; in code, source and TXT it stays literal.
 
+{/* @api InkKitEditor.headings */}
+
 ### headings
 
 `headings(expectedGeneration?: number): readonly Heading[]`
 
 Returns the outline in document order, as frozen entries. TXT, code and literal blocks give no entries. Query again after an edit, undo, load or mode change.
 
-```ts
-import type { DocumentVersion } from '@aicayzer/inkkit'
+{/* @api Heading */}
+A `Heading` is an immutable outline entry with the fields of `DocumentVersion`. Pass the entry back to `navigateHeading` while its load, revision and mode remain current.
 
-interface Heading extends Readonly<DocumentVersion> {
-  readonly id: string // Opaque. Belongs to this load, revision and editing mode.
-  readonly level: number // 1 to 6.
-  readonly text: string // Readable text, without author comments.
-}
-```
+{/* @api-scope Heading */}
+
+| Field   | Type     | Meaning                                                               |
+| ------- | -------- | --------------------------------------------------------------------- |
+| `id`    | `string` | An opaque identity belonging to this load, revision and editing mode. |
+| `level` | `number` | The heading level, from 1 to 6.                                       |
+| `text`  | `string` | The readable heading text, without author comments.                   |
+
+{/* @api InkKitEditor.navigateHeading */}
 
 ### navigateHeading
 
@@ -258,11 +311,15 @@ Moves the caret to the heading, focuses it, scrolls to it and unfolds callouts t
 
 ## Footnotes, references and comments
 
+{/* @api InkKitEditor.insertFootnote */}
+
 ### insertFootnote
 
 `insertFootnote(label?: string, expectedGeneration?: number): boolean`
 
 Inserts a footnote reference after the selection and, when the label has no definition, appends one at the end of the document and puts the caret in it. Both are one undo step. An omitted label uses the lowest positive integer that no footnote uses. A label must be 1 to 999 characters with no whitespace, brackets or backslashes, or the call throws `invalid-argument`. It returns `false` in source and TXT modes.
+
+{/* @api InkKitEditor.navigateFootnote */}
 
 ### navigateFootnote
 
@@ -270,11 +327,15 @@ Inserts a footnote reference after the selection and, when the label has no defi
 
 Moves the caret to the definition, or the first reference, of the footnote at the caret, and returns whether there was one. Alt+Enter and Alt+Shift+Enter do the same. It works in a read-only editor and returns `false` in source and TXT modes.
 
+{/* @api InkKitEditor.editReferenceDefinition */}
+
 ### editReferenceDefinition
 
 `editReferenceDefinition(label: string, destination: string, title?: string, expectedGeneration?: number): boolean`
 
 Changes the destination of the shared link definition for `label`, which matches regardless of case and runs of whitespace, so every link that uses it changes. `destination` follows the same rule as a `format('link')` destination. An omitted `title` keeps the current title; a non-empty one replaces it. An empty `title` throws `preservation`. It returns `false` when no definition has the label, and in source and TXT modes.
+
+{/* @api InkKitEditor.setCommentsVisible */}
 
 ### setCommentsVisible
 
@@ -284,21 +345,28 @@ Shows or hides author comments. Comments start hidden. This is presentation only
 
 ## Images and paths
 
+{/* @api InkKitEditor.insertImages */}
+
 ### insertImages
 
 `insertImages(images: ImageInsertion[], at?: ClientPoint, expectedGeneration?: number): boolean`
 
 Inserts images that an adapter already stored, at the selection, or as blocks at the drop point `at`: in place of an empty paragraph there, or after the top-level block there. It returns `false`, and changes nothing, for an empty list, in source and TXT modes, and when neither an `images` nor a `files` adapter is set.
 
-```ts
-interface ImageInsertion {
-  reference: string // Written as the image's Markdown destination.
-  alt: string
-  title?: string
-}
-```
+{/* @api ImageInsertion */}
+An `ImageInsertion` names an image the host already stored. Inkkit writes the reference into Markdown; the adapter supplies its display and exported bytes.
+
+{/* @api-scope ImageInsertion */}
+
+| Field       | Type                | Meaning                                                            |
+| ----------- | ------------------- | ------------------------------------------------------------------ |
+| `reference` | `string`            | The authored image reference, written as the Markdown destination. |
+| `alt`       | `string`            | The alternative text describing the image.                         |
+| `title`     | `string` (optional) | An optional image title. Omitted titles are empty.                 |
 
 `ClientPoint` is `{ clientX, clientY }`, finite CSS pixels. The reference is read like a URL: with a file adapter, everything after the first `#` is the fragment, so write a `#` in a file name as `%23`. In a table cell, the images go inline on one line. In a code block, comment, front matter or literal block, they go after that block. See [adapters](/guides/adapters).
+
+{/* @api InkKitEditor.appendImages */}
 
 ### appendImages
 
@@ -314,6 +382,8 @@ Adds images that an adapter already stored as the last blocks of the document, f
 
 Throws the checks in the [state table](#state-checks).
 
+{/* @api InkKitEditor.insertPaths */}
+
 ### insertPaths
 
 `insertPaths(paths: string[], at: ClientPoint, expectedGeneration?: number): boolean`
@@ -321,6 +391,8 @@ Throws the checks in the [state table](#state-checks).
 Inserts dropped file paths as literal text. In formatted mode each path becomes a paragraph at the drop point: in place of an empty block, or after the top-level block there. In source and TXT modes `at` is ignored and the paths go at the selection, separated by blank lines. It returns `false` only for an empty list.
 
 ## Files and wiki links
+
+{/* @api InkKitEditor.refreshReferences */}
 
 ### refreshReferences
 
@@ -340,36 +412,54 @@ Throws `invalid-argument` for `targets` that isn't a list of strings, then `not-
 
 These members prepare content for a host that writes the native clipboard or prints. [Copy, paste and print](/concepts/clipboard) describes what each output contains.
 
+{/* @api InkKitEditor.clipboardSnapshot */}
+
 ### clipboardSnapshot
 
 `clipboardSnapshot(scope?: ClipboardScope, expectedGeneration?: number): Promise<ClipboardOutput>`
 
-`ClipboardScope` is `'document'`, the default, or `'selection'`. Resolves with clipboard content and the version it was copied from. It rejects with `stale-document` if the document, its revision or the editing mode changes before the output is ready, and with `preservation` when the selection can't be written as Markdown. Resolve it before you touch the native clipboard, and keep the existing clipboard on failure. A missing image or diagram picture is reported in the `error` of its `ClipboardImage` or `ClipboardDiagram` entry, not as a rejection.
+Resolves with clipboard content and the version it was copied from. It rejects with `stale-document` if the document, its revision or the editing mode changes before the output is ready, and with `preservation` when the selection can't be written as Markdown. Resolve it before you touch the native clipboard, and keep the existing clipboard on failure. A missing image or diagram picture is reported in the `error` of its `ClipboardImage` or `ClipboardDiagram` entry, not as a rejection.
 
-```ts
-import type { DocumentVersion, PortableImage } from '@aicayzer/inkkit'
+{/* @api ClipboardOutput */}
+A `ClipboardOutput` combines the copied content with `DocumentVersion`, so the host can identify the revision it copied.
 
-interface ClipboardOutput extends DocumentVersion {
-  text: string // Readable plain text.
-  html: string // Semantic HTML with no private image URL.
-  markdown: string // The scope's Markdown source. A whole document gives its exact source.
-  images: ClipboardImage[] // The images in html, in order.
-  diagrams: ClipboardDiagram[] // Each complete Mermaid diagram in the scope.
-}
+{/* @api-scope ClipboardOutput */}
 
-interface ClipboardImage {
-  reference: string // The authored reference. Empty for the picture of a diagram.
-  alt: string
-  image?: PortableImage
-  error?: string // Why image is missing.
-}
+| Field      | Type                 | Meaning                                                           |
+| ---------- | -------------------- | ----------------------------------------------------------------- |
+| `text`     | `string`             | Readable plain text for ordinary clipboard applications.          |
+| `html`     | `string`             | Semantic HTML without private image display URLs.                 |
+| `markdown` | `string`             | The selected source, or the whole document's exact Markdown.      |
+| `images`   | `ClipboardImage[]`   | Image entries in their HTML order, with portable bytes or errors. |
+| `diagrams` | `ClipboardDiagram[]` | Each complete Mermaid diagram in the copied scope.                |
 
-interface ClipboardDiagram {
-  source: string
-  image?: PortableImage // A PNG of the rendered diagram.
-  error?: string // Why image is missing. The source is still in the output.
-}
-```
+{/* @api ClipboardImage */}
+A `ClipboardImage` describes an image in clipboard HTML and whether its portable bytes were obtained.
+
+{/* @api-scope ClipboardImage */}
+
+| Field       | Type                       | Meaning                                                             |
+| ----------- | -------------------------- | ------------------------------------------------------------------- |
+| `reference` | `string`                   | The authored image reference; empty for a rendered diagram picture. |
+| `alt`       | `string`                   | The alternative text describing the copied image.                   |
+| `image`     | `PortableImage` (optional) | Portable image bytes, present when image export succeeded.          |
+| `error`     | `string` (optional)        | The reason portable image bytes are missing.                        |
+
+{/* @api ClipboardDiagram */}
+A `ClipboardDiagram` retains a complete Mermaid diagram and its optional rendered picture.
+
+{/* @api-scope ClipboardDiagram */}
+
+| Field    | Type                       | Meaning                                                          |
+| -------- | -------------------------- | ---------------------------------------------------------------- |
+| `source` | `string`                   | The Mermaid source of the complete diagram.                      |
+| `image`  | `PortableImage` (optional) | A portable PNG of the rendered diagram, when available.          |
+| `error`  | `string` (optional)        | The reason the picture is missing. The source remains available. |
+
+{/* @api ClipboardScope */}
+`ClipboardScope` selects the whole document with `'document'` (the default), or the current selection with `'selection'`.
+
+{/* @api InkKitEditor.paste */}
 
 ### paste
 
@@ -377,18 +467,21 @@ interface ClipboardDiagram {
 
 Pastes content that the host read from the native clipboard, through the same import as a paste the person makes. Read the clipboard once; don't read it again while this runs. An unknown field throws `invalid-argument`.
 
-```ts
-import type { CapturedImage } from '@aicayzer/inkkit'
+{/* @api ClipboardInput */}
+A `ClipboardInput` supplies representations from one clipboard read. Inkkit chooses the applicable representation using the current mode and import rules.
 
-interface ClipboardInput {
-  text: string
-  markdown?: string // Explicit Markdown. Takes precedence over text and html.
-  html?: string
-  images?: CapturedImage[] // Bytes for the images that html refers to.
-}
-```
+{/* @api-scope ClipboardInput */}
+
+| Field      | Type                         | Meaning                                                                               |
+| ---------- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| `text`     | `string`                     | The plain text representation, required even when another representation is supplied. |
+| `markdown` | `string` (optional)          | Explicit authored Markdown, taking precedence over text and HTML.                     |
+| `html`     | `string` (optional)          | The HTML representation, imported only when the current mode permits it.              |
+| `images`   | `CapturedImage[]` (optional) | Captured image bytes associated with the HTML image sources or their order.           |
 
 An image item whose `source` equals an image's `src` belongs to that image; items without a `source` fill the rest in order. In Markdown source mode, `paste` inserts `markdown`, or else `text`, literally; in TXT it inserts `text`. The promise resolves once the content is inserted. It rejects with `stale-document` if the document is replaced, or editing is turned off, while images import. An image that can't be imported becomes the text `[Name: image unavailable]` and `events.error` receives `image-unavailable`; the paste still resolves.
+
+{/* @api InkKitEditor.pasteAsPlainText */}
 
 ### pasteAsPlainText
 
@@ -396,32 +489,36 @@ An image item whose `source` equals an image's `src` belongs to that image; item
 
 Inserts `text` literally at the selection and returns whether the document changed. It is the one way to paste literal text in formatted mode, and it never makes links or formatting.
 
+{/* @api InkKitEditor.printableSnapshot */}
+
 ### printableSnapshot
 
 `printableSnapshot(expectedGeneration?: number): Promise<PrintableDocument>`
 
 Resolves with the whole current document as standalone HTML, whatever the selection, folding and comment visibility. The host owns the Print and PDF commands. The result and its arrays are frozen, and `assets` holds copies of the bytes.
 
-```ts
-import type {
-  DocumentFormat,
-  DocumentVersion,
-  PortableImage,
-} from '@aicayzer/inkkit'
+{/* @api PrintableDocument */}
+A `PrintableDocument` is the complete frozen print output with `DocumentVersion`. The host chooses when to show the Print or PDF dialog.
 
-interface PrintableDocument extends DocumentVersion {
-  format: DocumentFormat
-  html: string // A complete HTML document with the print CSS embedded and data: images only.
-  styles: string // The print CSS on its own.
-  assets: readonly PortableImage[] // The images, in the order they appear in html.
-  warnings: readonly PrintableWarning[]
-}
+{/* @api-scope PrintableDocument */}
 
-interface PrintableWarning {
-  code: 'diagram-unavailable' | 'attachment-fallback' | 'attachment-unavailable'
-  message: string
-}
-```
+| Field      | Type                          | Meaning                                                                |
+| ---------- | ----------------------------- | ---------------------------------------------------------------------- |
+| `format`   | `DocumentFormat`              | The source document format, Markdown or literal text.                  |
+| `html`     | `string`                      | A standalone HTML document with embedded print CSS and data images.    |
+| `styles`   | `string`                      | The print stylesheet on its own.                                       |
+| `assets`   | `readonly PortableImage[]`    | Copies of the portable image bytes, in HTML order.                     |
+| `warnings` | `readonly PrintableWarning[]` | Descriptions of output that degraded without failing the whole export. |
+
+{/* @api PrintableWarning */}
+A `PrintableWarning` describes a fallback in otherwise usable print output.
+
+{/* @api-scope PrintableWarning */}
+
+| Field     | Type                                                                         | Meaning                                                                                          |
+| --------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `code`    | `'diagram-unavailable' \| 'attachment-fallback' \| 'attachment-unavailable'` | The fallback category: `diagram-unavailable`, `attachment-fallback` or `attachment-unavailable`. |
+| `message` | `string`                                                                     | A readable explanation of the degraded output.                                                   |
 
 It rejects rather than return partial output: with `stale-document` if the document changes while it runs, `image-unavailable` when an authored image has no adapter or its bytes can't be read, and `diagram-unavailable` when a diagram that previewed can't be rasterized. Output that degrades is reported in `warnings`; see [print](/concepts/clipboard#print).
 
@@ -429,31 +526,41 @@ It rejects rather than return partial output: with `stale-document` if the docum
 
 These members let a host build its own find bar, accessibility or overlay UI over the editor's readable text. See [controls](/guides/controls) for the pattern.
 
+{/* @api InkKitEditor.textSnapshot */}
+
 ### textSnapshot
 
 `textSnapshot(expectedGeneration?: number): ReadableTextSnapshot`
 
 Returns the readable text and the selection, frozen, with a `snapshotId` that names them. In source and TXT modes the text is the textarea's text, with CRLF as LF. In formatted mode, blocks and line breaks are joined with LF, and author comments and the metadata of reference definitions are left out.
 
-```ts
-import type { DocumentFormat, DocumentVersion } from '@aicayzer/inkkit'
+{/* @api ReadableTextSnapshot */}
+A `ReadableTextSnapshot` contains readable text and selection together with `DocumentVersion`. It does not replace the exact saved source from `snapshot`.
 
-interface ReadableTextSnapshot extends DocumentVersion {
-  snapshotId: string // Opaque, and local to this editor.
-  format: DocumentFormat
-  mode: 'source' | 'formatted'
-  text: string
-  selection: TextRange
-}
+{/* @api-scope ReadableTextSnapshot */}
 
-interface TextRange {
-  snapshotId: string
-  from: number // Zero-based UTF-16 offset in the snapshot's text.
-  to: number // Exclusive.
-}
-```
+| Field        | Type                      | Meaning                                                                                  |
+| ------------ | ------------------------- | ---------------------------------------------------------------------------------------- |
+| `snapshotId` | `string`                  | An opaque identity local to this editor, changed by document revisions and mode changes. |
+| `format`     | `DocumentFormat`          | The source format, Markdown or literal text.                                             |
+| `mode`       | `'source' \| 'formatted'` | The editing mode at the time of capture.                                                 |
+| `text`       | `string`                  | Readable text with normalised textarea line endings in source and TXT modes.             |
+| `selection`  | `TextRange`               | The selected readable range in this same snapshot.                                       |
+
+{/* @api TextRange */}
+A `TextRange` addresses a range within one readable snapshot, using zero-based UTF-16 offsets.
+
+{/* @api-scope TextRange */}
+
+| Field        | Type     | Meaning                                                        |
+| ------------ | -------- | -------------------------------------------------------------- |
+| `snapshotId` | `string` | The identity of the readable snapshot that owns these offsets. |
+| `from`       | `number` | The inclusive starting offset in the readable text.            |
+| `to`         | `number` | The exclusive ending offset. Equal endpoints describe a caret. |
 
 A load, a reload, a new revision or a mode change makes earlier snapshot IDs stale, and a range that carries one throws `stale-document`. Caret changes, scrolling and resizing don't. A range with an offset outside the text, `to` before `from`, or an offset that splits a surrogate pair throws `invalid-range`.
+
+{/* @api InkKitEditor.selectTextRange */}
 
 ### selectTextRange
 
@@ -461,11 +568,15 @@ A load, a reload, a new revision or a mode change makes earlier snapshot IDs sta
 
 Selects the range. `focus` puts focus in the editor and `reveal` scrolls the range into view; both default to `false`, so focus stays in a host search field. A complete image alt text or footnote label selects that node, and a callout title selects the callout. Part of one throws `invalid-range`. It works in a read-only editor.
 
+{/* @api InkKitEditor.revealTextRange */}
+
 ### revealTextRange
 
 `revealTextRange(range: TextRange): void`
 
 Scrolls the range into the viewport that [`setViewport`](#setviewport) describes, unfolding a callout that holds it. It works in a read-only editor.
+
+{/* @api InkKitEditor.replaceTextRange */}
 
 ### replaceTextRange
 
@@ -473,22 +584,27 @@ Scrolls the range into the viewport that [`setViewport`](#setviewport) describes
 
 Replaces the range with literal text as one undo step, keeping the surrounding structure and formatting, and returns whether the text changed. In formatted mode the range must sit in one text block. A range that crosses an image, a line break, a hidden comment or a block boundary throws `invalid-range`; use source mode to change syntax.
 
+{/* @api InkKitEditor.textRangesRects */}
+
 ### textRangesRects
 
 `textRangesRects(ranges: readonly TextRange[]): readonly (readonly TextRect[])[]`
 
 Measures a batch of ranges and returns one frozen array of rectangles for each, in order. It checks the whole batch before measuring, keeps no cache, and returns an empty array for an empty batch. Hidden content has no rectangles.
 
-```ts
-interface TextRect {
-  left: number
-  top: number
-  right: number
-  bottom: number
-  width: number
-  height: number
-}
-```
+{/* @api TextRect */}
+A `TextRect` measures content in CSS pixels in the web view's client coordinate space, matching DOM pointer coordinates.
+
+{/* @api-scope TextRect */}
+
+| Field           | Type     | Meaning                                            |
+| --------------- | -------- | -------------------------------------------------- |
+| `left`, `right` | `number` | The horizontal coordinates of the rectangle edges. |
+| `top`, `bottom` | `number` | The vertical coordinates of the rectangle edges.   |
+| `width`         | `number` | The horizontal extent in CSS pixels.               |
+| `height`        | `number` | The vertical extent in CSS pixels.                 |
+
+{/* @api InkKitEditor.visibleTextRanges */}
 
 ### visibleTextRanges
 
@@ -496,25 +612,37 @@ interface TextRect {
 
 Returns the ranges of the snapshot's text that are inside the viewport now.
 
+{/* @api InkKitEditor.setViewport */}
+
 ### setViewport
 
 `setViewport(options: ViewportOptions): void`
 
 Names the element that scrolls and how far host chrome covers it, replacing earlier settings. Reveal, find and heading navigation keep text out of the covered edges. A `scrollContainer` that isn't the root or an ancestor of it, or a `ViewportInsets` side that is negative or not finite, throws `invalid-argument`.
 
-```ts
-interface ViewportInsets {
-  top: number
-  right: number
-  bottom: number
-  left: number
-}
+{/* @api ViewportInsets */}
+`ViewportInsets` describe the area covered by host chrome on each viewport edge, in non-negative CSS pixels.
 
-interface ViewportOptions {
-  scrollContainer?: HTMLElement // Defaults to the root.
-  insets?: Partial<ViewportInsets> // CSS pixels. Each side defaults to 0.
-}
-```
+{/* @api-scope ViewportInsets */}
+
+| Field    | Type     | Meaning                                    |
+| -------- | -------- | ------------------------------------------ |
+| `top`    | `number` | The covered distance from the top edge.    |
+| `right`  | `number` | The covered distance from the right edge.  |
+| `bottom` | `number` | The covered distance from the bottom edge. |
+| `left`   | `number` | The covered distance from the left edge.   |
+
+{/* @api ViewportOptions */}
+`ViewportOptions` replace the scroll container and covered-edge settings for subsequent reveal and measurement operations.
+
+{/* @api-scope ViewportOptions */}
+
+| Field             | Type                                 | Meaning                                                               |
+| ----------------- | ------------------------------------ | --------------------------------------------------------------------- |
+| `scrollContainer` | `HTMLElement` (optional)             | The editor root or an ancestor that scrolls; omitted, it is the root. |
+| `insets`          | `Partial<ViewportInsets>` (optional) | Covered distances by edge. Omitted edges default to zero.             |
+
+{/* @api InkKitEditor.viewport */}
 
 ### viewport
 
@@ -522,20 +650,23 @@ interface ViewportOptions {
 
 Returns the visible area, the insets in effect and the scroll offsets, frozen.
 
-```ts
-import type { TextRect, ViewportInsets } from '@aicayzer/inkkit'
+{/* @api ViewportSnapshot */}
+A `ViewportSnapshot` reports the current frozen viewport geometry and combined scroll offsets.
 
-interface ViewportSnapshot {
-  rect: TextRect // The visible area of the container, root and window, less the insets.
-  insets: ViewportInsets
-  scrollTop: number // The container's offset plus, in source and TXT modes, the textarea's.
-  scrollLeft: number
-}
-```
+{/* @api-scope ViewportSnapshot */}
+
+| Field        | Type             | Meaning                                                                               |
+| ------------ | ---------------- | ------------------------------------------------------------------------------------- |
+| `rect`       | `TextRect`       | The visible intersection of container, root and window, after subtracting the insets. |
+| `insets`     | `ViewportInsets` | The covered-edge distances currently in effect.                                       |
+| `scrollTop`  | `number`         | The vertical container offset plus the textarea offset in source and TXT modes.       |
+| `scrollLeft` | `number`         | The horizontal container offset plus the textarea offset in source and TXT modes.     |
 
 ## Native text input
 
 A host whose native layer receives typing or keys before the web view does passes them to Inkkit with these members. Both require the expected generation, so input meant for a replaced document fails instead of landing in the new one. See [embed in a web view](/guides/web-view).
+
+{/* @api InkKitEditor.insertText */}
 
 ### insertText
 
@@ -543,22 +674,27 @@ A host whose native layer receives typing or keys before the web view does passe
 
 Inserts exactly `text` at the selection and returns `true`. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally.
 
+{/* @api InkKitEditor.keyDown */}
+
 ### keyDown
 
 `keyDown(input: KeyInput, expectedGeneration: number): boolean`
 
 Runs a key press through Inkkit's key handling and returns whether Inkkit handled it. When it returns `true`, the host must not also handle the key natively.
 
-```ts
-interface KeyInput {
-  key: string // KeyboardEvent.key, such as 'Enter' or 'b'.
-  code?: string // KeyboardEvent.code, such as 'KeyB'.
-  metaKey?: boolean // An omitted modifier isn't held.
-  ctrlKey?: boolean
-  altKey?: boolean
-  shiftKey?: boolean
-}
-```
+{/* @api KeyInput */}
+A `KeyInput` describes a native key press using DOM keyboard names and modifier state.
+
+{/* @api-scope KeyInput */}
+
+| Field      | Type                 | Meaning                                                       |
+| ---------- | -------------------- | ------------------------------------------------------------- |
+| `key`      | `string`             | The KeyboardEvent key value, such as Enter or a typed letter. |
+| `code`     | `string` (optional)  | The optional physical-key code, such as KeyB.                 |
+| `metaKey`  | `boolean` (optional) | Whether the Meta key is held; omitted means false.            |
+| `ctrlKey`  | `boolean` (optional) | Whether the Control key is held; omitted means false.         |
+| `altKey`   | `boolean` (optional) | Whether the Alt or Option key is held; omitted means false.   |
+| `shiftKey` | `boolean` (optional) | Whether the Shift key is held; omitted means false.           |
 
 It handles the keymap bindings and, in formatted mode, Alt+Enter and Alt+Shift+Enter for footnotes and the editor's own keys such as Enter, Tab and Backspace in lists and tables. Tab and Shift+Tab indent and outdent a list item through the default `indent` and `outdent` bindings. In source and TXT modes it handles Enter, Tab, Backspace and Delete with no Command, Control or Alt held, and returns `false` for other keys. It returns `false` during composition.
 
@@ -568,6 +704,8 @@ In a read-only editor, a bound key and Enter, Tab, Backspace and Delete throw `r
 
 ## Focus
 
+{/* @api InkKitEditor.focus InkKitEditor.blur */}
+
 ### focus and blur
 
 `focus(expectedGeneration?: number): void`
@@ -575,6 +713,8 @@ In a read-only editor, a bound key and Enter, Tab, Backspace and Delete throw `r
 `blur(expectedGeneration?: number): void`
 
 `focus` puts focus in the surface for the current mode: the formatted editor, or the textarea in source and TXT modes. `blur` takes focus off Inkkit's text surfaces and leaves focus anywhere else, such as in a host control or a button Inkkit draws, where it is. Use it instead of finding Inkkit's elements yourself. Neither checks composition, read-only or pending imports. Loading takes focus off the editor, so call `focus` after a load only when editing should start at once.
+
+{/* @api InkKitEditor.cancelPendingImports */}
 
 ## cancelPendingImports
 

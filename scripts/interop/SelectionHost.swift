@@ -71,7 +71,7 @@ final class SelectionHost: NSObject, NSApplicationDelegate {
         guard arguments.count >= 3 else { throw fail("Usage: SelectionHost BUNDLE OUTPUT") }
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 1000, height: 650))
         window = NSWindow(contentRect: content.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "InkKit selection evidence"
+        window.title = "Inkkit selection evidence"
         window.contentView = content
         web = WKWebView(frame: NSRect(x: 0, y: 60, width: 1000, height: 590))
         field.frame = NSRect(x: 20, y: 16, width: 400, height: 28)

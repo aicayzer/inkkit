@@ -604,7 +604,6 @@ export class Reconstruction {
         kept[from + index] = written.kept[index]!
       })
     }
-    const previous = positions.at(-1)
     this.separateLists(doc, pieces, kept, positions, current)
     let output = pieces.map((piece, index) => gaps[index] + piece).join('')
     if (this.endsAsAuthored(positions, carried))

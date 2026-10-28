@@ -229,8 +229,6 @@ export function createLiteralPreservation(images: boolean) {
   )
 }
 
-export const preserveLiterals = createLiteralPreservation(false)
-
 /** The Markdown a literal block holds, up to `end` within its content. */
 export function literalSource(
   node: ProseNode,

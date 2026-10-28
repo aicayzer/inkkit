@@ -321,7 +321,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         window = NSWindow(
             contentRect: NSRect(x: 20, y: 20, width: 720, height: 640),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "InkKit disposable clipboard fixture"
+        window.title = "Inkkit disposable clipboard fixture"
         window.contentView = web
         window.orderFront(nil)
         let url = URL(fileURLWithPath: args[1])
@@ -367,6 +367,12 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         }
     }
 
+    func jsInput(_ body: String, _ inputJSON: String) async throws -> Any {
+        // JSONSerialization can remove a literal leading BOM from string values.
+        // Parse the original bytes in JavaScript so source and assertions stay exact.
+        try await js("const input = JSON.parse(inputJSON);\n" + body, ["inputJSON": inputJSON])
+    }
+
     @objc nonisolated func printDidRun(_ operation: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -383,7 +389,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         printWeb = frozen
         frozen.navigationDelegate = self
         let panel = NSWindow(contentRect: frozen.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        panel.title = "InkKit disposable printable fixture"
+        panel.title = "Inkkit disposable printable fixture"
         panel.contentView = frozen
         panel.orderFront(nil)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -476,7 +482,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
             _ = try await js("""
                 for(let n=0;n<200&&!window.ready;n++)
                     await new Promise(r=>setTimeout(r,50));
-                if(!window.ready)throw new Error('InkKit mount timed out');
+                if(!window.ready)throw new Error('Inkkit mount timed out');
                 return true
                 """)
             if args[2] == "startup" {
@@ -491,11 +497,14 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
                 NSApplication.shared.terminate(nil)
                 return
             }
-            let input = try JSONSerialization.jsonObject(
-                with: Data(contentsOf: URL(fileURLWithPath: args[3]))) as! [String: Any]
+            let inputData = try Data(contentsOf: URL(fileURLWithPath: args[3]))
+            guard let inputJSON = String(data: inputData, encoding: .utf8) else {
+                throw NSError(domain: "Interop", code: 4, userInfo: [NSLocalizedDescriptionKey: "Input is not UTF-8 JSON"])
+            }
+            let input = try JSONSerialization.jsonObject(with: inputData) as! [String: Any]
             let result: Any
             if ["scenario", "print", "printable"].contains(args[2]) {
-                let scenario = try await js("return await window.interop.run(input)", ["input": input])
+                let scenario = try await jsInput("return await window.interop.run(input)", inputJSON)
                 var output = scenario as? [String: Any] ?? [:]
                 if output["passed"] as? Bool != false && args[2] == "printable" {
                     let name = input["printableName"] as? String ?? "printable"
@@ -513,15 +522,12 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
                 }
                 result = output
             } else {
-                _ = try await js("return window.interop.load(source, format)", [
-                    "source": input["source"] as? String ?? "",
-                    "format": input["format"] as? String ?? "md",
-                ])
+                _ = try await jsInput("return window.interop.load(input.source ?? '', input.format ?? 'md')", inputJSON)
                 switch args[2] {
                 case "export", "partial":
                     if args[2] == "partial" {
-                        if let selection = input["selection"] as? [String: Any] {
-                            _ = try await js("return await window.interop.select(selection)", ["selection": selection])
+                        if input["selection"] is [String: Any] {
+                            _ = try await jsInput("return await window.interop.select(input.selection)", inputJSON)
                         } else {
                             _ = try await js("""
                                 window.interop.selectPartial();
@@ -532,7 +538,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
                     }
                     result = try await js("return await window.interop.export(all)", ["all": args[2] == "export"])
                 case "paste":
-                    result = try await js("return await window.interop.paste(input)", ["input": input["clipboard"] as? [String: Any] ?? [:]])
+                    result = try await jsInput("return await window.interop.paste(input.clipboard ?? {})", inputJSON)
                 default:
                     throw NSError(domain: "Interop", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unknown mode: \(args[2])"])
                 }

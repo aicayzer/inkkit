@@ -33,7 +33,7 @@ The all-in-one measurement page was 6,086,749 bytes (gzip 1,720,663) for the bas
 
 ## Decisions
 
-A Chromium CPU profile of mixed loading/editing attributed the dominant editing work to source serialization and reopen validation. Highlighting was a small fraction of sampled work. InkKit now caches successful preserved source by immutable document identity, scoped to each load/reload. Repeated plugin updates and snapshot/export captures reuse that result; new documents, provenance changes, edits and history still produce the correct source. Failures remain uncached. This roughly halves the measured large/mixed edit cost without weakening the reopen check.
+A Chromium CPU profile of mixed loading/editing attributed the dominant editing work to source serialization and reopen validation. Highlighting was a small fraction of sampled work. Inkkit now caches successful preserved source by immutable document identity, scoped to each load/reload. Repeated plugin updates and snapshot/export captures reuse that result; new documents, provenance changes, edits and history still produce the correct source. Failures remain uncached. This roughly halves the measured large/mixed edit cost without weakening the reopen check.
 
 Optional presentation plugins can be skipped at mount through `rendering: { codeHighlighting: false, diagramPreview: false }`. Mermaid is imported only after validating an actual render request. Explicit diagram copy/print still renders on demand. These changes reduce execution work for minimal hosts while retaining the default rich behaviour.
 
@@ -144,9 +144,9 @@ Leaving Mermaid out removes about 83% of the page and about 75 ms from each WKWe
 
 When diagrams are enabled, the main-entry page still contains every diagram type Mermaid 12.1.0 ships, not only the six that `validateDiagram` accepts. Mermaid registers all of its built-in diagram types, layouts and KaTeX when it loads, each behind a dynamic import, and has no public option or entry point that leaves any out. A single-file build inlines all of them.
 
-A module graph of the main-entry page attributes 9.36 MB of rendered modules (before minification) to Mermaid. Of that, 6.23 MB is reachable only through diagram types, layouts and maths that InkKit refuses before rendering, mostly ELK (2.54 MB), other Mermaid diagram modules (1.62 MB), Cytoscape (0.87 MB) and KaTeX (0.48 MB). As an experiment, a host build plugin replaced those 48 dynamically imported modules with empty modules. The page fell from 6.1 MB to 2.7 MB (gzip 0.73 MB), and the six supported types still rendered in Chromium.
+A module graph of the main-entry page attributes 9.36 MB of rendered modules (before minification) to Mermaid. Of that, 6.23 MB is reachable only through diagram types, layouts and maths that Inkkit refuses before rendering, mostly ELK (2.54 MB), other Mermaid diagram modules (1.62 MB), Cytoscape (0.87 MB) and KaTeX (0.48 MB). As an experiment, a host build plugin replaced those 48 dynamically imported modules with empty modules. The page fell from 6.1 MB to 2.7 MB (gzip 0.73 MB), and the six supported types still rendered in Chromium.
 
-InkKit does not ship that plugin. It works by rewriting Mermaid's unexported chunk files, whose names and boundaries can change in any Mermaid release, and it applies only to hosts that build with Vite or Rollup. Pruning safely needs either a Mermaid entry point that registers selected diagram types or a separate decision to maintain such a plugin with InkKit's Mermaid pin.
+Inkkit does not ship that plugin. It works by rewriting Mermaid's unexported chunk files, whose names and boundaries can change in any Mermaid release, and it applies only to hosts that build with Vite or Rollup. Pruning safely needs either a Mermaid entry point that registers selected diagram types or a separate decision to maintain such a plugin with Inkkit's Mermaid pin.
 
 ## Source-mode typing, October 14, 2026
 

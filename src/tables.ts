@@ -160,7 +160,7 @@ function trimCell(nodes: ProseNode[]): ProseNode[] {
  * code belongs to its cell. Returns nothing for any other paragraph, including one with a line
  * break or an inline node, which a cell could not hold the same way.
  */
-export function typedRowCells(paragraph: ProseNode): ProseNode[][] | undefined {
+function typedRowCells(paragraph: ProseNode): ProseNode[][] | undefined {
   const rows: ProseNode[][] = [[]]
   for (let index = 0; index < paragraph.childCount; index++) {
     const child = paragraph.child(index)

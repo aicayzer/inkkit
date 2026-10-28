@@ -98,7 +98,7 @@ const keepingWhitespace = new Set([
  * declarations are parsed, so case, spacing, comments, quoted text and
  * `!important` do not matter. Style sheets are not consulted.
  */
-export function keepsWhitespace(element: Element): boolean {
+function keepsWhitespace(element: Element): boolean {
   return [
     ...inlineStyle(element, ['white-space', 'white-space-collapse']).values(),
   ].some((value) =>
@@ -273,10 +273,6 @@ const blocks = new Set([
   'FOOTER',
   'HR',
 ])
-
-export function isBlockElement(element: Element): boolean {
-  return blocks.has(element.tagName)
-}
 
 // Bolds the inline content of a term. Paragraphs, headings and divisions
 // inside it each become one bold paragraph; other blocks are kept as they are.

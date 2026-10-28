@@ -1,12 +1,12 @@
-import { createHash } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { resolve, join, dirname } from 'node:path'
+import { resolve } from 'node:path'
+import { runScenarios } from './runner.mjs'
+import { probeScenarios, probeGroups } from './scenarios/index.mjs'
 
 const positional = []
 const requestedGroups = []
 const requestedScenarios = []
 let list = false
+const tools = {}
 for (let index = 2; index < process.argv.length; index++) {
   const argument = process.argv[index]
   if (argument === '--list') list = true
@@ -15,6 +15,13 @@ for (let index = 2; index < process.argv.length; index++) {
     if (!value || value.startsWith('--'))
       throw Error(`Missing value for ${argument}`)
     ;(argument === '--group' ? requestedGroups : requestedScenarios).push(value)
+  } else if (
+    ['--archive', '--clipboard', '--image-drag-host'].includes(argument)
+  ) {
+    const value = process.argv[++index]
+    if (!value || value.startsWith('--'))
+      throw Error(`Missing value for ${argument}`)
+    tools[argument.slice(2)] = resolve(value)
   } else if (argument.startsWith('--'))
     throw Error(`Unknown option: ${argument}`)
   else positional.push(argument)
@@ -3188,6 +3195,10 @@ const groups = {
       !name.startsWith('native-'),
   ),
 }
+for (const [name, fixture] of Object.entries(scenarios))
+  scenarios[name] = { fixture }
+Object.assign(scenarios, probeScenarios)
+Object.assign(groups, probeGroups)
 const selected = new Set()
 for (const group of requestedGroups) {
   if (!(group in groups))
@@ -3208,172 +3219,31 @@ if (!selected.size) throw Error('Selection contains no scenarios')
 if (list) {
   console.log(
     JSON.stringify(
-      { groups, selected: [...selected], scenarios: names },
+      {
+        groups,
+        selected: [...selected],
+        scenarios: Object.keys(scenarios),
+        requirements: [...selected].map((name) => ({
+          name,
+          host: scenarios[name].hostKind ?? 'webkit',
+          clipboard: Boolean(scenarios[name].clipboard),
+        })),
+      },
       null,
       2,
     ),
   )
   process.exit(0)
 }
-await mkdir(destination, { recursive: true })
-
-const consumer = JSON.parse(
-  await readFile(join(dirname(bundle), 'consumer-evidence.json'), 'utf8'),
-)
-const bundleSha256 = createHash('sha256')
-  .update(await readFile(bundle))
-  .digest('hex')
-if (!consumer.version || consumer.bundleSha256 !== bundleSha256)
-  throw Error(
-    'Consumer evidence does not match this bundle; rebuild it from the candidate archive',
-  )
-const evidence = {
-  version: consumer.version,
-  entry: consumer.entry,
-  tarballSha256: consumer.tarballSha256,
+const evidence = await runScenarios({
   bundle,
-  bundleSha256,
+  destination,
   host,
-  hostSha256: createHash('sha256')
-    .update(await readFile(host))
-    .digest('hex'),
-  testedAt: new Date().toISOString(),
-  selection: { groups: requestedGroups, scenarios: [...selected] },
-  scenarios: [],
-}
-for (const name of selected) {
-  const fixture = scenarios[name]
-  const input = join(destination, `${name}.input.json`)
-  const output = join(destination, `${name}.result.json`)
-  await writeFile(input, `${JSON.stringify(fixture, null, 2)}\n`)
-  const run = spawnSync(
-    host,
-    [bundle, fixture.mode ?? 'scenario', input, output],
-    {
-      timeout: 120_000,
-      encoding: 'utf8',
-    },
-  )
-  let result
-  try {
-    result = JSON.parse(await readFile(output, 'utf8'))
-  } catch {}
-  const printFailures = ['print', 'printable'].includes(fixture.mode)
-    ? [
-        ...(result?.print?.pages >= (fixture.printMinPages ?? 1)
-          ? []
-          : [`Printed PDF has fewer than ${fixture.printMinPages ?? 1} pages`]),
-        ...(fixture.printIncludes ?? [])
-          .filter((value) => !result?.print?.text?.includes(value))
-          .map((value) => `Printed PDF omitted ${value}`),
-        ...(fixture.printExcludes ?? [])
-          .filter((value) => result?.print?.text?.includes(value))
-          .map((value) => `Printed PDF included ${value}`),
-        ...(fixture.mode === 'printable' &&
-        result?.print?.frozenDocument !== true
-          ? ['Print did not use the captured standalone HTML']
-          : []),
-        ...(fixture.mode === 'printable' &&
-        (result?.print?.screenGeometry?.editorComponents !== 0 ||
-          result?.print?.screenGeometry?.activeElements !== 0 ||
-          result?.print?.screenGeometry?.externalResources?.length !== 0)
-          ? [
-              'Frozen print document contains editor controls, active elements or external resources',
-            ]
-          : []),
-        ...(fixture.mode === 'printable' &&
-        !result?.print?.pageGeometry?.every(
-          (page) =>
-            Math.abs(page.width - 595.28) < 1 &&
-            Math.abs(page.height - 841.89) < 1,
-        )
-          ? ['Printed pages have unexpected geometry']
-          : []),
-        ...(fixture.printMinImages &&
-        !(
-          result?.print?.imageXObjects?.filter(
-            (image) =>
-              image.width > 0 && image.height > 0 && image.streamBytes > 0,
-          ).length >= fixture.printMinImages
-        )
-          ? ['Printed PDF omitted embedded image streams']
-          : []),
-        ...(fixture.mode === 'printable'
-          ? (
-              result?.results?.[fixture.printableName ?? 'printable']
-                ?.assetGeometry ?? []
-            ).flatMap((asset) =>
-              result?.print?.imagePlacements?.some(
-                (image) =>
-                  image.width === asset.width &&
-                  image.height === asset.height &&
-                  image.mediaBoxFraction > 0.999 &&
-                  image.drawnWidth > 0 &&
-                  image.drawnHeight > 0,
-              )
-                ? []
-                : [
-                    `Printed PDF has no complete page-contained image placement for ${asset.width}x${asset.height}`,
-                  ],
-            )
-          : []),
-        ...(fixture.printPortrait &&
-        !result?.print?.imagePlacements?.some((image) => {
-          if (
-            image.width !== fixture.printPortrait.width ||
-            image.height !== fixture.printPortrait.height ||
-            image.mediaBoxFraction < 0.999
-          )
-            return false
-          const raster = result?.print?.pageRasters?.find(
-            (page) => page.page === image.page && page.image === image.name,
-          )?.portrait
-          const bands = [
-            raster?.red ?? 0,
-            raster?.green ?? 0,
-            raster?.blue ?? 0,
-          ]
-          const coverage =
-            (raster?.colourPixels ?? 0) / (image.drawnWidth * image.drawnHeight)
-          return (
-            raster?.rendered === true &&
-            Math.min(...bands) > 100 &&
-            Math.max(...bands) / Math.min(...bands) < 1.06 &&
-            coverage > 0.95 &&
-            coverage < 1.05
-          )
-        })
-          ? [
-              'Native PDF raster does not show all equal portrait bands covering the complete drawn image area',
-            ]
-          : []),
-      ]
-    : []
-  evidence.scenarios.push({
-    name,
-    passed:
-      run.status === 0 &&
-      result?.passed === true &&
-      printFailures.length === 0 &&
-      !result?.pageErrors?.length &&
-      !run.stderr.includes('WKWebView page error:'),
-    status: run.status,
-    error: run.error?.message ?? run.stderr.trim(),
-    input,
-    output,
-    steps: result?.steps?.length ?? 0,
-    failures: result?.steps?.filter((step) => !step.passed) ?? [],
-    finalError: result?.final?.error ?? null,
-    pageErrors: result?.pageErrors ?? [],
-    ...(['print', 'printable'].includes(fixture.mode)
-      ? { print: result?.print, printFailures }
-      : {}),
-  })
-}
-evidence.passed = evidence.scenarios.every((scenario) => scenario.passed)
-await writeFile(
-  join(destination, 'evidence.json'),
-  `${JSON.stringify(evidence, null, 2)}\n`,
-)
+  tools,
+  scenarios,
+  selected: [...selected],
+  requestedGroups,
+  command: process.argv.slice(1),
+})
 console.log(JSON.stringify(evidence, null, 2))
 if (!evidence.passed) process.exitCode = 1

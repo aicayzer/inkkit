@@ -35,7 +35,7 @@ function onlyDefinitions(content: Fragment): boolean {
   return only
 }
 
-export interface ClipboardContent {
+interface ClipboardContent {
   text: string
   html: string
 }

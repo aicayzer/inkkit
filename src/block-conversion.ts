@@ -50,7 +50,7 @@ const keepsSyntax = (type: NodeType) =>
   type.name === 'comment_block' || type.name === 'literal_markdown'
 
 /** The Markdown of a textblock's inline content, as InkKit writes it. */
-export function writtenInlineSource(ctx: Ctx, node: ProseNode): string {
+function writtenInlineSource(ctx: Ctx, node: ProseNode): string {
   if (!node.content.size) return ''
   const { schema } = node.type
   const doc = schema.topNodeType.create(null, [
@@ -96,7 +96,7 @@ function withoutContainers(doc: ProseNode, pos: number, text: string): string {
 }
 
 /** The Markdown source of the inline content of each textblock at `positions`. */
-export function inlineSources(
+function inlineSources(
   ctx: Ctx,
   doc: ProseNode,
   positions: readonly number[],
