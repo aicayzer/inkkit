@@ -2,7 +2,7 @@ import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import {
   InkKitEditor,
   type EditorOptions,
@@ -310,6 +310,81 @@ test('headings 4–6 and table commands are configurable and initial read-only i
     },
     { editable: false },
   ))
+
+test.each(['formatted', 'source'] as const)(
+  'deferred portable cuts retain the captured selection across export and host write (%s)',
+  async (mode) => {
+    let finishExport!: () => void
+    const exporting = new Promise<void>((resolve) => {
+      finishExport = resolve
+    })
+    let copied!: () => void
+    let entered!: () => void
+    const copying = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const errors: Error[] = []
+    let markdown = ''
+    const text = '![photo](opaque)\r\n\r\nKeep α\r\n'
+    await run(
+      async (editor, root, ctx) => {
+        editor.loadDocument({ ...input, generation: 9, text })
+        editor.setEditingMode(mode)
+        const plain = root.querySelector('textarea')!
+        const view = ctx.get(editorViewCtx)
+        if (mode === 'source') plain.setSelectionRange(0, plain.value.length)
+        else
+          view.dispatch(
+            view.state.tr.setSelection(new AllSelection(view.state.doc)),
+          )
+        const event = new Event('cut', { bubbles: true, cancelable: true })
+        ;(mode === 'source' ? plain : view.dom).dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(true)
+        if (mode === 'source')
+          plain.setSelectionRange(plain.value.length, plain.value.length)
+        else
+          view.dispatch(
+            view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)),
+          )
+        finishExport()
+        await copying
+        expect(markdown).toContain('![photo](opaque)')
+        expect(markdown).toContain('Keep α')
+        expect(editor.snapshot().text).toBe(text)
+        if (mode === 'source') plain.setSelectionRange(0, 0)
+        else
+          view.dispatch(
+            view.state.tr.setSelection(TextSelection.atStart(view.state.doc)),
+          )
+        copied()
+        await vi.waitFor(() => expect(editor.snapshot().text).toBe(''))
+        expect(editor.undo()).toBe(true)
+        expect(editor.snapshot().text).toBe(text)
+        expect(errors).toEqual([])
+      },
+      {
+        images: {
+          presentation: () => undefined,
+          importImage: async () => ({ reference: 'opaque' }),
+          exportImage: async () => {
+            await exporting
+            return { bytes: new Uint8Array([1]), mimeType: 'image/png' }
+          },
+        },
+      },
+      {
+        error: (error) => errors.push(error),
+        clipboard: (content) => {
+          markdown = content.markdown
+          entered()
+          return new Promise<void>((resolve) => {
+            copied = resolve
+          })
+        },
+      },
+    )
+  },
+)
 
 test.each(['formatted', 'source'] as const)(
   'deferred portable cuts cannot delete after a read-only cycle (%s)',

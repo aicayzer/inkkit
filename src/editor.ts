@@ -1,3 +1,5 @@
+import { EditorOutput } from './editor-output'
+import { EditorClipboard } from './editor-clipboard'
 import { EditorText } from './editor-text'
 import { EditorViewport } from './editor-viewport'
 import { EditorSearch } from './editor-search'
@@ -21,10 +23,8 @@ import {
   editorViewCtx,
   parserCtx,
   prosePluginsCtx,
-  remarkCtx,
   schemaCtx,
 } from '@milkdown/kit/core'
-import { portableClipboard, clipboardText, clipboardContent } from './clipboard'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import { replacementMarks } from './text-input'
 import { blockDropRange } from './drop-placement'
@@ -50,27 +50,16 @@ import { defaultLabels } from './labels'
 import { serialize } from './dialect'
 import { extraLinkSchemes, isSafeLinkTarget } from './link-safety'
 import { Preservation } from './preserve'
-import {
-  sourceAttribute,
-  sourceSelection,
-  rawOffset,
-  type SourceProvenance,
-} from './source'
+import { sourceAttribute, type SourceProvenance } from './source'
 import {
   normaliseLabel,
   referenceDefinitions,
   footnoteDefinitions,
   singleLine,
 } from './references'
-import {
-  selectionMarkdown,
-  selectionContent,
-  referenceMetadata,
-  withReferenceMetadata,
-} from './reference-clipboard'
-import { imagePlacement, isImage } from './image-blocks'
+import { imagePlacement } from './image-blocks'
 import { wikiReference } from './linked-syntax'
-import { mediaPolicyEvent, requestRefresh, withFileSignal } from './files'
+import { mediaPolicyEvent, requestRefresh } from './files'
 import {
   tableCommand,
   tableCommands,
@@ -108,14 +97,7 @@ import {
 } from './types'
 import type { TextProjection } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
-import {
-  commentSelectionContent,
-  commentProvenance,
-  literalCommentSpans,
-  isComment,
-  isWrittenEdit,
-  setCommentVisibility,
-} from './comments'
+import { isWrittenEdit, setCommentVisibility } from './comments'
 import {
   assertHiddenCommentsKept,
   hiddenCommentExit,
@@ -151,12 +133,7 @@ import {
 } from './outline'
 import { toggleTask } from './tasks'
 import { modHeld, trackLinkModifier } from './modifier'
-import { diagramsAvailable, isMermaid } from './mermaid'
-import {
-  hasAuthoredImagesInLiterals,
-  printableMarkdown,
-  printableText,
-} from './print'
+import { diagramsAvailable } from './mermaid'
 
 /** An inline format that `CaretState` can report. */
 export type Mark =
@@ -574,43 +551,6 @@ function hostEvents(value: unknown): EditorEvents {
   }) as unknown as EditorEvents
 }
 
-/** Refuses a cut whose copy lost an image or a diagram, so the person keeps what the clipboard
- *  could not hold. */
-function refuseUnportableCut(content: ClipboardOutput): void {
-  if (content.images.some((image) => image.error))
-    throw new InkKitError(
-      'image-unavailable',
-      'The selected content could not be cut, because an image in it cannot be copied',
-    )
-  if (content.diagrams.some((diagram) => diagram.error))
-    throw new InkKitError(
-      'diagram-unavailable',
-      'The selected content could not be cut, because a diagram in it cannot be copied',
-    )
-}
-
-async function writeClipboard(
-  events: EditorEvents,
-  content: ClipboardOutput,
-): Promise<void> {
-  try {
-    await events.clipboard!(content)
-  } catch (error) {
-    throw coded(
-      error,
-      'clipboard-unavailable',
-      'The host could not write the clipboard',
-    )
-  }
-}
-
-function noClipboardHandler(): InkKitError {
-  return new InkKitError(
-    'clipboard-unavailable',
-    'Copying images or diagrams needs the clipboard event',
-  )
-}
-
 const documentFormats = ['md', 'txt'] as const
 
 function documentInput(value: unknown): DocumentInput {
@@ -716,7 +656,7 @@ export class InkKitEditor {
     showSource: (text, from, to) => this.source.showTypedSource(text, from, to),
     changed: () => {
       this.session.changed()
-      this.cancelExports()
+      this.output.cancel()
       this.search.invalidate()
     },
     publish: (text) => {
@@ -763,9 +703,38 @@ export class InkKitEditor {
     revealLiteral: () => this.revealLiteralSelection(),
     revealCurrent: () => this.revealCurrentSelection(),
   })
+  private readonly output: EditorOutput = new EditorOutput({
+    ctx: () => this.editor.ctx,
+    exportDocument: (text) => this.document.exportDocument(text),
+    sourceMode: () => this.mode === 'source',
+    element: () => this.source.element,
+    images: () => this.options.images,
+    files: () => this.options.files,
+    linkSchemes: () => this.linkSchemes,
+    context: () => this.context(),
+    assertCaptured: (captured, aborted) =>
+      this.assertCaptured(captured, aborted),
+    remember: (output, markdown, content, privateSource) =>
+      this.clipboard.remember(output, markdown, content, privateSource),
+  })
+  private readonly clipboard: EditorClipboard = new EditorClipboard({
+    ctx: () => this.editor.ctx,
+    format: () => this.document.format,
+    sourceMode: () => this.mode === 'source',
+    element: () => this.source.element,
+    replaceSelection: (text) => this.source.replaceLiteralSelection(text),
+    writable: () => this.writable,
+    snapshot: () => this.snapshot(),
+    prepareSelection: () => this.clipboardSnapshot('selection'),
+    capture: () => this.session.capture(),
+    assertCut: (captured) => this.assertCut(captured),
+    canWrite: () => Boolean(this.events.clipboard),
+    write: (content) => this.events.clipboard!(content),
+    linkSchemes: () => this.linkSchemes,
+    report: (error) => this.report(error),
+  })
   private lastMarkdown = ''
   private readonly session = new DocumentSession()
-  private exportControllers = new Set<AbortController>()
   private mode: EditingMode = 'formatted'
   private ready = false
   private destroyed = false
@@ -777,90 +746,6 @@ export class InkKitEditor {
   private auxClickHandler?: (event: MouseEvent) => void
   private untrackLinkModifier?: () => void
   private footnoteKeyHandler?: (event: KeyboardEvent) => void
-  private readonly localCopies = new Map<
-    string,
-    { text: string; html: string; markdown: string }
-  >()
-
-  private rememberCopy<T extends { text: string; html: string }>(
-    output: T,
-    markdown: string,
-    content: Fragment,
-    privateSource = false,
-    actualCopy = false,
-  ): T {
-    let comments = privateSource
-    content.descendants((node) => {
-      const labelled = (label: unknown) =>
-        typeof label === 'string' && literalCommentSpans(label).length > 0
-      if (
-        isComment(node) ||
-        (/^(?:reference|footnote)_/.test(node.type.name) &&
-          labelled(node.attrs.label)) ||
-        node.marks.some(
-          (mark) =>
-            mark.type.name === 'link' &&
-            (labelled(mark.attrs.label) ||
-              commentProvenance(mark.attrs.referenceContent)),
-        )
-      )
-        comments = true
-    })
-    if (!comments) {
-      if (actualCopy) this.localCopies.clear()
-      return output
-    }
-    const key = JSON.stringify([output.text, output.html, markdown])
-    const previous = this.localCopies.get(key)
-    if (previous) {
-      output.html = previous.html
-      if (actualCopy) this.localCopies.clear()
-      this.localCopies.set(key, previous)
-      return output
-    }
-    const wrapper = document.createElement('div')
-    const token = Array.from(
-      crypto.getRandomValues(new Uint8Array(16)),
-      (byte) => byte.toString(16).padStart(2, '0'),
-    ).join('')
-    wrapper.setAttribute('data-inkkit-local-copy', token)
-    wrapper.innerHTML = output.html
-    output.html = wrapper.outerHTML
-    if (actualCopy) this.localCopies.clear()
-    this.localCopies.set(key, {
-      text: output.text,
-      html: output.html,
-      markdown,
-    })
-    return output
-  }
-
-  private retainCopy(html: string): void {
-    for (const [key, copy] of this.localCopies)
-      if (copy.html !== html) this.localCopies.delete(key)
-  }
-
-  private restoreCopy<
-    T extends {
-      text: string
-      html?: string
-      markdown?: string
-      plainText?: boolean
-    },
-  >(input: T): T {
-    const copy = [...this.localCopies.values()].find(
-      (copy) => copy.text === input.text && copy.html === input.html,
-    )
-    return copy &&
-      input.markdown == null &&
-      !input.plainText &&
-      copy.text === input.text &&
-      copy.html === input.html
-      ? { ...input, markdown: copy.markdown }
-      : input
-  }
-
-  private copyHandler?: (event: ClipboardEvent) => void
   private reportingSuppressed = false
   private loading = false
   private call?: FacadeCall
@@ -893,7 +778,7 @@ export class InkKitEditor {
               return
             }
             this.session.changed()
-            this.cancelExports()
+            this.output.cancel()
             this.mediaPolicy()
             this.search.invalidate()
             let markdown: string
@@ -981,30 +866,6 @@ export class InkKitEditor {
       format: this.document.format,
       text,
       dirty: text !== this.document.original,
-    }
-  }
-
-  private cancelExports(): void {
-    for (const controller of this.exportControllers) controller.abort()
-    this.exportControllers.clear()
-  }
-
-  /** Runs asynchronous output work for the document `captured` describes, and throws
-   *  `stale-document` when the document, its revision or the editing mode changed meanwhile. */
-  private async exportContent<T>(
-    captured: SessionCapture,
-    operation: (signal: AbortSignal) => Promise<T>,
-  ): Promise<T> {
-    const controller = new AbortController()
-    this.exportControllers.add(controller)
-    try {
-      return await withFileSignal(
-        operation(controller.signal),
-        controller.signal,
-      )
-    } finally {
-      this.exportControllers.delete(controller)
-      this.assertCaptured(captured, controller.signal.aborted)
     }
   }
 
@@ -1469,7 +1330,7 @@ export class InkKitEditor {
       changed: () => {
         this.mode = mode
         this.session.modeChanged()
-        this.cancelExports()
+        this.output.cancel()
         this.search.reset()
       },
       update: () => {
@@ -1506,7 +1367,7 @@ export class InkKitEditor {
     expectString(text, 'text')
     this.assertMutation(expectedGeneration)
     const changed = this.history.applySource(text, true)
-    if (changed) this.localCopies.clear()
+    if (changed) this.clipboard.clear()
     return changed
   }
 
@@ -1542,51 +1403,7 @@ export class InkKitEditor {
   ): Promise<PrintableDocument> {
     const snapshot = this.snapshot(expectedGeneration)
     const captured = this.session.capture()
-    const state = this.editor.ctx.get(editorViewCtx).state
-    const doc = this.document.exportDocument(snapshot.text)
-    const output = await this.exportContent(captured, async (signal) => {
-      if (
-        snapshot.format === 'md' &&
-        !this.options.images &&
-        !this.options.files &&
-        hasAuthoredImagesInLiterals(doc.content, (source) =>
-          this.editor.ctx.get(remarkCtx).parse(source),
-        )
-      )
-        throw new InkKitError(
-          'image-unavailable',
-          'No image adapter is configured for the authored images.',
-        )
-      return snapshot.format === 'txt'
-        ? printableText(snapshot.text)
-        : printableMarkdown(
-            doc.content,
-            state.schema,
-            this.options.images,
-            this.context(),
-            this.options.files,
-            signal,
-          )
-    })
-    return Object.freeze({
-      documentId: snapshot.documentId,
-      generation: snapshot.generation,
-      revision: snapshot.revision,
-      format: snapshot.format,
-      html: output.html,
-      styles: output.styles,
-      assets: Object.freeze(
-        output.assets.map((asset) =>
-          Object.freeze({
-            ...asset,
-            bytes: new Uint8Array(asset.bytes),
-          }),
-        ),
-      ),
-      warnings: Object.freeze(
-        output.warnings.map((warning) => Object.freeze({ ...warning })),
-      ),
-    })
+    return this.output.printable(snapshot, captured)
   }
 
   /** Prepares the document or the selection for the native clipboard. Rejects with `stale-document`
@@ -1602,112 +1419,7 @@ export class InkKitEditor {
         : expectOneOf(scope, clipboardScopes, 'scope')) === 'document'
     const snapshot = this.snapshot(expectedGeneration)
     const captured = this.session.capture()
-    const { documentId, generation, revision } = captured
-    const version = { documentId, generation, revision }
-    if (this.document.format === 'txt') {
-      const text = all
-        ? snapshot.text
-        : snapshot.text.slice(
-            rawOffset(snapshot.text, this.source.element.selectionStart),
-            rawOffset(snapshot.text, this.source.element.selectionEnd),
-          )
-      const pre = document.createElement('pre')
-      pre.textContent = text
-      return {
-        ...version,
-        text,
-        html: pre.outerHTML,
-        markdown: text,
-        images: [],
-        diagrams: [],
-      }
-    }
-    const { schema, selection } = this.editor.ctx.get(editorViewCtx).state
-    // A partial copy in the source editor reads only the selected source.
-    const doc =
-      all || this.mode !== 'source'
-        ? this.document.exportDocument(snapshot.text)
-        : this.editor.ctx.get(editorViewCtx).state.doc
-    const selectedSource =
-      !all && this.mode === 'source'
-        ? sourceSelection(
-            snapshot.text,
-            this.source.element.selectionStart,
-            this.source.element.selectionEnd,
-          )
-        : undefined
-    const selectedDoc = selectedSource
-      ? this.editor.ctx.get(parserCtx)(selectedSource.shareable)
-      : undefined
-    const completeDiagrams = new Set<string>()
-    ;(selectedDoc ?? doc).descendants((node, pos) => {
-      if (
-        isMermaid(node) &&
-        (selectedDoc
-          ? Boolean(node.attrs.authoredFence?.close)
-          : all ||
-            (selection.from <= pos + 1 &&
-              selection.to >= pos + node.nodeSize - 1))
-      ) {
-        completeDiagrams.add(node.textContent.replace(/\r\n?/g, '\n'))
-      }
-    })
-    const content = selectedDoc
-      ? selectedDoc.content
-      : all
-        ? doc.content
-        : commentSelectionContent(
-            doc,
-            selection.from,
-            selection.to,
-            selection.content().content,
-          )
-    const valid = content.firstChild?.isInline
-      ? Fragment.from(schema.nodes.paragraph!.create(null, content))
-      : content
-    let markdown: string
-    try {
-      markdown = selectedSource
-        ? selectedSource.markdown
-        : all
-          ? snapshot.text
-          : completeDiagrams.size
-            ? Preservation.read(this.editor.ctx, snapshot.text).serialize(
-                doc.type.create(null, selectionContent(doc, valid)),
-              )
-            : selectionMarkdown(this.editor.ctx, doc, valid)
-    } catch (error) {
-      throw coded(error, 'preservation')
-    }
-    const result = await this.exportContent(captured, (signal) =>
-      portableClipboard(
-        all || selectedDoc ? content : selectionContent(doc, content),
-        schema,
-        markdown,
-        this.options.images,
-        this.context(),
-        completeDiagrams,
-        this.options.files,
-        signal,
-        this.linkSchemes,
-      ),
-    )
-    const metadata = referenceMetadata(
-      this.editor.ctx,
-      selectedDoc ?? doc,
-      content,
-    )
-    if (metadata != null)
-      result.html = withReferenceMetadata(result.html, metadata)
-    this.assertCaptured(captured)
-    this.rememberCopy(
-      result,
-      markdown,
-      content,
-      selectedSource != null &&
-        selectedSource.markdown !== selectedSource.shareable,
-    )
-    return { ...version, ...result }
+    return this.output.clipboard(snapshot, captured, all)
   }
 
   /** Cancels the pending image paste without changing the document or editability. */
@@ -1723,7 +1435,7 @@ export class InkKitEditor {
     expectedGeneration?: number,
   ): Promise<void> {
     this.assertAlive()
-    input = this.restoreCopy(clipboardInput(input))
+    input = this.clipboard.restore(clipboardInput(input))
     this.assertMutation(expectedGeneration)
     if (this.literalSurface) {
       this.pasteAsPlainText(
@@ -1841,11 +1553,11 @@ export class InkKitEditor {
   async destroy(): Promise<void> {
     if (this.destroyed) return
     this.destroyed = true
-    this.localCopies.clear()
+    this.clipboard.clear()
     this.ready = false
     this.session.close()
     this.history.reset()
-    this.cancelExports()
+    this.output.cancel()
     this.mediaPolicy()
     this.pasteController.destroy()
     if (this.clickHandler)
@@ -1855,10 +1567,7 @@ export class InkKitEditor {
     this.untrackLinkModifier?.()
     if (this.footnoteKeyHandler)
       this.root.removeEventListener('keydown', this.footnoteKeyHandler, true)
-    if (this.copyHandler) {
-      this.root.removeEventListener('copy', this.copyHandler, true)
-      this.root.removeEventListener('cut', this.copyHandler, true)
-    }
+    this.clipboard.destroy()
     this.source.destroy()
     await this.editor.destroy()
     if (this.ownsRootClass) this.root.classList.remove('inkkit-root')
@@ -1903,61 +1612,6 @@ export class InkKitEditor {
     key: new PluginKey('listIndent'),
     props: { handleKeyDown: (view, event) => this.indentKeys(view, event) },
   })
-
-  private copySourceSelection(event: ClipboardEvent): void {
-    event.preventDefault()
-    event.stopPropagation()
-    try {
-      const snapshot = this.snapshot()
-      const from = this.source.element.selectionStart,
-        to = this.source.element.selectionEnd
-      const selected = sourceSelection(snapshot.text, from, to)
-      const parsed = this.editor.ctx.get(parserCtx)(selected.shareable)
-      let portable = false
-      parsed.descendants((node) => {
-        if (isImage(node) || isMermaid(node)) portable = true
-      })
-      const cut = event.type === 'cut' && this.writable
-      const captured = this.session.capture()
-      if (portable && this.events.clipboard) {
-        void this.clipboardSnapshot('selection')
-          .then(async (content) => {
-            if (cut) refuseUnportableCut(content)
-            await writeClipboard(this.events, content)
-            this.retainCopy(content.html)
-            if (cut) {
-              this.assertCut(captured)
-              this.source.element.setSelectionRange(from, to)
-              this.source.replaceLiteralSelection('')
-            }
-          })
-          .catch((error) => this.report(error))
-      } else {
-        const output = clipboardContent(
-          parsed.content,
-          parsed.type.schema,
-          this.linkSchemes,
-        )
-        if (!event.clipboardData) return
-        this.rememberCopy(
-          output,
-          selected.markdown,
-          parsed.content,
-          selected.markdown !== selected.shareable,
-          true,
-        )
-        event.clipboardData.setData('text/plain', output.text)
-        event.clipboardData.setData('text/html', output.html)
-        if (portable) {
-          this.report(noClipboardHandler())
-          return
-        }
-        if (cut) this.source.replaceLiteralSelection('')
-      }
-    } catch (error) {
-      this.report(error)
-    }
-  }
 
   private dispatchTransaction(view: EditorView, tr: Transaction): void {
     // A call whose edit was refused changes nothing more; it throws when it returns.
@@ -2018,7 +1672,7 @@ export class InkKitEditor {
     instance.ownsRootClass = !root.classList.contains('inkkit-root')
     root.classList.add('inkkit-root')
     instance.pasteController = new PasteController({
-      restoreCopy: (input) => instance.restoreCopy(input),
+      restoreCopy: (input) => instance.clipboard.restore(input),
       ctx: () => instance.editor.ctx,
       context: () => instance.context(),
       adapter: options.images,
@@ -2181,93 +1835,7 @@ export class InkKitEditor {
         event.preventDefault()
     }
     root.addEventListener('auxclick', instance.auxClickHandler)
-    instance.copyHandler = (event) => {
-      if (instance.document.format === 'txt') return
-      if (instance.mode === 'source') {
-        instance.copySourceSelection(event)
-        return
-      }
-      const view = instance.editor.ctx.get(editorViewCtx)
-      const fragment = commentSelectionContent(
-        view.state.doc,
-        view.state.selection.from,
-        view.state.selection.to,
-        view.state.selection.content().content,
-      )
-      const expanded = selectionContent(view.state.doc, fragment)
-      let hasImages = false
-      expanded.descendants((node) => {
-        if (isImage(node) || isMermaid(node)) hasImages = true
-      })
-      if (!hasImages) {
-        if (!event.clipboardData || fragment.size === 0) return
-        event.preventDefault()
-        event.stopPropagation()
-        try {
-          instance.snapshot()
-          const content = expanded
-          const valid = fragment.firstChild?.isInline
-            ? Fragment.from(
-                view.state.schema.nodes.paragraph!.create(null, fragment),
-              )
-            : fragment
-          const markdown = selectionMarkdown(
-            instance.editor.ctx,
-            view.state.doc,
-            valid,
-          )
-          const output = clipboardContent(
-            content,
-            view.state.schema,
-            instance.linkSchemes,
-          )
-          const metadata = referenceMetadata(
-            instance.editor.ctx,
-            view.state.doc,
-            valid,
-          )
-          if (metadata != null)
-            output.html = withReferenceMetadata(output.html, metadata)
-          instance.rememberCopy(output, markdown, fragment, false, true)
-          event.clipboardData.setData('text/plain', output.text)
-          event.clipboardData.setData('text/html', output.html)
-          if (event.type === 'cut' && instance.writable)
-            view.dispatch(view.state.tr.deleteSelection().scrollIntoView())
-        } catch (error) {
-          instance.report(error)
-        }
-        return
-      }
-      event.preventDefault()
-      event.stopPropagation()
-      if (events.clipboard) {
-        const captured = instance.session.capture()
-        const { from, to } = view.state.selection
-        const cut = event.type === 'cut' && instance.writable
-        void instance
-          .clipboardSnapshot('selection')
-          .then(async (content) => {
-            if (cut) refuseUnportableCut(content)
-            await writeClipboard(events, content)
-            instance.retainCopy(content.html)
-            if (cut) {
-              instance.assertCut(captured)
-              view.dispatch(
-                view.state.tr.deleteRange(from, to).scrollIntoView(),
-              )
-            }
-          })
-          .catch((error) => instance.report(error))
-      } else {
-        const container = document.createElement('div')
-        container.textContent = clipboardText(expanded)
-        event.clipboardData?.setData('text/plain', container.textContent ?? '')
-        event.clipboardData?.setData('text/html', container.outerHTML)
-        instance.report(noClipboardHandler())
-      }
-    }
-    root.addEventListener('copy', instance.copyHandler, true)
-    root.addEventListener('cut', instance.copyHandler, true)
+    instance.clipboard.install(root)
     instance.applyInputPolicy()
     instance.setKeymap(options.keymap ?? {})
     instance.untrackLinkModifier = trackLinkModifier(root)
@@ -2297,7 +1865,7 @@ export class InkKitEditor {
       left = container.scrollLeft
     this.releaseFocus()
     this.ready = false
-    this.cancelExports()
+    this.output.cancel()
     this.mediaPolicy()
     this.pasteController.cancelPending()
     // Views made while the new document loads capture its generation.
@@ -2555,7 +2123,7 @@ export class InkKitEditor {
   }
 
   private load(markdown: string, preservation: Preservation): void {
-    this.localCopies.clear()
+    this.clipboard.clear()
     this.document.original = markdown
     const { ctx } = this.editor
     const view = ctx.get(editorViewCtx)
