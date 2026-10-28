@@ -1,3 +1,8 @@
+import { $prose } from '@milkdown/kit/utils'
+import { applyFormat, formatAvailability } from './editor-commands'
+import { createEditorKeymap, tableShortcut } from './editor-keymap'
+import { createMilkdownEditor } from './editor-milkdown'
+import { markRun, caretState, terminalSelection } from './editor-selection'
 import { literalTextNodes } from './literal-text'
 import { wikiSession, wikiSuggestionTransaction } from './wiki-suggestions'
 import type { SlashMenuOptions, SlashCommandName, SlashCommand } from './types'
@@ -5,110 +10,45 @@ import { Suggestions, type SuggestionSession } from './suggestions'
 import { slashMenuOptions, slashSession, slashTransaction } from './slash-menu'
 import { htmlBreakAt } from './hard-break'
 import {
-  Editor,
-  commandsCtx,
-  type CmdKey,
-  defaultValueCtx,
+  type Editor,
   editorStateOptionsCtx,
   editorViewCtx,
   parserCtx,
-  editorViewOptionsCtx,
   prosePluginsCtx,
   remarkCtx,
-  remarkStringifyOptionsCtx,
-  rootCtx,
   schemaCtx,
 } from '@milkdown/kit/core'
-import {
-  visibleClipboard,
-  portableClipboard,
-  clipboardText,
-  clipboardContent,
-} from './clipboard'
-import { clipboard } from '@milkdown/kit/plugin/clipboard'
-import { history, historyKeymap } from '@milkdown/kit/plugin/history'
+import { portableClipboard, clipboardText, clipboardContent } from './clipboard'
 import {
   closeHistory,
   redoDepth,
   undo as undoHistory,
   redo as redoHistory,
 } from '@milkdown/kit/prose/history'
-import { cursor } from './cursor'
-import { replacementMarks, textInputPlugin } from './text-input'
+import { replacementMarks } from './text-input'
 import { blockDropRange } from './drop-placement'
+import { linkSchema } from '@milkdown/kit/preset/commonmark'
+import { undoSmartPunctuation } from './smart-punctuation'
 import {
-  blockquoteKeymap,
-  blockquoteSchema,
-  bulletListKeymap,
-  codeBlockKeymap,
-  codeBlockSchema,
-  emphasisKeymap,
-  headingKeymap,
-  headingSchema,
-  inlineCodeKeymap,
-  inlineCodeSchema,
-  linkSchema,
-  listItemKeymap,
-  orderedListKeymap,
-  paragraphKeymap,
-  paragraphSchema,
-  strongKeymap,
-  toggleEmphasisCommand,
-  toggleInlineCodeCommand,
-  toggleLinkCommand,
-  toggleStrongCommand,
-  wrapInBulletListCommand,
-  wrapInOrderedListCommand,
-} from '@milkdown/kit/preset/commonmark'
-import { authoredSourcesCtx, setTextblockType } from './block-conversion'
-import { smartPunctuationCtx, undoSmartPunctuation } from './smart-punctuation'
-import {
-  strikethroughKeymap,
-  tableKeymap,
-  toggleStrikethroughCommand,
-} from '@milkdown/kit/preset/gfm'
-import {
-  NodeRange,
   Fragment,
   Mark as ProseMark,
   Slice,
-  type MarkType,
   type Node as ProseNode,
-  type ResolvedPos,
 } from '@milkdown/kit/prose/model'
-import { splitBlock } from '@milkdown/kit/prose/commands'
-import { undoInputRule } from '@milkdown/kit/prose/inputrules'
-import { keydownHandler, keymap } from '@milkdown/kit/prose/keymap'
 import { goToNextCell } from '@milkdown/kit/prose/tables'
-import { liftListItem, sinkListItem } from '@milkdown/kit/prose/schema-list'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import {
-  Mapping,
-  findWrapping,
-  liftTarget,
-} from '@milkdown/kit/prose/transform'
-import {
-  AllSelection,
   NodeSelection,
   Plugin,
   PluginKey,
-  Selection,
   TextSelection,
   EditorState,
-  type Command,
   type Transaction,
 } from '@milkdown/kit/prose/state'
-import { $prose, callCommand, type $UserKeymap } from '@milkdown/kit/utils'
-import { literalEnter, literalReread, literalRereadKey } from './literal-edits'
-import { codeCopyPlugin, placeholderPlugin } from './decorations'
-import { codeControlCtx, codeControlsPlugin } from './code-controls'
-import { labelsCtx, defaultLabels } from './labels'
-import { createDialect, serialize, stringifyOptions } from './dialect'
-import {
-  extraLinkSchemes,
-  isSafeLinkTarget,
-  linkSchemesCtx,
-} from './link-safety'
+import { literalRereadKey } from './literal-edits'
+import { defaultLabels } from './labels'
+import { serialize } from './dialect'
+import { extraLinkSchemes, isSafeLinkTarget } from './link-safety'
 import { Preservation } from './preserve'
 import { modeSelectionMap } from './mode-selection'
 import {
@@ -132,14 +72,10 @@ import {
   referenceMetadata,
   withReferenceMetadata,
 } from './reference-clipboard'
-import { imageView } from './images'
-import { imagePlacement, isImage, isImageBlock } from './image-blocks'
-import { GapCursor } from '@milkdown/kit/prose/gapcursor'
-import { wikiLinkView } from './wiki-view'
+import { imagePlacement, isImage } from './image-blocks'
 import { wikiReference } from './linked-syntax'
 import { mediaPolicyEvent, requestRefresh, withFileSignal } from './files'
 import {
-  tablePlugins,
   tableCommand,
   tableCommands,
   tableAvailability,
@@ -147,7 +83,6 @@ import {
   tableOptions,
   configureTableMovement,
 } from './tables'
-import { tableBlock, tableControlCtx } from './table-block'
 import {
   InkKitError,
   type ClientPoint,
@@ -187,13 +122,7 @@ import {
   textRect,
   type TextProjection,
 } from './text-ranges'
-import { highlightKeymap, toggleHighlightCommand } from './inline-highlight'
-import {
-  blockMove,
-  canMoveBlock,
-  carriedBlocks,
-  moveBlockTransaction,
-} from './block-move'
+import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
 import {
   assertCommentsEndWhereWritten,
   commentSelectionContent,
@@ -229,10 +158,9 @@ import {
   optionalRecord,
   optionalString,
 } from './errors'
-import { selectionPlugin, setSelectionHostActive } from './selection'
+import { setSelectionHostActive } from './selection'
 import { SearchQuery, setSearchState } from 'prosemirror-search'
 import {
-  search,
   findFormatted,
   findLiteral,
   replaceFormatted,
@@ -246,14 +174,9 @@ import {
   sourceHeadingPosition,
   type OutlineContext,
 } from './outline'
-import {
-  taskAtCaret,
-  taskListPlugin,
-  toggleTask,
-  toggleTaskList,
-} from './tasks'
+import { toggleTask } from './tasks'
 import { modHeld, trackLinkModifier } from './modifier'
-import { diagramsAvailable, isMermaid, mermaidPreview } from './mermaid'
+import { diagramsAvailable, isMermaid } from './mermaid'
 import {
   hasAuthoredImagesInLiterals,
   printableMarkdown,
@@ -337,11 +260,6 @@ function formatOptions(
   }
 }
 
-function headingLevel(command: FormatCommand): number | undefined {
-  const match = /^heading([1-6])$/.exec(command)
-  return match ? Number(match[1]) : undefined
-}
-
 /** A key press for `keyDown`. An omitted modifier is not held. */
 export interface KeyInput {
   key: string
@@ -411,10 +329,6 @@ export type Keymap = Partial<Record<ShortcutName, readonly string[]>>
 const formatShortcuts = formatCommands.filter(
   (command): command is Exclude<FormatCommand, 'link'> => command !== 'link',
 )
-
-function tableShortcut(command: TableCommand): ShortcutName {
-  return `table${command[0]!.toUpperCase()}${command.slice(1)}` as ShortcutName
-}
 
 /** Every `ShortcutName`. */
 export const shortcutNames: readonly ShortcutName[] = [
@@ -785,487 +699,6 @@ function capturedImage(value: unknown, name: string): CapturedImage {
     filename: optionalString(image.filename, `${name}.filename`),
     source: optionalString(image.source, `${name}.source`),
   }
-}
-
-const markNames: Record<string, Mark> = {
-  strong: 'bold',
-  emphasis: 'italic',
-  strike_through: 'strikethrough',
-  highlight: 'highlight',
-  inlineCode: 'code',
-  link: 'link',
-}
-
-// Select All resolves at the document level, where no block can be read.
-function textBounds(state: EditorState): {
-  $from: ResolvedPos
-  $to: ResolvedPos
-} {
-  const { selection, doc } = state
-  if (selection instanceof AllSelection)
-    return TextSelection.between(doc.resolve(0), doc.resolve(doc.content.size))
-  return selection
-}
-
-/** The extent of `mark` that covers `from` to `to` inside one textblock: the adjacent inline nodes
- *  that carry it. Undefined when the range leaves it. */
-function markRun(
-  doc: ProseNode,
-  mark: ProseMark,
-  from: number,
-  to: number,
-): { from: number; to: number } | undefined {
-  const $from = doc.resolve(from)
-  if (!$from.parent.inlineContent || to > $from.end()) return undefined
-  const start = $from.start()
-  let run: { from: number; to: number } | undefined
-  let found: { from: number; to: number } | undefined
-  $from.parent.forEach((child, offset) => {
-    const childFrom = start + offset
-    if (!mark.isInSet(child.marks)) {
-      run = undefined
-      return
-    }
-    if (run) run.to = childFrom + child.nodeSize
-    else run = { from: childFrom, to: childFrom + child.nodeSize }
-    if (run.from <= from && to <= run.to) found = run
-  })
-  return found
-}
-
-function caretState(state: EditorState): CaretState {
-  const { empty } = state.selection
-  const { $from, $to } = textBounds(state)
-  const active = new Set<Mark>()
-  const marks = empty ? (state.storedMarks ?? $from.marks()) : []
-  for (const mark of marks) {
-    const name = markNames[mark.type.name]
-    if (name) active.add(name)
-  }
-  if (!empty) {
-    for (const [name, mark] of Object.entries(markNames)) {
-      const type = state.schema.marks[name]
-      if (type && state.doc.rangeHasMark($from.pos, $to.pos, type))
-        active.add(mark)
-    }
-  }
-  return {
-    marks: [...active],
-    block: blockAt($from.parent, $from),
-    quoted: quoted($from, $to),
-  }
-}
-
-// Prefer the last writing position without selecting a terminal atom that typing could replace.
-function terminalSelection(doc: ProseNode): Selection {
-  const $end = doc.resolve(doc.content.size)
-  const gap = GapCursor as unknown as { valid($pos: ResolvedPos): boolean }
-  if (isImageBlock(doc.lastChild) && gap.valid($end)) return new GapCursor($end)
-  const text = Selection.findFrom($end, -1, true)
-  if (text) return text
-  if (gap.valid($end)) return new GapCursor($end)
-  throw new InkKitError('preservation', 'Document has no safe writing position')
-}
-
-// True only when one quote holds the whole selection, so the state matches what the command can lift.
-function quoted($from: ResolvedPos, $to: ResolvedPos): boolean {
-  return (
-    $from.blockRange($to, (node) => node.type.name === 'blockquote') != null
-  )
-}
-
-function blockAt(
-  parent: ProseNode,
-  $from: EditorState['selection']['$from'],
-): Block {
-  for (let depth = $from.depth; depth > 0; depth--) {
-    const node = $from.node(depth)
-    switch (node.type.name) {
-      case 'heading':
-        return { type: 'heading', level: node.attrs.level }
-      case 'code_block':
-        return { type: 'codeBlock' }
-      case 'list_item':
-        return node.attrs.checked == null
-          ? {
-              type:
-                $from.node(depth - 1).type.name === 'ordered_list'
-                  ? 'orderedList'
-                  : 'bulletList',
-            }
-          : { type: 'taskList' }
-    }
-  }
-  if (parent.type.name === 'heading')
-    return { type: 'heading', level: parent.attrs.level }
-  return { type: 'paragraph' }
-}
-
-const quotes = new Set(['blockquote', 'inkkit_callout'])
-
-// A list item that opens with a quote holds an empty first paragraph, because the schema needs
-// one. Once a paragraph has left the quote, the empty one would be written as a `<br />` line, so
-// it goes. A `<br />` line an author wrote reads as the same paragraph, and stays while the quote
-// does.
-function liftQuote(
-  state: EditorState,
-  range: NodeRange,
-  target: number,
-): Transaction {
-  const tr = state.tr.lift(range, target)
-  const { depth } = range
-  const item = range.$from.node(depth - 1)
-  const spacer = item.firstChild
-  if (
-    item.type.name === 'list_item' &&
-    range.$from.index(depth - 1) === 1 &&
-    spacer?.type.name === 'paragraph' &&
-    spacer.content.size === 0
-  ) {
-    const from = range.$from.start(depth - 1)
-    if (tr.doc.nodeAt(from + spacer.nodeSize)?.type === spacer.type)
-      tr.delete(from, from + spacer.nodeSize)
-  }
-  return tr
-}
-
-// Backspace right after an input rule, such as a typed code fence, takes it back. The handlers for
-// quotes and list items below would otherwise lift or join the block the rule made.
-const undoTypedRule = $prose(() => keymap({ Backspace: undoInputRule }))
-
-// Backspace at the start of a quote's or callout's first block is left alone
-// by the preset, or joins the block to the one above; leaving the quote is what
-// a Backspace there means. A callout's only block stays while it holds text,
-// because lifting it would remove the callout and its title.
-const quoteBackspace = $prose(() =>
-  keymap({
-    Backspace: (state, dispatch) => {
-      const { $from, empty } = state.selection
-      if (!empty || $from.parentOffset > 0 || $from.depth < 2) return false
-      const quote = $from.node($from.depth - 1)
-      if (!quotes.has(quote.type.name) || $from.index($from.depth - 1) > 0)
-        return false
-      if (
-        quote.type.name === 'inkkit_callout' &&
-        quote.childCount === 1 &&
-        $from.parent.content.size > 0
-      )
-        return true
-      const range = $from.blockRange($from, (node) =>
-        quotes.has(node.type.name),
-      )
-      const target = range && liftTarget(range)
-      if (!range || target == null) return false
-      dispatch?.(liftQuote(state, range, target).scrollIntoView())
-      return true
-    },
-  }),
-)
-
-// The preset's Enter in an empty block lifts it out of its parent, splitting
-// the parent when the block is not its last. A callout split that way repeats
-// its header, so Enter there adds a paragraph instead, and leaves the callout
-// only from its last block.
-const calloutEnter = $prose(() =>
-  keymap({
-    Enter: (state, dispatch) => {
-      const { $from, empty } = state.selection
-      if (
-        !empty ||
-        $from.depth < 2 ||
-        !$from.parent.isTextblock ||
-        $from.parent.type.spec.code ||
-        $from.parent.content.size > 0
-      )
-        return false
-      const callout = $from.node($from.depth - 1)
-      if (
-        callout.type.name !== 'inkkit_callout' ||
-        $from.index($from.depth - 1) === callout.childCount - 1
-      )
-        return false
-      return splitBlock(state, dispatch)
-    },
-  }),
-)
-
-// The preset lifts only an item's first line, which cannot leave on its own while the item holds
-// more, such as a nested list: at the top of a document Backspace did nothing, and below another block
-// it merged the line upward and left an empty bullet. The whole item is lifted instead, and a nested
-// list it held joins the items that followed, since both now sit at one level.
-const listItemBackspace = $prose(() =>
-  keymap({
-    Backspace: (state, dispatch) => {
-      const { $from, empty } = state.selection
-      if (!empty || $from.parentOffset > 0 || $from.depth < 3) return false
-      const item = $from.node(-1)
-      if (
-        item.type.name !== 'list_item' ||
-        item.childCount < 2 ||
-        $from.index(-1) > 0 ||
-        $from.index(-2) > 0
-      )
-        return false
-      const { doc } = state
-      const range = new NodeRange(
-        doc.resolve($from.start(-1)),
-        doc.resolve($from.end(-1)),
-        $from.depth - 1,
-      )
-      const target = liftTarget(range)
-      if (target == null) return false
-      const tr = state.tr.lift(range, target)
-      const $line = tr.doc.resolve(tr.mapping.map($from.pos))
-      joinLists(tr, $line.start(-1), $line.index(-1) + item.childCount)
-      dispatch?.(tr.scrollIntoView())
-      return true
-    },
-  }),
-)
-
-// Lifting an item out of a list that no item holds, the preset leaves a nested list the item held
-// beside the items that followed. Out of a nested list it joins the two itself.
-const liftItem: Command = (state, dispatch) => {
-  const itemType = state.schema.nodes.list_item!
-  const { $from, $to } = state.selection
-  const range = $from.blockRange(
-    $to,
-    (node) => node.firstChild?.type === itemType,
-  )
-  const lift = liftListItem(itemType)
-  if (!range || !dispatch || $from.node(range.depth - 1).type === itemType)
-    return lift(state, dispatch)
-  let lifted: Transaction | undefined
-  if (!lift(state, (tr) => (lifted = tr)) || !lifted) return false
-  let count = 0
-  for (let index = range.startIndex; index < range.endIndex; index++)
-    count += range.parent.child(index).childCount
-  const start = range.$from.start(range.depth - 1)
-  const first =
-    range.$from.index(range.depth - 1) + (range.startIndex > 0 ? 1 : 0)
-  joinLists(lifted, start, first + count)
-  joinLists(lifted, start, first)
-  dispatch(lifted)
-  return true
-}
-
-// Backspace in the empty line left by ending a list in the middle removes it and joins the two
-// lists again, as they were before. In the empty item left by ending a nested list in the middle,
-// it moves the item back into the nested list before it, with the items it took along.
-const rejoinLists = $prose(() =>
-  keymap({
-    Backspace: (state, dispatch) => {
-      const { $from, empty } = state.selection
-      if (
-        !empty ||
-        $from.parent.type.name !== 'paragraph' ||
-        $from.parent.content.size > 0
-      )
-        return false
-      const index = $from.index(-1)
-      const container = $from.node(-1)
-      if (container.type.name === 'list_item') {
-        const list = $from.node(-2)
-        const sublist = container.maybeChild(1)
-        const previous = list.maybeChild($from.index(-2) - 1)?.lastChild
-        if (
-          index !== 0 ||
-          container.childCount !== 2 ||
-          !sublist ||
-          !isList(sublist) ||
-          previous?.type !== sublist.type
-        )
-          return false
-        if (dispatch) {
-          const at = $from.before(-1)
-          // The end of the content of the list the item before ends with.
-          const end = at - 2
-          const tr = state.tr
-            .delete(at, at + container.nodeSize)
-            .insert(
-              end,
-              Fragment.from(
-                container.copy(Fragment.from(container.firstChild!)),
-              ).append(sublist.content),
-            )
-          tr.setSelection(TextSelection.create(tr.doc, end + 2))
-          dispatch(tr.scrollIntoView())
-        }
-        return true
-      }
-      const before = container.maybeChild(index - 1)
-      const after = container.maybeChild(index + 1)
-      if (!before || !after || !isList(before) || after.type !== before.type)
-        return false
-      if (dispatch) {
-        const at = $from.before()
-        const tr = state.tr.delete(at, $from.after())
-        joinLists(tr, $from.start(-1), index)
-        tr.setSelection(Selection.near(tr.doc.resolve(at), -1))
-        dispatch(tr.scrollIntoView())
-      }
-      return true
-    },
-  }),
-)
-
-// Enter in an empty item in the middle of a nested list split that list around a line left in the
-// item holding it, which Markdown cannot write, so the edit was refused. The item moves out a level
-// instead, as the last item of a nested list does, and the items after it become its own.
-const nestedItemEnter = $prose(() =>
-  keymap({
-    Enter: (state, dispatch) => {
-      const { $from, empty } = state.selection
-      const itemType = state.schema.nodes.list_item!
-      if (
-        !empty ||
-        $from.depth < 5 ||
-        $from.parent.content.size > 0 ||
-        $from.node(-1).type !== itemType ||
-        $from.node(-1).childCount !== 1 ||
-        $from.node(-3).type !== itemType ||
-        $from.indexAfter(-2) === $from.node(-2).childCount
-      )
-        return false
-      return liftListItem(itemType)(state, dispatch)
-    },
-  }),
-)
-
-// Items an edit moves between lists, such as ending a list in the middle or lifting an item out a
-// level, keep the attributes ProseMirror copies with them, which then disagree with their new list.
-// An item takes its list's kind, which the reopened Markdown would give it. A list split from an
-// ordered list, which ProseMirror starts from the first list's number, continues from the items
-// left before it, as Markdown written so numbers it. Items are followed by position, since
-// relabelling replaces their nodes.
-const movedListItems = $prose(
-  () =>
-    new Plugin({
-      key: new PluginKey('movedListItems'),
-      appendTransaction(transactions, oldState, newState) {
-        if (!transactions.some((tr) => tr.docChanged)) return null
-        const {
-          bullet_list: bullet,
-          ordered_list: ordered,
-          list_item: itemType,
-        } = newState.schema.nodes
-        const maps = transactions.flatMap((tr) => tr.mapping.maps)
-        const mapping = new Mapping(maps)
-        const inverse = mapping.invert()
-        // The ordered list and index of the item whose content starts at a position.
-        const itemAt = (doc: ProseNode, pos: number) => {
-          const $pos = doc.resolve(pos)
-          return $pos.depth > 1 &&
-            $pos.parent.type === itemType &&
-            $pos.node(-1).type === ordered
-            ? {
-                list: $pos.node(-1),
-                at: $pos.before(-1),
-                index: $pos.index(-1),
-              }
-            : undefined
-        }
-        let ranges: Array<[number, number]> = []
-        for (const map of maps) {
-          ranges = ranges.map(([from, to]) => [map.map(from, -1), map.map(to)])
-          map.forEach((_from, _to, from, to) => ranges.push([from, to]))
-        }
-        const tr = newState.tr
-        const seen = new Set<number>()
-        const { doc } = newState
-        const continued = (list: ProseNode, pos: number) => {
-          const back = inverse.mapResult(pos + 2, 1)
-          const origin = back.deleted
-            ? undefined
-            : itemAt(oldState.doc, back.pos)
-          // The original list itself, which lost the items before this one.
-          if (!origin?.index || mapping.map(origin.at, 1) === pos) return
-          const $list = doc.resolve(pos)
-          let before = 0
-          for (
-            let index = 0, at = origin.at + 1;
-            index < origin.index;
-            at += origin.list.child(index++).nodeSize
-          ) {
-            const forward = mapping.mapResult(at + 1, 1)
-            const now = forward.deleted ? undefined : itemAt(doc, forward.pos)
-            if (
-              now &&
-              now.at < pos &&
-              doc.resolve(now.at).start() === $list.start()
-            )
-              before++
-          }
-          // A part split at its own level continues the numbering. A list
-          // that comes to follow the first line of an item starts from 1,
-          // since Markdown reads a list after a line only when it does.
-          const order = before
-            ? Number(origin.list.attrs.order) + before
-            : $list.parent.type === itemType
-              ? 1
-              : undefined
-          if (order !== undefined && list.attrs.order !== order)
-            tr.setNodeMarkup(pos, undefined, { ...list.attrs, order })
-        }
-        for (const [from, to] of ranges)
-          doc.nodesBetween(
-            Math.max(0, from - 1),
-            Math.min(doc.content.size, to + 1),
-            (node, pos, parent) => {
-              if (seen.has(pos)) return
-              seen.add(pos)
-              if (node.type === ordered) continued(node, pos)
-              const listType =
-                parent?.type === ordered
-                  ? 'ordered'
-                  : parent?.type === bullet
-                    ? 'bullet'
-                    : undefined
-              if (
-                node.type === itemType &&
-                listType &&
-                node.attrs.listType !== listType
-              )
-                tr.setNodeMarkup(pos, undefined, {
-                  ...node.attrs,
-                  listType,
-                  label: listType === 'ordered' ? node.attrs.label : '•',
-                })
-            },
-          )
-        return tr.docChanged ? tr : null
-      },
-    }),
-)
-
-const textInputPolicy = $prose(() => textInputPlugin())
-
-function outermostListDepth($pos: ResolvedPos): number | null {
-  for (let depth = 1; depth <= $pos.depth; depth++) {
-    if (isList($pos.node(depth))) return depth
-  }
-  return null
-}
-
-function innermostListDepth($pos: ResolvedPos): number | null {
-  for (let depth = $pos.depth; depth >= 1; depth--) {
-    if (isList($pos.node(depth))) return depth
-  }
-  return null
-}
-
-function isList(node: ProseNode): boolean {
-  return node.type.name === 'bullet_list' || node.type.name === 'ordered_list'
-}
-
-// Two lists of one kind side by side are written with a changed marker to keep them apart, and the
-// document shows a gap between them, so an edit that leaves them so joins them.
-function joinLists(tr: Transaction, start: number, index: number): void {
-  const $start = tr.doc.resolve(start)
-  const before = $start.parent.maybeChild(index - 1)
-  const after = $start.parent.maybeChild(index)
-  if (before && after && isList(before) && after.type === before.type)
-    tr.join($start.posAtIndex(index))
 }
 
 let editorSequence = 0
@@ -1911,52 +1344,7 @@ export class InkKitEditor {
     const mutable =
       this.writable && !this.composing && !this.pasteController.pending
     const formatted = mutable && !this.literalSurface
-    const manager = this.editor.ctx.get(commandsCtx)
-    const check = <T>(key: CmdKey<T>, payload?: T): boolean =>
-      formatted && manager.get(key)(payload)(state)
-    const canBecome = (
-      type: 'paragraph' | 'heading' | 'codeBlock',
-      level?: number,
-    ): boolean => formatted && this.textblockType(type, level)(state)
-    const heading = (level: number) =>
-      canBecome('heading', level) || canBecome('paragraph')
-    const format: Record<FormatCommand, boolean> = {
-      heading1: heading(1),
-      heading2: heading(2),
-      heading3: heading(3),
-      heading4: heading(4),
-      heading5: heading(5),
-      heading6: heading(6),
-      paragraph: canBecome('paragraph'),
-      bold: check(toggleStrongCommand.key),
-      italic: check(toggleEmphasisCommand.key),
-      strikethrough: check(toggleStrikethroughCommand.key),
-      highlight: check(toggleHighlightCommand.key),
-      code:
-        formatted &&
-        (state.selection.empty
-          ? state.selection.$from.parent.inlineContent &&
-            state.selection.$from.parent.type.allowsMarkType(
-              inlineCodeSchema.type(this.editor.ctx),
-            )
-          : check(toggleInlineCodeCommand.key)),
-      codeBlock: canBecome('codeBlock') || canBecome('paragraph'),
-      quote: formatted && this.canQuote(state),
-      bulletList:
-        formatted &&
-        (innermostListDepth(textBounds(state).$from) != null ||
-          check(wrapInBulletListCommand.key)),
-      orderedList:
-        formatted &&
-        (innermostListDepth(textBounds(state).$from) != null ||
-          check(wrapInOrderedListCommand.key)),
-      taskList:
-        formatted &&
-        (innermostListDepth(textBounds(state).$from) != null ||
-          check(wrapInBulletListCommand.key)),
-      toggleTask: formatted && taskAtCaret(state) != null,
-      link: check(toggleLinkCommand.key, {}),
-    }
+    const format = formatAvailability(this.editor, state, formatted)
     const tables = formatted
       ? tableAvailability(this.editor.ctx)
       : (Object.fromEntries(
@@ -2002,28 +1390,6 @@ export class InkKitEditor {
   /** An image adapter shows and exports an inserted reference, and so does a file adapter. */
   private get canInsertImages(): boolean {
     return !!this.options.images || !!this.options.files
-  }
-
-  private canQuote(state: EditorState): boolean {
-    const { $from, $to } = textBounds(state)
-    if (quoted($from, $to)) {
-      const range = $from.blockRange(
-        $to,
-        (node) => node.type.name === 'blockquote',
-      )
-      return !!range && liftTarget(range) != null
-    }
-    const type = blockquoteSchema.type(this.editor.ctx)
-    let range = $from.blockRange($to)
-    if (range && findWrapping(range, type)) return true
-    const depth = outermostListDepth($from)
-    if (depth == null) return false
-    range = new NodeRange(
-      state.doc.resolve($from.before(depth)),
-      state.doc.resolve($from.after(depth)),
-      depth - 1,
-    )
-    return !!findWrapping(range, type)
   }
 
   // Edit > Undo and the touch gestures arrive as `beforeinput` events that
@@ -3033,6 +2399,58 @@ export class InkKitEditor {
     }
   }
 
+  private dispatchTransaction(view: EditorView, tr: Transaction): void {
+    // A call whose edit was refused changes nothing more; it throws when it returns.
+    if (this.call?.refusal && tr.docChanged) return
+    for (const node of tr.getMeta(carriedBlocks) ?? [])
+      (this.carried ??= new WeakSet()).add(node)
+    this.suggestions?.beforeTransaction(tr)
+    const base = this.suggestionBase ?? view.state
+    const applied = base.applyTransaction(tr)
+    let next = applied.state
+    if (!this.loading) {
+      const check = (doc: ProseNode) => {
+        if (!this.literalSurface) assertHiddenCommentsKept(base, tr, doc)
+        this.assertPreserved(view.state.doc, doc, isWrittenEdit(tr))
+      }
+      try {
+        try {
+          check(next.doc)
+        } catch (error) {
+          // Reading a literal block again never adds a refusal: the
+          // edit is then made as it would be without that.
+          if (
+            !applied.transactions.some((step) => step.getMeta(literalRereadKey))
+          )
+            throw error
+          next = base.apply(tr.setMeta(literalRereadKey, 'skip'))
+          check(next.doc)
+        }
+      } catch (error) {
+        view.updateState(view.state)
+        this.refuse(
+          new InkKitError(
+            'preservation',
+            `The edit was not applied because its Markdown could not be preserved: ${error instanceof Error ? error.message : String(error)}`,
+            { cause: error },
+          ),
+        )
+        return
+      }
+    }
+    if (this.formattedRedoLimit !== undefined) {
+      const depth = redoDepth(next)
+      if (depth === 0) this.formattedRedoLimit = undefined
+      else if (next !== view.state) {
+        if (this.historyDirection === 'undo')
+          this.formattedRedoLimit = Math.min(depth, this.formattedRedoLimit + 1)
+        else if (this.historyDirection === 'redo')
+          this.formattedRedoLimit = Math.max(0, this.formattedRedoLimit - 1)
+      }
+    }
+    view.updateState(next)
+  }
+
   /** Builds the editor in `root`. It has no document until `loadDocument`. Rejects with
    *  `invalid-argument` for a bad root, handler or option. */
   static async mount(
@@ -3090,249 +2508,50 @@ export class InkKitEditor {
           },
         }),
     })
-    instance.editor = await Editor.make()
-      .config((ctx) => {
-        ctx.set(rootCtx, root)
-        ctx.set(authoredSourcesCtx.key, (doc, positions) =>
-          instance.authoredSources(doc, positions),
-        )
-        ctx.set(
-          smartPunctuationCtx.key,
-          () => instance.inputPreferences.smartPunctuation === true,
-        )
-        ctx.set(linkSchemesCtx.key, instance.linkSchemes)
-        ctx.update(labelsCtx.key, () => ({
-          ...defaultLabels,
-          ...options.labels,
-        }))
-        ctx.set(codeControlCtx.key, (operation) =>
-          instance.forPerson(
-            () =>
-              instance.facadeCall(() => {
-                instance.assertMutation()
-                return !instance.literalSurface && operation()
-              }),
-            false,
-          ),
-        )
-        ctx.set(tableControlCtx.key, (operation) =>
-          instance.forPerson(
-            () =>
-              instance.facadeCall(() => {
-                instance.assertMutation()
-                return !instance.literalSurface && operation()
-              }),
-            false,
-          ),
-        )
-        ctx.set(defaultValueCtx, '')
-        ctx.set(remarkStringifyOptionsCtx, stringifyOptions)
-        ctx.update(editorStateOptionsCtx, (override) => (options) => {
-          const next = override(options)
-          return {
-            ...next,
-            plugins: [...(next.plugins ?? []), instance.indentPlugin],
-          }
-        })
-        // The preset binds Tab, Shift-Tab, Mod-[ and Mod-] to list indentation. The keymap's
-        // `indent` and `outdent` bind it instead.
-        ctx.update(listItemKeymap.key, (keys) => ({
-          ...keys,
-          SinkListItem: { shortcuts: [] },
-          LiftListItem: { shortcuts: [] },
-        }))
-        // Formatting keys are the app's to set, through setKeymap; the presets' own go.
-        const unbind = <K extends string>(
-          keymap: $UserKeymap<string, K>,
-          keep: K[] = [],
-        ) =>
-          ctx.update(keymap.key, (keys) => {
-            const cleared = { ...keys }
-            for (const name of Object.keys(cleared) as K[]) {
-              if (!keep.includes(name)) cleared[name] = { shortcuts: [] }
-            }
-            return cleared
-          })
-        unbind(tableKeymap, ['NextCell', 'PrevCell'])
-        unbind(historyKeymap)
-        unbind(strongKeymap)
-        unbind(emphasisKeymap)
-        unbind(inlineCodeKeymap)
-        unbind(strikethroughKeymap)
-        unbind(highlightKeymap)
-        unbind(headingKeymap, ['DowngradeHeading'])
-        unbind(paragraphKeymap)
-        unbind(blockquoteKeymap)
-        unbind(codeBlockKeymap)
-        unbind(bulletListKeymap)
-        unbind(orderedListKeymap)
-        ctx.update(editorViewOptionsCtx, (options) => ({
-          ...options,
-          dispatchTransaction: function (this: EditorView, tr) {
-            // A call whose edit was refused changes nothing more; it throws when it returns.
-            if (instance.call?.refusal && tr.docChanged) return
-            for (const node of tr.getMeta(carriedBlocks) ?? [])
-              (instance.carried ??= new WeakSet()).add(node)
-            instance.suggestions?.beforeTransaction(tr)
-            const base = instance.suggestionBase ?? this.state
-            const applied = base.applyTransaction(tr)
-            let next = applied.state
-            if (!instance.loading) {
-              const check = (doc: ProseNode) => {
-                if (!instance.literalSurface)
-                  assertHiddenCommentsKept(base, tr, doc)
-                instance.assertPreserved(this.state.doc, doc, isWrittenEdit(tr))
-              }
-              try {
-                try {
-                  check(next.doc)
-                } catch (error) {
-                  // Reading a literal block again never adds a refusal: the
-                  // edit is then made as it would be without that.
-                  if (
-                    !applied.transactions.some((step) =>
-                      step.getMeta(literalRereadKey),
-                    )
-                  )
-                    throw error
-                  next = base.apply(tr.setMeta(literalRereadKey, 'skip'))
-                  check(next.doc)
-                }
-              } catch (error) {
-                this.updateState(this.state)
-                instance.refuse(
-                  new InkKitError(
-                    'preservation',
-                    `The edit was not applied because its Markdown could not be preserved: ${error instanceof Error ? error.message : String(error)}`,
-                    { cause: error },
-                  ),
-                )
-                return
-              }
-            }
-            if (instance.formattedRedoLimit !== undefined) {
-              const depth = redoDepth(next)
-              if (depth === 0) instance.formattedRedoLimit = undefined
-              else if (next !== this.state) {
-                if (instance.historyDirection === 'undo')
-                  instance.formattedRedoLimit = Math.min(
-                    depth,
-                    instance.formattedRedoLimit + 1,
-                  )
-                else if (instance.historyDirection === 'redo')
-                  instance.formattedRedoLimit = Math.max(
-                    0,
-                    instance.formattedRedoLimit - 1,
-                  )
-              }
-            }
-            this.updateState(next)
-          },
-          handleScrollToSelection: () => {
-            if (!instance.loading && instance.ready)
-              instance.revealCurrentSelection()
-            return true
-          },
-        }))
-      })
-      .use(labelsCtx)
-      .use(linkSchemesCtx)
-      .use(instance.pasteController.plugin)
-      .use(visibleClipboard)
-      .use($prose(() => instance.suggestions!.plugin()))
-      .use(instance.keymapPlugin)
-      .use(
-        createDialect(
-          Boolean(options.images || options.files),
-          Boolean(options.wikiLinks),
-          Boolean(options.files),
+    instance.editor = await createMilkdownEditor(root, options, {
+      plugins: {
+        indent: instance.indentPlugin,
+        paste: instance.pasteController.plugin,
+        suggestions: $prose(() => instance.suggestions!.plugin()),
+        keymap: instance.keymapPlugin,
+        change: instance.changePlugin,
+        historyInput: instance.historyInputPlugin,
+        policy: instance.policyPlugin,
+      },
+      authoredSources: (doc, positions) =>
+        instance.authoredSources(doc, positions),
+      smartPunctuation: () =>
+        instance.inputPreferences.smartPunctuation === true,
+      linkSchemes: instance.linkSchemes,
+      mutate: (operation) =>
+        instance.forPerson(
+          () =>
+            instance.facadeCall(() => {
+              instance.assertMutation()
+              return !instance.literalSurface && operation()
+            }),
+          false,
         ),
-      )
-      .use(codeControlCtx)
-      .use(codeControlsPlugin(() => instance.viewport().rect))
-      .use(tablePlugins)
-      .use(tableBlock)
-      .use(instance.changePlugin)
-      .use(instance.historyInputPlugin)
-      .use(history)
-      .use(clipboard)
-      .use(cursor)
-      .use(
-        taskListPlugin((operation) =>
-          instance.forPerson(
-            () =>
-              instance.facadeCall(() => {
-                instance.assertMutation()
-                return !instance.literalSurface && operation()
-              }),
-            false,
-          ),
-        ),
-      )
-      .use(undoTypedRule)
-      .use(quoteBackspace)
-      .use(calloutEnter)
-      .use(literalEnter)
-      .use(literalReread)
-      .use(listItemBackspace)
-      .use(nestedItemEnter)
-      .use(rejoinLists)
-      .use(movedListItems)
-      .use(textInputPolicy)
-      .use(events.copy ? codeCopyPlugin((text) => events.copy?.(text)) : [])
-      .use(placeholderPlugin)
-      .use(
-        options.rendering?.codeHighlighting === false
-          ? []
-          : (await import('./highlight.js')).highlightPlugin,
-      )
-      .use(
-        options.rendering?.diagramPreview === false || !diagramsAvailable()
-          ? []
-          : mermaidPreview((error) => instance.report(error)),
-      )
-      .use(selectionPlugin)
-      .use($prose(() => search()))
-      .use(instance.policyPlugin)
-      .use(
-        options.wikiLinks
-          ? wikiLinkView(options.wikiLinks, {
-              capture: () => instance.adapterCapture(),
-              active: () =>
-                instance.ready &&
-                !instance.destroyed &&
-                !instance.literalSurface,
-              labels: { ...defaultLabels, ...options.labels },
-              error: (error) => instance.report(error),
-            })
-          : [],
-      )
-      .use(
-        options.images || options.files
-          ? imageView(
-              options.images,
-              {
-                capture: () => instance.adapterCapture(),
-                active: () =>
-                  instance.ready &&
-                  !instance.destroyed &&
-                  !instance.literalSurface,
-                labels: { ...defaultLabels, ...options.labels },
-                error: (error) => instance.report(error),
-              },
-              options.files,
-              () => {
-                try {
-                  instance.assertMutation()
-                  return true
-                } catch {
-                  return false
-                }
-              },
-            )
-          : [],
-      )
-      .create()
+      dispatchTransaction: (view, tr) => instance.dispatchTransaction(view, tr),
+      revealSelection: () => {
+        if (!instance.loading && instance.ready)
+          instance.revealCurrentSelection()
+      },
+      visibleRect: () => instance.viewport().rect,
+      capture: () => instance.adapterCapture(),
+      active: () =>
+        instance.ready && !instance.destroyed && !instance.literalSurface,
+      canMutate: () => {
+        try {
+          instance.assertMutation()
+          return true
+        } catch {
+          return false
+        }
+      },
+      report: (error) => instance.report(error),
+      copy: events.copy ? (text) => events.copy?.(text) : undefined,
+    })
     configureTableMovement(instance.editor.ctx, () => {
       try {
         instance.assertCurrent()
@@ -4546,6 +3765,34 @@ export class InkKitEditor {
     })
   }
 
+  private openSelectedLink(state: EditorState): boolean {
+    if (!this.ready || this.composing || this.literalSurface) return false
+    const { selection } = state
+    const node =
+      selection instanceof NodeSelection
+        ? selection.node
+        : selection.$from.nodeAfter
+    if (node?.type.name === 'inkkit_wiki_link' && this.options.wikiLinks) {
+      const captured = this.adapterCapture()
+      try {
+        if (captured.isCurrent())
+          this.options.wikiLinks.open(wikiReference(node), captured.context)
+      } catch (error) {
+        this.report(coded(error, 'file-unavailable'))
+      }
+    } else {
+      // Prefer the character after a boundary, then the one before it, just
+      // as a caret at either end of a rendered link belongs to that link.
+      const mark = [selection.$from.nodeAfter, selection.$from.nodeBefore]
+        .flatMap((node) => node?.marks ?? [])
+        .find((mark) => mark.type.name === 'link')
+      const href = mark?.attrs.href as string | undefined
+      if (href && isSafeLinkTarget(href, this.linkSchemes))
+        this.events.openLink?.(href)
+    }
+    return true
+  }
+
   /** Replaces every binding. Keys are in ProseMirror's notation. A key given to two shortcuts goes
    *  to the later one, in the order history, link opening, formatting, block moves, tables, so it lands the same
    *  way every time. A table binding passes a key it shares with a block move to the move outside
@@ -4554,137 +3801,27 @@ export class InkKitEditor {
   setKeymap(keymap: Keymap): void {
     this.assertAlive()
     keymap = keymapBindings(keymap, 'keymap')
-    this.configuredKeys = {
-      undo: ['Mod-z'],
-      redo: ['Mod-y', 'Shift-Mod-z'],
-      moveBlockUp: ['Alt-ArrowUp'],
-      moveBlockDown: ['Alt-ArrowDown'],
-      tableExit: ['Mod-Enter', 'Enter'],
-      indent: ['Tab'],
-      outdent: ['Shift-Tab'],
-      ...keymap,
-    }
-    const bindings: Record<string, Command> = {}
-    // Consuming unbound history keys prevents the browser's separate undo stack
-    // from changing source/TXT outside the shared document history.
-    const historyBindings: Record<string, Command> = Object.fromEntries(
-      ['Mod-z', 'Mod-y', 'Shift-Mod-z'].map((key) => [key, () => true]),
-    )
-    for (const name of ['undo', 'redo'] as const) {
-      for (const key of this.configuredKeys[name] ?? []) {
-        historyBindings[key] = () => {
-          if (!this.ready || !this.commandState().commands[name]) return true
-          return this.forPerson(() => this[name](), true)
-        }
-      }
-    }
-    Object.assign(bindings, historyBindings)
-    const openLink: Command = (state) => {
-      if (!this.ready || this.composing || this.literalSurface) return false
-      const { selection } = state
-      const node =
-        selection instanceof NodeSelection
-          ? selection.node
-          : selection.$from.nodeAfter
-      if (node?.type.name === 'inkkit_wiki_link' && this.options.wikiLinks) {
-        const captured = this.adapterCapture()
-        try {
-          if (captured.isCurrent())
-            this.options.wikiLinks.open(wikiReference(node), captured.context)
-        } catch (error) {
-          this.report(coded(error, 'file-unavailable'))
-        }
-      } else {
-        // Prefer the character after a boundary, then the one before it, just
-        // as a caret at either end of a rendered link belongs to that link.
-        const mark = [selection.$from.nodeAfter, selection.$from.nodeBefore]
-          .flatMap((node) => node?.marks ?? [])
-          .find((mark) => mark.type.name === 'link')
-        const href = mark?.attrs.href as string | undefined
-        if (href && isSafeLinkTarget(href, this.linkSchemes))
-          this.events.openLink?.(href)
-      }
-      return true
-    }
-    for (const key of keymap.openLink ?? []) bindings[key] = openLink
-    for (const name of formatShortcuts) {
-      for (const key of keymap[name] ?? []) {
-        bindings[key] = () => {
-          if (!this.ready || !this.commandState().commands.format[name])
-            return true
-          this.forPerson(() => this.format(name), false)
-          return true
-        }
-      }
-    }
-    const moves: Record<string, Command> = {}
-    for (const [name, direction] of [
-      ['moveBlockUp', 'up'],
-      ['moveBlockDown', 'down'],
-    ] as const) {
-      for (const key of this.configuredKeys[name] ?? []) {
-        moves[key] = bindings[key] = (state) => {
-          // In a table, and when nothing can be edited, the key goes on to the
-          // table's own bindings and the web view, which moves the caret.
-          if (!this.ready || !this.writable || this.literalSurface) return false
-          const move = blockMove(state, direction)
-          if (!move) return false
-          if (
-            move === 'move' &&
-            !this.composing &&
-            !this.pasteController.pending
-          )
-            this.forPerson(() => this.moveBlock(direction), false)
-          return true
-        }
-      }
-    }
-    // Not in `readOnlyKeys`: with nothing to edit, these keys do nothing and are not consumed, so
-    // Tab still moves focus.
-    const indents: Record<string, Command> = {}
-    const sink: Command = (state, dispatch) =>
-      sinkListItem(state.schema.nodes.list_item!)(state, dispatch)
-    for (const [name, command] of [
-      ['indent', sink],
-      ['outdent', liftItem],
-    ] as const) {
-      for (const key of this.configuredKeys[name] ?? [])
-        indents[key] = (state, dispatch, view) =>
-          this.ready && this.writable && !this.literalSurface
-            ? command(state, dispatch, view)
-            : false
-    }
-    for (const command of tableCommands) {
-      for (const key of this.configuredKeys[tableShortcut(command)] ?? [])
-        bindings[key] = (state, dispatch, view) => {
-          if (!this.ready || !this.commandState().commands.table[command])
-            return moves[key]?.(state, dispatch, view) ?? false
-          return this.forPerson(() => this.table(command), true)
-        }
-    }
-    this.readOnlyKeys = keydownHandler(
-      Object.fromEntries(
-        Object.keys(bindings)
-          // A block move key is a caret key while nothing can be edited.
-          .filter((key) => !moves[key])
-          .map((key) => [
-            key,
-            bindings[key] === openLink
-              ? openLink
-              : () => {
-                  throw new InkKitError('read-only', 'The editor is read-only')
-                },
-          ]),
-      ),
-    )
-    this.keys = keydownHandler(bindings)
-    this.readingKeys = keydownHandler(
-      Object.fromEntries(
-        Object.entries(bindings).filter(([, handler]) => handler === openLink),
-      ),
-    )
-    this.indentKeys = keydownHandler(indents)
-    this.literalKeys = keydownHandler(historyBindings)
+    const bindings = createEditorKeymap(keymap, formatShortcuts, {
+      ready: () => this.ready,
+      writable: () => this.writable,
+      literalSurface: () => this.literalSurface,
+      composing: () => this.composing,
+      pending: () => this.pasteController.pending,
+      commandState: () => this.commandState(),
+      run: (operation, fallback) => this.forPerson(operation, fallback),
+      undo: () => this.undo(),
+      redo: () => this.redo(),
+      openLink: (state) => this.openSelectedLink(state),
+      format: (command) => this.format(command),
+      moveBlock: (direction) => this.moveBlock(direction),
+      table: (command) => this.table(command),
+    })
+    this.configuredKeys = bindings.configuredKeys
+    this.readOnlyKeys = bindings.readOnlyKeys
+    this.keys = bindings.keys
+    this.readingKeys = bindings.readingKeys
+    this.indentKeys = bindings.indentKeys
+    this.literalKeys = bindings.literalKeys
   }
 
   /** Dropped files land as one paragraph per path at the drop point: in place of an empty block, after
@@ -4826,149 +3963,6 @@ export class InkKitEditor {
       tr.setSelection(TextSelection.create(tr.doc, end)).scrollIntoView(),
     )
     this.focus()
-  }
-
-  // Removing a mark at a caret only clears the stored mark, so the whole marked
-  // run is selected for the command and the caret put back after it.
-  private withMarkRunSelected(mark: MarkType, command: () => void): boolean {
-    const view = this.editor.ctx.get(editorViewCtx)
-    const { selection, doc } = view.state
-    if (!selection.empty) return false
-    const $pos = selection.$from
-    const parent = $pos.parent
-    const start = $pos.start()
-    let from = $pos.pos
-    let to = $pos.pos
-    parent.forEach((child, offset) => {
-      const childFrom = start + offset
-      const childTo = childFrom + child.nodeSize
-      if (!mark.isInSet(child.marks)) return
-      if (childTo >= $pos.pos && childFrom <= to) {
-        from = Math.min(from, childFrom)
-        to = Math.max(to, childTo)
-      }
-    })
-    if (from === to) return false
-    view.dispatch(
-      view.state.tr.setSelection(TextSelection.create(doc, from, to)),
-    )
-    command()
-    const caret = Math.min($pos.pos, view.state.doc.content.size)
-    view.dispatch(
-      view.state.tr.setSelection(TextSelection.create(view.state.doc, caret)),
-    )
-    return true
-  }
-
-  // Milkdown's inline code command ignores a caret; a stored mark makes the
-  // next typed text code, the way bold and italic behave.
-  private toggleInlineCode(): void {
-    const view = this.editor.ctx.get(editorViewCtx)
-    const type = inlineCodeSchema.type(this.editor.ctx)
-    const run = () => {
-      this.editor.action(callCommand(toggleInlineCodeCommand.key))
-    }
-    const { selection, storedMarks } = view.state
-    if (!selection.empty) return run()
-    // A pending stored mark is only that; the span next to the caret is left alone.
-    if (storedMarks) {
-      const tr = type.isInSet(storedMarks)
-        ? view.state.tr.removeStoredMark(type)
-        : view.state.tr.addStoredMark(type.create())
-      return view.dispatch(tr)
-    }
-    if (!type.isInSet(selection.$from.marks()))
-      view.dispatch(view.state.tr.addStoredMark(type.create()))
-    else this.withMarkRunSelected(type, run)
-  }
-
-  private list(kind: 'bulletList' | 'orderedList'): void {
-    const view = this.editor.ctx.get(editorViewCtx)
-    const { state } = view
-    const { $from } = textBounds(state)
-    const wanted = kind === 'bulletList' ? 'bullet_list' : 'ordered_list'
-    const depth = innermostListDepth($from)
-    if (depth == null) {
-      const command =
-        kind === 'bulletList'
-          ? wrapInBulletListCommand
-          : wrapInOrderedListCommand
-      this.editor.action(callCommand(command.key))
-      return
-    }
-    const list = $from.node(depth)
-    if (list.type.name === wanted) {
-      liftItem(state, view.dispatch)
-      return
-    }
-    // The items carry the list kind too, and a bullet list whose items say
-    // ordered is turned back into one by the preset.
-    const pos = $from.before(depth)
-    const ordered = wanted === 'ordered_list'
-    const attrs = ordered
-      ? { order: 1, spread: list.attrs.spread }
-      : { spread: list.attrs.spread }
-    let tr = state.tr.setNodeMarkup(pos, state.schema.nodes[wanted], attrs)
-    list.forEach((item, offset) => {
-      tr = tr.setNodeMarkup(pos + 1 + offset, undefined, {
-        ...item.attrs,
-        listType: ordered ? 'ordered' : 'bullet',
-        label: ordered ? '1.' : '•',
-      })
-    })
-    view.dispatch(tr)
-  }
-
-  private quote(): void {
-    const view = this.editor.ctx.get(editorViewCtx)
-    const type = blockquoteSchema.type(this.editor.ctx)
-    const { $from, $to } = textBounds(view.state)
-    let range = $from.blockRange($to)
-    let wrapping = range && findWrapping(range, type)
-    if (!wrapping) {
-      // A list item cannot hold a quote, so the whole list is quoted instead.
-      const depth = outermostListDepth($from)
-      if (depth == null) return
-      const doc = view.state.doc
-      range = new NodeRange(
-        doc.resolve($from.before(depth)),
-        doc.resolve($from.after(depth)),
-        depth - 1,
-      )
-      wrapping = findWrapping(range, type)
-    }
-    if (!range || !wrapping) return
-    view.dispatch(view.state.tr.wrap(range, wrapping))
-  }
-
-  private unquote(): void {
-    const view = this.editor.ctx.get(editorViewCtx)
-    const { $from, $to } = textBounds(view.state)
-    const range = $from.blockRange(
-      $to,
-      (node) => node.type.name === 'blockquote',
-    )
-    if (!range) return
-    const target = liftTarget(range)
-    if (target == null) return
-    view.dispatch(liftQuote(view.state, range, target))
-  }
-
-  /** Changes the selected textblocks' type, keeping everything they hold. */
-  private textblockType(
-    type: 'paragraph' | 'heading' | 'codeBlock',
-    attr?: string | number,
-  ): Command {
-    const ctx = this.editor.ctx
-    if (type === 'codeBlock')
-      return setTextblockType(ctx, codeBlockSchema.type(ctx), {
-        language: String(attr ?? ''),
-      })
-    if (type === 'heading')
-      return setTextblockType(ctx, headingSchema.type(ctx), {
-        level: Number(attr),
-      })
-    return setTextblockType(ctx, paragraphSchema.type(ctx))
   }
 
   /**
@@ -5139,60 +4133,9 @@ export class InkKitEditor {
     if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
     const before = view.state
-    const run = (cmd: Parameters<typeof callCommand>[0], payload?: unknown) =>
-      this.editor.action(callCommand(cmd, payload))
-    const state = caretState(before)
-    const become = (
-      type: 'paragraph' | 'heading' | 'codeBlock',
-      attr?: string | number,
-    ) => this.textblockType(type, attr)(view.state, view.dispatch)
-    const level = headingLevel(command)
-    if (level != null) {
-      if (state.block.type === 'heading' && state.block.level === level)
-        become('paragraph')
-      else become('heading', level)
-    }
-    switch (command) {
-      case 'paragraph':
-        become('paragraph')
-        break
-      case 'bold':
-        run(toggleStrongCommand.key)
-        break
-      case 'italic':
-        run(toggleEmphasisCommand.key)
-        break
-      case 'strikethrough':
-        run(toggleStrikethroughCommand.key)
-        break
-      case 'highlight':
-        run(toggleHighlightCommand.key)
-        break
-      case 'code':
-        this.toggleInlineCode()
-        break
-      case 'codeBlock':
-        if (state.block.type === 'codeBlock') become('paragraph')
-        else become('codeBlock', checked?.language ?? '')
-        break
-      case 'quote':
-        if (state.quoted) this.unquote()
-        else this.quote()
-        break
-      case 'bulletList':
-      case 'orderedList':
-        this.list(command)
-        break
-      case 'taskList':
-        toggleTaskList(this.editor.ctx)
-        break
-      case 'toggleTask':
-        toggleTask(this.editor.ctx)
-        break
-      case 'link':
-        this.link(checked?.destination)
-        break
-    }
+    applyFormat(this.editor, command, checked, (destination) =>
+      this.link(destination),
+    )
     this.focus()
     const after = view.state
     const marks = (state: EditorState) =>
