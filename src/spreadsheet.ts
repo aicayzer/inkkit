@@ -33,40 +33,49 @@ export function pasteSpreadsheet(
   const view = ctx.get(editorViewCtx)
   if (input.plainText || input.markdown != null) return false
   const inTable = !at && isInTable(view.state)
-  if (
-    input.html &&
-    /data-inkkit-(?:reference|footnote|comment)/i.test(input.html)
-  ) {
-    if (inTable && /<table[\s>]/i.test(input.html)) reject()
-    return false
-  }
-  if (input.images?.length || (input.html && /<img[\s>]/i.test(input.html))) {
-    if (!input.html || !/<table[\s>]/i.test(input.html)) return false
+  let fragment: DocumentFragment | undefined
+  if (input.html) {
     const template = document.createElement('template')
     template.innerHTML = input.html
-    for (const image of template.content.querySelectorAll('img'))
+    fragment = template.content
+  }
+  const hasTable = Boolean(fragment?.querySelector('table'))
+  if (
+    fragment?.querySelector(
+      '[data-inkkit-reference], [data-inkkit-reference-type], [data-inkkit-reference-content], [data-inkkit-reference-definition], [data-inkkit-footnote-reference], [data-inkkit-footnote-definition], [data-inkkit-comment]',
+    )
+  ) {
+    if (inTable && hasTable) reject()
+    return false
+  }
+  if (input.images?.length || fragment?.querySelector('img')) {
+    if (!fragment || !hasTable) return false
+    // The probe must not replace images in the captured fragment or reparse HTML.
+    const probe = fragment.cloneNode(true) as DocumentFragment
+    for (const image of probe.querySelectorAll('img'))
       image.replaceWith(
         document.createTextNode(image.getAttribute('alt') ?? 'Image'),
       )
     try {
-      htmlGrid(view.state.schema, template.innerHTML)
+      htmlGrid(view.state.schema, probe)
       return false
     } catch {
-      if (!inTable && !standaloneTable(input.html)) return false
+      if (!inTable && !standaloneTable(fragment)) return false
     }
   }
   let grid: Grid | undefined
   try {
-    grid = input.html?.match(/<table[\s>]/i)
-      ? htmlGrid(view.state.schema, input.html)
-      : !input.html &&
-          input.text.includes('\t') &&
-          (inTable || looksLikeGrid(input.text))
-        ? textGrid(view.state.schema, input.text)
-        : undefined
+    grid =
+      fragment && hasTable
+        ? htmlGrid(view.state.schema, fragment)
+        : !input.html &&
+            input.text.includes('\t') &&
+            (inTable || looksLikeGrid(input.text))
+          ? textGrid(view.state.schema, input.text)
+          : undefined
   } catch (error) {
     if (inTable || !input.html) throw error
-    if (!standaloneTable(input.html)) return false
+    if (!fragment || !standaloneTable(fragment)) return false
     const schema = view.state.schema
     const children: ProseNode[] = []
     let cursor = 0
@@ -220,13 +229,11 @@ export function pasteSpreadsheet(
   return true
 }
 
-function standaloneTable(html: string): boolean {
-  const template = document.createElement('template')
-  template.innerHTML = html
-  for (const metadata of template.content.querySelectorAll('meta[charset]'))
-    metadata.remove()
-  const elements = [...template.content.childNodes].filter(
-    (node) => node.nodeType !== 3 || node.textContent?.trim(),
+function standaloneTable(fragment: DocumentFragment): boolean {
+  const elements = [...fragment.childNodes].filter(
+    (node) =>
+      !(node instanceof Element && node.matches('meta[charset]')) &&
+      (node.nodeType !== 3 || node.textContent?.trim()),
   )
   return elements.length === 1 && elements[0] instanceof HTMLTableElement
 }
@@ -301,10 +308,7 @@ function textGrid(schema: Schema, input: string): Grid {
   }
 }
 
-function htmlGrid(schema: Schema, html: string): Grid {
-  const template = document.createElement('template')
-  template.innerHTML = html
-  const fragment = template.content
+function htmlGrid(schema: Schema, fragment: DocumentFragment): Grid {
   for (const metadata of fragment.querySelectorAll('meta[charset]'))
     metadata.remove()
   const table = fragment.querySelector('table')
