@@ -60,7 +60,7 @@ test('cards, notes and preserved blocks have accessible roles and no axe finding
     const findings = await page.evaluate(async () => {
       const { axe } = window as unknown as { axe: typeof import('axe-core') }
       const result = await axe.run('.inkkit-root .ProseMirror.editor', {
-        // Color contrast depends on the host page; names and roles are InkKit's.
+        // Color contrast depends on the host page; names and roles are Inkkit's.
         rules: { 'color-contrast': { enabled: false } },
       })
       // "Incomplete" means axe wants a person to check, so it counts as a finding.
