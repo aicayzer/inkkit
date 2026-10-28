@@ -7,6 +7,8 @@ Every failure Inkkit reports is an `InkKitError`. Branch on its `code`; the `mes
 
 ## InkKitError
 
+An `InkKitError` reports a refused operation or unavailable resource. Its code is stable for host handling; its message and original cause help diagnose the failure.
+
 ```ts
 import type { EditorErrorCode } from '@aicayzer/inkkit'
 
@@ -21,6 +23,7 @@ declare class InkKitError extends Error {
 }
 ```
 
+{/* @api EditorErrorCode */}
 `EditorErrorCode` is the closed list of codes in [error codes](#error-codes). When a failure started outside Inkkit, such as in an adapter, the host clipboard handler or the diagram renderer, the original error is `cause`. There is no separate source field: the code and `cause` say where a failure came from. You can construct an `InkKitError` yourself, for example in a test double.
 
 ```ts
@@ -41,6 +44,9 @@ try {
   }
 }
 ```
+
+{/* @api InkKitError.code */}
+The `code` identifies the kind of failure. Branch on it instead of matching the diagnostic message; the accepted values are listed below.
 
 ## How errors arrive
 

@@ -17,6 +17,8 @@ const options: EditorOptions = {
 const editor = await InkKitEditor.mount(root, events, options)
 ```
 
+{/* @api EditorOptions */}
+
 ## Editor options
 
 Three options can change after mount, through a method. The rest are fixed at mount; to change one, destroy the editor and mount a new one.
@@ -54,6 +56,7 @@ Whether the person can edit. `false` permits selection, copying, find, navigatio
 
 <ResponseField name="textInput" type="TextInputPreferences" default="{}">
 
+{/* @api TextInputPreferences */}
 A `TextInputPreferences` object: input hints for both editing surfaces, and smart punctuation. Every field is optional. `setTextInputPreferences` replaces the whole set, so a field you leave out returns to its default.
 
 <Expandable title="TextInputPreferences">
@@ -137,6 +140,7 @@ Mermaid previews below `mermaid` fences. `false` also removes the `diagram` slas
 
 <ResponseField name="slashMenu" type="SlashMenuOptions" default="{ enabled: false }">
 
+{/* @api SlashMenuOptions */}
 A `SlashMenuOptions` object. It offers block commands when the person types `/` on an empty line. See [Slash menu](#slash-menu).
 
 <Expandable title="SlashMenuOptions">
@@ -162,6 +166,8 @@ Your own commands, shown after the built-in ones in the order you give. See [`Sl
 </Expandable>
 
 </ResponseField>
+
+{/* @api EditorEvents */}
 
 ## Events
 
@@ -211,15 +217,13 @@ If the handler throws or rejects, Inkkit reports `clipboard-unavailable` and a c
 
 </ResponseField>
 
+{/* @api CommandState */}
+
 ## Command state
 
 [`commandState`](/reference/editor#commandstate) returns a `CommandState`, and `commandStateChanged` sends one. It describes the moment you ask; it doesn't promise that a later call succeeds, so handle the result and errors when the person acts. Reading it never dirties the document.
 
-<ResponseField name="documentId, generation, revision" type="DocumentVersion">
-
-The document this state describes.
-
-</ResponseField>
+The inherited `documentId`, `generation` and `revision` fields identify the document this state describes. See [`DocumentVersion`](/reference/editor#documents).
 
 <ResponseField name="format" type="'md' | 'txt'">
 
@@ -229,6 +233,7 @@ The document format.
 
 <ResponseField name="mode" type="EditingMode">
 
+{/* @api EditingMode */}
 An `EditingMode`: `'formatted'` or `'source'`. A TXT document is always `'source'`.
 
 </ResponseField>
@@ -253,18 +258,21 @@ An image import is running.
 
 <ResponseField name="caret" type="CaretState">
 
+{/* @api CaretState */}
 A `CaretState`: the formatting at the selection. In source and TXT modes it is always `{ marks: [], block: { type: 'paragraph' }, quoted: false }`.
 
 <Expandable title="CaretState">
 
 <ResponseField name="marks" type="Mark[]">
 
+{/* @api Mark */}
 An array of `Mark` values, each one of `bold`, `italic`, `strikethrough`, `highlight`, `code` or `link`. At a caret, the marks the next typed text takes, including ones you toggled. For a range, every mark found anywhere in it.
 
 </ResponseField>
 
 <ResponseField name="block" type="Block">
 
+{/* @api Block */}
 A `Block`: the innermost heading, code block or list item that holds the start of the selection. It is `{ type: 'heading', level }` with `level` from 1 to 6, `{ type: 'codeBlock' }`, `{ type: 'bulletList' }`, `{ type: 'orderedList' }` or `{ type: 'taskList' }`. Anything else, such as a paragraph, a table cell or a callout outside a list, is `{ type: 'paragraph' }`.
 
 </ResponseField>
@@ -307,6 +315,8 @@ What each command can do now. Every entry is `false` while the editor is read-on
 
 </ResponseField>
 
+{/* @api-scope CommandState.commands */}
+
 | Entry                                                            | `true` when                                                                                                                                     |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `undo`, `redo`                                                   | There is a step to undo or redo, including steps taken in source mode.                                                                          |
@@ -317,6 +327,8 @@ What each command can do now. Every entry is `false` while the editor is read-on
 | `format`                                                         | A `Record<FormatCommand, boolean>`: each [format command](#format-commands) that applies to the selection. All `false` in source and TXT modes. |
 | `table`                                                          | A `Record<TableCommand, boolean>`: each [table command](#table-commands) that applies to the selection. All `false` in source and TXT modes.    |
 | `moveBlockUp`, `moveBlockDown`                                   | [`moveBlock`](/reference/editor#moveblock) would move the blocks at the selection. `false` in source and TXT modes and in a table.              |
+
+{/* @api FormatCommand */}
 
 ## Format commands
 
@@ -337,17 +349,26 @@ What each command can do now. Every entry is `false` while the editor is read-on
 
 `format('toggleTask')` switches the innermost task item at the start of the selection between checked and unchecked. It returns `false` outside a task item and changes only its checkbox marker in the saved source. `commandState().commands.format.toggleTask` reports availability; the command follows the same read-only, composition and generation guards as other formatting commands. Task markers also expose a checkbox role and checked state, with Space or Enter toggling a focused marker.
 
+{/* @api FormatOptions */}
+`FormatOptions` supplies the destination for a link or the language for a code block. Each field belongs only to its corresponding command.
+
+{/* @api-scope FormatOptions */}
+
 <ResponseField name="destination" type="string">
 
 Only with `link`. It must be a relative address, a fragment, a query, or an `http`, `https`, `mailto` or `tel` address, or one whose scheme is in [`linkSchemes`](#editor-options), with no control characters, and Markdown must be able to write it so that it reads back the same. Otherwise `format` throws `invalid-argument`. In a reference link, the shared definition changes, so every link that uses it changes.
 
 </ResponseField>
 
+{/* @api-scope FormatOptions */}
+
 <ResponseField name="language" type="string">
 
 Only with `codeBlock`. The info string of the new code block.
 
 </ResponseField>
+
+{/* @api TableCommand */}
 
 ## Table commands
 
@@ -364,7 +385,10 @@ Only with `codeBlock`. The info string of the new code block.
 | `sortRows`                                                         | Sorts the body rows. The header and the column alignments stay fixed. Equal keys keep their order, and empty cells come last. | An ascending text sort on the selected column would reorder the rows. |
 | `exit`                                                             | Adds an empty paragraph after the table and puts the caret in it.                                                             | The selection is in a table.                                          |
 
+{/* @api TableOptions */}
 Each `TableOptions` field belongs to one command. A field with another command, an unknown field, or a value outside its range throws `invalid-argument`.
+
+{/* @api-scope TableOptions */}
 
 | Field        | Command    | Type                            | Default                     | Meaning                                                                                                                                                                                                                  |
 | ------------ | ---------- | ------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -397,6 +421,9 @@ With `slashMenu.enabled`, typing `/` at the end of an empty paragraph or heading
 The text typed after the slash filters the menu. A command matches when its displayed name, or one of its additional words, starts with the filter, ignoring case. Choosing a command replaces the slash and filter in one edit; one Undo restores the line as it was before the slash. A refused edit changes nothing and reports `preservation` through `events.error`. The menu uses the `suggestions` and `suggestionsEmpty` labels and the `--inkkit-menu-*` [tokens](/reference/appearance#tokens).
 
 ### Built-in slash commands
+
+{/* @api SlashCommandName */}
+A `SlashCommandName` selects one built-in block command. The table lists the accepted names, displayed labels and additional filter words.
 
 | `SlashCommandName` | Default name (label)               | Additional words         |
 | ------------------ | ---------------------------------- | ------------------------ |

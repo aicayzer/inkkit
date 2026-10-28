@@ -58,9 +58,13 @@ Set these CSS custom properties on the editor root or an ancestor. Inkkit reads 
 
 Tables have a subtle 4px outer radius by default. Internal cell divisions stay square. Hosts adopting this version can set `--inkkit-table-radius: 0px` to retain square outer corners.
 
+{/* @api EditorLabels */}
+
 ## Labels
 
 Pass any of these keys in [`labels`](/reference/options#editor-options) at mount to replace the default text. Labels are fixed at mount.
+
+{/* @api-scope EditorLabels */}
 
 | Label                    | Default text              | Where it appears                                                                                          |
 | ------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -100,19 +104,19 @@ Pass any of these keys in [`labels`](/reference/options#editor-options) at mount
 | `suggestions`            | Suggestions               | Accessible name of the suggestion list, for the slash menu and note suggestions.                          |
 | `suggestionsLoading`     | Loading…                  | The suggestion list while `WikiLinkAdapter.suggest` runs.                                                 |
 | `suggestionsEmpty`       | No matches                | Shown briefly when nothing matches, before the list closes.                                               |
-| `slashHeading1`          | Heading 1                 | Slash menu: `heading1`.                                                                                   |
-| `slashHeading2`          | Heading 2                 | Slash menu: `heading2`.                                                                                   |
-| `slashHeading3`          | Heading 3                 | Slash menu: `heading3`.                                                                                   |
-| `slashBulletList`        | Bulleted List             | Slash menu: `bulletList`.                                                                                 |
-| `slashOrderedList`       | Numbered List             | Slash menu: `orderedList`.                                                                                |
-| `slashTaskList`          | Checklist                 | Slash menu: `taskList`.                                                                                   |
+| `slashHeading1`          | Heading 1                 | Slash menu command: `heading1`.                                                                           |
+| `slashHeading2`          | Heading 2                 | Slash menu command: `heading2`.                                                                           |
+| `slashHeading3`          | Heading 3                 | Slash menu command: `heading3`.                                                                           |
+| `slashBulletList`        | Bulleted List             | Slash menu command: `bulletList`.                                                                         |
+| `slashOrderedList`       | Numbered List             | Slash menu command: `orderedList`.                                                                        |
+| `slashTaskList`          | Checklist                 | Slash menu command: `taskList`.                                                                           |
 | `taskCheckbox`           | Task                      | Accessible name of a task checkbox with an empty first paragraph. Otherwise, its paragraph text names it. |
-| `slashQuote`             | Quote                     | Slash menu: `quote`.                                                                                      |
-| `slashCodeBlock`         | Code Block                | Slash menu: `codeBlock`.                                                                                  |
-| `slashTable`             | Table                     | Slash menu: `table`.                                                                                      |
-| `slashCallout`           | Callout                   | Slash menu: `callout`, which opens the callout choices.                                                   |
-| `slashDivider`           | Divider                   | Slash menu: `divider`.                                                                                    |
-| `slashDiagram`           | Diagram                   | Slash menu: `diagram`, when previews are available.                                                       |
+| `slashQuote`             | Quote                     | Slash menu command: `quote`.                                                                              |
+| `slashCodeBlock`         | Code Block                | Slash menu command: `codeBlock`.                                                                          |
+| `slashTable`             | Table                     | Slash menu command: `table`.                                                                              |
+| `slashCallout`           | Callout                   | Slash menu command: `callout`, which opens the callout choices.                                           |
+| `slashDivider`           | Divider                   | Slash menu command: `divider`.                                                                            |
+| `slashDiagram`           | Diagram                   | Slash menu command: `diagram`, when previews are available.                                               |
 | `slashNote`              | Note                      | Slash menu callout choice.                                                                                |
 | `slashTip`               | Tip                       | Slash menu callout choice.                                                                                |
 | `slashImportant`         | Important                 | Slash menu callout choice.                                                                                |
@@ -123,6 +127,9 @@ Pass any of these keys in [`labels`](/reference/options#editor-options) at mount
 ## Shortcuts
 
 Pass bindings in [`keymap`](/reference/options#editor-options) at mount, or replace them later with [`setKeymap`](/reference/editor#setkeymap). Each call replaces the whole map: a name you leave out loses its binding, except that a name with default keys keeps them. `[]` removes a name's defaults. Formatting has no default bindings, and `link` has no name because it needs a destination.
+
+{/* @api ShortcutName */}
+A `ShortcutName` identifies a configurable binding: formatting, history, link opening, block movement, list indentation or a table command.
 
 | `ShortcutName`         | Default keys           | What it does                |
 | ---------------------- | ---------------------- | --------------------------- |
@@ -169,6 +176,7 @@ Pass bindings in [`keymap`](/reference/options#editor-options) at mount, or repl
 | `tableSortRows`        | None                   | `table('sortRows')`         |
 | `tableExit`            | `Mod-Enter`, `Enter`   | `table('exit')`, in a table |
 
+{/* @api Keymap */}
 A `Keymap` maps each name to an array of keys. An unknown name, or a value that isn't an array of strings, throws `invalid-argument`; a `null` entry counts as omitted.
 
 - **Where bindings apply.** History bindings work on every surface. Link opening, formatting, block move and table bindings work only in formatted mode. `Mod-z`, `Mod-y` and `Shift-Mod-z` are always consumed, even when unbound, so the browser's own undo never changes source or TXT text.
