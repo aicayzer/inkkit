@@ -1,3 +1,4 @@
+import { withoutLeadingBOM } from './bom'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { finalCodeEnding } from './code-fences'
 import { sourceFrontmatter } from './literals'
@@ -88,10 +89,10 @@ export class RegionEdits {
     // Front matter runs from the start of the file to the next delimiter
     // line, which a changed block can supply, and a rule that opens the file
     // would then be rewritten.
-    const bom = (text: string) => text.replace(/^\uFEFF/, '')
-    const frontmatter = sourceFrontmatter(bom(output))
+    const frontmatter = sourceFrontmatter(withoutLeadingBOM(output))
     if (
-      frontmatter !== sourceFrontmatter(bom(this.loaded.source)) ||
+      frontmatter !==
+        sourceFrontmatter(withoutLeadingBOM(this.loaded.source)) ||
       (doc.firstChild?.type.name === 'hr' && frontmatter?.startsWith('---'))
     )
       return undefined

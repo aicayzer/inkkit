@@ -57,3 +57,9 @@ The remaining collaborators separate state by responsibility:
 - `preserve-moves.ts` tracks carried block identities and correspondence for the current save. `preserve-reconstruction.ts` assembles authored and newly written pieces, including list boundaries and changed link forms.
 
 `Preservation` selects the local, regional or whole-document path and retains final reparse validation. It also owns the recent-instance cache and cross-check policy. Collaborators receive only the fields and operations they use; they do not receive the coordinator or an editor. Temporary move and link-rewrite state is cleared after each attempt. The extraction keeps fallback eligibility, cache lifetimes, work budgets and exact output unchanged.
+
+## Shared primitives
+
+- `bom.ts` recognises or removes exactly one leading byte-order mark. Callers retain control of parser offsets, incremental-read eligibility and saved output.
+- `text-edges.ts` finds non-overlapping matching UTF-16 prefixes and suffixes. Callers keep source mapping and syntax-boundary adjustments; comparisons involving hard-break identity or syntax-node arrays stay with their owning algorithms.
+- `portable-image.ts` shares byte encoding and the exact lowercase image MIME allowlist. Clipboard, paste and print retain their own MIME coercion, case, base64 and image-validation rules.

@@ -1,3 +1,4 @@
+import { leadingBOMLength } from './bom'
 import { remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Mark } from '@milkdown/kit/prose/model'
@@ -198,7 +199,7 @@ export class Reconstruction {
     if (index === 0)
       return position === 0 && block
         ? this.loaded.source.slice(0, block.start)
-        : this.loaded.source.startsWith('\uFEFF')
+        : leadingBOMLength(this.loaded.source)
           ? '\uFEFF'
           : ''
     const previous = positions[index - 1]
@@ -611,7 +612,7 @@ export class Reconstruction {
     else if (output) output += finalCodeEnding(doc) ?? this.loaded.lineEnding
     // A `---` rule that opens the file reads back as front matter when
     // another `---` line follows, whether it is new or moved there.
-    const bom = output.startsWith('\uFEFF') ? 1 : 0
+    const bom = leadingBOMLength(output)
     if (
       doc.firstChild?.type.name === 'hr' &&
       sourceFrontmatter(output.slice(bom))?.startsWith('---')

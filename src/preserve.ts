@@ -1,3 +1,4 @@
+import { leadingBOMLength } from './bom'
 import { remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -184,8 +185,7 @@ export class Preservation {
   private wholeDocument(doc: ProseNode): string {
     try {
       const canonical = write(this.ctx, doc)
-      if (canonical === '')
-        return this.source.startsWith('\uFEFF') ? '\uFEFF' : ''
+      if (canonical === '') return leadingBOMLength(this.source) ? '\uFEFF' : ''
       const current: string[] = []
       doc.forEach((node) => current.push(this.loaded.formOf(node)))
       const pairing = this.movement.pairing(doc, current)

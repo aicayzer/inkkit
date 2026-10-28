@@ -1,3 +1,4 @@
+import { matchingTextEdges } from './text-edges'
 import type { Root } from 'mdast'
 import { type SourceNode } from './preserve-types'
 import { sourceRange, lf, literals } from './preserve-shape'
@@ -7,20 +8,7 @@ import { sourceRange, lf, literals } from './preserve-shape'
 // is kept on the side of the edit where it reads as `before` does.
 function retainLine(authored: string, before: string, after: string): string {
   if (before === after) return authored
-  let prefix = 0
-  while (
-    prefix < before.length &&
-    prefix < after.length &&
-    before[prefix] === after[prefix]
-  )
-    prefix++
-  let suffix = 0
-  while (
-    suffix < before.length - prefix &&
-    suffix < after.length - prefix &&
-    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
-  )
-    suffix++
+  const { prefix, suffix } = matchingTextEdges(before, after)
   if (authored.endsWith(before.slice(prefix)))
     return (
       authored.slice(0, authored.length - before.length + prefix) +
