@@ -19,7 +19,7 @@ import {
 } from '@milkdown/kit/transformer'
 import type { Root, RootContent } from 'mdast'
 import { literalCommentSpans } from './comments'
-import { InkKitError } from './types'
+import { MarkdownParseRefusal } from './preserve-error'
 
 /**
  * Milkdown's parser state, except that it throws where Milkdown would drop content. Milkdown
@@ -108,10 +108,7 @@ export function parseMarkdown(
   })
   const kept = build(schema, tree as unknown as MarkdownNode)
   if (kept) return kept
-  throw new InkKitError(
-    'preservation',
-    'The Markdown cannot be shown without losing part of it',
-  )
+  throw new MarkdownParseRefusal()
 }
 
 /** Replaces Milkdown's parser with `parseMarkdown`, for every caller of `parserCtx`. */

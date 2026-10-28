@@ -9,7 +9,11 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { type Block, type SourceNode, type Reorder } from './preserve-types'
 import { retainSource } from './preserve-retain'
-import { PreservationError } from './preserve-error'
+import {
+  PreservationError,
+  PreservationRefusal,
+  isPreservationRefusal,
+} from './preserve-error'
 import { retainSplit, liftedSource } from './preserve-containers'
 import { parseDoc, parseTree, write, blockForm } from './preserve-parse'
 import {
@@ -83,7 +87,10 @@ export class LoadedSource {
         let start = node.position?.start.offset
         const end = node.position?.end.offset
         if (start == null || end == null)
-          throw new PreservationError('A source block has no location')
+          throw new PreservationRefusal(
+            'source-location',
+            'A source block has no location',
+          )
         start += offset
         const sourceEnd = end + offset
         const firstColumn = source.lastIndexOf('\n', start - 1) + 1
@@ -149,7 +156,8 @@ export class LoadedSource {
             : { label: definitionLabel(label), text: raw }
         })
     } catch (cause) {
-      if (cause instanceof PreservationError) throw cause
+      if (cause instanceof PreservationError || isPreservationRefusal(cause))
+        throw cause
       throw new PreservationError('Cannot read Markdown for preservation', {
         cause,
       })
@@ -261,7 +269,10 @@ export class LoadedSource {
     const offset = leadingBOMLength(this.source)
     const start = block.ast.position?.start.offset
     if (start == null)
-      throw new PreservationError('A source block has no location')
+      throw new PreservationRefusal(
+        'source-location',
+        'A source block has no location',
+      )
     this.readNestedLiterals(block)
     return (
       this.source.slice(block.start, start + offset) +

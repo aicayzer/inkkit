@@ -4,8 +4,12 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { nothingCarried } from './preserve-types'
-import { correspondence, tooManyBlocks } from './preserve-alignment'
-import { PreservationError } from './preserve-error'
+import { correspondence } from './preserve-alignment'
+import {
+  PreservationError,
+  PreservationRefusal,
+  isPreservationRefusal,
+} from './preserve-error'
 import { preservationWork, parseDoc, write, crossCheck } from './preserve-parse'
 import { semanticSignature } from './preserve-shape'
 import { LoadedSource } from './preserve-source'
@@ -91,6 +95,12 @@ export class Preservation {
     this.movement.current = moved
     try {
       return this.serializeWith(doc)
+    } catch (cause) {
+      if (cause instanceof PreservationError || isPreservationRefusal(cause))
+        throw cause
+      throw new PreservationError('Cannot preserve the edited Markdown', {
+        cause,
+      })
     } finally {
       this.movement.current = undefined
     }
@@ -98,19 +108,12 @@ export class Preservation {
 
   private serializeWith(doc: ProseNode): string {
     if (this.unchanged(doc)) return this.source
-    let local: string | undefined
-    try {
-      local = this.localEdits(doc)
-    } catch (cause) {
-      if (cause instanceof PreservationError) throw cause
-      throw new PreservationError('Cannot preserve the edited Markdown', {
-        cause,
-      })
-    }
+    let local = this.localEdits(doc)
     if (local === undefined)
       try {
         local = this.regions(doc)
-      } catch {
+      } catch (error) {
+        if (!isPreservationRefusal(error)) throw error
         // The whole-document path decides, and refuses if it fails too.
         local = undefined
       }
@@ -146,17 +149,22 @@ export class Preservation {
     const { characters } = preservationWork
     let whole: string
     try {
-      whole = this.wholeDocument(doc)
-    } catch (error) {
-      // An edit validated where it stands needs no matching, so it can save
-      // when matching the whole document would run out of budget.
-      whole =
-        (error as Error).message === tooManyBlocks().message &&
-        this.reopens(doc, text)
-          ? text
-          : `refused: ${(error as Error).message}`
+      try {
+        whole = this.wholeDocument(doc)
+      } catch (error) {
+        if (!isPreservationRefusal(error)) throw error
+        // An edit validated where it stands needs no matching, so it can save
+        // when matching the whole document would run out of budget.
+        whole =
+          error instanceof PreservationRefusal &&
+          error.reason === 'matching-budget' &&
+          this.reopens(doc, text)
+            ? text
+            : `refused: ${error.message}`
+      }
+    } finally {
+      preservationWork.characters = characters
     }
-    preservationWork.characters = characters
     if (whole !== text)
       crossCheck.differences.push(
         JSON.stringify({ source: this.source, fast: text, whole }),
@@ -200,7 +208,8 @@ export class Preservation {
           let output: string | undefined
           try {
             output = this.reconstruction.writeDocument(doc, current, pairing)
-          } catch {
+          } catch (error) {
+            if (!isPreservationRefusal(error)) throw error
             output = undefined
           }
           if (output !== undefined && this.reopens(doc, output, canonical))
@@ -224,11 +233,13 @@ export class Preservation {
       // as the edit left them.
       const output = attempt() ?? this.reconstruction.withLinkEdits(attempt)
       if (output !== undefined) return output
-      throw new PreservationError(
+      throw new PreservationRefusal(
+        'reopen-mismatch',
         'The edited Markdown cannot be reopened without changing its content',
       )
     } catch (cause) {
-      if (cause instanceof PreservationError) throw cause
+      if (cause instanceof PreservationError || isPreservationRefusal(cause))
+        throw cause
       throw new PreservationError('Cannot preserve the edited Markdown', {
         cause,
       })

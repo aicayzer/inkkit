@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import { withEditor } from './harness'
 import { Preservation } from '../src/preserve'
+import { PreservationRefusal } from '../src/preserve-error'
 
 for (const repeated of [false, true]) {
   for (const formatted of [false, true]) {
@@ -86,7 +87,13 @@ test('unmatchable large rewrites still fail within the correspondence work budge
       new Preservation(editor.ctx, source).serialize(
         parse(rewritten.slice(1).join('\n\n')),
       ),
-    ).toThrow('too many blocks')
+    ).toThrow(
+      expect.objectContaining({
+        constructor: PreservationRefusal,
+        reason: 'matching-budget',
+        message: expect.stringContaining('too many blocks'),
+      }),
+    )
     // Every block edited where it stands needs no matching.
     expect(
       new Preservation(editor.ctx, source).serialize(
@@ -160,7 +167,11 @@ test('local text validation cannot hide a newly resolved shortcut reference', as
         .firstChild!.eq(view.state.doc.firstChild!),
     ).toBe(true)
     expect(() => preservation.serialize(view.state.doc)).toThrow(
-      'cannot be reopened',
+      expect.objectContaining({
+        constructor: PreservationRefusal,
+        reason: 'reopen-mismatch',
+        message: expect.stringContaining('cannot be reopened'),
+      }),
     )
   })
 })

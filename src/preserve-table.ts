@@ -1,6 +1,6 @@
 import { type SourceNode } from './preserve-types'
 import { signature } from './preserve-shape'
-import { PreservationError } from './preserve-error'
+import { PreservationRefusal } from './preserve-error'
 
 // The pipes GFM splits a row at; an escaped pipe does not split it.
 export function rowPipes(row: string): {
@@ -44,7 +44,10 @@ export function retainShortRow(
   const start = before.position?.start.offset
   const end = before.position?.end.offset
   if (from == null || to == null || start == null || end == null)
-    throw new PreservationError('A source token has no location')
+    throw new PreservationRefusal(
+      'source-location',
+      'A source token has no location',
+    )
   const kept = rowPipes(row)
   let output = (
     kept.closing == null ? row : row.slice(0, kept.closing)

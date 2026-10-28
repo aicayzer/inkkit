@@ -1,5 +1,5 @@
 import { matchingTextEdges } from './text-edges'
-import { PreservationError } from './preserve-error'
+import { PreservationRefusal } from './preserve-error'
 
 const MATCHING_BUDGET = 1_000_000
 
@@ -43,8 +43,9 @@ export function correspondence(
   return result
 }
 
-export function tooManyBlocks(): PreservationError {
-  return new PreservationError(
+export function tooManyBlocks(): PreservationRefusal {
+  return new PreservationRefusal(
+    'matching-budget',
     'The edit changes too many blocks to preserve safely',
   )
 }
