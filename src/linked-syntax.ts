@@ -1,3 +1,4 @@
+import { withoutLeadingBOM } from './bom'
 import { $inputRule, $node, $prose, $remark } from '@milkdown/kit/utils'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { InputRule } from '@milkdown/kit/prose/inputrules'
@@ -314,7 +315,7 @@ export function authoredFileSource(node: ProseNode): string | null {
 export function remarkFileSources() {
   return (tree: Root, file: { value?: unknown }) => {
     // Positions count from after a byte order mark.
-    const source = String(file.value ?? '').replace(/^\uFEFF/, '')
+    const source = withoutLeadingBOM(String(file.value ?? ''))
     const visit = (node: Nodes, inTable = false) => {
       if (node.type === 'image' && node.inkkitFileRaw == null) {
         const start = node.position?.start.offset

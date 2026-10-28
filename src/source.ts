@@ -1,3 +1,5 @@
+import { matchingTextEdges } from './text-edges'
+import { leadingBOMLength } from './bom'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { literalCommentSpans } from './comments'
 
@@ -68,21 +70,7 @@ export function normalizedOffset(source: string, raw: number): number {
 export function editedPlainSource(previous: string, value: string): string {
   const normalized = previous.replace(/\r\n?/g, '\n')
   if (normalized === value) return previous
-  let prefix = 0,
-    suffix = 0
-  while (
-    prefix < normalized.length &&
-    prefix < value.length &&
-    normalized[prefix] === value[prefix]
-  )
-    prefix++
-  while (
-    suffix < normalized.length - prefix &&
-    suffix < value.length - prefix &&
-    normalized[normalized.length - suffix - 1] ===
-      value[value.length - suffix - 1]
-  )
-    suffix++
+  const { prefix, suffix } = matchingTextEdges(normalized, value)
   const ending = /\r\n|\r|\n/.exec(previous)?.[0] ?? '\n'
   return (
     previous.slice(0, rawOffset(previous, prefix)) +
@@ -103,7 +91,7 @@ export function sourceSelection(
     to = rawOffset(source, end)
   let shareable = '',
     cursor = from
-  const bom = source.startsWith('\uFEFF') ? 1 : 0
+  const bom = leadingBOMLength(source)
   for (const parsed of literalCommentSpans(source.slice(bom))) {
     const span = { start: parsed.start + bom, end: parsed.end + bom }
     if (span.end <= from || span.start >= to) continue

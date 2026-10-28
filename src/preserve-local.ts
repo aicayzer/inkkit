@@ -1,3 +1,4 @@
+import { leadingBOMLength, withoutLeadingBOM } from './bom'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { sourceFrontmatter } from './literals'
@@ -90,9 +91,8 @@ export class LocalEdits {
     output += this.loaded.source.slice(previous)
     // Front matter is found by reading from the start of the file to the next
     // delimiter line, which an edited block can supply.
-    const bom = (text: string) => text.replace(/^\uFEFF/, '')
-    return sourceFrontmatter(bom(output)) ===
-      sourceFrontmatter(bom(this.loaded.source))
+    return sourceFrontmatter(withoutLeadingBOM(output)) ===
+      sourceFrontmatter(withoutLeadingBOM(this.loaded.source))
       ? output
       : undefined
   }
@@ -227,7 +227,7 @@ export class LocalEdits {
     const before = this.loaded.baseline.child(index)
     const block = this.loaded.blocks[index]!
     const list = block.ast
-    const offset = this.loaded.source.startsWith('\uFEFF') ? 1 : 0
+    const offset = leadingBOMLength(this.loaded.source)
     const source = this.loaded.source.slice(offset)
     if (
       list.type !== 'list' ||

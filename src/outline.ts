@@ -1,3 +1,4 @@
+import { leadingBOMLength } from './bom'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { TextSelection } from '@milkdown/kit/prose/state'
@@ -34,7 +35,7 @@ function sourceLocations(ctx: Ctx, source: string): LocatedHeading[] {
   const preservation = Preservation.read(ctx, source)
   const tree = preservation.sourceTree as unknown as SourceNode
   const positions: { position: number; level: number }[] = []
-  const bom = source.startsWith('\uFEFF') ? 1 : 0
+  const bom = leadingBOMLength(source)
   const visit = (node: SourceNode) => {
     if (node.type === 'heading' && node.position?.start.offset != null)
       positions.push({

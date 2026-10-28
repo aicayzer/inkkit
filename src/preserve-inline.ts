@@ -1,3 +1,4 @@
+import { matchingTextEdges } from './text-edges'
 import { linkForm } from './link-form'
 import { type SourceNode, type Gutters } from './preserve-types'
 import {
@@ -246,20 +247,7 @@ export function retainText(
     text.includes('\n') ? regutter(text, gutters()) : text
   before = lf(before)
   after = lf(after)
-  let prefix = 0
-  while (
-    prefix < before.length &&
-    prefix < after.length &&
-    before[prefix] === after[prefix]
-  )
-    prefix++
-  let suffix = 0
-  while (
-    suffix < before.length - prefix &&
-    suffix < after.length - prefix &&
-    before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
-  )
-    suffix++
+  let { prefix, suffix } = matchingTextEdges(before, after)
   const read = decodedOffsets(raw, true)
   if (read?.decoded !== before) return after
   const { offsets } = read

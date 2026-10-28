@@ -1,3 +1,4 @@
+import { matchingTextEdges } from './text-edges'
 import { PreservationError } from './preserve-error'
 
 const MATCHING_BUDGET = 1_000_000
@@ -240,14 +241,6 @@ export function pairSimilar(
 
 // Characters an edit left in place at the start and end of a block.
 function similarity(left: string, right: string): number {
-  const limit = Math.min(left.length, right.length)
-  let prefix = 0
-  while (prefix < limit && left[prefix] === right[prefix]) prefix++
-  let suffix = 0
-  while (
-    suffix < limit - prefix &&
-    left[left.length - 1 - suffix] === right[right.length - 1 - suffix]
-  )
-    suffix++
+  const { prefix, suffix } = matchingTextEdges(left, right)
   return prefix + suffix
 }

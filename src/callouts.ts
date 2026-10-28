@@ -1,3 +1,4 @@
+import { withoutLeadingBOM } from './bom'
 import { gutterAt } from './gutter'
 import { $node, $prose, $remark } from '@milkdown/kit/utils'
 import { editorLabels } from './labels'
@@ -85,7 +86,7 @@ function remarkCallouts(this: Processor) {
     handlers: { inkkitCallout: calloutHandler },
   })
   return (tree: Root, file: { value: unknown }) => {
-    const source = String(file.value).replace(/^\uFEFF/, '')
+    const source = withoutLeadingBOM(String(file.value))
     const visit = (node: Nodes): Nodes => {
       if (node.type === 'blockquote') {
         const start = node.position?.start.offset,

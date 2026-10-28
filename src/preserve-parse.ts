@@ -1,3 +1,4 @@
+import { withoutLeadingBOM } from './bom'
 import { parserCtx } from '@milkdown/kit/core'
 import { remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -25,7 +26,7 @@ export function parseTree(ctx: Ctx, text: string): Root {
   preservationWork.characters += text.length
   const tree = ctx.get(remarkCtx).parse(text) as Root
   // Positions count from after a byte order mark.
-  const body = text.replace(/^\uFEFF/, '')
+  const body = withoutLeadingBOM(text)
   const visit = (node: SourceNode) => {
     if (node.type === 'link')
       node.data = {

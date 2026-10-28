@@ -1,3 +1,4 @@
+import { withoutLeadingBOM } from './bom'
 import {
   ParserReady,
   parserCtx,
@@ -90,7 +91,7 @@ export function parseMarkdown(
   const doc = build(schema, tree as unknown as MarkdownNode)
   if (doc) return doc
   // Micromark's positions exclude an initial byte-order mark.
-  const source = markdown.replace(/^\uFEFF/, '')
+  const source = withoutLeadingBOM(markdown)
   tree.children = tree.children.map((node): RootContent => {
     const alone = { type: 'root', children: [node] }
     if (build(schema, alone as unknown as MarkdownNode)) return node

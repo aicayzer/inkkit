@@ -1,3 +1,5 @@
+import { matchingTextEdges } from './text-edges'
+import { leadingBOMLength, withoutLeadingBOM } from './bom'
 import { remarkCtx } from '@milkdown/kit/core'
 import { schemaCtx } from '@milkdown/kit/core'
 import { parseMarkdown } from './parser'
@@ -52,7 +54,7 @@ export class LoadedSource {
           ? '\r\n'
           : '\n'
       const processor = (this.processor = ctx.get(remarkCtx))
-      const offset = source.startsWith('\uFEFF') ? 1 : 0
+      const offset = leadingBOMLength(source)
       const body = source.slice(offset)
       const incremental = previous?.readEditedSource(source)
       const rawTree = incremental?.raw ?? parseTree(ctx, source)
@@ -162,8 +164,8 @@ export class LoadedSource {
     source: string,
   ): { raw: Root; tree: Root; doc: ProseNode } | undefined {
     if (
-      this.source.startsWith('\uFEFF') ||
-      source.startsWith('\uFEFF') ||
+      leadingBOMLength(this.source) ||
+      leadingBOMLength(source) ||
       /[\[\]<>%]/.test(this.source) ||
       /[\[\]<>%]/.test(source) ||
       this.blocks.length !== this.baseline.childCount ||
@@ -175,21 +177,7 @@ export class LoadedSource {
       )
     )
       return
-    let prefix = 0,
-      suffix = 0
-    while (
-      prefix < source.length &&
-      prefix < this.source.length &&
-      source[prefix] === this.source[prefix]
-    )
-      prefix++
-    while (
-      suffix < source.length - prefix &&
-      suffix < this.source.length - prefix &&
-      source[source.length - suffix - 1] ===
-        this.source[this.source.length - suffix - 1]
-    )
-      suffix++
+    const { prefix, suffix } = matchingTextEdges(source, this.source)
     const first = Math.max(
       0,
       this.blocks.findIndex((block) => block.end >= prefix) - 1,
@@ -270,7 +258,7 @@ export class LoadedSource {
     joined: readonly SourceNode[] = [],
     reorder?: Reorder,
   ): string {
-    const offset = this.source.startsWith('\uFEFF') ? 1 : 0
+    const offset = leadingBOMLength(this.source)
     const start = block.ast.position?.start.offset
     if (start == null)
       throw new PreservationError('A source block has no location')
@@ -347,7 +335,7 @@ export class LoadedSource {
     canonical: string,
     taken: Set<SourceNode>,
   ): string | undefined {
-    const source = this.source.slice(this.source.startsWith('\uFEFF') ? 1 : 0)
+    const source = withoutLeadingBOM(this.source)
     const part = retainSplit(
       retainSource,
       this.around(positions, index).map((block) => block.ast),
@@ -375,7 +363,7 @@ export class LoadedSource {
     return liftedSource(
       this.around(positions, index).map((block) => block.ast),
       after,
-      this.source.slice(this.source.startsWith('\uFEFF') ? 1 : 0),
+      withoutLeadingBOM(this.source),
     )
   }
 

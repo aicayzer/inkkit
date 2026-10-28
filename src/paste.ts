@@ -1,3 +1,4 @@
+import { isPortableImageMIME } from './portable-image'
 import { literalTextNodes } from './literal-text'
 import { htmlBreakAt } from './hard-break'
 import { replacementMarks } from './text-input'
@@ -1142,11 +1143,8 @@ function unsupportedClipboardTable(table: HTMLTableElement): boolean {
   )
 }
 function dataImage(source: string): CapturedImage | undefined {
-  const match =
-    /^data:(image\/(?:png|jpeg|gif|webp|avif|bmp|tiff));base64,([A-Za-z0-9+/=\s]+)$/.exec(
-      source,
-    )
-  if (!match) return undefined
+  const match = /^data:([^;]+);base64,([A-Za-z0-9+/=\s]+)$/.exec(source)
+  if (!match || !isPortableImageMIME(match[1]!)) return undefined
   const binary = atob(match[2]!)
   return {
     mimeType: match[1]!,
