@@ -206,7 +206,7 @@ export const remarkCalloutsPlugin = $remark(
   () => remarkCallouts,
 )
 
-export const calloutSchema = $node('inkkit_callout', (ctx) => ({
+const calloutSchema = $node('inkkit_callout', (ctx) => ({
   group: 'block',
   content: 'block+',
   defining: true,
@@ -315,7 +315,7 @@ export const calloutSchema = $node('inkkit_callout', (ctx) => ({
   },
 }))
 
-export const calloutView = $prose(
+const calloutView = $prose(
   (ctx) =>
     new Plugin({
       key: new PluginKey('inkkitCalloutView'),

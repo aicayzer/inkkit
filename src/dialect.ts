@@ -545,7 +545,7 @@ function padShortRows(node: Nodes): void {
   if ('children' in node) node.children.forEach(padShortRows)
 }
 
-export const remarkDialectPlugin = $remark('remarkDialect', () => remarkDialect)
+const remarkDialectPlugin = $remark('remarkDialect', () => remarkDialect)
 
 // Split only line endings: decoded character references beside a soft break
 // are document text, so the preset must not trim their spaces or tabs.
@@ -658,7 +658,7 @@ const breaksWithoutMarks = $prose(
     }),
 )
 
-export const remarkLinkFormsPlugin = $remark(
+const remarkLinkFormsPlugin = $remark(
   'inkkitLinkForms',
   () => remarkLinkForms,
 )

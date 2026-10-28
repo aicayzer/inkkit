@@ -30,7 +30,7 @@ function validName(value: unknown): value is string {
     !parsed.fragment
   )
 }
-export function wikiSuggestionNode(
+function wikiSuggestionNode(
   state: EditorState,
   name: string,
 ): ProseNode {

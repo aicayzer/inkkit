@@ -98,7 +98,7 @@ function cellDepth($pos: ResolvedPos): number {
   return 0
 }
 
-export type ImagePlacement =
+type ImagePlacement =
   { kind: 'blocks' } | { kind: 'inline' } | { kind: 'after'; pos: number }
 
 /** Where `insertImages` puts images for a selection. `blocks` replaces the selection with one block per
@@ -135,7 +135,7 @@ export function imagePlacement(state: EditorState): ImagePlacement {
 
 /** The image a paragraph holds as its only content, without marks, which makes the paragraph a
  *  standalone image block. A linked or emphasised image stays inline so its marks are kept. */
-export function standaloneImage(
+function standaloneImage(
   children: readonly ProseNode[],
 ): ProseNode | undefined {
   const [image] = children

@@ -142,7 +142,7 @@ const views = new WeakMap<EditorView, Set<TableBlockView>>()
  * operation runs the facade's table command, so it keeps the same source
  * guarantees and refusals.
  */
-export class TableBlockView implements NodeView {
+class TableBlockView implements NodeView {
   dom: HTMLElement
   contentDOM: HTMLTableSectionElement
   private readonly scroller: HTMLElement

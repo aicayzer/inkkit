@@ -20,7 +20,7 @@ export interface SuggestionSession {
   cancel?(): void
   update(query: string, show: (rows: SuggestionRow[]) => void): void
 }
-export interface SuggestionHost {
+interface SuggestionHost {
   root: HTMLElement
   labels: Readonly<EditorLabels>
   active(): boolean

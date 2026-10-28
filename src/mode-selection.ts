@@ -2,7 +2,8 @@ import { leadingBOMLength } from './bom'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { RootContent } from 'mdast'
-import { decodedOffsets, Preservation } from './preserve'
+import { decodedOffsets } from './preserve-inline'
+import { Preservation } from './preserve'
 
 interface Point {
   formatted: number

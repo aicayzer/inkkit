@@ -23,7 +23,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { pasteSpreadsheet } from './spreadsheet'
 import { clipboardContent } from './clipboard'
-import { semanticSignature } from './preserve'
+import { semanticSignature } from './preserve-shape'
 import { importableSlice, topLevel } from './html-import'
 import {
   blockDropRange,
@@ -63,7 +63,7 @@ import {
 export interface PasteInput extends ClipboardInput {
   plainText?: boolean
 }
-export interface PasteControllerOptions {
+interface PasteControllerOptions {
   restoreCopy?: (input: PasteInput) => PasteInput
   ctx: () => Ctx
   context: () => DocumentContext

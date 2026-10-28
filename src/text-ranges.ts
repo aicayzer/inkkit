@@ -4,7 +4,7 @@ import { InkKitError, type TextRect } from './types'
 import { fileFields } from './linked-syntax'
 import { imageBlockName } from './image-blocks'
 
-export interface TextSpan {
+interface TextSpan {
   from: number
   to: number
   start: number

@@ -51,12 +51,12 @@ function remarkInlineHighlight(this: Processor) {
   })
 }
 
-export const remarkInlineHighlightPlugin = $remark(
+const remarkInlineHighlightPlugin = $remark(
   'inkkitInlineHighlight',
   () => remarkInlineHighlight,
 )
 
-export const highlightSchema = $markSchema('highlight', () => ({
+const highlightSchema = $markSchema('highlight', () => ({
   priority: 45,
   parseDOM: [{ tag: 'mark' }],
   toDOM: () => ['mark', 0],
@@ -84,7 +84,7 @@ export const toggleHighlightCommand = $command(
   (ctx) => () => toggleMark(highlightSchema.type(ctx)),
 )
 
-export const highlightInputRule = $inputRule((ctx) => {
+const highlightInputRule = $inputRule((ctx) => {
   const pattern = /==([^\n]+)==$/
   const rule = markRule(pattern, highlightSchema.type(ctx))
   const apply = (

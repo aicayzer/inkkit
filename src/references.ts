@@ -20,7 +20,7 @@ export function normaliseLabel(label: string): string {
   return normalizeIdentifier(label).toLowerCase()
 }
 
-export interface LocatedDefinition {
+interface LocatedDefinition {
   node: ProseNode
   pos: number
 }
@@ -223,7 +223,7 @@ function pastedForm(element: HTMLElement, href: string): LinkForm {
     : null
 }
 
-export const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
+const referenceLinks = linkSchema.extendSchema((base) => (ctx) => {
   const schema = base(ctx)
   return {
     ...schema,
@@ -359,7 +359,7 @@ export function definitionText(
   return `[${String(label)}]: ${String(url)}${title ? ` "${String(title)}"` : ''}`
 }
 
-export const referenceDefinition = $node('reference_definition', () => ({
+const referenceDefinition = $node('reference_definition', () => ({
   group: 'block',
   atom: true,
   defining: true,
@@ -429,7 +429,7 @@ export const referenceDefinition = $node('reference_definition', () => ({
   },
 }))
 
-export const footnoteReference = $node('footnote_reference', (ctx) => ({
+const footnoteReference = $node('footnote_reference', (ctx) => ({
   inline: true,
   group: 'inline',
   atom: true,

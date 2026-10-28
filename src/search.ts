@@ -22,11 +22,11 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { InkKitError } from './types'
 import { coded } from './errors'
 
-export interface TextMatch {
+interface TextMatch {
   from: number
   to: number
 }
-export interface LiteralReplacement extends TextMatch {
+interface LiteralReplacement extends TextMatch {
   text: string
   count: number
 }

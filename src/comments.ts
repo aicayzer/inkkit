@@ -24,7 +24,7 @@ import type { Literal, Nodes, Root } from 'mdast'
 import type { Handle } from 'mdast-util-to-markdown'
 import type { Processor } from 'unified'
 
-export type CommentSyntax = 'html' | 'obsidian'
+type CommentSyntax = 'html' | 'obsidian'
 interface Comment extends Literal {
   type: 'inkkitCommentInline' | 'inkkitCommentBlock'
   syntax: CommentSyntax
@@ -428,10 +428,10 @@ function commentNode(inline: boolean) {
     },
   }))
 }
-export const commentInline = commentNode(true)
-export const commentBlock = commentNode(false)
+const commentInline = commentNode(true)
+const commentBlock = commentNode(false)
 const visibilityKey = new PluginKey<boolean>('inkkit-comments-visible')
-export const commentVisibility = $prose(
+const commentVisibility = $prose(
   () =>
     new Plugin<boolean>({
       key: visibilityKey,

@@ -106,7 +106,7 @@ export async function resolveFile(
   return Object.freeze({ ...presentation })
 }
 
-export type FileResolutionState =
+type FileResolutionState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'resolved'; presentation: FilePresentation }
@@ -116,7 +116,7 @@ export type FileResolutionState =
 export const mediaPolicyEvent = 'inkkit-media-policy'
 
 /** What `refreshReferences` asks of the views: the targets to resolve again, or every one. */
-export interface ReferenceRefresh {
+interface ReferenceRefresh {
   targets?: ReadonlySet<string>
 }
 

@@ -26,7 +26,7 @@ import {
 } from './errors'
 import type { SuggestionRow, SuggestionSession } from './suggestions'
 
-export const slashCommands = [
+const slashCommands = [
   'heading1',
   'heading2',
   'heading3',
@@ -113,7 +113,7 @@ const glyphs = [
   '◇',
 ]
 const callouts = ['Note', 'Tip', 'Important', 'Warning', 'Caution'] as const
-export interface SlashHost {
+interface SlashHost {
   options?: SlashMenuOptions
   labels: Readonly<EditorLabels>
   diagrams: boolean
