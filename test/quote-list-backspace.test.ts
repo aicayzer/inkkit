@@ -1,3 +1,4 @@
+import { withInputTimers } from './timing'
 import { expect, test } from 'vitest'
 import { edit, type Session } from './edit-source'
 
@@ -65,14 +66,15 @@ test('Backspace during composition is left to the input method', async () => {
     session.caret('a', 'before')
     session.type('``` ')
     const before = session.text()
-    session.view.dom.dispatchEvent(
-      new CompositionEvent('compositionstart', { bubbles: true }),
-    )
-    expect(backspace(session)).toBe(false)
-    session.view.dom.dispatchEvent(
-      new CompositionEvent('compositionend', { bubbles: true }),
-    )
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await withInputTimers(() => {
+      session.view.dom.dispatchEvent(
+        new CompositionEvent('compositionstart', { bubbles: true }),
+      )
+      expect(backspace(session)).toBe(false)
+      session.view.dom.dispatchEvent(
+        new CompositionEvent('compositionend', { bubbles: true }),
+      )
+    })
     expect(session.text()).toBe(before)
     expect(backspace(session)).toBe(true)
   })

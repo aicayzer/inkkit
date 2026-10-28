@@ -96,9 +96,21 @@ async function paste(
       document.body.append(root)
       const imports: { name?: string; type: string; length: number }[] = []
       const errors: string[] = []
+      let started = false
+      let finish!: () => void
+      const imported = new Promise<void>((resolve) => {
+        finish = resolve
+      })
       const editor = await InkKitEditor.mount(
         root,
-        { changed() {}, error: (error) => errors.push(error.code) },
+        {
+          changed() {},
+          error: (error) => errors.push(error.code),
+          commandStateChanged(state) {
+            if (state.pending) started = true
+            else if (started) finish()
+          },
+        },
         {
           images: {
             presentation: () => undefined,
@@ -168,13 +180,9 @@ async function paste(
                 cancelable: true,
               }),
             )
-          await new Promise((resolve) => setTimeout(resolve, 50))
-          for (
-            let wait = 0;
-            wait < 100 && editor.commandState().pending;
-            wait++
-          )
-            await new Promise((resolve) => setTimeout(resolve, 20))
+          await imported
+          // The DOM handler reports a rejected import after pending becomes false.
+          await new Promise<void>((resolve) => queueMicrotask(resolve))
         }
         return { imports, errors, text: editor.snapshot().text }
       } finally {

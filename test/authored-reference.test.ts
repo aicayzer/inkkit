@@ -1,3 +1,4 @@
+import { nextTask } from './timing'
 import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -187,7 +188,7 @@ test('a stale paste changes no reference and runs no callback', async () => {
     await expect(
       editor.paste({ text: 'x', markdown: '![b](b.png) [[Other]]' }, 2),
     ).rejects.toMatchObject({ code: 'stale-document' })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await nextTask()
     expect([files.length, links.length]).toEqual(seen)
     expect(editor.snapshot().text).toBe('![a](a.png) [[Plan]]\n\nTARGET\n')
   } finally {

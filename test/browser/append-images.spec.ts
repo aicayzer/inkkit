@@ -42,7 +42,15 @@ test('appendImages adds images below a long document without moving focus, scrol
         format: 'md',
         text: `${filler}\n| A | B |\n| - | - |\n| c | d |\n`,
       })
-      await new Promise((r) => setTimeout(r, 100))
+      const drawn = async () => {
+        await Promise.all(
+          [...root.querySelectorAll('img')].map((image) => image.decode()),
+        )
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => setTimeout(resolve)),
+        )
+      }
+      await drawn()
       const measure = () => {
         const selection = getSelection()!
         return {
@@ -55,15 +63,15 @@ test('appendImages adds images below a long document without moving focus, scrol
       editor.find('Line 3')
       editor.focus()
       root.scrollTop = 120
-      await new Promise((r) => setTimeout(r, 50))
+      await drawn()
       const typing = measure()
       const first = editor.appendImages([{ reference: 'a.png', alt: 'A' }])
-      await new Promise((r) => setTimeout(r, 100))
+      await drawn()
       const whileEditing = measure()
       // Focus is on another control: appending must not take it.
       button.focus()
       const second = editor.appendImages([{ reference: 'b.png', alt: 'B' }])
-      await new Promise((r) => setTimeout(r, 100))
+      await drawn()
       const away = measure()
       const images = root.querySelectorAll('.inkkit-image img').length
       const text = editor.snapshot().text

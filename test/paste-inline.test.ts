@@ -1,6 +1,7 @@
 import { ctxOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
+import { closeHistory } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitEditor, type ClipboardInput } from '../src/index'
@@ -299,7 +300,8 @@ test('terminal pasted hidden blocks preserve surrounding bytes through the publi
       await editor.paste({ text: `x\n\n${tail}` }, 1)
       const inserted = editor.snapshot().text
       expect(inserted).toBe(`*  untouched é🌻\n\nBeforex\n\n${tail}\n`)
-      await new Promise((resolve) => setTimeout(resolve, 550))
+      const view = ctxOf(editor).get(editorViewCtx)
+      view.dispatch(closeHistory(view.state.tr))
       editor.insertText('X', 1)
       const saved = editor.snapshot().text
       expect(saved).toBe(`${inserted.trimEnd()}\n\nX\n`)

@@ -18,6 +18,7 @@ test('refreshReferences updates links and cards in place, with the scroll positi
       root.style.cssText = 'height:240px;overflow:auto;width:480px'
       document.body.append(root)
       const known = new Set<string>()
+      const answers: Promise<import('../../src/core').FilePresentation>[] = []
       let ready = false
       const asked: string[] = []
       const errors: string[] = []
@@ -33,11 +34,15 @@ test('refreshReferences updates links and cards in place, with the scroll positi
             },
           },
           files: {
-            async resolve(r) {
+            resolve(r) {
               asked.push(`file:${r.target}`)
-              return ready
-                ? { kind: 'image', url: pixel }
-                : { kind: 'missing', label: r.target }
+              const answer = Promise.resolve(
+                ready
+                  ? { kind: 'image' as const, url: pixel }
+                  : { kind: 'missing' as const, label: r.target },
+              )
+              answers.push(answer)
+              return answer
             },
           },
         },
@@ -51,7 +56,22 @@ test('refreshReferences updates links and cards in place, with the scroll positi
         format: 'md',
         text: `${filler}\nA [[Plan]] and\n\n![[pic.png|120]]\n\nEnd\n`,
       })
-      const settle = () => new Promise((r) => setTimeout(r, 100))
+      const settle = async () => {
+        await Promise.all(answers.splice(0))
+        // File resolution wraps the answer before applying its presentation.
+        await new Promise<void>((resolve) => setTimeout(resolve))
+        if (
+          root.querySelector<HTMLElement>('.inkkit-file')?.dataset
+            .inkkitFileState !== 'resolved'
+        )
+          throw new Error('The refreshed file card is not ready')
+        await Promise.all(
+          [...root.querySelectorAll('img')].map((image) => image.decode()),
+        )
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => setTimeout(resolve)),
+        )
+      }
       await settle()
       const link = root.querySelector<HTMLElement>('.inkkit-wiki-link')!
       const card = () => root.querySelector<HTMLElement>('.inkkit-file')!

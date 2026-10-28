@@ -50,9 +50,16 @@ test('structural edits in long notes', async ({ page, browserName }) => {
         range.collapse(true)
         ;(block.closest('[contenteditable="true"]') as HTMLElement).focus()
         const selection = window.getSelection()!
+        const changed = new Promise<void>((resolve) =>
+          document.addEventListener(
+            'selectionchange',
+            () => queueMicrotask(resolve),
+            { once: true },
+          ),
+        )
         selection.removeAllRanges()
         selection.addRange(range)
-        await new Promise((r) => setTimeout(r, 50))
+        await changed
       },
       [selector, label, at] as const,
     )

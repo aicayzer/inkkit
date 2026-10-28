@@ -1,3 +1,4 @@
+import { withInputTimers } from './timing'
 import { expect, test } from 'vitest'
 import { edit, type Session } from './edit-source'
 
@@ -215,14 +216,15 @@ test('Tab during composition is left to the input method', async () => {
   expect(
     await edit(source, async (session) => {
       session.caret('b')
-      session.view.dom.dispatchEvent(
-        new CompositionEvent('compositionstart', { bubbles: true }),
-      )
-      expect(session.key('Tab')).toBe(false)
-      session.view.dom.dispatchEvent(
-        new CompositionEvent('compositionend', { bubbles: true }),
-      )
-      await new Promise((resolve) => setTimeout(resolve, 30))
+      await withInputTimers(() => {
+        session.view.dom.dispatchEvent(
+          new CompositionEvent('compositionstart', { bubbles: true }),
+        )
+        expect(session.key('Tab')).toBe(false)
+        session.view.dom.dispatchEvent(
+          new CompositionEvent('compositionend', { bubbles: true }),
+        )
+      })
       expect(session.text()).toBe(source)
     }),
   ).toBe(source)

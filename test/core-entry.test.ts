@@ -1,3 +1,4 @@
+import { nextTask } from './timing'
 import { ctxOf } from './editor-access'
 import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -52,7 +53,7 @@ test('the core entry renders no diagram and never loads Mermaid', async () => {
 test('diagram source stays editable and preserved without previews or errors', async () => {
   const errors: Error[] = []
   await run(async (editor, root, ctx) => {
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await nextTask()
     expect(root.querySelector('.inkkit-mermaid-preview')).toBeNull()
     const code = root.querySelector('pre code')!.cloneNode(true) as HTMLElement
     code.querySelector('.inkkit-code-controls')?.remove()
