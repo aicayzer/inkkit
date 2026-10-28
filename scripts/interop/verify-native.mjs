@@ -1236,10 +1236,6 @@ const commentSource =
         assert('snapshot.text', raw.replace('unsupported', 'raw replacement')),
         { op: 'editingMode', mode: 'formatted' },
         assert('snapshot.text', raw.replace('unsupported', 'raw replacement')),
-        { op: 'save', name: 'saved' },
-        { op: 'reopen' },
-        same('snapshot.text', 'saved', 'text'),
-        assert('snapshot.dirty', false),
         {
           op: 'awaitDOM',
           selector: '.inkkit-mermaid-preview[data-state="error"]',
@@ -1251,6 +1247,21 @@ const commentSource =
           code: 'diagram-unavailable',
           message: incompleteDiagramDiagnostic,
         },
+        { op: 'save', name: 'saved' },
+        { op: 'reopen' },
+        same('snapshot.text', 'saved', 'text'),
+        assert('snapshot.dirty', false),
+        // Reopening identical source can retain the preview without a new error event.
+        {
+          op: 'awaitDOM',
+          selector: '.inkkit-mermaid-preview[data-state="error"]',
+          name: 'reopenedPreview',
+        },
+        assert(
+          'nodes.0.text',
+          `Diagram unavailable: ${incompleteDiagramDiagnostic}`,
+          'reopenedPreview',
+        ),
       ],
     },
     'source-spelling-cross-mode-history': {
