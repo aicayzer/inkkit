@@ -114,6 +114,10 @@ const refused: [string, string][] = [
     'flowchart TD\nA --> B\nclick A href "page" "Tip"',
   ],
   [
+    'a click href without a tooltip in a flowchart',
+    'flowchart TD\nA --> B\nclick A href "page"',
+  ],
+  [
     'a click tooltip before its node',
     'flowchart TD\nclick X cb "Tip"\nX --> B',
   ],
@@ -253,7 +257,6 @@ const statements = [
 ]
 for (const statement of statements)
   for (const [position, build] of [
-    ['at the start of a line', (s: string) => `flowchart TD\nA --> B\n${s}`],
     ['after spaces', (s: string) => `flowchart TD\nA --> B\n   ${s}`],
     ['after a tab', (s: string) => `flowchart TD\nA --> B\n\t${s}`],
     [
