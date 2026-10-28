@@ -39,7 +39,7 @@ const engines = Object.fromEntries(
   Object.entries(available).filter(([name]) => requested.includes(name)),
 )
 
-// Untidy Markdown that InkKit keeps byte for byte: a setext heading, `+` list
+// Untidy Markdown that Inkkit keeps byte for byte: a setext heading, `+` list
 // markers, an aligned table, Unicode and a missing final newline.
 const roundTripText =
   'Consumer\n===\n\n+ one\n+ two\n\n| a | b |\n|---|:-:|\n| 1 | 2 |\n\nCafé ☕ *emph* __strong__ end'

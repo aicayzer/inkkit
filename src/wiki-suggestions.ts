@@ -30,10 +30,7 @@ function validName(value: unknown): value is string {
     !parsed.fragment
   )
 }
-function wikiSuggestionNode(
-  state: EditorState,
-  name: string,
-): ProseNode {
+function wikiSuggestionNode(state: EditorState, name: string): ProseNode {
   if (!validName(name))
     throw invalidArgument('A note suggestion must be a supported note name')
   const { $from } = state.selection

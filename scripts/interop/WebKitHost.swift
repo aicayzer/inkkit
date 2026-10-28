@@ -321,7 +321,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         window = NSWindow(
             contentRect: NSRect(x: 20, y: 20, width: 720, height: 640),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "InkKit disposable clipboard fixture"
+        window.title = "Inkkit disposable clipboard fixture"
         window.contentView = web
         window.orderFront(nil)
         let url = URL(fileURLWithPath: args[1])
@@ -389,7 +389,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
         printWeb = frozen
         frozen.navigationDelegate = self
         let panel = NSWindow(contentRect: frozen.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        panel.title = "InkKit disposable printable fixture"
+        panel.title = "Inkkit disposable printable fixture"
         panel.contentView = frozen
         panel.orderFront(nil)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -482,7 +482,7 @@ final class Host: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScrip
             _ = try await js("""
                 for(let n=0;n<200&&!window.ready;n++)
                     await new Promise(r=>setTimeout(r,50));
-                if(!window.ready)throw new Error('InkKit mount timed out');
+                if(!window.ready)throw new Error('Inkkit mount timed out');
                 return true
                 """)
             if args[2] == "startup" {

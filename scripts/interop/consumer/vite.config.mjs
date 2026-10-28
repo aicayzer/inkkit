@@ -11,7 +11,7 @@ export default defineConfig({
         for (const chunk of Object.values(bundle)) {
           if (chunk.type !== 'chunk') continue
           for (const [id, module] of Object.entries(chunk.modules)) {
-            // InkKit bundles lowlight and highlight.js into its highlight chunk.
+            // Inkkit bundles lowlight and highlight.js into its highlight chunk.
             const group =
               /node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?mermaid\//.test(
                 id,

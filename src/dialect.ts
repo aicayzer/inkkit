@@ -658,10 +658,7 @@ const breaksWithoutMarks = $prose(
     }),
 )
 
-const remarkLinkFormsPlugin = $remark(
-  'inkkitLinkForms',
-  () => remarkLinkForms,
-)
+const remarkLinkFormsPlugin = $remark('inkkitLinkForms', () => remarkLinkForms)
 
 const remarkFileSourcesPlugin = $remark(
   'inkkitFileSources',
