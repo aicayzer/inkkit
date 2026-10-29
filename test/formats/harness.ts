@@ -1,10 +1,10 @@
 import { InkKitEditor } from '../../src/core'
 import type {
   CommandState,
-  DocumentFormat,
   DocumentInput,
   DocumentSnapshot,
   EditorOptions,
+  TextDocumentFormat,
 } from '../../src/core'
 
 export interface Mounted {
@@ -50,7 +50,7 @@ export async function withEditor<T>(
 let generation = 0
 
 /** A load of `text` with a new generation. */
-export function input(format: DocumentFormat, text: string): DocumentInput {
+export function input(format: TextDocumentFormat, text: string): DocumentInput {
   return {
     documentId: `${format}-document`,
     generation: ++generation,

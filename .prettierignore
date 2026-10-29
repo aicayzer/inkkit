@@ -3,3 +3,5 @@ dist
 node_modules
 _local
 _tmp
+# Golden files written byte for byte by the Swift RTF tests
+test/formats/rtf/fixtures/*.json

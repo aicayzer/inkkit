@@ -50,7 +50,7 @@ An input supplies `source`, optional `format`, `documentId`, `configuration`, `h
 
 For fixtures that require separate history steps, `historyClock: true` fixes `Date.now` before loading the scenario. `historyBoundary` advances it by 1,000 ms and records the before/after values. The original function is restored on success or failure. Timers, native events, rendering and `performance.now` remain live. This fixture mechanism controls both formatted and source history; it is not a public editor API. Do not use it for performance measurements or place it between keys that must share a history step. Other operation settling is unchanged.
 
-Assertions accept `equals`, `includes`, `excludes`, `truthy` and `equalsFrom: {name, path}`. An empty path addresses a whole named result. `expectedError` requires a matching code or message. Source selections use normalized textarea UTF-16 offsets; snapshots retain authored CRLF bytes.
+Assertions accept `equals`, `includes`, `excludes`, `truthy` and `equalsFrom: {name, path}`. An empty path addresses a whole named result. `expectedError` requires a matching code or message. Source selections use normalized textarea UTF-16 offsets; snapshots retain authored CRLF bytes. For `format: 'rtf'`, `source`, and the `source` of `reload` and `reopen`, is a `RichTextDocument` object, and `reopen` without a source reloads the saved `document`.
 
 The host parses fixture JSON in JavaScript to preserve literal leading BOMs inside strings. `JSONSerialization` can remove them before the editor receives its input, including from assertion expectations. The input fidelity probe checks scenario, load, selection and paste inputs against independent Node.js expectations, including BOMs, mixed line endings, combining characters, emoji and malformed JSON. It uses a small offline page without the editor and does not access the clipboard:
 
@@ -99,8 +99,9 @@ These cases share the runner, evidence format and selection rules above. They re
 | `native-structural-deletion` |     6 | Three trusted Backspaces preserve exact source, revision and authored reference tails.                                                                    |
 | `native-long-list`           |     2 | Trusted Enter, typing and structural Backspaces in bullet/task lists, exact source, history and save/reopen.                                              |
 | `native-image-drag`          |     2 | Block/inline image drag exposes readable text/HTML to an AppKit destination, without private references or bytes; refused drop preserves source/revision. |
+| `native-rich-text`           |     1 | An RTF `document` loaded through the facade takes trusted typing and a host `Mod-u` underline; the canonical snapshot, history and reopen agree.          |
 
-`native-editing` selects all probe groups except image drag (28 cases). Case names begin with their group name. Use `--list` to inspect exact names and required tools before launching a host. Native groups are opt-in and do not expand the default core or legacy selection.
+`native-editing` selects all probe groups except image drag and rich text (28 cases); `native-rich-text` and `native-image-drag` are selected on their own. Case names begin with their group name. Use `--list` to inspect exact names and required tools before launching a host. Native groups are opt-in and do not expand the default core or legacy selection.
 
 Build the clipboard helper for literal paste and the specialised image-drag host for image drag:
 

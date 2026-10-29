@@ -29,12 +29,13 @@ These leave it unchanged: selection and caret moves, `setEditingMode`, `setEdita
 
 `loadDocument(input)` replaces the document. `input` is a `DocumentInput`:
 
-| Field        | Type              | Meaning                                                                                           |
-| ------------ | ----------------- | ------------------------------------------------------------------------------------------------- |
-| `documentId` | `string`          | Your name for the document.                                                                       |
-| `generation` | integer           | Greater than the loaded document's generation.                                                    |
-| `format`     | `'md'` or `'txt'` | `md` is Markdown. `txt` is literal text, with no formatted mode. It must be a format you offered. |
-| `text`       | `string`          | The complete text, with its line endings. An empty string is an empty document.                   |
+| Field        | Type                       | Meaning                                                                                                                                                                                   |
+| ------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `documentId` | `string`                   | Your name for the document.                                                                                                                                                               |
+| `generation` | integer                    | Greater than the loaded document's generation.                                                                                                                                            |
+| `format`     | `'md'`, `'txt'` or `'rtf'` | `md` is Markdown. `txt` is literal text, with no formatted mode. `rtf` is rich text, with no source mode. It must be a format you offered.                                                |
+| `text`       | `string`                   | Markdown and TXT only. The complete text, with its line endings. An empty string is an empty document.                                                                                    |
+| `document`   | `RichTextDocument`         | RTF only. The document your converter read from the file. Inkkit checks it, and an invalid one throws `invalid-argument` naming the first bad path. See [rich text](/concepts/rich-text). |
 
 A load:
 
@@ -59,7 +60,7 @@ Your app chooses which formats an editor opens with the [`formats`](/reference/o
 | `structure` | The structure and marks, such as headings, lists, bold and links. Fonts, colors and sizes are replaced with Inkkit's style.                |
 | `lossy`     | A conversion that drops something. The format says what it drops, so your app can tell the person before they save over the original file. |
 
-Markdown and TXT are both `exact`. Use the promise to decide what your app tells the person, for example whether to warn before saving over a file that was converted.
+Markdown and TXT are both `exact`. RTF is `structure`: the first save after an edit writes the file in Inkkit's style, and [rich text](/concepts/rich-text) lists what it keeps. Use the promise to decide what your app tells the person, for example whether to warn before saving over a file that was converted.
 
 ## Reload a changed document
 
@@ -116,21 +117,23 @@ async function save(generation: number): Promise<boolean> {
 
 The snapshot's `text` is the exact source, including line endings. A document that was loaded and not edited returns the bytes that were loaded. In source mode, it includes everything typed so far.
 
+An RTF snapshot has a `document` instead of a `text`: the current document in canonical form, which your converter writes as RTF. Check `snapshot.format` before you read either. An editor mounted without `rtf` in `formats` is typed so that its snapshots are always text.
+
 When `snapshot` throws, its code says what to do:
 
-| Code                | Cause                                                                   | What to do                                                                                  |
-| ------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `composition`       | Text input, such as an IME, is composing.                               | Retry after `commandStateChanged` reports `composing: false`.                               |
-| `operation-pending` | An image import is running.                                             | Retry after `commandStateChanged` reports `pending: false`.                                 |
-| `stale-document`    | The generation you passed is no longer loaded.                          | Don't write. The document you meant has been replaced; don't save this text under its name. |
-| `preservation`      | The current content can't be written as Markdown that reopens as shown. | Don't write. Keep the document open and tell the person it can't be saved.                  |
-| `internal`          | A defect in Inkkit.                                                     | Don't write. Keep the document open and report it.                                          |
+| Code                | Cause                                                                                          | What to do                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `composition`       | Text input, such as an IME, is composing.                                                      | Retry after `commandStateChanged` reports `composing: false`.                               |
+| `operation-pending` | An image import is running.                                                                    | Retry after `commandStateChanged` reports `pending: false`.                                 |
+| `stale-document`    | The generation you passed is no longer loaded.                                                 | Don't write. The document you meant has been replaced; don't save this text under its name. |
+| `preservation`      | The current content can't be written as Markdown that reopens as shown, or as an RTF document. | Don't write. Keep the document open and tell the person it can't be saved.                  |
+| `internal`          | A defect in Inkkit.                                                                            | Don't write. Keep the document open and report it.                                          |
 
 `not-ready`, `destroyed` and `invalid-argument` mean that your app called `snapshot` at the wrong time or with a bad generation. [Error codes](/reference/errors#error-codes) describes every code.
 
 ### Unsaved changes and `dirty`
 
-A snapshot's `dirty` is `true` when its `text` differs from the text of the last load or reload. It compares text, so undoing back to the loaded text makes it `false` again.
+A snapshot's `dirty` is `true` when its `text` differs from the text of the last load or reload. It compares text, so undoing back to the loaded text makes it `false` again. For RTF, it compares the canonical current document with the canonical form of the one loaded, so a document that was loaded in another form, such as with unsorted marks, isn't dirty until it is edited.
 
 `dirty` doesn't know about your saves: after you write a snapshot, it stays `true`. To show whether there are unsaved changes, record the `revision` of the snapshot you wrote and compare it with the revision that later `changed` events carry.
 

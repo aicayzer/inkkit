@@ -125,6 +125,10 @@ const formatCommands: readonly FormatCommand[] = [
   'orderedList',
   'taskList',
   'toggleTask',
+  'alignLeft',
+  'alignCenter',
+  'alignRight',
+  'alignJustify',
   'link',
 ]
 
@@ -622,8 +626,10 @@ test('ShortcutName lists every binding, as the API reference documents them', ()
 })
 
 test('a bound shortcut runs the format command of the same name', async () => {
+  // Alignment applies only in RTF documents; `test/formats/rtf` binds its shortcuts.
   const commands = formatCommands.filter(
-    (command): command is Exclude<FormatCommand, 'link'> => command !== 'link',
+    (command): command is Exclude<FormatCommand, 'link'> =>
+      command !== 'link' && !command.startsWith('align'),
   )
   for (const command of commands) {
     // `paragraph` changes only a block that is not one already.

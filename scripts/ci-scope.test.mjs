@@ -11,12 +11,13 @@ test('prose skips editor and website builds', () => {
   assert.deepEqual(scope(['docs/api.md', 'README.md', 'AGENTS.md']), {
     editor: false,
     site: false,
+    swift: false,
   })
 })
 test('Mintlify pages and configuration build the website', () => {
   assert.deepEqual(
     scope(['docs/index.mdx', 'docs/docs.json', 'docs/.mintignore']),
-    { editor: false, site: true },
+    { editor: false, site: true, swift: false },
   )
 })
 test('website branding does not run editor tests', () => {
@@ -25,6 +26,7 @@ test('website branding does not run editor tests', () => {
     {
       editor: false,
       site: true,
+      swift: false,
     },
   )
 })
@@ -39,11 +41,37 @@ test('mixed, unknown and workflow changes retain editor checks', () => {
     assert.deepEqual(scope(['docs/index.mdx', path]), {
       editor: true,
       site: true,
+      swift: path === '.github/workflows/ci.yml',
     })
+  }
+})
+test('the Swift package, its fixtures and its job run the swift job', () => {
+  for (const path of [
+    'Package.swift',
+    'apple/Sources/InkKitRTF/Reader.swift',
+    'apple/Tests/InkKitRTFTests/ReaderTests.swift',
+    'test/formats/rtf/fixtures/basic.json',
+    '.github/workflows/ci.yml',
+  ]) {
+    assert.equal(scope([path]).swift, true, path)
+    assert.equal(scope(['docs/api.md', path]).swift, true, path)
+  }
+})
+test('editor, prose and website changes skip the swift job', () => {
+  for (const path of [
+    'src/core.ts',
+    'docs/api.md',
+    'docs/index.mdx',
+    'test/formats/rtf/other.json',
+    'applesauce/file.ts',
+    'Package.swift.md',
+  ]) {
+    assert.equal(scope([path]).swift, false, path)
   }
 })
 test('empty changes fail safe; moves out of docs retain editor checks', () => {
   assert.equal(scope([]).editor, true)
+  assert.equal(scope([]).swift, true)
   assert.equal(scope(['docs/example.md', 'src/example.md']).editor, true)
 })
 
@@ -99,19 +127,19 @@ test('real branches exclude unrelated main changes and preserve release gates', 
     const base = commit('editor.js', 'export const changed = true\n')
     assert.deepEqual(run('pull_request', 'refs/pull/1/merge', base, head), {
       status: 0,
-      output: 'editor=false\nsite=false\n',
+      output: 'editor=false\nsite=false\nswift=false\n',
     })
     assert.deepEqual(run('push', 'refs/heads/main', start, base), {
       status: 0,
-      output: 'editor=true\nsite=false\n',
+      output: 'editor=true\nsite=false\nswift=false\n',
     })
     assert.deepEqual(run('push', 'refs/tags/v1', start, head), {
       status: 0,
-      output: 'editor=true\nsite=true\n',
+      output: 'editor=true\nsite=true\nswift=true\n',
     })
     assert.deepEqual(run('workflow_dispatch', 'refs/heads/main', start, head), {
       status: 0,
-      output: 'editor=true\nsite=true\n',
+      output: 'editor=true\nsite=true\nswift=true\n',
     })
     assert.notEqual(
       run('pull_request', 'refs/pull/1/merge', 'missing-ref', head).status,

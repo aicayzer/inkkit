@@ -28,7 +28,8 @@ jobs:
     needs: [tag, checks]
     runs-on: ubuntu-latest
     # The environment accepts only v* tags; the tag ruleset limits who can
-    # create them. Every publication also requires source validation and CI.
+    # create them. Every publication also requires source validation and CI,
+    # which includes the browser jobs and the Swift package tests.
     environment: npm
     permissions:
       contents: read

@@ -6,6 +6,15 @@ description: 'Every InkKitEditor member: signature, result, the state it checks 
 {/* @api InkKitEditor */}
 `InkKitEditor` is the editor facade. You create it with `InkKitEditor.mount`, load a document, and read it back with `snapshot`. Options and events are in [Options and events](/reference/options), adapter interfaces in [Adapters](/reference/adapters), and every error code in [Errors](/reference/errors).
 
+## Upgrading from 0.3
+
+Version 0.4 adds RTF documents. A host that offers only Markdown and TXT keeps its behavior, and most code compiles unchanged, because `InkKitEditor`, `EditorOptions`, `EditorEvents`, `DocumentInput` and `DocumentSnapshot` take the offered formats as a type argument that defaults to `TextDocumentFormat`. Check these:
+
+- **`DocumentFormat` includes `'rtf'`.** A text load whose format variable is typed `DocumentFormat` no longer compiles, because an RTF load has a `document` instead of `text`. Type it `TextDocumentFormat`.
+- **A `Record<DocumentFormat, …>` needs an `rtf` key.** For example, a map of file extensions or menu titles by format.
+- **Four format commands are added:** `alignLeft`, `alignCenter`, `alignRight` and `alignJustify`. `FormatCommand`, `ShortcutName` and `CommandState.commands.format` include them; they are always `false` outside RTF. Code that lists every command, or a toolbar built from the record's keys, sees them.
+- **`InkKitEditor<F>` is generic.** `mount` with `formats` that include `'rtf'` returns an `InkKitEditor<'md' | 'rtf'>`, say, whose snapshots and `changed` events can be RTF; narrow on `format`. A helper that accepts any editor takes `InkKitEditor<DocumentFormat>`, since an editor typed with text formats only doesn't accept RTF loads.
+
 ## Conventions
 
 These rules apply to every member:
@@ -14,7 +23,7 @@ These rules apply to every member:
 - **A failed call changes nothing.** The document, selection, revision and undo history are as they were, and no `changed` or `commandStateChanged` event is sent for it. The exception is `internal`, after which the editor's state can't be trusted. See [how errors arrive](/reference/errors#how-errors-arrive).
 - **Events from a call arrive before it returns.** When a synchronous call succeeds, its `changed` and `commandStateChanged` events are sent in order immediately before it returns. An asynchronous call sends the events it raises after its first pause as they happen. If your handler makes a call that sends a newer event of the same kind, the older ones still waiting are dropped.
 - **`null` counts as omitted** for an optional parameter or option field, because WebKit bridges send JSON `null` for a missing value. `snapshot(null)` reads the current generation.
-- **Unknown names fail.** An option, event handler, label, shortcut name, command or options field that this reference doesn't list throws `invalid-argument`, so a misspelling is never ignored. The input values `DocumentInput`, `TextRange` and `Heading` are checked only for the fields they need.
+- **Unknown names fail.** An option, event handler, label, shortcut name, command or options field that this reference doesn't list throws `invalid-argument`, so a misspelling is never ignored. The input values `TextDocumentInput`, `TextRange` and `Heading` are checked only for the fields they need. An RTF `document` is checked completely, and an unknown field in it throws `invalid-argument`.
 - **Pass the expected generation.** Most members that read or change the document take `expectedGeneration` as their last parameter. When the loaded document has another generation, the call throws `stale-document` and changes nothing. Omitted means the current generation. A host that calls Inkkit across a native bridge should pass it on every call. See [documents and saving](/concepts/documents).
 - **Offsets are UTF-16 code units** in the text of the snapshot that names them, and `to` is exclusive. Row and column indices are zero-based.
 - **Points and rectangles are CSS pixels** in the web view's client area, the coordinates of DOM pointer events. They aren't device pixels and aren't relative to the root.
@@ -31,7 +40,7 @@ Each member first throws `destroyed` if the editor was destroyed, then `invalid-
 | `setEditable`, `setTextInputPreferences`                                                                                                                                                                          | None.                                                  | `composition`.                                                                                                                                                                            |
 | `reloadDocument`                                                                                                                                                                                                  | Optional, the last parameter. Checked only when given. | `not-ready` and `stale-document`, only when the generation is given. Then the same errors as `loadDocument`.                                                                              |
 | `commandState`, `focus`, `blur`, `cancelPendingImports`, `refreshReferences`                                                                                                                                      | Optional, the last parameter.                          | `not-ready`, `stale-document`.                                                                                                                                                            |
-| `snapshot`, `printableSnapshot`, `clipboardSnapshot`, `setEditingMode`, `find`, `navigateFootnote`, `textSnapshot`, `headings`                                                                                    | Optional, the last parameter.                          | `not-ready`, `stale-document`, `composition`, `operation-pending`.                                                                                                                        |
+| `snapshot`, `convertDocument`, `printableSnapshot`, `clipboardSnapshot`, `setEditingMode`, `find`, `navigateFootnote`, `textSnapshot`, `headings`                                                                 | Optional, the last parameter.                          | `not-ready`, `stale-document`, `composition`, `operation-pending`.                                                                                                                        |
 | `navigateHeading`                                                                                                                                                                                                 | None. The heading entry names a version.               | `not-ready`, `stale-document` for another generation, `composition`, `operation-pending`, then `stale-document` for an older revision or mode.                                            |
 | `selectTextRange`, `revealTextRange`, `textRangesRects`, `visibleTextRanges`                                                                                                                                      | None. The range's `snapshotId` names a version.        | `not-ready`, `composition`, `operation-pending`, `stale-document` for a `snapshotId` that isn't current, then `invalid-range`.                                                            |
 | `replaceTextRange`                                                                                                                                                                                                | None. The range's `snapshotId` names a version.        | `not-ready`, `composition`, `operation-pending`, `stale-document`, `invalid-range`, `read-only`.                                                                                          |
@@ -41,7 +50,7 @@ Each member first throws `destroyed` if the editor was destroyed, then `invalid-
 
 `mount` checks only its arguments, and `destroy` has no checks.
 
-A member that changes the document also throws `preservation` when the result can't be saved as Markdown that reopens as shown, and changes nothing. `snapshot`, `clipboardSnapshot`, `printableSnapshot`, `replaceSource` and switching to source mode throw or reject with `preservation` when the current content can't be written. See [preservation](/concepts/preservation).
+A member that changes the document also throws `preservation` when the result can't be saved as Markdown that reopens as shown, and changes nothing. In an RTF document, an edit that would bring in something RTF can't hold, such as a heading, is refused the same way, or, for typing and commands, does nothing. `snapshot`, `clipboardSnapshot`, `printableSnapshot`, `replaceSource` and switching to source mode throw or reject with `preservation` when the current content can't be written. See [preservation](/concepts/preservation).
 
 ## Entry points
 
@@ -68,6 +77,10 @@ import '@aicayzer/inkkit/style.css'
 
 `static mount(root: HTMLElement, events: EditorEvents, options?: EditorOptions): Promise<InkKitEditor>`
 
+`static mount<F extends DocumentFormat>(root: HTMLElement, events: EditorEvents<F>, options: EditorOptions<F> & { formats: readonly F[] }): Promise<InkKitEditor<F>>`
+
+The editor's type argument `F` is the formats it offers. Without `formats`, or with only `'md'` and `'txt'`, it is `TextDocumentFormat`, and snapshots are text. With `formats: ['md', 'rtf']`, `F` is `'md' | 'rtf'`, so [`snapshot`](#snapshot) returns either kind and you narrow on `format`. A helper that accepts any editor takes `InkKitEditor<DocumentFormat>`.
+
 Builds the editor inside `root` and adds the class `inkkit-root` to it. The editor has no document until you call [`loadDocument`](#loaddocument). Keep the root in the page, and leave its children alone, until `destroy` completes.
 
 `mount` rejects with `invalid-argument` when `root` isn't an `HTMLElement`, when `events` has no `changed` function or names something that isn't an event, or when `options` has an unknown field or a field of the wrong type. See [`EditorEvents`](/reference/options#events) and [`EditorOptions`](/reference/options#editor-options).
@@ -83,10 +96,13 @@ Cancels pending work, releases the editor and removes `inkkit-root` from the roo
 ## Documents
 
 {/* @api DocumentFormat */}
-`DocumentFormat` is `'md'` for Markdown or `'txt'` for literal text. TXT has no formatted mode. An editor loads only the formats you offer in [`formats`](/reference/options#formats). See [documents and saving](/concepts/documents) for load and version rules.
+`DocumentFormat` is `'md'` for Markdown, `'txt'` for literal text or `'rtf'` for rich text. TXT has no formatted mode, and RTF has no source mode. An editor loads only the formats you offer in [`formats`](/reference/options#formats). See [documents and saving](/concepts/documents) for load and version rules, and [rich text](/concepts/rich-text) for what an RTF document holds.
+
+{/* @api TextDocumentFormat */}
+`TextDocumentFormat` is `'md' | 'txt'`, the formats whose document is text. It is the default type argument of `InkKitEditor`, `EditorOptions`, `EditorEvents`, `DocumentInput` and `DocumentSnapshot`, so an editor you mount without `rtf` in `formats` takes and returns text documents.
 
 {/* @api FormatPromise */}
-`FormatPromise` states what saving a format keeps. Markdown and TXT are both `'exact'`. See [what each format promises](/concepts/documents#formats-and-what-they-promise).
+`FormatPromise` states what saving a format keeps. Markdown and TXT are `'exact'`, and RTF is `'structure'`. See [what each format promises](/concepts/documents#formats-and-what-they-promise).
 
 | Value         | Meaning                                                                                                            |
 | ------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -110,7 +126,7 @@ An `OfferedFormat` is one entry of [`formats`](#formats): a format you offered, 
 
 `readonly formats: readonly OfferedFormat[]`
 
-The formats you offered in the [`formats`](/reference/options#formats) option, in your order, each with its `promise`. Without the option, the list is Markdown and then TXT. The list is frozen and fixed at mount, so a host can read it once to fill an Open or Save As menu. It works before the first load.
+The formats you offered in the [`formats`](/reference/options#formats) option, in your order, each with its `promise`. Without the option, the list is Markdown and then TXT; RTF is offered only when you list it. The list is frozen and fixed at mount, so a host can read it once to fill an Open or Save As menu. It works before the first load.
 
 {/* @api DocumentVersion */}
 A `DocumentVersion` identifies one revision within a loaded document. Outputs and command state carry these fields.
@@ -124,24 +140,39 @@ A `DocumentVersion` identifies one revision within a loaded document. Outputs an
 | `revision`   | `number` | The content revision within this load, starting at zero.  |
 
 {/* @api DocumentInput */}
-A `DocumentInput` supplies the complete source and its identity for a load or reload.
+A `DocumentInput` supplies the complete document and its identity for a load or reload. It is a `TextDocumentInput` for Markdown and TXT, or a `RichTextDocumentInput` for RTF. Its type argument is the formats the editor offers, and without `rtf` it is always a `TextDocumentInput`.
 
-{/* @api-scope DocumentInput */}
+{/* @api TextDocumentInput */}
+A `TextDocumentInput` loads a Markdown or TXT document from its text.
 
-| Field        | Type             | Meaning                                                                            |
-| ------------ | ---------------- | ---------------------------------------------------------------------------------- |
-| `documentId` | `string`         | The host's document identity, preserved in later snapshots.                        |
-| `generation` | `number`         | An integer greater than the loaded generation; the first load accepts any integer. |
-| `format`     | `DocumentFormat` | The document format, one of those in [`formats`](#formats).                        |
-| `text`       | `string`         | The complete authored text. An empty string loads an empty document.               |
+{/* @api-scope TextDocumentInput */}
+
+| Field        | Type                 | Meaning                                                                            |
+| ------------ | -------------------- | ---------------------------------------------------------------------------------- |
+| `documentId` | `string`             | The host's document identity, preserved in later snapshots.                        |
+| `generation` | `number`             | An integer greater than the loaded generation; the first load accepts any integer. |
+| `format`     | `TextDocumentFormat` | The document format, one of those in [`formats`](#formats).                        |
+| `text`       | `string`             | The complete authored text. An empty string loads an empty document.               |
+
+{/* @api RichTextDocumentInput */}
+A `RichTextDocumentInput` loads an RTF document from the `RichTextDocument` your converter read from the file. It has no `text`.
+
+{/* @api-scope RichTextDocumentInput */}
+
+| Field        | Type               | Meaning                                                                            |
+| ------------ | ------------------ | ---------------------------------------------------------------------------------- |
+| `documentId` | `string`           | The host's document identity, preserved in later snapshots.                        |
+| `generation` | `number`           | An integer greater than the loaded generation; the first load accepts any integer. |
+| `format`     | `'rtf'`            | RTF, which must be in [`formats`](#formats).                                       |
+| `document`   | `RichTextDocument` | The document to load. Inkkit checks it and puts it in canonical form.              |
 
 {/* @api InkKitEditor.loadDocument */}
 
 ### loadDocument
 
-`loadDocument(input: DocumentInput): void`
+`loadDocument(input: DocumentInput<F>): void`
 
-Replaces the document. The generation must be greater than the loaded one; the first load accepts any integer. A generation that isn't greater, or a format that isn't in [`formats`](#formats), throws `invalid-argument`. Markdown that can't be kept even as literal source throws `preservation`. Either way the load changes nothing.
+Replaces the document. The generation must be greater than the loaded one; the first load accepts any integer. A generation that isn't greater, or a format that isn't in [`formats`](#formats), throws `invalid-argument`. An RTF `document` that isn't a valid [`RichTextDocument`](#rich-text-documents), a Markdown or TXT load that has a `document`, and an RTF load that has a `text`, also throw `invalid-argument`; the message names the first problem's path, such as `input.document.blocks[2].content[0].text`. Markdown that can't be kept even as literal source throws `preservation`. Either way the load changes nothing.
 
 A load clears the undo history, returns to formatted mode, cancels pending imports and exports, and sends one `commandStateChanged` and no `changed`. [Load a document](/concepts/documents#load-a-document) lists everything it resets.
 
@@ -149,7 +180,7 @@ A load clears the undo history, returns to formatted mode, cancels pending impor
 
 ### reloadDocument
 
-`reloadDocument(input: DocumentInput, expectedGeneration?: number): void`
+`reloadDocument(input: DocumentInput<F>, expectedGeneration?: number): void`
 
 Replaces the document with a newer version of it, under the same generation rule and errors as `loadDocument`. It keeps the selection where it still fits, the focus, the scroll position and, for Markdown, the editing mode, and clears the undo history. See [Reload a changed document](/concepts/documents#reload-a-changed-document).
 
@@ -159,20 +190,136 @@ With `expectedGeneration`, the loaded document must be that generation, or the c
 
 ### snapshot
 
-`snapshot(expectedGeneration?: number): DocumentSnapshot`
+`snapshot(expectedGeneration?: number): DocumentSnapshot<F>`
 
-Returns the complete current text, which is what a host saves. The `text` is the exact source, including line endings; an unedited document returns the bytes that were loaded. In source mode it includes what was typed there.
+Returns the complete current document, which is what a host saves. For Markdown and TXT, the `text` is the exact source, including line endings; an unedited document returns the bytes that were loaded. In source mode it includes what was typed there. For RTF, the `document` is the canonical form of the current document, a new object on each call, which you pass to your converter to write the file.
 
 {/* @api DocumentSnapshot */}
-A `DocumentSnapshot` combines the source fields of `DocumentInput` with `DocumentVersion`, plus its saved-state flag.
+A `DocumentSnapshot` is a `TextDocumentSnapshot` for Markdown and TXT, or a `RichTextDocumentSnapshot` for RTF. Its type argument is the formats the editor offers, and without `rtf` it is always a `TextDocumentSnapshot`. Narrow on `format` before you read `text` or `document`.
 
-{/* @api-scope DocumentSnapshot */}
+{/* @api TextDocumentSnapshot */}
+A `TextDocumentSnapshot` combines the fields of `TextDocumentInput` with `DocumentVersion`, plus its saved-state flag.
+
+{/* @api-scope TextDocumentSnapshot */}
 
 | Field   | Type      | Meaning                                                          |
 | ------- | --------- | ---------------------------------------------------------------- |
 | `dirty` | `boolean` | Whether the current text differs from the text of the last load. |
 
-It throws `preservation` when the current content can't be written as Markdown that reopens as shown. A failed snapshot is not an unchanged document: don't save, and keep the document open. See [the save rules](/concepts/documents).
+{/* @api RichTextDocumentSnapshot */}
+A `RichTextDocumentSnapshot` combines the fields of `RichTextDocumentInput` with `DocumentVersion`, plus its saved-state flag. Its `document` is always in canonical form.
+
+{/* @api-scope RichTextDocumentSnapshot */}
+
+| Field   | Type      | Meaning                                                                                                                           |
+| ------- | --------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `dirty` | `boolean` | Whether the canonical current document differs from the canonical form of the last load. Undoing every edit makes it clean again. |
+
+It throws `preservation` when the current content can't be written as Markdown that reopens as shown, or as an RTF document. A failed snapshot is not an unchanged document: don't save, and keep the document open. See [the save rules](/concepts/documents).
+
+{/* @api InkKitEditor.convertDocument */}
+
+### convertDocument
+
+`convertDocument(format: DocumentFormat, expectedGeneration?: number): ConvertedDocument`
+
+Converts the loaded document to `format`, which must be in [`formats`](#formats), and returns the result with what the conversion lost. It changes nothing in the editor: load the result as a new generation when the person confirms, for example after a Save As to another format.
+
+- **Markdown to RTF** reads the formatted document, including what was typed in source mode. Headings become bold paragraphs and code blocks become paragraphs in code; the [loss codes](#convertdocument) list everything else.
+- **RTF to Markdown** writes the document with Inkkit's Markdown writer. Underline, superscript and subscript become `<u>`, `<sup>` and `<sub>`, and a line break in a table cell becomes `<br />`. Alignment is the only loss. Inkkit reads the Markdown back, and if it wouldn't give the same document less its alignment, the call throws `preservation` rather than return a conversion that loses something unreported.
+- **The same format** returns a copy with no losses.
+
+Any other pair, such as TXT to or from RTF, throws `invalid-argument`: your converter's plain-text helpers convert TXT, and Markdown and TXT share their text. It has the same state checks as `snapshot`.
+
+{/* @api ConvertedDocument */}
+A `ConvertedDocument` is `{ format, text, lost }` for Markdown and TXT, or `{ format: 'rtf', document, lost }` for RTF. `lost` is a frozen list of [`FormatLoss`](#convertdocument) entries in the order of [`FormatLossCode`](#convertdocument); an empty list means the conversion kept everything.
+
+{/* @api FormatLoss */}
+A `FormatLoss` names one kind of content a conversion couldn't keep.
+
+{/* @api-scope FormatLoss */}
+
+| Field   | Type             | Meaning                                                     |
+| ------- | ---------------- | ----------------------------------------------------------- |
+| `code`  | `FormatLossCode` | What was lost.                                              |
+| `count` | `number`         | How many places in the document lost it, at least one each. |
+
+{/* @api FormatLossCode */}
+`FormatLossCode` is the closed list of what a conversion can lose. A new code is added only in a minor release.
+
+| Code                  | Direction     | What happened                                                                                                                              |
+| --------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `'heading'`           | Markdown, RTF | A heading became a bold paragraph.                                                                                                         |
+| `'code-block'`        | Markdown, RTF | A code block became one paragraph in code for each line.                                                                                   |
+| `'diagram'`           | Markdown, RTF | A diagram became its source, as paragraphs in code.                                                                                        |
+| `'quote'`             | Markdown, RTF | A quote gave up its paragraphs.                                                                                                            |
+| `'callout'`           | Markdown, RTF | A callout gave up its title, as a bold paragraph, and its paragraphs.                                                                      |
+| `'task'`              | Markdown, RTF | A task item became a plain list item, without its checkbox.                                                                                |
+| `'rule'`              | Markdown, RTF | A horizontal rule was left out.                                                                                                            |
+| `'footnote'`          | Markdown, RTF | A footnote reference became its label in brackets, and a footnote's text a paragraph that starts with its label.                           |
+| `'comment'`           | Markdown, RTF | An author comment was left out.                                                                                                            |
+| `'highlight'`         | Markdown, RTF | Highlighted text kept its text without the highlight.                                                                                      |
+| `'image'`             | Markdown, RTF | An image was left out.                                                                                                                     |
+| `'file'`              | Markdown, RTF | A file embed was left out.                                                                                                                 |
+| `'wiki-link'`         | Markdown, RTF | A wiki link became its text.                                                                                                               |
+| `'literal'`           | Markdown, RTF | Markdown kept as authored, or raw HTML, became its source as text.                                                                         |
+| `'link'`              | Markdown, RTF | A link with an empty address, or one with a control character, became its text.                                                            |
+| `'table-alignment'`   | Markdown, RTF | A table lost its column alignment.                                                                                                         |
+| `'list-start'`        | Markdown, RTF | A numbered list that started below 1 starts at 1, and one above 2,147,483,647 starts at 2,147,483,647.                                     |
+| `'list-item-blocks'`  | Markdown, RTF | A list item's further paragraphs, code or table became lines of its first paragraph, since an RTF item holds one.                          |
+| `'list-depth'`        | Markdown, RTF | Lists deeper than 9 levels became lines of the item at the ninth level.                                                                    |
+| `'link-underline'`    | Markdown, RTF | Underlined link text lost its underline, which RTF draws on every link.                                                                    |
+| `'invalid-character'` | Markdown, RTF | A character RTF can't hold as text, U+0000, U+FFFC or a lone surrogate, became U+FFFD.                                                     |
+| `'alignment'`         | RTF, Markdown | A centered, right-aligned or justified paragraph became left-aligned.                                                                      |
+| `'mark-spaces'`       | RTF, Markdown | Spaces at the edge of an underlined, struck-through or linked run moved outside it, since Markdown can't start or end a mark with a space. |
+| `'empty-line'`        | RTF, Markdown | A paragraph of only a line break became an empty paragraph, or an empty paragraph at the end was left out.                                 |
+
+## Rich text documents
+
+These types describe the JSON form of an RTF document, which your converter reads from and writes to the file. They match the `RichTextDocument` of the `InkKitRTF` Swift package exactly; see [host RTF documents](/guides/web-view#host-rtf-documents).
+
+{/* @api RichTextDocument */}
+A `RichTextDocument` is a whole RTF document.
+
+{/* @api-scope RichTextDocument */}
+
+| Field     | Type              | Meaning                                                |
+| --------- | ----------------- | ------------------------------------------------------ |
+| `version` | `1`               | The model version. 1 is the only version.              |
+| `blocks`  | `RichTextBlock[]` | The document's paragraphs, lists and tables, in order. |
+
+{/* @api RichTextBlock */}
+A `RichTextBlock` is one of three blocks, told apart by `type`:
+
+- `{ type: 'paragraph', align?, content }`: a paragraph of `RichTextInline` content. `align` is `'center'`, `'right'` or `'justify'`, and absent for left alignment.
+- `{ type: 'list', ordered, start?, items }`: a bulleted or numbered list of `RichTextListItem`s. `start` is a numbered list's first number, from 1 to 2,147,483,647, the largest that RTF writes and reads back, and absent for 1. Lists nest up to 9 levels.
+- `{ type: 'table', rows }`: a table of rows of `RichTextTableCell`s. It has at least one row and one cell, every row has the same number of cells, and it can't be inside a list.
+
+{/* @api RichTextListItem */}
+A `RichTextListItem` is one list item.
+
+{/* @api-scope RichTextListItem */}
+
+| Field    | Type              | Meaning                                                      |
+| -------- | ----------------- | ------------------------------------------------------------ |
+| `blocks` | `RichTextBlock[]` | One paragraph, then any nested lists. It holds nothing else. |
+
+{/* @api RichTextTableCell */}
+A `RichTextTableCell` is one table cell.
+
+{/* @api-scope RichTextTableCell */}
+
+| Field     | Type               | Meaning                                                  |
+| --------- | ------------------ | -------------------------------------------------------- |
+| `content` | `RichTextInline[]` | The cell's text and line breaks, as one line of content. |
+
+{/* @api RichTextInline */}
+A `RichTextInline` is `{ type: 'text', text, marks? }`, a run of text, or `{ type: 'break' }`, a line break inside a paragraph or cell. A run is never empty and never holds `\n`, `\r`, U+000B, U+000C, U+0085, U+2028, U+2029, U+FFFC or U+0000, or a lone surrogate. An edit that would leave one in the text is refused.
+
+{/* @api RichTextMark */}
+A `RichTextMark` is `{ type }` for `'bold'`, `'italic'`, `'underline'`, `'strikethrough'`, `'superscript'`, `'subscript'` and `'code'`, or `{ type: 'link', href }` for a link. A run has each type at most once, never both superscript and subscript, and a link's `href` is never empty and has no control character. Any other address is kept as given, such as `http://[`; links that a person adds or pastes must also pass link safety.
+
+**Canonical form.** Inkkit's snapshots, and your converter's output, are canonical: marks are in the order above, a run with a link has no underline, adjacent runs with equal marks are merged, runs are in Unicode Normalization Form C, and `align` and `start` are left out for left alignment and 1. A load accepts a document that isn't canonical and puts it in canonical form; that alone doesn't make it dirty.
 
 ## Editability and input
 
@@ -267,9 +414,9 @@ Runs one table command in formatted mode and returns whether it applied. It retu
 
 `setEditingMode(mode: EditingMode, expectedGeneration?: number): boolean`
 
-`EditingMode` is `'formatted'` or `'source'`, which shows the Markdown in a textarea. A TXT document is always `'source'`. Markdown loads in formatted mode.
+`EditingMode` is `'formatted'` or `'source'`, which shows the Markdown in a textarea. A TXT document is always `'source'`, and an RTF document always `'formatted'`. Markdown loads in formatted mode.
 
-`setEditingMode` switches the current Markdown document without changing its identity, generation, revision or dirty state, and maps the selection to the matching text. It returns `false` when the mode is already set, and for TXT. It works in a read-only editor. Switching to source mode throws `preservation` when the formatted document can't be written. Leaving source mode makes everything edited there one step of the formatted history. The host owns the mode control.
+`setEditingMode` switches the current Markdown document without changing its identity, generation, revision or dirty state, and maps the selection to the matching text. It returns `false` when the mode is already set, and for TXT and RTF. It works in a read-only editor. Switching to source mode throws `preservation` when the formatted document can't be written. Leaving source mode makes everything edited there one step of the formatted history. The host owns the mode control.
 
 {/* @api InkKitEditor.replaceSource */}
 
@@ -277,7 +424,7 @@ Runs one table command in formatted mode and returns whether it applied. It retu
 
 `replaceSource(text: string, expectedGeneration?: number): boolean`
 
-Replaces the complete source as one undo step and returns `false` for identical source. It accepts any text, including unsupported or incomplete Markdown, and the snapshot holds it as given.
+Replaces the complete source as one undo step and returns `false` for identical source. It accepts any text, including unsupported or incomplete Markdown, and the snapshot holds it as given. An RTF document has no source, so the call throws `invalid-argument`.
 
 {/* @api InkKitEditor.undo InkKitEditor.redo */}
 
@@ -315,7 +462,7 @@ Selects the next match after the selection, wrapping at the end, and returns whe
 
 `headings(expectedGeneration?: number): readonly Heading[]`
 
-Returns the outline in document order, as frozen entries. TXT, code and literal blocks give no entries. Query again after an edit, undo, load or mode change.
+Returns the outline in document order, as frozen entries. TXT, RTF, code and literal blocks give no entries. Query again after an edit, undo, load or mode change.
 
 {/* @api Heading */}
 A `Heading` is an immutable outline entry with the fields of `DocumentVersion`. Pass the entry back to `navigateHeading` while its load, revision and mode remain current.
@@ -344,7 +491,7 @@ Moves the caret to the heading, focuses it, scrolls to it and unfolds callouts t
 
 `insertFootnote(label?: string, expectedGeneration?: number): boolean`
 
-Inserts a footnote reference after the selection and, when the label has no definition, appends one at the end of the document and puts the caret in it. Both are one undo step. An omitted label uses the lowest positive integer that no footnote uses. A label must be 1 to 999 characters with no whitespace, brackets or backslashes, or the call throws `invalid-argument`. It returns `false` in source and TXT modes.
+Inserts a footnote reference after the selection and, when the label has no definition, appends one at the end of the document and puts the caret in it. Both are one undo step. An omitted label uses the lowest positive integer that no footnote uses. A label must be 1 to 999 characters with no whitespace, brackets or backslashes, or the call throws `invalid-argument`. It returns `false` in source and TXT modes, and in RTF.
 
 {/* @api InkKitEditor.navigateFootnote */}
 
@@ -378,7 +525,7 @@ Shows or hides author comments. Comments start hidden. This is presentation only
 
 `insertImages(images: ImageInsertion[], at?: ClientPoint, expectedGeneration?: number): boolean`
 
-Inserts images that an adapter already stored, at the selection, or as blocks at the drop point `at`: in place of an empty paragraph there, or after the top-level block there. It returns `false`, and changes nothing, for an empty list, in source and TXT modes, and when neither an `images` nor a `files` adapter is set.
+Inserts images that an adapter already stored, at the selection, or as blocks at the drop point `at`: in place of an empty paragraph there, or after the top-level block there. It returns `false`, and changes nothing, for an empty list, in source and TXT modes, in RTF, and when neither an `images` nor a `files` adapter is set.
 
 {/* @api ImageInsertion */}
 An `ImageInsertion` names an image the host already stored. Inkkit writes the reference into Markdown; the adapter supplies its display and exported bytes.
@@ -445,7 +592,7 @@ These members prepare content for a host that writes the native clipboard or pri
 
 `clipboardSnapshot(scope?: ClipboardScope, expectedGeneration?: number): Promise<ClipboardOutput>`
 
-Resolves with clipboard content and the version it was copied from. It rejects with `stale-document` if the document, its revision or the editing mode changes before the output is ready, and with `preservation` when the selection can't be written as Markdown. Resolve it before you touch the native clipboard, and keep the existing clipboard on failure. A missing image or diagram picture is reported in the `error` of its `ClipboardImage` or `ClipboardDiagram` entry, not as a rejection.
+Resolves with clipboard content and the version it was copied from. It rejects with `stale-document` if the document, its revision or the editing mode changes before the output is ready, and with `preservation` when the selection can't be written as Markdown. Resolve it before you touch the native clipboard, and keep the existing clipboard on failure. A missing image or diagram picture is reported in the `error` of its `ClipboardImage` or `ClipboardDiagram` entry, not as a rejection. From an RTF document, the output has no images or diagrams, and `markdown` is the copied content written as Markdown, without alignment: text such as `**literal**` is escaped, so it stays text.
 
 {/* @api ClipboardOutput */}
 A `ClipboardOutput` combines the copied content with `DocumentVersion`, so the host can identify the revision it copied.
@@ -506,7 +653,7 @@ A `ClipboardInput` supplies representations from one clipboard read. Inkkit choo
 | `html`     | `string` (optional)          | The HTML representation, imported only when the current mode permits it.              |
 | `images`   | `CapturedImage[]` (optional) | Captured image bytes associated with the HTML image sources or their order.           |
 
-An image item whose `source` equals an image's `src` belongs to that image; items without a `source` fill the rest in order. In Markdown source mode, `paste` inserts `markdown`, or else `text`, literally; in TXT it inserts `text`. The promise resolves once the content is inserted. It rejects with `stale-document` if the document is replaced, or editing is turned off, while images import. An image that can't be imported becomes the text `[Name: image unavailable]` and `events.error` receives `image-unavailable`; the paste still resolves.
+An image item whose `source` equals an image's `src` belongs to that image; items without a `source` fill the rest in order. In Markdown source mode, `paste` inserts `markdown`, or else `text`, literally; in TXT it inserts `text`. In RTF, `markdown` pastes as its text, unparsed; otherwise `html` keeps what RTF holds, and `text` pastes a paragraph for each line. [Rich text](/concepts/rich-text#paste) describes the conversion. The promise resolves once the content is inserted. It rejects with `stale-document` if the document is replaced, or editing is turned off, while images import. An image that can't be imported becomes the text `[Name: image unavailable]` and `events.error` receives `image-unavailable`; the paste still resolves.
 
 {/* @api InkKitEditor.pasteAsPlainText */}
 

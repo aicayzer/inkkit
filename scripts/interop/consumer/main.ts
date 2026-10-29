@@ -5,7 +5,7 @@ import {
   ControlledImages,
   ControlledFiles,
   imageBytes,
-  fixtures,
+  allFixtures as fixtures,
 } from './fixtures'
 const images = new ControlledImages(
   () => new InkKitError('image-unavailable', 'Fixture image unavailable'),
@@ -46,6 +46,7 @@ const mountEditor = (configuration = 'rich', linked = false) =>
       },
     },
     {
+      formats: ['md', 'txt', 'rtf'],
       images: configuration === 'rich' ? images.adapter : undefined,
       files: configuration === 'rich' && linked ? files.adapter : undefined,
       wikiLinks: configuration === 'rich' && linked ? files.wiki : undefined,
@@ -93,18 +94,18 @@ const capture = () => ({
   errorCode: window.lastErrorCode ?? null,
   diagnostics: window.interopErrors ?? [],
 })
+// For RTF, `source` is the `RichTextDocument` a host's converter would give.
+const documentInput = (source, format) =>
+  format === 'rtf'
+    ? { documentId, generation: ++generation, format, document: source }
+    : { documentId, generation: ++generation, format, text: source }
 const load = (source, format = 'md', identity = 'interop') => {
   window.lastError = undefined
   window.lastErrorCode = undefined
   window.interopErrors = []
   documentId = identity
   documentFormat = format
-  editor.loadDocument({
-    documentId,
-    generation: ++generation,
-    format,
-    text: source,
-  })
+  editor.loadDocument(documentInput(source, format))
   return editor.snapshot()
 }
 const portableImage = (image) => {
@@ -331,9 +332,11 @@ window.interop = {
     }
     if (input.fixture && !fixtures[input.fixture])
       throw Error(`Unknown fixture: ${input.fixture}`)
+    const fixture = fixtures[input.fixture ?? 'everyday']
     load(
-      input.source ?? fixtures[input.fixture ?? 'everyday'].text,
-      input.format ?? fixtures[input.fixture ?? 'everyday'].format,
+      input.source ??
+        (fixture.format === 'rtf' ? fixture.document : fixture.text),
+      input.format ?? fixture.format,
       input.documentId ?? 'interop',
     )
     const results = {}
@@ -1420,7 +1423,8 @@ window.interop = {
             if (!saved && operation.source === undefined)
               throw Error('Reopen requires a saved snapshot or explicit source')
             result = load(
-              operation.source ?? saved.text,
+              operation.source ??
+                (saved.format === 'rtf' ? saved.document : saved.text),
               operation.format ?? saved?.format ?? documentFormat,
               operation.documentId ?? documentId,
             )
@@ -1433,12 +1437,12 @@ window.interop = {
             )
             break
           case 'reload':
-            editor.reloadDocument({
-              documentId,
-              generation: ++generation,
-              format: operation.format ?? documentFormat,
-              text: operation.source,
-            })
+            editor.reloadDocument(
+              documentInput(
+                operation.source,
+                operation.format ?? documentFormat,
+              ),
+            )
             documentFormat = operation.format ?? documentFormat
             result = capture()
             break

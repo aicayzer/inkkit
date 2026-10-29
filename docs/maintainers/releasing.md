@@ -32,7 +32,8 @@ Pushing a later matching version tag starts npm publication. Complete the gate *
 2. Run the checks in [development](development.md), using the bounded browser/native selection policy and relevant changed-contract checks. Update API and supported-syntax documentation to match the implemented behaviour.
 3. Record the reviewed release commit, tested tarball SHA-256, npm integrity, decompressed tar SHA-256, offline bundle SHA-256 and verification results in the milestone publication checklist and release evidence. Retain the candidate and its evidence in `_local/release/<version>/`. Review the packed file allowlist and confirm version/tag agreement.
 4. Check the npm trusted-publisher configuration, then tag the reviewed commit `v<version>` and push that tag. Inspect the hosted workflow's validation and publication results.
-5. Download the release workflow's `package-candidate` artefact into a separate directory. Verify publication with the command below. Record the workflow URL, OIDC result and registry evidence before marking the milestone publication checklist complete and closing the milestone. Publish and verify each authorised release before beginning implementation of the next.
+5. After the tag exists, confirm that `swift package resolve` resolves the new `v<version>` tag from a scratch package that depends on the repository.
+6. Download the release workflow's `package-candidate` artefact into a separate directory. Verify publication with the command below. Record the workflow URL, OIDC result and registry evidence before marking the milestone publication checklist complete and closing the milestone. Publish and verify each authorised release before beginning implementation of the next.
 
 ```sh
 node scripts/verify-release.mjs 0.0.7 \

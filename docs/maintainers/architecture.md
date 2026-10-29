@@ -20,9 +20,22 @@
 
 ## Document formats
 
-`formats/` holds one `FormatHandler` per document format: `markdown.ts` and `text.ts`, registered in `formats/index.ts`, with the shared interface in `formats/types.ts`. A handler states what differs by format: how text loads and reads into the formatted document, whether only the literal surface edits it, whether source mode and headings exist, how the literal surface pastes and inserts text, and how the format prints and fills the clipboard. Its `promise` is the public `FormatPromise`.
+`formats/` holds one `FormatHandler` per document format: `markdown.ts`, `text.ts` and `rich-text.ts`, registered in `formats/index.ts`, with the shared interface in `formats/types.ts`. A handler states what differs by format: how text loads and reads into the formatted document, whether only the literal surface edits it, whether source mode and headings exist, how the literal surface pastes and inserts text, and how the format prints and fills the clipboard. Its `promise` is the public `FormatPromise`.
 
-`EditorDocument` sets the handler on each load, and the facade and its collaborators read its fields directly, so a keystroke does no lookup. The Markdown handler wraps `Preservation`, the dialect parser, Markdown printing and the portable Markdown clipboard; those modules are unchanged. The TXT handler reaches none of them. `test/formats/boundary.test.ts` walks the runtime import graph of each non-Markdown handler and fails if it reaches `preserve*.ts`, `dialect.ts`, `html-import.ts` or `paste-html.ts`. Format commands, tables and block moves follow `literalOnly`, because a literal-only format has no formatted surface.
+`EditorDocument` sets the handler on each load, and the facade and its collaborators read its fields directly, so a keystroke does no lookup. The Markdown handler wraps `Preservation`, the dialect parser, Markdown printing and the portable Markdown clipboard. The shared schema in `dialect.ts` also serves RTF: its paragraph has an `align` attribute that only RTF sets, which Markdown's DOM rule never reads and its writer ignores. The TXT handler reaches none of them. `test/formats/boundary.test.ts` walks the runtime import graph of each non-Markdown handler and fails if it reaches `preserve*.ts`, `dialect.ts`, `html-import.ts` or `paste-html.ts`. Format commands, tables and block moves follow `literalOnly`, because a literal-only format has no formatted surface.
+
+### Rich text
+
+An RTF document reaches the editor as the JSON `RichTextDocument` that the host's `InkKitRTF` converter produced. The editor never parses or writes RTF.
+
+- `rich-text-model.ts` mirrors `apple/Sources/InkKitRTF/Validation.swift`: it checks a loaded document, reports the first bad path as `invalid-argument`, and builds the canonical form (sorted marks, a link's underline removed, merged runs, NFC text, default `align` and `start` left out). Keep the two in step; the golden files in `test/formats/rtf/fixtures/` are the shared contract, and the Swift tests write them.
+- Inside the editor, an RTF document's text is the canonical JSON of its document. `EditorDocument.original`, `changed` comparisons, `dirty` and save caches work on that string as they do on Markdown, and the facade turns it into `document` only for public snapshots. Preservation's line cleanup (`cleanSourceDoc`) is skipped, because an RTF break is content.
+- `rich-text-prose.ts` maps between the JSON and the shared schema: paragraphs carry the `align` attribute, which only this module and the alignment commands set; lists map to `bullet_list` and `ordered_list` with tight items; a table's first row becomes the header row and is written back first. It also holds `allows`, the transaction check behind the `richTextGuard` plugin in `editor-milkdown.ts`, which reads only the changed range and its ancestors.
+- `rich-text-import.ts` converts pasted HTML and text through `DOMParser` and link safety, without Markdown's HTML import.
+- Markdown behaviour is gated by `FormatHandler.markdownInput` through `format-input.ts`: input rules other than smart punctuation return no transaction, and bare-address linking stops. Command availability masks the commands RTF can't hold in `editor-commands.ts`.
+- `formats/convert.ts` converts between Markdown and RTF for `convertDocument`. It is the one module that reads both formats; `rich-text.ts` doesn't import it, so the boundary test still holds.
+
+The editor's type argument is its offered formats, defaulting to `TextDocumentFormat`, so code written for Markdown and TXT keeps text snapshots. `mount` has an overload for each case; the text-only one is last, because `Parameters<typeof InkKitEditor.mount>` reads the last overload.
 
 ## Document and source history
 

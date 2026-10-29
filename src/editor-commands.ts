@@ -4,13 +4,18 @@ import {
   commandsCtx,
   type CmdKey,
 } from '@milkdown/kit/core'
-import { NodeRange, type MarkType } from '@milkdown/kit/prose/model'
+import {
+  NodeRange,
+  type MarkType,
+  type Node as ProseNode,
+} from '@milkdown/kit/prose/model'
 import {
   type EditorState,
   type Command,
   TextSelection,
 } from '@milkdown/kit/prose/state'
 import { findWrapping, liftTarget } from '@milkdown/kit/prose/transform'
+import { wrapInList } from '@milkdown/kit/prose/schema-list'
 import { callCommand } from '@milkdown/kit/utils'
 import {
   blockquoteSchema,
@@ -42,6 +47,7 @@ import {
 } from './editor-input'
 import { caretState, textBounds, quoted } from './editor-selection'
 import type { FormatCommand, FormatOptions } from './editor'
+import type { FormatHandler } from './formats'
 
 type CommandEditor = Pick<Editor, 'ctx' | 'action'>
 
@@ -50,7 +56,89 @@ function headingLevel(command: FormatCommand): number | undefined {
   return match ? Number(match[1]) : undefined
 }
 
+/** What an RTF document cannot hold: headings, code blocks, quotes, tasks and highlight. Every
+ *  other command is available as in Markdown, and alignment only here. */
+const unavailableInRichText: readonly FormatCommand[] = [
+  'heading1',
+  'heading2',
+  'heading3',
+  'heading4',
+  'heading5',
+  'heading6',
+  'paragraph',
+  'highlight',
+  'codeBlock',
+  'quote',
+  'taskList',
+  'toggleTask',
+]
+
+const alignments = {
+  alignLeft: null,
+  alignCenter: 'center',
+  alignRight: 'right',
+  alignJustify: 'justify',
+} as const
+
+type AlignCommand = keyof typeof alignments
+
+function isAlignCommand(command: FormatCommand): command is AlignCommand {
+  return command in alignments
+}
+
+/** Calls `found` for each paragraph the selection touches that can take an alignment, which
+ *  those in table cells cannot, until it returns false. */
+function eachAlignable(
+  state: EditorState,
+  found: (node: ProseNode, pos: number) => boolean,
+): void {
+  const { from, to } = state.selection
+  let going = true
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    if (!going || node.type.name === 'table') return false
+    if (node.type.name === 'paragraph') going = found(node, pos)
+    return going && !node.isTextblock
+  })
+}
+
+function canAlign(state: EditorState): boolean {
+  let any = false
+  eachAlignable(state, () => {
+    any = true
+    return false
+  })
+  return any
+}
+
+/** The alignment of the paragraph that holds the start of the selection. */
+export function caretAlignment(
+  state: EditorState,
+): 'left' | 'center' | 'right' | 'justify' {
+  const { parent } = state.selection.$from
+  return parent.type.name === 'paragraph' && parent.attrs.align
+    ? (parent.attrs.align as 'center' | 'right' | 'justify')
+    : 'left'
+}
+
 export function formatAvailability(
+  editor: CommandEditor,
+  state: EditorState,
+  formatted: boolean,
+  handler: FormatHandler,
+): Record<FormatCommand, boolean> {
+  const available = markdownAvailability(editor, state, formatted)
+  const rich = handler.richText
+  if (!rich) return available
+  for (const command of unavailableInRichText) available[command] = false
+  // A link's run never keeps underline in RTF, so underline does nothing on link text.
+  if (available.underline && rich.inLink(state)) available.underline = false
+  const align = formatted && canAlign(state)
+  available.alignLeft = available.alignCenter = align
+  available.alignRight = available.alignJustify = align
+  return available
+}
+
+function markdownAvailability(
   editor: CommandEditor,
   state: EditorState,
   formatted: boolean,
@@ -102,8 +190,25 @@ export function formatAvailability(
       (innermostListDepth(textBounds(state).$from) != null ||
         check(wrapInBulletListCommand.key)),
     toggleTask: formatted && taskAtCaret(state) != null,
+    alignLeft: false,
+    alignCenter: false,
+    alignRight: false,
+    alignJustify: false,
     link: check(toggleLinkCommand.key, {}),
   }
+}
+
+/** Sets the alignment of the paragraphs the selection touches. */
+function align(editor: CommandEditor, command: AlignCommand): void {
+  const view = editor.ctx.get(editorViewCtx)
+  const value = alignments[command]
+  const tr = view.state.tr
+  eachAlignable(view.state, (node, pos) => {
+    if (node.attrs.align !== value)
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, align: value })
+    return true
+  })
+  if (tr.docChanged) view.dispatch(tr)
 }
 
 function canQuote(editor: CommandEditor, state: EditorState): boolean {
@@ -184,12 +289,41 @@ function toggleInlineCode(editor: CommandEditor): void {
   else withMarkRunSelected(editor, type, run)
 }
 
-function list(editor: CommandEditor, kind: 'bulletList' | 'orderedList'): void {
+function list(
+  editor: CommandEditor,
+  kind: 'bulletList' | 'orderedList',
+  itemPerBlock: boolean,
+): void {
   const view = editor.ctx.get(editorViewCtx)
   const { state } = view
   const { $from } = textBounds(state)
   const wanted = kind === 'bulletList' ? 'bullet_list' : 'ordered_list'
   const depth = innermostListDepth($from)
+  if (depth == null && itemPerBlock) {
+    // An RTF list item holds one paragraph, so each selected paragraph becomes an item.
+    const ordered = wanted === 'ordered_list'
+    wrapInList(
+      state.schema.nodes[wanted]!,
+      ordered ? { order: 1, spread: false } : { spread: false },
+    )(state, (tr) => {
+      tr.doc.nodesBetween(
+        tr.mapping.map(state.selection.from),
+        tr.mapping.map(state.selection.to),
+        (node, pos) => {
+          if (node.type.name !== 'list_item') return true
+          tr.setNodeMarkup(pos, undefined, {
+            ...node.attrs,
+            listType: ordered ? 'ordered' : 'bullet',
+            label: ordered ? '1.' : '•',
+            spread: false,
+          })
+          return false
+        },
+      )
+      view.dispatch(tr)
+    })
+    return
+  }
   if (depth == null) {
     const command =
       kind === 'bulletList' ? wrapInBulletListCommand : wrapInOrderedListCommand
@@ -274,6 +408,7 @@ export function applyFormat(
   command: FormatCommand,
   checked: FormatOptions | undefined,
   link: (destination: string | undefined) => void,
+  itemPerBlock = false,
 ): void {
   const view = editor.ctx.get(editorViewCtx)
   const run = (cmd: Parameters<typeof callCommand>[0], payload?: unknown) =>
@@ -283,6 +418,10 @@ export function applyFormat(
     type: 'paragraph' | 'heading' | 'codeBlock',
     attr?: string | number,
   ) => textblockType(editor, type, attr)(view.state, view.dispatch)
+  if (isAlignCommand(command)) {
+    align(editor, command)
+    return
+  }
   const level = headingLevel(command)
   if (level != null) {
     if (state.block.type === 'heading' && state.block.level === level)
@@ -327,7 +466,7 @@ export function applyFormat(
       break
     case 'bulletList':
     case 'orderedList':
-      list(editor, command)
+      list(editor, command, itemPerBlock)
       break
     case 'taskList':
       toggleTaskList(editor.ctx)
