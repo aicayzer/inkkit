@@ -400,11 +400,8 @@ function tableRows(
     for (const cell of row.children) {
       if (cell.tagName !== 'TD' && cell.tagName !== 'TH') continue
       const reader = new Reader(schemes, 1)
-      const inner = elementMarks(
-        cell,
-        cell.tagName === 'TH' ? marks : marks,
-        schemes,
-      )
+      // A header cell is drawn bold, but its text carries no mark of its own.
+      const inner = elementMarks(cell, marks, schemes)
       for (const child of cell.childNodes) reader.read(child, inner, false)
       reader.flush()
       const builder = new InlineBuilder()
