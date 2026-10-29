@@ -6,9 +6,11 @@ import {
   type FormatCommand,
   type Heading,
   type DocumentFormat,
+  type RichTextDocument,
+  type TextDocumentSnapshot,
 } from '../src/index'
 import {
-  fixtures,
+  allFixtures as fixtures,
   configurations,
   ControlledImages,
   ControlledFiles,
@@ -114,9 +116,10 @@ for (const command of tableCommands) {
   option.textContent = command
   element<HTMLSelectElement>('table-action').append(option)
 }
-let editor: InkKitEditor
+// The playground offers every format, including RTF.
+let editor: InkKitEditor<DocumentFormat>
 let mounting = true
-let secondEditor: InkKitEditor | undefined
+let secondEditor: InkKitEditor<DocumentFormat> | undefined
 let images = new ControlledImages()
 let files = new ControlledFiles()
 let pendingOutput: Promise<{ value?: unknown; error?: unknown }> | undefined
@@ -219,10 +222,17 @@ function selectedText() {
     ? selection.toString()
     : ''
 }
+/** The snapshot an observation reports. An RTF snapshot carries `document` and no `text`; the
+ *  type keeps `text` so that the Markdown specs read it without narrowing first. */
+type ObservedSnapshot = Omit<TextDocumentSnapshot, 'format'> & {
+  format: DocumentFormat
+  document?: RichTextDocument
+}
 function observe() {
-  let snapshot, snapshotError
+  let snapshot: ObservedSnapshot | undefined, snapshotError
   try {
-    if (!mounting) snapshot = editor.snapshot(generation)
+    if (!mounting)
+      snapshot = editor.snapshot(generation) as unknown as ObservedSnapshot
   } catch (error) {
     snapshotError = {
       message: String(error),
@@ -317,7 +327,13 @@ function updateControls() {
         ],
     }))
       element<HTMLButtonElement>(id).disabled = !enabled
-    element<HTMLButtonElement>('editing-mode').disabled = state.format === 'txt'
+    element<HTMLButtonElement>('editing-mode').disabled = state.format !== 'md'
+    setText('mode', state.format === 'md' ? 'Load as TXT' : 'Load as Markdown')
+    element<HTMLButtonElement>('convert').disabled = state.format === 'txt'
+    setText(
+      'convert',
+      state.format === 'rtf' ? 'Convert to Markdown' : 'Convert to RTF',
+    )
   }
   try {
     headings = editor.headings(generation)
@@ -353,12 +369,22 @@ function updateControls() {
         ? `, ${observation.snapshot.dirty ? 'Unsaved changes' : 'Unchanged'}`
         : '')
 }
+/** Loads text, or for RTF the document a host's converter would give. */
 function load(
-  text: string,
+  content: string | RichTextDocument,
   format: DocumentFormat,
   documentId = `fixture:${fixtureId}`,
 ) {
-  editor.loadDocument({ documentId, generation: ++generation, format, text })
+  editor.loadDocument(
+    format === 'rtf'
+      ? {
+          documentId,
+          generation: ++generation,
+          format,
+          document: content as RichTextDocument,
+        }
+      : { documentId, generation: ++generation, format, text: String(content) },
+  )
   statusError = false
   updateControls()
   return observe()
@@ -430,6 +456,7 @@ async function reset(
       },
     },
     {
+      formats: ['md', 'txt', 'rtf'],
       images: configuration === 'rich' ? images.adapter : undefined,
       rendering:
         configuration === 'minimal'
@@ -459,7 +486,11 @@ async function reset(
       'md',
       `generated:${generated.kind}:${generated.count}`,
     )
-  else load(fixture.text, fixture.format)
+  else
+    load(
+      fixture.format === 'rtf' ? fixture.document : fixture.text,
+      fixture.format,
+    )
   for (const [id, value] of Object.entries({
     fixture: fixtureId,
     configuration,
@@ -537,18 +568,35 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
         break
       case 'reload': {
         const snapshot = target.snapshot()
+        const next = target === editor ? ++generation : snapshot.generation + 1
         target.reloadDocument(
-          {
-            documentId: snapshot.documentId,
-            generation:
-              target === editor ? ++generation : snapshot.generation + 1,
-            format: snapshot.format,
-            text: args.text === undefined ? snapshot.text : String(args.text),
-          },
+          snapshot.format === 'rtf'
+            ? {
+                documentId: snapshot.documentId,
+                generation: next,
+                format: 'rtf',
+                document:
+                  args.document === undefined
+                    ? snapshot.document
+                    : (args.document as RichTextDocument),
+              }
+            : {
+                documentId: snapshot.documentId,
+                generation: next,
+                format: snapshot.format,
+                text:
+                  args.text === undefined ? snapshot.text : String(args.text),
+              },
           snapshot.generation,
         )
         break
       }
+      case 'convert':
+        result = editor.convertDocument(
+          args.format as DocumentFormat,
+          generation,
+        )
+        break
       case 'format':
         result = editor.format(
           args.command as FormatCommand,
@@ -769,9 +817,21 @@ click('generate', () => {
   generated = parseGenerate(`paragraphs:${count}`)
   return reset()
 })
-click('source', async () =>
-  navigator.clipboard.writeText(editor.snapshot(generation).text),
-)
+click('source', async () => {
+  const snapshot = editor.snapshot(generation)
+  // An RTF document has no Markdown source; its Markdown is a conversion.
+  const converted =
+    snapshot.format === 'rtf'
+      ? editor.convertDocument('md', generation)
+      : undefined
+  await navigator.clipboard.writeText(
+    converted?.format === 'md'
+      ? converted.text
+      : snapshot.format === 'rtf'
+        ? ''
+        : snapshot.text,
+  )
+})
 click('copy-readable', async () => {
   const data = await editor.clipboardSnapshot()
   await navigator.clipboard.writeText(data.text)
@@ -785,7 +845,21 @@ click('editing-mode', async () => {
 })
 click('mode', () => {
   const snapshot = editor.snapshot(generation)
+  if (snapshot.format === 'rtf') {
+    const converted = editor.convertDocument('md', generation)
+    return load(converted.format === 'md' ? converted.text : '', 'md')
+  }
   return load(snapshot.text, snapshot.format === 'md' ? 'txt' : 'md')
+})
+// Converts between Markdown and RTF and loads the result, as a host would, showing what was lost.
+click('convert', () => {
+  const format = editor.snapshot(generation).format === 'rtf' ? 'md' : 'rtf'
+  const converted = editor.convertDocument(format, generation)
+  lastResult = converted.lost
+  return load(
+    converted.format === 'rtf' ? converted.document : converted.text,
+    converted.format,
+  )
 })
 click('undo', () => operation('undo'))
 click('redo', () => operation('redo'))

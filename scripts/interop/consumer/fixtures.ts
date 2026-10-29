@@ -1,5 +1,5 @@
 // Type-only, so the copied consumer build never resolves this path.
-import type { DocumentFormat } from '../../../src/types'
+import type { RichTextDocument, TextDocumentFormat } from '../../../src/types'
 
 export const imageData =
   'iVBORw0KGgoAAAANSUhEUgAAAFAAAAAoCAYAAABpYH0BAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAUKADAAQAAAABAAAAKAAAAADbisV7AAAAlUlEQVRoBe3SMQ0AIQAEQR4X6MC/Nj5BAtvO9dtM7jtrn2HPAvO5FF4BgPEIAAFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPjIA/2VgCmiePpoIAAAAASUVORK5CYII='
@@ -8,8 +8,13 @@ export const imageBytes = () =>
 
 export interface Fixture {
   label: string
-  format: DocumentFormat
+  format: TextDocumentFormat
   text: string
+}
+export interface RichTextFixture {
+  label: string
+  format: 'rtf'
+  document: RichTextDocument
 }
 export const wrappedSearchText =
   'Wrapped match spans several visual lines so its first and final character must both fit below the host search header and above the bottom inset.'
@@ -175,6 +180,386 @@ export const fixtures: Record<string, Fixture> = {
     text: '\uFEFF#  Authored heading  \r\n\r\nBefore [Alpha][Authored].\r\n\r\n[Authored]: <https://example.com/original> "Shared title"\r\n\r\n[Unused]: https://example.com/unused\r\n',
   },
 }
+// Golden documents the Swift converter read from real RTF files, copied here because the
+// consumer build copies this file alone. `test/formats/rtf/playground.test.ts` checks that they
+// still match `test/formats/rtf/fixtures/`.
+export const richTextFixtures: Record<string, RichTextFixture> = {}
+richTextFixtures['rtf'] = {
+  label: 'RTF from TextEdit',
+  format: 'rtf',
+  // textedit-layout, textedit-marks, textedit-lists and textedit-table, in that order.
+  document: {
+    version: 1,
+    blocks: [
+      {
+        content: [
+          { marks: [{ type: 'bold' }], text: 'Big Title', type: 'text' },
+        ],
+        type: 'paragraph',
+      },
+      {
+        content: [
+          { marks: [{ type: 'bold' }], text: 'Subheading', type: 'text' },
+        ],
+        type: 'paragraph',
+      },
+      {
+        align: 'center',
+        content: [{ text: 'Centred', type: 'text' }],
+        type: 'paragraph',
+      },
+      {
+        align: 'right',
+        content: [{ text: 'Right', type: 'text' }],
+        type: 'paragraph',
+      },
+      {
+        align: 'justify',
+        content: [{ text: 'Justified text that goes on', type: 'text' }],
+        type: 'paragraph',
+      },
+      {
+        content: [
+          { text: 'Line one', type: 'text' },
+          { type: 'break' },
+          { text: 'line two after Shift-Return', type: 'text' },
+        ],
+        type: 'paragraph',
+      },
+      {
+        content: [{ text: 'Col1\tCol2\tCol3', type: 'text' }],
+        type: 'paragraph',
+      },
+      {
+        content: [
+          { text: 'Vertical tab:', type: 'text' },
+          { type: 'break' },
+          { text: 'x and form feed break below', type: 'text' },
+        ],
+        type: 'paragraph',
+      },
+      {
+        content: [
+          { text: 'Plain, ', type: 'text' },
+          { marks: [{ type: 'bold' }], text: 'bold', type: 'text' },
+          { text: ', ', type: 'text' },
+          { marks: [{ type: 'italic' }], text: 'italic', type: 'text' },
+          { text: ', ', type: 'text' },
+          {
+            marks: [{ type: 'bold' }, { type: 'italic' }],
+            text: 'bold italic',
+            type: 'text',
+          },
+          { text: ', ', type: 'text' },
+          { marks: [{ type: 'underline' }], text: 'underline', type: 'text' },
+          { text: ', ', type: 'text' },
+          {
+            marks: [{ type: 'underline' }],
+            text: 'double underline',
+            type: 'text',
+          },
+          { text: ', ', type: 'text' },
+          {
+            marks: [{ type: 'underline' }],
+            text: 'thick underline',
+            type: 'text',
+          },
+          { text: ', ', type: 'text' },
+          { marks: [{ type: 'strikethrough' }], text: 'strike', type: 'text' },
+          { text: ', x', type: 'text' },
+          { marks: [{ type: 'superscript' }], text: '2', type: 'text' },
+          { text: ' H', type: 'text' },
+          { marks: [{ type: 'subscript' }], text: '2', type: 'text' },
+          { text: 'O, ', type: 'text' },
+          {
+            marks: [{ type: 'superscript' }],
+            text: 'baselineUp',
+            type: 'text',
+          },
+          { text: ' ', type: 'text' },
+          {
+            marks: [{ type: 'subscript' }],
+            text: 'baselineDown',
+            type: 'text',
+          },
+          { text: ', ', type: 'text' },
+          { marks: [{ type: 'code' }], text: 'mono', type: 'text' },
+          { text: ', Times, red, hilite, ', type: 'text' },
+          {
+            marks: [{ href: 'https://example.com/a?b=1', type: 'link' }],
+            text: 'link',
+            type: 'text',
+          },
+          { text: '.', type: 'text' },
+        ],
+        type: 'paragraph',
+      },
+      { content: [{ text: 'Bullets', type: 'text' }], type: 'paragraph' },
+      {
+        items: [
+          {
+            blocks: [
+              { content: [{ text: 'one', type: 'text' }], type: 'paragraph' },
+            ],
+          },
+          {
+            blocks: [
+              { content: [{ text: 'two', type: 'text' }], type: 'paragraph' },
+              {
+                items: [
+                  {
+                    blocks: [
+                      {
+                        content: [{ text: 'nested a', type: 'text' }],
+                        type: 'paragraph',
+                      },
+                    ],
+                  },
+                  {
+                    blocks: [
+                      {
+                        content: [{ text: 'nested b', type: 'text' }],
+                        type: 'paragraph',
+                      },
+                    ],
+                  },
+                ],
+                ordered: false,
+                type: 'list',
+              },
+            ],
+          },
+          {
+            blocks: [
+              { content: [{ text: 'three', type: 'text' }], type: 'paragraph' },
+            ],
+          },
+        ],
+        ordered: false,
+        type: 'list',
+      },
+      { content: [{ text: 'Numbered', type: 'text' }], type: 'paragraph' },
+      {
+        items: [
+          {
+            blocks: [
+              { content: [{ text: 'first', type: 'text' }], type: 'paragraph' },
+            ],
+          },
+          {
+            blocks: [
+              {
+                content: [{ text: 'second', type: 'text' }],
+                type: 'paragraph',
+              },
+              {
+                items: [
+                  {
+                    blocks: [
+                      {
+                        content: [{ text: 'sub a', type: 'text' }],
+                        type: 'paragraph',
+                      },
+                    ],
+                  },
+                  {
+                    blocks: [
+                      {
+                        content: [{ text: 'sub b', type: 'text' }],
+                        type: 'paragraph',
+                      },
+                    ],
+                  },
+                ],
+                ordered: true,
+                type: 'list',
+              },
+            ],
+          },
+          {
+            blocks: [
+              { content: [{ text: 'third', type: 'text' }], type: 'paragraph' },
+            ],
+          },
+        ],
+        ordered: true,
+        type: 'list',
+      },
+      { content: [{ text: 'After.', type: 'text' }], type: 'paragraph' },
+      { content: [{ text: 'Before table', type: 'text' }], type: 'paragraph' },
+      {
+        rows: [
+          [
+            {
+              content: [
+                { marks: [{ type: 'bold' }], text: 'H1', type: 'text' },
+              ],
+            },
+            {
+              content: [
+                { marks: [{ type: 'bold' }], text: 'H2', type: 'text' },
+              ],
+            },
+          ],
+          [
+            { content: [{ text: 'a', type: 'text' }] },
+            { content: [{ text: 'b', type: 'text' }] },
+          ],
+          [
+            { content: [{ text: 'c', type: 'text' }] },
+            { content: [{ text: 'd', type: 'text' }] },
+          ],
+        ],
+        type: 'table',
+      },
+      { content: [{ text: 'After table', type: 'text' }], type: 'paragraph' },
+    ],
+  },
+}
+richTextFixtures['rtf-word'] = {
+  label: 'RTF from a Word-style file',
+  format: 'rtf',
+  // word-style
+  document: {
+    blocks: [
+      {
+        content: [
+          { marks: [{ type: 'bold' }], text: 'Word Heading One', type: 'text' },
+        ],
+        type: 'paragraph',
+      },
+      {
+        content: [
+          { marks: [{ type: 'bold' }], text: 'Word Heading Two', type: 'text' },
+        ],
+        type: 'paragraph',
+      },
+      {
+        content: [
+          { text: 'Normal text with ', type: 'text' },
+          { marks: [{ type: 'bold' }], text: 'bold', type: 'text' },
+          { text: ', ', type: 'text' },
+          { marks: [{ type: 'italic' }], text: 'italic', type: 'text' },
+          { text: ', ', type: 'text' },
+          { marks: [{ type: 'underline' }], text: 'underline', type: 'text' },
+          { text: ', ', type: 'text' },
+          { marks: [{ type: 'underline' }], text: 'double', type: 'text' },
+          { text: ', ', type: 'text' },
+          { marks: [{ type: 'strikethrough' }], text: 'strike', type: 'text' },
+          { text: ', x', type: 'text' },
+          { marks: [{ type: 'superscript' }], text: '2', type: 'text' },
+          { text: ' and H', type: 'text' },
+          { marks: [{ type: 'subscript' }], text: '2', type: 'text' },
+          { text: 'O, red, hl, ', type: 'text' },
+          {
+            marks: [{ href: 'https://example.com/', type: 'link' }],
+            text: 'link',
+            type: 'text',
+          },
+          { text: '. Café – dash.', type: 'text' },
+        ],
+        type: 'paragraph',
+      },
+      { content: [{ text: 'Bullet one', type: 'text' }], type: 'paragraph' },
+      { content: [{ text: 'Bullet two', type: 'text' }], type: 'paragraph' },
+      {
+        items: [
+          {
+            blocks: [
+              {
+                content: [{ text: 'List bullet via ls1', type: 'text' }],
+                type: 'paragraph',
+              },
+              {
+                items: [
+                  {
+                    blocks: [
+                      {
+                        content: [{ text: 'Nested ls1', type: 'text' }],
+                        type: 'paragraph',
+                      },
+                    ],
+                  },
+                ],
+                ordered: false,
+                type: 'list',
+              },
+            ],
+          },
+        ],
+        ordered: false,
+        type: 'list',
+      },
+      {
+        items: [
+          {
+            blocks: [
+              {
+                content: [{ text: 'Numbered ls2', type: 'text' }],
+                type: 'paragraph',
+              },
+              {
+                items: [
+                  {
+                    blocks: [
+                      {
+                        content: [{ text: 'Sub numbered', type: 'text' }],
+                        type: 'paragraph',
+                      },
+                    ],
+                  },
+                ],
+                ordered: true,
+                type: 'list',
+              },
+            ],
+          },
+        ],
+        ordered: true,
+        type: 'list',
+      },
+      {
+        align: 'center',
+        content: [{ text: 'Centred', type: 'text' }],
+        type: 'paragraph',
+      },
+      {
+        align: 'right',
+        content: [{ text: 'Right', type: 'text' }],
+        type: 'paragraph',
+      },
+      {
+        rows: [
+          [
+            { content: [{ text: 'A1', type: 'text' }] },
+            { content: [{ text: 'B1', type: 'text' }] },
+          ],
+          [
+            { content: [{ text: 'A2', type: 'text' }] },
+            { content: [{ text: 'B2', type: 'text' }] },
+          ],
+        ],
+        type: 'table',
+      },
+      {
+        content: [
+          { text: 'Line', type: 'text' },
+          { type: 'break' },
+          { text: 'break and end.', type: 'text' },
+        ],
+        type: 'paragraph',
+      },
+    ],
+    version: 1,
+  },
+}
+
+/** Every fixture, by name, for a page that loads any format. */
+export const allFixtures: Record<string, Fixture | RichTextFixture> = {
+  ...fixtures,
+  ...richTextFixtures,
+}
+
 export const configurations = ['minimal', 'rich'] as const
 export type AdapterMode =
   'normal' | 'reject' | 'reject-coded' | 'hold' | 'corrupt'
