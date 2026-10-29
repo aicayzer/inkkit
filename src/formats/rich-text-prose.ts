@@ -12,6 +12,7 @@ import {
   canonicalMarks,
   linkProblem,
   maximumListDepth,
+  maximumListStart,
   textProblem,
 } from './rich-text-model'
 
@@ -238,8 +239,13 @@ function richBlock(node: ProseNode, listDepth: number): RichTextBlock {
         items.push({ blocks })
       })
       const start = Number(node.attrs.order ?? 1)
-      if (ordered && (!Number.isSafeInteger(start) || start < 1))
-        throw unrepresentable('a list that starts below 1')
+      if (
+        ordered &&
+        (!Number.isSafeInteger(start) || start < 1 || start > maximumListStart)
+      )
+        throw unrepresentable(
+          `a list that starts below 1 or above ${maximumListStart}`,
+        )
       return ordered && start !== 1
         ? { type: 'list', ordered, start, items }
         : { type: 'list', ordered, items }
@@ -328,7 +334,8 @@ function refusal(
     listDepth > maximumListDepth
   )
     return 'list depth'
-  if (name === 'ordered_list' && !(Number(node.attrs.order) >= 1))
+  const order = Number(node.attrs.order)
+  if (name === 'ordered_list' && !(order >= 1 && order <= maximumListStart))
     return 'list start'
   if (name === 'table' && listDepth > 0) return 'table in list'
   if (

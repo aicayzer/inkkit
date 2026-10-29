@@ -13,6 +13,7 @@ import {
   canonicalMarks,
   linkProblem,
   maximumListDepth,
+  maximumListStart,
   textBlocks,
 } from './rich-text-model'
 import { proseBlock } from './rich-text-prose'
@@ -341,7 +342,12 @@ class Reader {
     if (!items.length)
       items.push({ blocks: [{ type: 'paragraph', content: [] }] })
     return ordered && Number.isSafeInteger(start) && start > 1
-      ? { type: 'list', ordered, start, items }
+      ? {
+          type: 'list',
+          ordered,
+          start: Math.min(start, maximumListStart),
+          items,
+        }
       : { type: 'list', ordered, items }
   }
 

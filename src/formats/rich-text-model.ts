@@ -14,6 +14,10 @@ import type {
 /** The deepest list nesting RTF can hold (`\ilvl` 0 to 8). */
 export const maximumListDepth = 9
 
+/** The largest first number of an ordered list that RTF writes and reads back unchanged, as
+ *  measured with the host's converter. */
+export const maximumListStart = 2_147_483_647
+
 /** Characters a run never holds: they would change the structure, stand for an attachment or end
  *  the text when RTF is written. */
 const forbidden = /[\u0000\n\r\u000b\u000c\u0085\u2028\u2029\ufffc]/
@@ -269,6 +273,8 @@ function readList(
       invalid(`${path}.start`, 'must be a whole number')
     if ((block.start as number) < 1)
       invalid(`${path}.start`, 'the start must be at least 1')
+    if ((block.start as number) > maximumListStart)
+      invalid(`${path}.start`, `the start must be at most ${maximumListStart}`)
     if (block.start !== 1) start = block.start as number
   }
   const entries = list(block.items, `${path}.items`)

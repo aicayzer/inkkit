@@ -8,10 +8,12 @@ import {
   rich,
   richSnapshot,
   select,
+  text,
   type,
   withRichEditor,
 } from './harness'
 import { editorViewCtx } from '@milkdown/kit/core'
+import { markdownToRichText } from '../../../src/formats/convert'
 
 const t = (value: string, ...marks: RichTextMark[]) =>
   marks.length
@@ -225,6 +227,74 @@ describe('one link rule', () => {
         view.state.tr
           .setSelection(TextSelection.create(view.state.doc, 1, 2))
           .addMark(1, 2, view.state.schema.marks.link!.create({ href: '' })),
+      )
+      expect(view.state.doc).toBe(before)
+    }))
+})
+
+describe('the largest list start', () => {
+  const list = (start: number) =>
+    doc({
+      type: 'list',
+      ordered: true,
+      start,
+      items: [{ blocks: [para('x')] }],
+    })
+
+  test('a start up to 2,147,483,647 loads, and a larger one is refused', () =>
+    withRichEditor({}, ({ editor }) => {
+      editor.loadDocument(rich(list(2_147_483_647)))
+      expect(richSnapshot(editor).document).toEqual(list(2_147_483_647))
+      expect(() => editor.loadDocument(rich(list(2_147_483_648)))).toThrow(
+        expect.objectContaining({
+          code: 'invalid-argument',
+          message: expect.stringContaining(
+            'the start must be at most 2147483647',
+          ),
+        }),
+      )
+    }))
+
+  // CommonMark list numbers have at most nine digits, so only a document built some other way
+  // can start above the bound.
+  test('Markdown to RTF lowers a larger start and reports it', () =>
+    withRichEditor({}, ({ editor }) => {
+      editor.loadDocument(text('md', '1. big\n'))
+      const { schema } = ctxOf(editor).get(editorViewCtx).state
+      const big = schema.nodes.doc!.create(null, [
+        schema.nodes.ordered_list!.create({ order: 9_999_999_999 }, [
+          schema.nodes.list_item!.create(null, [
+            schema.nodes.paragraph!.create(null, [schema.text('x')]),
+          ]),
+        ]),
+      ])
+      expect(markdownToRichText(big)).toEqual({
+        document: list(2_147_483_647),
+        lost: [{ code: 'list-start', count: 1 }],
+      })
+    }))
+
+  test('pasted HTML and edits keep within the bound', () =>
+    withRichEditor({}, async ({ editor }) => {
+      editor.loadDocument(rich(doc(para())))
+      await editor.paste({
+        text: '',
+        html: '<ol start="9999999999"><li>x</li></ol>',
+      })
+      expect(richSnapshot(editor).document.blocks[0]).toEqual(
+        list(2_147_483_647).blocks[0],
+      )
+      const view = ctxOf(editor).get(editorViewCtx)
+      const before = view.state.doc
+      let pos = -1
+      view.state.doc.descendants((node, at) => {
+        if (node.type.name === 'ordered_list') pos = at
+      })
+      view.dispatch(
+        view.state.tr.setNodeMarkup(pos, undefined, {
+          ...view.state.doc.nodeAt(pos)!.attrs,
+          order: 2_147_483_648,
+        }),
       )
       expect(view.state.doc).toBe(before)
     }))

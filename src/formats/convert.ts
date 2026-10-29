@@ -24,6 +24,7 @@ import {
   canonicalMarks,
   linkProblem,
   maximumListDepth,
+  maximumListStart,
 } from './rich-text-model'
 import { richTextToProse } from './rich-text-prose'
 
@@ -266,6 +267,9 @@ class MarkdownReader {
     if (ordered && !(Number.isSafeInteger(start) && start >= 1)) {
       this.lost.add('list-start')
       start = 1
+    } else if (ordered && start > maximumListStart) {
+      this.lost.add('list-start')
+      start = maximumListStart
     }
     const items: { blocks: RichTextBlock[] }[] = []
     node.forEach((item) => {
