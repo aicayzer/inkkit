@@ -54,6 +54,20 @@ export function codeControlsPlugin(
                     button.setAttribute('aria-label', labels.codeLanguage)
                     button.setAttribute('aria-haspopup', 'dialog')
                     button.setAttribute('aria-expanded', 'false')
+                    const chevron = document.createElementNS(
+                      'http://www.w3.org/2000/svg',
+                      'svg',
+                    )
+                    chevron.setAttribute('viewBox', '0 0 12 12')
+                    chevron.setAttribute('aria-hidden', 'true')
+                    chevron.setAttribute('focusable', 'false')
+                    const path = document.createElementNS(
+                      'http://www.w3.org/2000/svg',
+                      'path',
+                    )
+                    path.setAttribute('d', 'm3 4.5 3 3 3-3')
+                    chevron.append(path)
+                    button.append(chevron)
                     wrapper.append(button)
                     let popup: HTMLElement | undefined
                     let restore: (() => void) | undefined
@@ -68,7 +82,7 @@ export function codeControlsPlugin(
                     button.addEventListener('mousedown', (event) =>
                       event.preventDefault(),
                     )
-                    button.addEventListener('click', () => {
+                    button.addEventListener('click', (event) => {
                       if (popup) {
                         close()
                         return
@@ -76,6 +90,10 @@ export function codeControlsPlugin(
                       const captured = view.state.doc
                       popup = document.createElement('span')
                       popup.className = 'inkkit-code-language-menu'
+                      // Text inputs match :focus-visible even after a pointer
+                      // opens them; keep navigation focus local to this popup.
+                      popup.dataset.inkkitInputModality =
+                        event.detail === 0 ? 'keyboard' : 'pointer'
                       popup.setAttribute('role', 'dialog')
                       popup.setAttribute('aria-label', labels.codeLanguage)
                       popup.contentEditable = 'false'
@@ -156,7 +174,20 @@ export function codeControlsPlugin(
                         }
                       }
                       search.addEventListener('input', render)
+                      popup.addEventListener('pointerdown', () => {
+                        if (popup)
+                          popup.dataset.inkkitInputModality = 'pointer'
+                      })
                       popup.addEventListener('keydown', (event) => {
+                        if (
+                          popup &&
+                          (event.key === 'Tab' ||
+                            event.key.startsWith('Arrow') ||
+                            event.key === 'Home' ||
+                            event.key === 'End' ||
+                            event.key === 'Enter')
+                        )
+                          popup.dataset.inkkitInputModality = 'keyboard'
                         if (event.key === 'Escape') {
                           event.preventDefault()
                           event.stopPropagation()
@@ -177,7 +208,9 @@ export function codeControlsPlugin(
                             document.activeElement as HTMLButtonElement,
                           )
                           options[
-                            (index - 1 + options.length) % options.length
+                            index < 0
+                              ? options.length - 1
+                              : (index - 1 + options.length) % options.length
                           ]?.focus()
                         }
                         if (event.key === 'Enter' && event.target === search) {

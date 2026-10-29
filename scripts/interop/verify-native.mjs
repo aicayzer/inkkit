@@ -2807,6 +2807,102 @@ const commentSource =
   }
 }
 {
+  const authored =
+    'Before **bold**\r\n\r\n~~~~ strange-language title="héllo"\r\nconst café = "☕"\r\n~~~~~  \r\n\r\nAfter _word_\r\n'
+  const changed = authored.replace('~~~~ strange-language', '~~~~ bash')
+  scenarios['host-code-language-keyboard'] = {
+    source: authored,
+    operations: [
+      {
+        op: 'nativeInput',
+        selector: '.inkkit-code-language',
+        keyCode: 36,
+        characters: '\r',
+      },
+      {
+        op: 'controlState',
+        selector: '.inkkit-code-language-menu input',
+        name: 'search',
+      },
+      assert('focused', true, 'search'),
+      { op: 'dom', selector: '.inkkit-code-language-menu', name: 'keyboard' },
+      assert(
+        'nodes.0.attributes.data-inkkit-input-modality',
+        'keyboard',
+        'keyboard',
+      ),
+      {
+        op: 'nativeInput',
+        selector: '.inkkit-code-language-menu input',
+        focus: false,
+        keys: [
+          { keyCode: 11, characters: 'b' },
+          { keyCode: 0, characters: 'a' },
+          { keyCode: 1, characters: 's' },
+          { keyCode: 4, characters: 'h' },
+        ],
+      },
+      {
+        op: 'dom',
+        selector: '.inkkit-code-language-list button',
+        name: 'filtered',
+      },
+      assert('count', 1, 'filtered'),
+      assert('nodes.0.text', 'Bash', 'filtered'),
+      {
+        op: 'nativeInput',
+        selector: '.inkkit-code-language-menu input',
+        focus: false,
+        keyCode: 125,
+        characters: '\uf701',
+      },
+      {
+        op: 'controlState',
+        selector: '.inkkit-code-language-list button',
+        name: 'choice',
+      },
+      assert('focused', true, 'choice'),
+      {
+        op: 'nativeInput',
+        selector: '.inkkit-code-language-list button',
+        focus: false,
+        keyCode: 36,
+        characters: '\r',
+      },
+      assert('snapshot.text', changed),
+      { op: 'undo' },
+      assert('snapshot.text', authored),
+      { op: 'redo' },
+      assert('snapshot.text', changed),
+      { op: 'save' },
+      { op: 'reopen' },
+      assert('snapshot.text', changed),
+      {
+        op: 'nativeInput',
+        selector: '.inkkit-code-language',
+        keyCode: 36,
+        characters: '\r',
+      },
+      {
+        op: 'nativeInput',
+        selector: '.inkkit-code-language-menu input',
+        focus: false,
+        keyCode: 53,
+        characters: '\u001b',
+      },
+      {
+        op: 'controlState',
+        selector: '.inkkit-code-language',
+        name: 'returned',
+      },
+      assert('focused', true, 'returned'),
+      { op: 'dom', selector: '.inkkit-code-language-menu', name: 'closed' },
+      assert('count', 0, 'closed'),
+      assert('snapshot.text', changed),
+    ],
+  }
+}
+{
   for (const mode of ['formatted', 'source', 'txt']) {
     scenarios[`host-document-load-releases-${mode}-focus`] = {
       source: '# Reading\n\nText to edit.\n',

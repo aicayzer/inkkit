@@ -14,7 +14,11 @@ test('code language controls support search, keyboard selection, undo and visibl
   })
   await language.click()
   const search = page.getByRole('searchbox', { name: 'Search languages' })
-  await search.fill('typescript')
+  await expect(search).toBeFocused()
+  await expect(search).toHaveCSS('outline-style', 'none')
+  await page.keyboard.type('typescript')
+  await expect(search).toHaveValue('typescript')
+  await expect(search).toHaveCSS('outline-style', 'none')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
   expect((await observe(page)).snapshot!.text).toBe(
@@ -29,6 +33,80 @@ test('code language controls support search, keyboard selection, undo and visibl
   await expect(copy).toHaveCSS('opacity', '1')
   await expect(copy).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await page.keyboard.press('Enter')
+  expect((await observe(page)).diagnostics).toEqual([])
+})
+
+test('language picker aligns its decorative chevron and shows token focus for keyboard navigation', async ({
+  page,
+  openFixture,
+  browserName,
+}) => {
+  await openFixture()
+  const source = '```custom-language\ncode\n```\n'
+  await operation(page, 'replaceSource', { text: source })
+  await page.locator('.inkkit-root').evaluate((root) => {
+    root.style.setProperty('--inkkit-focus-color', 'rgb(120, 20, 180)')
+    root.style.setProperty('--inkkit-focus-width', '3px')
+    root.style.setProperty('--inkkit-focus-offset', '-3px')
+  })
+  const language = page.getByRole('button', {
+    name: 'Code language',
+    exact: true,
+  })
+  const chevron = language.locator('svg')
+  await expect(chevron).toHaveAttribute('aria-hidden', 'true')
+  await expect(chevron).toHaveAttribute('focusable', 'false')
+  const anchor = await language.boundingBox()
+  const icon = await chevron.boundingBox()
+  expect(
+    Math.abs(icon!.y + icon!.height / 2 - anchor!.y - anchor!.height / 2),
+  ).toBeLessThan(1)
+
+  await language.click()
+  const menu = page.getByRole('dialog', { name: 'Code language' })
+  const search = page.getByRole('searchbox', { name: 'Search languages' })
+  await expect(search).toBeFocused()
+  await expect(search).toHaveCSS('outline-style', 'none')
+  await page.keyboard.press('ArrowUp')
+  await expect(
+    menu.getByRole('button', { name: 'custom-language', exact: true }),
+  ).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  const auto = menu.getByRole('button', { name: 'Auto', exact: true })
+  await expect(auto).toBeFocused()
+  await expect(auto).toHaveCSS('outline-color', 'rgb(120, 20, 180)')
+  await expect(auto).toHaveCSS('outline-width', '3px')
+  await page.keyboard.press('Shift+Tab')
+  await expect(search).toBeFocused()
+  await expect(search).toHaveCSS('outline-color', 'rgb(120, 20, 180)')
+  await expect(search).toHaveCSS('outline-width', '3px')
+  await expect(search).toHaveCSS('outline-offset', '-3px')
+  await search.click()
+  await expect(search).toBeFocused()
+  await expect(search).toHaveCSS('outline-style', 'none')
+  await page.keyboard.type('no-language-☃')
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('ArrowDown')
+  await expect(search).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(language).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(search).toBeFocused()
+  await expect(search).toHaveCSS('outline-width', '3px')
+  if (browserName === 'chromium') {
+    await page.emulateMedia({ forcedColors: 'active' })
+    await expect(search).toHaveCSS('outline-style', 'solid')
+    await expect(search).toHaveCSS('outline-width', '3px')
+    expect(
+      await search.evaluate((input) => getComputedStyle(input).outlineColor),
+    ).not.toBe('rgba(0, 0, 0, 0)')
+  }
+  await page.keyboard.press('Escape')
+  await language.click()
+  await expect(search).toHaveCSS('outline-style', 'none')
+  await page.getByRole('textbox', { name: 'Formatted Markdown editor' }).click()
+  await expect(menu).toHaveCount(0)
+  expect((await observe(page)).snapshot!.text).toBe(source)
   expect((await observe(page)).diagnostics).toEqual([])
 })
 
