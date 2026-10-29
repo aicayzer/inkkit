@@ -9,10 +9,18 @@ export function scope(paths) {
     path.startsWith('docs/') &&
     (/\.(mdx|css|svg|png|jpe?g|gif|webp|ico|woff2?|ttf|otf)$/.test(path) ||
       /^docs\/(docs\.json|\.mintignore)$/.test(path))
+  // The Swift package reads the shared RTF fixtures; the workflow edits that
+  // define its job must also run it.
+  const swift = (path) =>
+    path === 'Package.swift' ||
+    path === '.github/workflows/ci.yml' ||
+    path.startsWith('apple/') ||
+    path.startsWith('test/formats/rtf/fixtures/')
   return {
     editor:
       paths.length === 0 || paths.some((path) => !prose(path) && !site(path)),
     site: paths.some(site),
+    swift: paths.length === 0 || paths.some(swift),
   }
 }
 
@@ -21,7 +29,7 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   const { EVENT, REF, BASE, HEAD, GITHUB_OUTPUT } = process.env
-  let result = { editor: true, site: true }
+  let result = { editor: true, site: true, swift: true }
   // Tags, manual/reusable release runs and missing history retain every gate.
   if (
     (EVENT === 'pull_request' ||
@@ -45,6 +53,6 @@ if (
   }
   appendFileSync(
     GITHUB_OUTPUT,
-    `editor=${result.editor}\nsite=${result.site}\n`,
+    `editor=${result.editor}\nsite=${result.site}\nswift=${result.swift}\n`,
   )
 }
