@@ -642,7 +642,7 @@ window.interop = {
                 fillsColumn:
                   Math.abs(
                     node.getBoundingClientRect().width -
-                      view().getBoundingClientRect().width,
+                      node.parentElement.getBoundingClientRect().width,
                   ) < 1,
                 openButtons: node.querySelectorAll('.inkkit-file-open').length,
               })),
