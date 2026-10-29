@@ -1,4 +1,5 @@
 import { ctxOf } from './editor-access'
+import { fixtures } from '../scripts/interop/consumer/fixtures'
 import { roundTrip } from './harness'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -607,6 +608,16 @@ test('an edit whose Markdown would not reopen is refused without changing the do
     expect(view.state).toBe(state)
     expect(editor.snapshot()).toEqual(before)
     expect([undoDepth(view.state), redoDepth(view.state)]).toEqual(depths)
+  }))
+
+test('the playground fixture loads formatted and saves unchanged', () =>
+  open(({ editor, view, load, reopens }) => {
+    const source = fixtures['inline-marks']!.text
+    load(source)
+    expect(marked(view.state.doc)).toContain('underline:underlined')
+    expect(literals(view.state.doc)).toBe(1)
+    expect(editor.snapshot().text).toBe(source)
+    expect(reopens()).toBe(source)
   }))
 
 test('an address inside a mark stays bare, and so does the mark beside new neighbours', () =>

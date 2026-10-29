@@ -173,6 +173,7 @@ for (const id of [
   'table-edge-cases',
   'empty-code-fences',
   'diagram-annotations',
+  'inline-marks',
 ])
   test(`the ${id} fixture opens and saves unchanged @playground-tools`, async ({
     page,
