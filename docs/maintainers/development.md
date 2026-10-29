@@ -45,7 +45,7 @@ Choose checks from the changed behaviour, not from every available fixture combi
 
 For a maintenance group, run focused checks while implementing each change, then run the complete browser and relevant native suites once on the combined final candidate before release. A later change requires the checks it affects; an identical source tree after rebasing does not require another run. Preserve the earlier commit and tree identity with the evidence. Hosted CI still runs its normal checks on each pull request and merge.
 
-Randomized tests use independent, deterministic samples: `SOURCE_TYPING_SEEDS=60`, `PRESERVATION_LIST_SEEDS=400`, `PRESERVATION_LOCAL_SEEDS=600` and `PRESERVATION_STRUCTURAL_SEEDS=300`. Set only the relevant variable to increase a run, for example `SOURCE_TYPING_SEEDS=200 pnpm exec vitest run test/source-typing.test.ts`. Source typing compares the formatted document's structure and marks, not only its readable text.
+Randomized tests use independent, deterministic samples: `SOURCE_TYPING_SEEDS=60`, `PRESERVATION_LIST_SEEDS=400`, `PRESERVATION_LOCAL_SEEDS=600`, `PRESERVATION_STRUCTURAL_SEEDS=300` and `RICH_TEXT_CONVERT_SEEDS=300`. Set only the relevant variable to increase a run, for example `SOURCE_TYPING_SEEDS=200 pnpm exec vitest run test/source-typing.test.ts`. Source typing compares the formatted document's structure and marks, not only its readable text.
 
 The browser suite includes the bounded long-note scaling check. Run it alone with `pnpm exec playwright test --project=chromium test/browser/long-note-scaling.spec.ts`; [performance](performance.md) defines its documents, measurements and allowance.
 

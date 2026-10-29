@@ -525,27 +525,34 @@ function visible(document: RichTextDocument): unknown {
   return document.blocks.map(block)
 }
 
-test('random rich documents convert to Markdown, read back and convert back', () =>
-  withRichEditor({}, ({ editor }) => {
-    const next = random(415)
-    for (let index = 0; index < 300; index++) {
-      const document = randomDocument(next)
-      editor.loadDocument(rich(document))
-      const loaded = richSnapshot(editor).document
-      let converted
-      try {
-        converted = editor.convertDocument('md')
-      } catch (error) {
-        throw new Error(
-          `case ${index}: ${JSON.stringify(loaded)}: ${String(error)}`,
-        )
+// Each seed is an independent sample, run in groups so one test stays within the timeout.
+const convertSeeds = Number(process.env.RICH_TEXT_CONVERT_SEEDS ?? 300)
+const convertGroup = 25
+for (let first = 1; first <= convertSeeds; first += convertGroup) {
+  const last = Math.min(convertSeeds, first + convertGroup - 1)
+  test(`random rich documents convert to Markdown, read back and convert back (seeds ${first}-${last})`, () =>
+    withRichEditor({}, ({ editor }) => {
+      for (let index = first; index <= last; index++) {
+        const document = randomDocument(random(index))
+        editor.loadDocument(rich(document))
+        const loaded = richSnapshot(editor).document
+        let converted
+        try {
+          converted = editor.convertDocument('md')
+        } catch (error) {
+          throw new Error(
+            `case ${index}: ${JSON.stringify(loaded)}: ${String(error)}`,
+          )
+        }
+        if (converted.format !== 'md') throw new Error('not Markdown')
+        editor.loadDocument(text('md', converted.text))
+        const back = editor.convertDocument('rtf')
+        if (back.format !== 'rtf') throw new Error('not RTF')
+        // With nothing lost but alignment, the document comes back as a reader sees it.
+        if (converted.lost.every((loss) => loss.code === 'alignment'))
+          expect(visible(back.document), `case ${index}`).toEqual(
+            visible(loaded),
+          )
       }
-      if (converted.format !== 'md') throw new Error('not Markdown')
-      editor.loadDocument(text('md', converted.text))
-      const back = editor.convertDocument('rtf')
-      if (back.format !== 'rtf') throw new Error('not RTF')
-      // With nothing lost but alignment, the document comes back as a reader sees it.
-      if (converted.lost.every((loss) => loss.code === 'alignment'))
-        expect(visible(back.document), `case ${index}`).toEqual(visible(loaded))
-    }
-  }))
+    }))
+}
