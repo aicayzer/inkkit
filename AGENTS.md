@@ -48,6 +48,7 @@ Use Node.js 26 or later and the pnpm version in `package.json`. [Development](do
 - CI uses GitHub-hosted runners only, because the repository is public.
 - Repository prose follows the Google developer documentation style guide.
 - Change the version or push a tag only in an authorized release ([releasing](docs/maintainers/releasing.md)).
+- Inkkit is in early development. Releases use patch increments within the current minor version. A minor or major increment requires an explicit, operator-initiated instruction naming the target version; general implementation or release approval does not authorize it.
 
 ## Where scope and decisions live
 
