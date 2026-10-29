@@ -376,6 +376,22 @@
   white-space: normal;
 }
 
+/* A file presentation with `layout: 'fill'` takes the column's width instead of its label's. */
+.inkkit-root
+  .ProseMirror
+  .inkkit-image.inkkit-file[data-inkkit-file-layout='fill'] {
+  display: block;
+  width: 100%;
+}
+.inkkit-root .ProseMirror .inkkit-file[data-inkkit-file-activation='card'] {
+  cursor: pointer;
+}
+.inkkit-root
+  .ProseMirror
+  .inkkit-file[data-inkkit-file-activation='card']:hover {
+  background: var(--_inkkit-code-bg);
+}
+
 .inkkit-root .ProseMirror .inkkit-file-footer {
   display: flex;
   flex-wrap: wrap;
@@ -1103,6 +1119,7 @@
 /* One ring for every control InkKit draws; the editing surfaces can be set apart. */
 .inkkit-root button:focus-visible,
 .inkkit-root .inkkit-image-handle:focus-visible,
+.inkkit-root .inkkit-file[data-inkkit-file-activation='card']:focus-visible,
 .inkkit-root .inkkit-file audio:focus-visible,
 .inkkit-root .inkkit-file video:focus-visible {
   outline: var(--inkkit-focus-width, 2px) solid

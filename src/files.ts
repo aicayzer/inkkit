@@ -76,6 +76,15 @@ export async function resolveFile(
     typeof presentation.label !== 'string'
   )
     throw new TypeError('File presentation label must be text')
+  if (presentation.kind === 'file') {
+    if (presentation.layout !== undefined && presentation.layout !== 'fill')
+      throw new TypeError('File presentation layout must be fill')
+    if (
+      presentation.activation !== undefined &&
+      presentation.activation !== 'card'
+    )
+      throw new TypeError('File presentation activation must be card')
+  }
   if (presentation.kind === 'error' && typeof presentation.message !== 'string')
     throw new TypeError('File presentation error must include a message')
   if ('url' in presentation) {

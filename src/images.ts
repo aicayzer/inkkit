@@ -55,6 +55,8 @@ class ImageView implements NodeView {
   private resolution?: FileResolution
   private previewFailed = false
   private suspended = false
+  /** True while the card is itself the Open control (`activation: 'card'`). */
+  private cardKeys = false
   /** Present when the host sets `files`, which then shows every image. */
   private readonly runtime?: FileViewRuntime
 
@@ -121,9 +123,13 @@ class ImageView implements NodeView {
   stopEvent(event: Event): boolean {
     return (
       event.target instanceof Element &&
-      !!event.target.closest(
+      (!!event.target.closest(
         '.inkkit-image-handle, .inkkit-file-control, audio, video, iframe',
-      )
+      ) ||
+        // Return and Space on a focused card belong to the card, not the editor.
+        (event.type === 'keydown' &&
+          event.target === this.element &&
+          this.cardKeys))
     )
   }
 
@@ -262,7 +268,36 @@ class ImageView implements NodeView {
       this.view.dispatch(state.tr.setSelection(selection))
   }
 
-  private card(label: string, status?: string, retry = false): void {
+  private cardKey = (event: KeyboardEvent): void => {
+    if (event.target !== this.element || event.isComposing) return
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    this.activate()
+  }
+
+  private cardClick = (): void => this.activate()
+
+  /** Makes the whole card the one control that opens the file, in place of the arrow button. */
+  private activateCard(label: string): void {
+    const { element } = this
+    element.setAttribute('role', 'button')
+    element.setAttribute(
+      'aria-label',
+      `${this.runtime!.labels.fileOpen} ${label}`,
+    )
+    element.tabIndex = 0
+    element.dataset.inkkitFileActivation = 'card'
+    this.cardKeys = true
+    element.addEventListener('click', this.cardClick)
+    element.addEventListener('keydown', this.cardKey)
+  }
+
+  private card(
+    label: string,
+    status?: string,
+    retry = false,
+    activation = false,
+  ): void {
     if (this.resolution?.state.status !== 'loading' && !this.handle)
       this.restoreResizeFocus = false
     const footer = document.createElement('span')
@@ -274,7 +309,8 @@ class ImageView implements NodeView {
     text.textContent = label
     text.title = label
     name.append(text)
-    if (this.runtime?.adapter.open) {
+    if (activation && this.runtime?.adapter.open) this.activateCard(label)
+    else if (this.runtime?.adapter.open) {
       const open = this.button('', this.activate)
       open.classList.add('inkkit-file-open')
       open.setAttribute(
@@ -325,6 +361,12 @@ class ImageView implements NodeView {
       : splitAlt(String(this.node.attrs.alt ?? ''))
     this.width = width
     this.element.textContent = ''
+    this.element.removeEventListener('click', this.cardClick)
+    this.element.removeEventListener('keydown', this.cardKey)
+    this.element.removeAttribute('tabindex')
+    this.element.removeAttribute('data-inkkit-file-activation')
+    this.element.removeAttribute('data-inkkit-file-layout')
+    this.cardKeys = false
     this.image = undefined
     this.handle = undefined
     if (this.runtime) {
@@ -404,6 +446,10 @@ class ImageView implements NodeView {
         this.pdf = pdf
         this.element.append(pdf)
         this.card(label, this.runtime.labels.filePDFPreview)
+      } else if (presentation.kind === 'file') {
+        if (presentation.layout === 'fill')
+          this.element.dataset.inkkitFileLayout = 'fill'
+        this.card(label, undefined, false, presentation.activation === 'card')
       } else this.card(label)
       this.restoreHandleFocus()
       return

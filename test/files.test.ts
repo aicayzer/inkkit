@@ -795,3 +795,118 @@ test.each([
     )
   },
 )
+
+const fileCard = (
+  extra: Partial<Extract<FilePresentation, { kind: 'file' }>>,
+) => ({ kind: 'file', label: 'Picture', ...extra }) satisfies FilePresentation
+
+test('a file card without layout or activation keeps its arrow button and shrink-wrapped width', async () => {
+  const open = vi.fn()
+  await mounted(
+    { resolve: async () => fileCard({}), open },
+    async (_, root) => {
+      await vi.waitFor(() =>
+        expect(
+          root.querySelector('[data-inkkit-file-state="resolved"]'),
+        ).not.toBeNull(),
+      )
+      const card = root.querySelector<HTMLElement>('.inkkit-file')!
+      expect(card.getAttribute('role')).toBe('group')
+      expect(card.hasAttribute('tabindex')).toBe(false)
+      expect(card.dataset.inkkitFileLayout).toBeUndefined()
+      expect(card.dataset.inkkitFileActivation).toBeUndefined()
+      card.click()
+      card.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      )
+      expect(open).not.toHaveBeenCalled()
+      root.querySelector<HTMLButtonElement>('.inkkit-file-open')!.click()
+      expect(open).toHaveBeenCalledTimes(1)
+    },
+  )
+})
+
+test('layout fill marks the card to take the column width', async () => {
+  await mounted(
+    { resolve: async () => fileCard({ layout: 'fill' }) },
+    async (_, root) => {
+      await vi.waitFor(() =>
+        expect(
+          root.querySelector('[data-inkkit-file-state="resolved"]'),
+        ).not.toBeNull(),
+      )
+      expect(
+        root.querySelector<HTMLElement>('.inkkit-file')!.dataset
+          .inkkitFileLayout,
+      ).toBe('fill')
+    },
+  )
+})
+
+test('activation card makes the whole card the one open control, also read-only', async () => {
+  const open = vi.fn()
+  await mounted(
+    { resolve: async () => fileCard({ activation: 'card' }), open },
+    async (editor, root) => {
+      await vi.waitFor(() =>
+        expect(
+          root.querySelector('[data-inkkit-file-state="resolved"]'),
+        ).not.toBeNull(),
+      )
+      const card = root.querySelector<HTMLElement>('.inkkit-file')!
+      expect(card.getAttribute('role')).toBe('button')
+      expect(card.getAttribute('aria-label')).toBe('Open Picture')
+      expect(card.tabIndex).toBe(0)
+      expect(root.querySelector('.inkkit-file-open')).toBeNull()
+      expect(root.querySelectorAll('button')).toHaveLength(0)
+      editor.setEditable(false)
+      card.click()
+      expect(open).toHaveBeenCalledTimes(1)
+      for (const key of ['Enter', ' ']) {
+        const event = new KeyboardEvent('keydown', {
+          key,
+          bubbles: true,
+          cancelable: true,
+        })
+        card.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(true)
+      }
+      card.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'a', bubbles: true }),
+      )
+      expect(open).toHaveBeenCalledTimes(3)
+      expect(open).toHaveBeenCalledWith(
+        expect.objectContaining(reference),
+        expect.objectContaining({ documentId: 'files' }),
+      )
+      expect(editor.snapshot().text).toBe(source.text)
+    },
+  )
+})
+
+test('activation card without an open function stays a plain group', async () => {
+  await mounted(
+    { resolve: async () => fileCard({ activation: 'card' }) },
+    async (_, root) => {
+      await vi.waitFor(() =>
+        expect(
+          root.querySelector('[data-inkkit-file-state="resolved"]'),
+        ).not.toBeNull(),
+      )
+      const card = root.querySelector<HTMLElement>('.inkkit-file')!
+      expect(card.getAttribute('role')).toBe('group')
+      expect(card.hasAttribute('tabindex')).toBe(false)
+    },
+  )
+})
+
+test('an unknown layout or activation value is an invalid presentation', async () => {
+  for (const extra of [{ layout: 'wide' }, { activation: 'row' }])
+    await expect(
+      resolveFile(
+        { resolve: async () => ({ kind: 'file', ...extra }) as never },
+        reference,
+        context(),
+      ),
+    ).rejects.toThrow(TypeError)
+})

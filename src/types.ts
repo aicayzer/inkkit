@@ -275,7 +275,15 @@ export type FilePresentation =
       label?: string
       mimeType?: string
     }
-  | { kind: 'file' | 'missing'; label?: string }
+  | {
+      kind: 'file'
+      label?: string
+      /** `'fill'` stretches the card to the full width of the column. */
+      layout?: 'fill'
+      /** `'card'` makes the whole card the one control that calls `FileAdapter.open`. */
+      activation?: 'card'
+    }
+  | { kind: 'missing'; label?: string }
   | { kind: 'error'; label?: string; message: string }
 /** Resolves, exports and opens files. The host owns storage, permissions and native actions. */
 export interface FileAdapter {
