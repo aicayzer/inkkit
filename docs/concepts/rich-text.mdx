@@ -35,7 +35,7 @@ A link's underline is how the link is drawn, so a run with a link never also has
 
 ### Refused, never dropped
 
-The converter refuses a file that holds content the document can't represent, rather than losing it: pictures and attachments (RTFD), merged table cells, tables inside tables, lists inside tables, headers and footers, footnotes and comments. It throws `RTFConversionError.unsupportedContent` with the kinds it found, and your app tells the person the file can't be opened for editing. Old-style Word `\pntext` list markers read as plain paragraphs, keeping their text.
+The converter refuses a file that holds content the document can't represent, rather than losing it: pictures and attachments (RTFD), merged table cells, tables inside tables, lists inside tables, headers and footers, footnotes, comments and equations. It also refuses a table of more than 1,000 columns or 100,000 cells, since every row is as wide as the widest and a short file could otherwise declare millions of empty cells. It throws `RTFConversionError.unsupportedContent` with the kinds it found, and your app tells the person the file can't be opened for editing. Old-style Word `\pntext` list markers read as plain paragraphs, keeping their text.
 
 ## Why there are no headings
 

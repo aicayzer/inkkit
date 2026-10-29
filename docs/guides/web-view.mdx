@@ -316,7 +316,7 @@ extension EditorBridge {
 
 Write the file only after an edit: the first save rewrites the whole file in Inkkit's style, so an unedited file keeps its own fonts and colors. `rtfData(from:)` writes RTF, never RTFD, and the functions don't need the main thread.
 
-Links keep their addresses exactly. The system's RTF writer percent-encodes a link's address, so `rtfData(from:)` also records each address it would change, such as `http://[`, in an `{\*\inkkitlinks …}` group that other RTF readers skip, and `document(fromRTF:)` restores it. Another app reading the file sees the link as the system writes it, and the record doesn't survive that app saving the file.
+Links keep their addresses exactly. The system's RTF writer percent-encodes a link's address, so `rtfData(from:)` also records the exact address of every link, in order, in an `{\*\inkkitlinks …}` group that other RTF readers skip. `document(fromRTF:)` restores them only when the record still describes the links it read: as many entries as links, each giving the address the system read. Otherwise, as after an edit in another app, or for a damaged record, it keeps the system's addresses, such as `http://%5B`, and never fails because of the record.
 
 Every conversion failure is an `RTFConversionError`, whose `code` is stable. Map the codes to your app's own messages:
 
@@ -329,7 +329,7 @@ func message(for error: RTFConversionError) -> String {
         "This RTF document is damaged and can't be opened."
     case .unsupportedContent(let kinds):
         // Sorted and unique: attachment, table, mergedTableCells, nestedTable,
-        // listInTableCell, headerOrFooter, footnote and comment.
+        // listInTableCell, headerOrFooter, footnote, comment, equation and largeTable.
         kinds.contains(.attachment)
             ? "This document has pictures or attachments, which would be lost."
             : "This document has content that can't be edited here without losing it."
@@ -341,7 +341,7 @@ func message(for error: RTFConversionError) -> String {
 }
 ```
 
-`notRTF`, `unreadable` and `unsupportedContent` come from reading; offer to open the file as plain text, or not at all. `invalidDocument` from `RichTextDocument(json:)` or `rtfData(from:)` means the JSON isn't a valid document, which an Inkkit snapshot never is, or that two links have different addresses that RTF would write the same, such as `http://[` and `http://%5B`; treat it as a failed save, keep the document open and show its reason. On iOS, `rtfData(from:)` throws `unsupportedContent([.table])` for a document with a table, because UIKit has no RTF tables. `RTFConversionError.description` gives an English message for logs.
+`notRTF`, `unreadable` and `unsupportedContent` come from reading; offer to open the file as plain text, or not at all. `invalidDocument` from `RichTextDocument(json:)` or `rtfData(from:)` means the JSON isn't a valid document, which an Inkkit snapshot never is; treat it as a failed save and keep the document open. On iOS, `rtfData(from:)` throws `unsupportedContent([.table])` for a document with a table, because UIKit has no RTF tables. `RTFConversionError.description` gives an English message for logs.
 
 To switch a document between TXT and RTF, use the package's `RichTextDocument(plainText:)` and `plainText`. To switch between Markdown and RTF, use [`convertDocument`](/reference/editor#convertdocument), which also lists what the conversion loses.
 
