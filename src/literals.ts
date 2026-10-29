@@ -33,10 +33,13 @@ export function lineBreakHTML(value: string): boolean {
 }
 
 function restoreInlineBreaks(node: Nodes, inline = false): void {
-  // Cells and headings retain every break. A standalone paragraph break is a
-  // spacer; formatting descendants inherit their containing block's policy.
+  // Cells and headings retain every break. A paragraph holding only a break
+  // is a spacer. In any other paragraph the break is inline, also inside
+  // formatting or a link that is the paragraph's only child; descendants
+  // inherit their containing block's policy.
   const container =
-    (node.type === 'paragraph' && node.children.length > 1) ||
+    (node.type === 'paragraph' &&
+      (node.children.length > 1 || node.children[0]?.type !== 'html')) ||
     node.type === 'heading' ||
     node.type === 'tableCell'
   const restore = container || inline
