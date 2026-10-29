@@ -7,3 +7,7 @@ _tmp/
 
 # Records kept beside the code, synced to Marfa (not part of this repository)
 /marfa/
+
+# Swift package build output
+/.build/
+/.swiftpm/
