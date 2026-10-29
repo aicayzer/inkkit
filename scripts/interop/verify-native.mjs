@@ -1258,7 +1258,6 @@ const commentSource =
         { op: 'reopen' },
         same('snapshot.text', 'saved', 'text'),
         assert('snapshot.dirty', false),
-        // Reopening identical source can retain the preview without a new error event.
         {
           op: 'awaitDOM',
           selector: '.inkkit-mermaid-preview[data-state="error"]',
@@ -1269,6 +1268,13 @@ const commentSource =
           `Diagram unavailable: ${incompleteDiagramDiagnostic}`,
           'reopenedPreview',
         ),
+        assert('errorCode', 'diagram-unavailable'),
+        assert('error', incompleteDiagramDiagnostic),
+        {
+          op: 'acknowledgeError',
+          code: 'diagram-unavailable',
+          message: incompleteDiagramDiagnostic,
+        },
       ],
     },
     'source-spelling-cross-mode-history': {
