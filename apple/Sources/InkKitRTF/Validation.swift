@@ -4,6 +4,11 @@ extension RichTextDocument {
     /// The deepest list nesting RTF can hold (`\ilvl` 0 to 8).
     public static let maximumListDepth = 9
 
+    /// The most columns, and cells, a table read from RTF may have. Every row has as many cells as
+    /// the widest, so a few wide rows in a short file would otherwise make millions of empty cells.
+    public static let maximumTableColumns = 1_000
+    public static let maximumTableCells = 100_000
+
     /// The largest first number of an ordered list that the writer and reader keep: RTF's
     /// `\\levelstartat` is a 32-bit number, and a larger start reads back as 1.
     public static let maximumListStart = 2_147_483_647
@@ -14,6 +19,20 @@ extension RichTextDocument {
     static let forbiddenScalars: Set<Unicode.Scalar> = [
         "\u{0}", "\n", "\r", "\u{0B}", "\u{0C}", "\u{85}", "\u{2028}", "\u{2029}", "\u{FFFC}",
     ]
+
+    /// Why `href` cannot be a link's address, or nil. An address is not empty, holds no control
+    /// character and follows the rule for text; anything else is kept as given.
+    static func linkProblem(_ href: String) -> String? {
+        if href.isEmpty { return "a link needs an address" }
+        if href.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) {
+            return "a link address cannot hold a control character"
+        }
+        if let bad = href.unicodeScalars.first(where: forbiddenScalars.contains) {
+            let code = String(bad.value, radix: 16, uppercase: true)
+            return "a link address cannot hold U+\(String(repeating: "0", count: max(0, 4 - code.count)) + code)"
+        }
+        return nil
+    }
 
     /// Checks the document, then returns its canonical form.
     ///
@@ -165,11 +184,8 @@ extension RichTextDocument {
             if case .link(let href) = mark {
                 // Any other address is kept as given, as the editor keeps it; the writer stores
                 // one that isn't a URL as text.
-                guard !href.isEmpty else {
-                    throw .invalidDocument("\(path): a link needs an address")
-                }
-                guard !href.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
-                    throw .invalidDocument("\(path): a link address cannot hold a control character")
+                if let problem = linkProblem(href) {
+                    throw .invalidDocument("\(path): \(problem)")
                 }
             }
         }

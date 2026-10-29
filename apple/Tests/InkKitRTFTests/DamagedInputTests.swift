@@ -248,6 +248,7 @@ struct DamagedInputTests {
         }
         #expect(RTFConversionError.UnsupportedContent.allCases.map(\.rawValue) == [
             "attachment", "table", "mergedTableCells", "nestedTable", "listInTableCell", "headerOrFooter", "footnote", "comment",
+            "equation", "largeTable",
         ])
     }
 }
@@ -268,3 +269,66 @@ struct SeededGenerator: RandomNumberGenerator {
         return z ^ (z >> 31)
     }
 }
+
+@Suite("Content the system reader drops")
+struct DroppedContentTests {
+    @Test("A Word equation is refused, not dropped", arguments: [
+        #"{\rtf1\ansi before {\mmath{\*\moMathPara{\*\moMath{\mr x}{\mr =1}}}} after\par}"#,
+        #"{\rtf1\ansi before {\*\moMath{\mr x=1}} after\par}"#,
+        #"{\rtf1\ansi before {\mmath{\*\moMath{\mr x=1}}{\mmathPict fallback}} after\par}"#,
+    ])
+    func equation(_ rtf: String) {
+        #expect(throws: RTFConversionError.unsupportedContent([.equation])) {
+            try RTFConverter.document(fromRTF: Data(rtf.utf8))
+        }
+    }
+
+    @Test("Word's equation settings alone are not an equation")
+    func equationSettings() throws {
+        let document = try RTFConverter.document(fromRTF: Data(#"{\rtf1\ansi{\*\mmathPr\mdispDef1}text\par}"#.utf8))
+        #expect(document == doc(p(t("text"))))
+    }
+
+    #if canImport(AppKit)
+    @Test("C1 control characters other than U+0085 survive writing and reading")
+    func c1Controls() throws {
+        var text = "a"
+        for value in 0x80...0x9F where value != 0x85 { text.unicodeScalars.append(UnicodeScalar(value)!) }
+        try expectRoundTrip(doc(p(t(text))))
+    }
+    #endif
+}
+
+#if canImport(AppKit)
+@Suite("Table size")
+struct TableSizeTests {
+    /// A first row of `columns` cells and then `rows` rows of one cell in the same table.
+    private func wideTable(columns: Int, rows: Int) -> Data {
+        var rtf = #"{\rtf1\ansi \trowd "#
+        rtf += (1...columns).map { #"\cellx\#($0 * 10)"# }.joined() + " "
+        rtf += String(repeating: #"\intbl a\cell "#, count: columns) + #"\row "#
+        rtf += String(repeating: #"\trowd \cellx10 \intbl b\cell\row "#, count: rows)
+        return Data((rtf + "}").utf8)
+    }
+
+    @Test("A short file that declares millions of cells is refused before they are built")
+    func refusedTable() {
+        #expect(throws: RTFConversionError.unsupportedContent([.largeTable])) {
+            try RTFConverter.document(fromRTF: wideTable(columns: 2_000, rows: 2_000))
+        }
+        #expect(throws: RTFConversionError.unsupportedContent([.largeTable])) {
+            try RTFConverter.document(fromRTF: wideTable(columns: 500, rows: 500))
+        }
+    }
+
+    @Test("A table within the limits reads as before")
+    func keptTable() throws {
+        let document = try RTFConverter.document(fromRTF: wideTable(columns: 50, rows: 50))
+        guard case .table(let table)? = document.blocks.first else {
+            Issue.record("expected a table")
+            return
+        }
+        #expect(table.rows.count == 51 && table.rows.allSatisfy { $0.count == 50 })
+    }
+}
+#endif

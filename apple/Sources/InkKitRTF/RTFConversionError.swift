@@ -35,6 +35,11 @@ public enum RTFConversionError: Error, Equatable, Hashable, Sendable {
         case footnote
         /// A comment (an RTF annotation).
         case comment
+        /// An equation, as Word writes in `\mmath` and `\moMath`, which the system reader drops.
+        case equation
+        /// A table of more than ``RichTextDocument/maximumTableColumns`` columns or
+        /// ``RichTextDocument/maximumTableCells`` cells, which a short file can declare.
+        case largeTable
 
         public static func < (lhs: Self, rhs: Self) -> Bool {
             allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
@@ -50,6 +55,8 @@ public enum RTFConversionError: Error, Equatable, Hashable, Sendable {
             case .headerOrFooter: "headers or footers"
             case .footnote: "footnotes"
             case .comment: "comments"
+            case .equation: "equations"
+            case .largeTable: "very large tables"
             }
         }
     }

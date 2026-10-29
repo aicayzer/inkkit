@@ -198,13 +198,6 @@ struct RoundTripTests {
         try expectRoundTrip(doc(p(t("before "), t("x", .link(href: href)), t(" after"))))
     }
 
-    @Test("Two link addresses that RTF would write the same are refused, not merged")
-    func linkAddressCollision() {
-        #expect(throws: RTFConversionError.self) {
-            try RTFConverter.rtfData(from: doc(p(t("a", .link(href: "http://[")), t(" b", .link(href: "http://%5B")))))
-        }
-    }
-
     @Test("Another RTF reader skips the address record and sees the link as the system writes it")
     func linkRecordIsIgnorable() throws {
         let data = try RTFConverter.rtfData(from: doc(p(t("before "), t("x", .link(href: "http://[")), t(" after"))))

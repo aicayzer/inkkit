@@ -28,14 +28,12 @@ enum RTFWriter {
         } catch {
             throw .writeFailed
         }
-        return try LinkAddresses.record(writer.links, in: data)
+        return LinkAddresses.record(LinkAddresses.hrefs(of: canonical), in: data)
     }
 
     private struct Builder {
         let output = NSMutableAttributedString()
         var fonts = WriterFonts()
-        /// Every link address written.
-        var links: Set<String> = []
 
         mutating func append(_ block: Doc.Block) throws(RTFConversionError) {
             switch block {
@@ -101,9 +99,8 @@ enum RTFWriter {
                     attributes[.inkkitSuperscript] = -1
                 case .link(let href):
                     // A URL when one keeps the address exactly, and otherwise the text. The
-                    // system still percent-encodes the field, so the address is also recorded.
+                    // system still percent-encodes the field, so the writer also records it.
                     attributes[.link] = LinkAddresses.linkValue(href)
-                    links.insert(href)
                 }
             }
             return attributes

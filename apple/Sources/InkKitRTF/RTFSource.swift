@@ -4,7 +4,7 @@ import Foundation
 ///
 /// The system RTF reader drops several kinds of content without reporting it: pictures and
 /// embedded objects (`\pict`, `\object`, `\NeXTGraphic`, `\bin`), shapes and text boxes, headers,
-/// footers, footnotes and comments. It also stops at the first closing brace that ends the
+/// footers, footnotes, comments and equations. It also stops at the first closing brace that ends the
 /// document, so text after an unbalanced `}` disappears. The scan finds these in the source,
 /// so the conversion can refuse them.
 enum RTFSource {
@@ -21,6 +21,8 @@ enum RTFSource {
         "header", "headerl", "headerr", "headerf", "footer", "footerl", "footerr", "footerf",
     ]
     private static let mergedCellWords: Set<String> = ["clmgf", "clmrg", "clvmgf", "clvmrg"]
+    /// Word's equation groups. `\mmathPr`, the document's equation settings, holds no equation.
+    private static let equationWords: Set<String> = ["mmath", "moMath", "moMathPara"]
     private static let nestedTableWords: Set<String> = ["nestcell", "nestrow", "nesttableprops"]
     private static let tableWords: Set<String> = ["trowd", "intbl", "cell", "row", "itap"]
 
@@ -128,6 +130,8 @@ enum RTFSource {
             findings.unsupported.insert(.footnote)
         } else if word == "annotation" {
             findings.unsupported.insert(.comment)
+        } else if equationWords.contains(word) {
+            findings.unsupported.insert(.equation)
         } else if mergedCellWords.contains(word) {
             findings.unsupported.insert(.mergedTableCells)
         } else if nestedTableWords.contains(word) || (word == "itap" && (parameter ?? 1) > 1) {

@@ -38,8 +38,10 @@ enum RTFReader {
         let records = paragraphs(of: attributed, unsupported: &unsupported)
         guard unsupported.isEmpty else { throw .unsupported(unsupported) }
         var document = Doc(blocks: blocks(from: records))
-        let addresses = LinkAddresses.table(in: data)
-        if !addresses.isEmpty { document = LinkAddresses.restore(document, from: addresses) }
+        // The record restores exact addresses only when it describes the links read.
+        if let addresses = LinkAddresses.addresses(in: data, for: LinkAddresses.hrefs(of: document)) {
+            document = LinkAddresses.restore(document, addresses: addresses)
+        }
         // The reader builds canonical content, so this only guards against a reader bug
         // producing a document the editor would refuse.
         return try document.canonicalized()
@@ -100,6 +102,19 @@ enum RTFReader {
             #endif
             records.append(record)
             start = next
+        }
+        // A table's size is checked before its rows are built.
+        var sizes: [ObjectIdentifier: (rows: Int, columns: Int)] = [:]
+        for case let cell? in records.map(\.cell) {
+            let key = ObjectIdentifier(cell.table)
+            let size = sizes[key] ?? (0, 1)
+            sizes[key] = (max(size.rows, cell.row + 1), max(size.columns, cell.columns, cell.column + 1))
+        }
+        for size in sizes.values
+        where size.columns > Doc.maximumTableColumns
+            || size.rows.multipliedReportingOverflow(by: size.columns).overflow
+            || size.rows * size.columns > Doc.maximumTableCells {
+            unsupported.insert(.largeTable)
         }
         return records
     }
