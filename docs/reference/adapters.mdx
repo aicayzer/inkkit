@@ -101,7 +101,7 @@ Returns portable bytes for a file that resolved as `image`, for clipboard and pr
 
 <ResponseField name="open" type="(reference: FileReference, context: DocumentContext) => void">
 
-Setting it adds an Open button, named by the `fileOpen` label, to every file card. Inkkit calls it when the person activates the button, also in a read-only editor. A thrown exception reports `file-unavailable`. Inkkit doesn't await a returned value, so handle the failure of asynchronous native work yourself.
+Setting it adds an Open button, named by the `fileOpen` label, to every file card, except one whose presentation has [`activation: 'card'`](#file-card-options), which opens from the card itself. Inkkit calls it when the person activates the button, also in a read-only editor. A thrown exception reports `file-unavailable`. Inkkit doesn't await a returned value, so handle the failure of asynchronous native work yourself.
 
 </ResponseField>
 
@@ -302,12 +302,21 @@ In a path, the fragment starts at the first `#`, so write a `#` that belongs to 
 
 A `FilePresentation` is what `FileAdapter.resolve` returns: one of these shapes, chosen by `kind`. Every shape takes an optional `label`, the name the card shows.
 
-| `kind`                           | Other fields                       | The card shows                                                                                                   |
-| -------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `image`, `audio`, `video`, `pdf` | `url: string`, `mimeType?: string` | The resource at `url`. Audio and video use native controls and never autoplay. A PDF shows in a sandboxed frame. |
-| `file`                           | None                               | A card with no preview.                                                                                          |
-| `missing`                        | None                               | A card with the `fileMissing` label.                                                                             |
-| `error`                          | `message: string`                  | A card whose status is `message`, a short reason for the person. An empty `message` shows the `fileError` label. |
+| `kind`                           | Other fields                             | The card shows                                                                                                   |
+| -------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `image`, `audio`, `video`, `pdf` | `url: string`, `mimeType?: string`       | The resource at `url`. Audio and video use native controls and never autoplay. A PDF shows in a sandboxed frame. |
+| `file`                           | `layout?: 'fill'`, `activation?: 'card'` | A card with no preview. See [file card options](#file-card-options).                                             |
+| `missing`                        | None                                     | A card with the `fileMissing` label.                                                                             |
+| `error`                          | `message: string`                        | A card whose status is `message`, a short reason for the person. An empty `message` shows the `fileError` label. |
+
+#### File card options
+
+A `file` presentation takes two optional fields. Without them the card is as wide as its label, and `FileAdapter.open` runs only from the card's Open button. Any other value makes the result invalid.
+
+- **`layout: 'fill'`** stretches the card to the full width of the column.
+- **`activation: 'card'`** makes the whole card the one control: it has the `button` role, takes focus, and is named by the `fileOpen` label followed by the card's name. A click, or Return or Space with the card focused, calls [`FileAdapter.open`](#fileadapter), also in a read-only editor. The card has no Open button, so there is one control rather than two. Without `FileAdapter.open`, the field has no effect.
+
+A host that shows a not-yet-loaded picture as a file card can set both, so every placeholder has the same width and one target. Don't style Inkkit's internal classes for this.
 
 The `url` is for display only and must serve the declared kind offline in your page. Its lifetime, access checks and byte validation are yours. A `mimeType`, when given, must match the kind: `image/*`, `audio/*`, `video/*` or `application/pdf`.
 

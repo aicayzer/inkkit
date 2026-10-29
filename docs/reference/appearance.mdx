@@ -92,64 +92,64 @@ Pass any of these keys in [`labels`](/reference/options#editor-options) at mount
 
 {/* @api-scope EditorLabels */}
 
-| Label                    | Default text              | Where it appears                                                                                          |
-| ------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `formattedEditor`        | Formatted Markdown editor | Accessible name of the formatted editing surface.                                                         |
-| `richTextEditor`         | Rich text editor          | Accessible name of the formatted editing surface while an RTF document is loaded.                         |
-| `sourceEditor`           | Markdown source editor    | Accessible name of the Markdown source surface.                                                           |
-| `plainTextEditor`        | Plain text editor         | Accessible name of the TXT surface.                                                                       |
-| `placeholder`            | Start typing…             | Shown in an empty formatted document.                                                                     |
-| `copyCode`               | Copy                      | The code block Copy button, drawn only when `events.copy` is set.                                         |
-| `codeLanguage`           | Code language             | Accessible name of a code block's language button and its list.                                           |
-| `codeLanguageSearch`     | Search languages          | Placeholder and accessible name of the language search field.                                             |
-| `codeAuto`               | Auto                      | The language choice for a fence with no language, highlighted by detection.                               |
-| `codePlainText`          | Plain text                | The language choice that writes `text` and turns highlighting off.                                        |
-| `expandCallout`          | Expand                    | The fold button of a collapsed callout, followed by the callout's title in its accessible name.           |
-| `collapseCallout`        | Collapse                  | The fold button of an expanded callout, followed by the callout's title in its accessible name.           |
-| `diagramRendering`       | Rendering diagram…        | The preview card while a diagram renders.                                                                 |
-| `diagramUnavailable`     | Diagram unavailable:      | Prefix of the renderer's message on a diagram that can't render.                                          |
-| `footnote`               | Footnote                  | Prefix of the footnote label in the accessible name of footnote references and definitions.               |
-| `tableAddRow`            | Add row                   | Table row menu: add a row after it.                                                                       |
-| `tableAddColumn`         | Add column                | Table column menu: add a column after it.                                                                 |
-| `tableDeleteRow`         | Delete row                | Table row menu: delete the row. The header row doesn't offer it.                                          |
-| `tableDeleteColumn`      | Delete column             | Table column menu: delete the column.                                                                     |
-| `tableAlignLeft`         | Align left                | Table column menu: align left.                                                                            |
-| `tableAlignCenter`       | Align center              | Table column menu: align center.                                                                          |
-| `tableAlignRight`        | Align right               | Table column menu: align right.                                                                           |
-| `tableMoveColumn`        | Move column               | The control above the active column, which opens its menu and moves it.                                   |
-| `tableMoveRow`           | Move row                  | The control beside the active row, which opens its menu and moves it.                                     |
-| `fileLoading`            | Loading file…             | File card status while `FileAdapter.resolve` runs.                                                        |
-| `fileMissing`            | File unavailable          | File card status when the file resolves as `missing`.                                                     |
-| `fileError`              | File could not be loaded  | File card status when resolution fails, or resolves as `error` with an empty `message`.                   |
-| `fileRetry`              | Retry                     | The file card button that resolves the file again.                                                        |
-| `fileOpen`               | Open                      | Name and tooltip of the file card Open button, drawn only when `FileAdapter.open` is set.                 |
-| `filePreviewUnavailable` | Preview unavailable       | File card status when its image, audio, video or PDF fails to load.                                       |
-| `filePDFPreview`         | Open to view this PDF     | Status line of a PDF card.                                                                                |
-| `wikiMissing`            | Link unavailable          | Tooltip and accessible description of a wiki link that `WikiLinkAdapter.resolve` reports missing.         |
-| `comment`                | Author comment            | Accessible name of a visible author comment.                                                              |
-| `preservedMarkdown`      | Preserved Markdown        | Accessible name of a block that Inkkit keeps as authored Markdown and doesn't render.                     |
-| `suggestions`            | Suggestions               | Accessible name of the suggestion list, for the slash menu and note suggestions.                          |
-| `suggestionsLoading`     | Loading…                  | The suggestion list while `WikiLinkAdapter.suggest` runs.                                                 |
-| `suggestionsEmpty`       | No matches                | Shown briefly when nothing matches, before the list closes.                                               |
-| `slashHeading1`          | Heading 1                 | Slash menu command: `heading1`.                                                                           |
-| `slashHeading2`          | Heading 2                 | Slash menu command: `heading2`.                                                                           |
-| `slashHeading3`          | Heading 3                 | Slash menu command: `heading3`.                                                                           |
-| `slashBulletList`        | Bulleted List             | Slash menu command: `bulletList`.                                                                         |
-| `slashOrderedList`       | Numbered List             | Slash menu command: `orderedList`.                                                                        |
-| `slashTaskList`          | Checklist                 | Slash menu command: `taskList`.                                                                           |
-| `taskCheckbox`           | Task                      | Accessible name of a task checkbox with an empty first paragraph. Otherwise, its paragraph text names it. |
-| `slashQuote`             | Quote                     | Slash menu command: `quote`.                                                                              |
-| `slashCodeBlock`         | Code Block                | Slash menu command: `codeBlock`.                                                                          |
-| `slashTable`             | Table                     | Slash menu command: `table`.                                                                              |
-| `slashCallout`           | Callout                   | Slash menu command: `callout`, which opens the callout choices.                                           |
-| `slashDivider`           | Divider                   | Slash menu command: `divider`.                                                                            |
-| `slashDiagram`           | Diagram                   | Slash menu command: `diagram`, when previews are available.                                               |
-| `slashNote`              | Note                      | Slash menu callout choice.                                                                                |
-| `slashTip`               | Tip                       | Slash menu callout choice.                                                                                |
-| `slashImportant`         | Important                 | Slash menu callout choice.                                                                                |
-| `slashWarning`           | Warning                   | Slash menu callout choice.                                                                                |
-| `slashCaution`           | Caution                   | Slash menu callout choice.                                                                                |
-| `imageResize`            | Resize image              | Accessible name prefix for the keyboard image-width control, followed by the image label.                 |
+| Label                    | Default text              | Where it appears                                                                                                                                       |
+| ------------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `formattedEditor`        | Formatted Markdown editor | Accessible name of the formatted editing surface.                                                                                                      |
+| `richTextEditor`         | Rich text editor          | Accessible name of the formatted editing surface while an RTF document is loaded.                                                                      |
+| `sourceEditor`           | Markdown source editor    | Accessible name of the Markdown source surface.                                                                                                        |
+| `plainTextEditor`        | Plain text editor         | Accessible name of the TXT surface.                                                                                                                    |
+| `placeholder`            | Start typing…             | Shown in an empty formatted document.                                                                                                                  |
+| `copyCode`               | Copy                      | The code block Copy button, drawn only when `events.copy` is set.                                                                                      |
+| `codeLanguage`           | Code language             | Accessible name of a code block's language button and its list.                                                                                        |
+| `codeLanguageSearch`     | Search languages          | Placeholder and accessible name of the language search field.                                                                                          |
+| `codeAuto`               | Auto                      | The language choice for a fence with no language, highlighted by detection.                                                                            |
+| `codePlainText`          | Plain text                | The language choice that writes `text` and turns highlighting off.                                                                                     |
+| `expandCallout`          | Expand                    | The fold button of a collapsed callout, followed by the callout's title in its accessible name.                                                        |
+| `collapseCallout`        | Collapse                  | The fold button of an expanded callout, followed by the callout's title in its accessible name.                                                        |
+| `diagramRendering`       | Rendering diagram…        | The preview card while a diagram renders.                                                                                                              |
+| `diagramUnavailable`     | Diagram unavailable:      | Prefix of the renderer's message on a diagram that can't render.                                                                                       |
+| `footnote`               | Footnote                  | Prefix of the footnote label in the accessible name of footnote references and definitions.                                                            |
+| `tableAddRow`            | Add row                   | Table row menu: add a row after it.                                                                                                                    |
+| `tableAddColumn`         | Add column                | Table column menu: add a column after it.                                                                                                              |
+| `tableDeleteRow`         | Delete row                | Table row menu: delete the row. The header row doesn't offer it.                                                                                       |
+| `tableDeleteColumn`      | Delete column             | Table column menu: delete the column.                                                                                                                  |
+| `tableAlignLeft`         | Align left                | Table column menu: align left.                                                                                                                         |
+| `tableAlignCenter`       | Align center              | Table column menu: align center.                                                                                                                       |
+| `tableAlignRight`        | Align right               | Table column menu: align right.                                                                                                                        |
+| `tableMoveColumn`        | Move column               | The control above the active column, which opens its menu and moves it.                                                                                |
+| `tableMoveRow`           | Move row                  | The control beside the active row, which opens its menu and moves it.                                                                                  |
+| `fileLoading`            | Loading file…             | File card status while `FileAdapter.resolve` runs.                                                                                                     |
+| `fileMissing`            | File unavailable          | File card status when the file resolves as `missing`.                                                                                                  |
+| `fileError`              | File could not be loaded  | File card status when resolution fails, or resolves as `error` with an empty `message`.                                                                |
+| `fileRetry`              | Retry                     | The file card button that resolves the file again.                                                                                                     |
+| `fileOpen`               | Open                      | Name and tooltip of the file card Open button, drawn only when `FileAdapter.open` is set. A card with `activation: 'card'` takes this name as its own. |
+| `filePreviewUnavailable` | Preview unavailable       | File card status when its image, audio, video or PDF fails to load.                                                                                    |
+| `filePDFPreview`         | Open to view this PDF     | Status line of a PDF card.                                                                                                                             |
+| `wikiMissing`            | Link unavailable          | Tooltip and accessible description of a wiki link that `WikiLinkAdapter.resolve` reports missing.                                                      |
+| `comment`                | Author comment            | Accessible name of a visible author comment.                                                                                                           |
+| `preservedMarkdown`      | Preserved Markdown        | Accessible name of a block that Inkkit keeps as authored Markdown and doesn't render.                                                                  |
+| `suggestions`            | Suggestions               | Accessible name of the suggestion list, for the slash menu and note suggestions.                                                                       |
+| `suggestionsLoading`     | Loading…                  | The suggestion list while `WikiLinkAdapter.suggest` runs.                                                                                              |
+| `suggestionsEmpty`       | No matches                | Shown briefly when nothing matches, before the list closes.                                                                                            |
+| `slashHeading1`          | Heading 1                 | Slash menu command: `heading1`.                                                                                                                        |
+| `slashHeading2`          | Heading 2                 | Slash menu command: `heading2`.                                                                                                                        |
+| `slashHeading3`          | Heading 3                 | Slash menu command: `heading3`.                                                                                                                        |
+| `slashBulletList`        | Bulleted List             | Slash menu command: `bulletList`.                                                                                                                      |
+| `slashOrderedList`       | Numbered List             | Slash menu command: `orderedList`.                                                                                                                     |
+| `slashTaskList`          | Checklist                 | Slash menu command: `taskList`.                                                                                                                        |
+| `taskCheckbox`           | Task                      | Accessible name of a task checkbox with an empty first paragraph. Otherwise, its paragraph text names it.                                              |
+| `slashQuote`             | Quote                     | Slash menu command: `quote`.                                                                                                                           |
+| `slashCodeBlock`         | Code Block                | Slash menu command: `codeBlock`.                                                                                                                       |
+| `slashTable`             | Table                     | Slash menu command: `table`.                                                                                                                           |
+| `slashCallout`           | Callout                   | Slash menu command: `callout`, which opens the callout choices.                                                                                        |
+| `slashDivider`           | Divider                   | Slash menu command: `divider`.                                                                                                                         |
+| `slashDiagram`           | Diagram                   | Slash menu command: `diagram`, when previews are available.                                                                                            |
+| `slashNote`              | Note                      | Slash menu callout choice.                                                                                                                             |
+| `slashTip`               | Tip                       | Slash menu callout choice.                                                                                                                             |
+| `slashImportant`         | Important                 | Slash menu callout choice.                                                                                                                             |
+| `slashWarning`           | Warning                   | Slash menu callout choice.                                                                                                                             |
+| `slashCaution`           | Caution                   | Slash menu callout choice.                                                                                                                             |
+| `imageResize`            | Resize image              | Accessible name prefix for the keyboard image-width control, followed by the image label.                                                              |
 
 ## Shortcuts
 

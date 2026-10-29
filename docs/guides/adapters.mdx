@@ -144,7 +144,7 @@ How the result shows:
 
 `reference.raw` is the embed's Markdown as the document holds it, such as `![a|120](a\_b.png "T")` or `![[photo.png|400]]`: use it to match the embed to the text you saved. Escapes, the alias and the width stay as written, and a table cell's `\|` escapes are included. Find the file by `target`, never by `raw`. The [reference](/reference/adapters#filereference) says exactly what it holds.
 
-A card that is loading, failed, missing or in error has a Retry button, which calls `resolve` again. Setting `open` adds an Open button to every card, and `contextMenu` receives right-clicks with a `ClientPoint`. An exception they throw is reported as `file-unavailable`. Both return nothing, so handle failures of asynchronous work inside them.
+A card that is loading, failed, missing or in error has a Retry button, which calls `resolve` again. Setting `open` adds an Open button to every card (a `file` presentation can instead make the whole card the control with `activation: 'card'`, and fill the column with `layout: 'fill'`; see [file card options](/reference/adapters#file-card-options)), and `contextMenu` receives right-clicks with a `ClientPoint`. An exception they throw is reported as `file-unavailable`. Both return nothing, so handle failures of asynchronous work inside them.
 
 Abandon the work when `context.signal` aborts. Inkkit aborts a request when the reference changes, the person retries, the mode changes, the document reloads or the editor is destroyed, and it ignores late results even if you don't stop.
 
