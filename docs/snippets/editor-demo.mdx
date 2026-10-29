@@ -6,11 +6,27 @@ export const EditorDemo = ({
   const frame = useRef(null)
   const post = (message) =>
     frame.current?.contentWindow?.postMessage(message, '*')
-  const sendTheme = () =>
+  const sendTheme = () => {
+    let element = frame.current?.parentElement
+    let background
+    while (element) {
+      const colour = getComputedStyle(element).backgroundColor
+      if (colour !== 'transparent' && colour !== 'rgba(0, 0, 0, 0)') {
+        background = colour
+        break
+      }
+      element = element.parentElement
+    }
+    if (background)
+      frame.current
+        ?.closest('.editor-page')
+        ?.style.setProperty('--demo-background', background)
     post({
       type: 'inkkit-demo-theme',
       dark: document.documentElement.classList.contains('dark'),
+      background,
     })
+  }
   useEffect(() => {
     const observer = new MutationObserver(sendTheme)
     observer.observe(document.documentElement, {
@@ -24,16 +40,19 @@ export const EditorDemo = ({
   }, [focused])
   useEffect(() => {
     const onMessage = (event) => {
-      if (
-        event.source !== frame.current?.contentWindow ||
-        event.data?.type !== 'inkkit-demo-focus'
-      )
-        return
-      onFocusChange?.(event.data.focused === true)
+      if (event.source !== frame.current?.contentWindow) return
+      if (event.data?.type === 'inkkit-demo-focus') {
+        onFocusChange?.(event.data.focused === true)
+      } else if (fullPage && event.data?.type === 'inkkit-demo-height') {
+        const height = event.data.height
+        if (Number.isFinite(height) && height >= 410) {
+          frame.current.style.height = Math.min(height, 100000) + 'px'
+        }
+      }
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [onFocusChange])
+  }, [onFocusChange, fullPage])
   const icon = (paths) =>
     `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`
   const icons = {
@@ -62,21 +81,23 @@ export const EditorDemo = ({
     `<button type="button" id="${id}" class="tool" aria-label="${label}" title="${label}" disabled>${icons[name]}</button>`
   const compactHeader = `<header><span>Try editing this note</span><nav aria-label="Demo controls"><button id="mode" disabled aria-pressed="false">Source</button><button id="reset" disabled>Reset</button></nav></header>`
   const bar = `<div class="top"><div class="top-in">
-<div class="bar">
-<div class="actions" role="toolbar" aria-label="Editor controls">
-<div class="switch" role="group" aria-label="View"><button type="button" id="formatted" class="tool" aria-label="Formatted" title="Formatted" aria-pressed="true" disabled>${icons.formatted}</button><button type="button" id="source" class="tool" aria-label="Source" title="Source" aria-pressed="false" disabled>${icons.source}</button></div>
+<div class="bar" role="toolbar" aria-label="Editor controls">
 <div class="tools">
 ${tool('undo', 'undo', 'Undo')}${tool('redo', 'redo', 'Redo')}
 <button type="button" id="find" class="tool" aria-label="Find" title="Find" aria-expanded="false" aria-controls="findbar" disabled>${icons.find}</button>
 <button type="button" id="copy" class="tool" aria-label="Copy Markdown" title="Copy Markdown" disabled><span class="glyph">${icons.copy}</span><span class="glyph glyph-done">${icons.done}</span></button>
 ${tool('reset', 'reset', 'Reset')}
 </div>
-<button type="button" id="focus" class="tool" aria-label="Focus" title="Focus" disabled>${icons.focus}</button>
+<div class="switch" role="group" aria-label="View"><button type="button" id="formatted" aria-pressed="true" disabled>Formatted</button><button type="button" id="source" aria-pressed="false" disabled>Source</button></div>
+<div class="appearance">
+<button type="button" id="theme" aria-haspopup="menu" aria-expanded="false" aria-controls="theme-menu">Theme<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
+${tool('focus', 'focus', 'Focus')}
 </div>
-<div class="appearance" role="group" aria-label="Editor appearance">
-<label><span class="sr-only">Theme</span><select id="theme" title="Theme"><option value="standard">Standard</option><option value="calm">Calm</option><option value="essential">Essential</option></select></label>
-<label><span class="sr-only">Appearance</span><select id="appearance" title="Appearance"><option value="system">Match site</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
 </div>
+<div id="theme-menu" class="choice-menu" role="menu" aria-label="Theme" hidden>
+<button type="button" role="menuitemradio" aria-checked="true" data-theme="standard" tabindex="-1">Standard<span aria-hidden="true">✓</span></button>
+<button type="button" role="menuitemradio" aria-checked="false" data-theme="calm" tabindex="-1">Calm<span aria-hidden="true">✓</span></button>
+<button type="button" role="menuitemradio" aria-checked="false" data-theme="essential" tabindex="-1">Essential<span aria-hidden="true">✓</span></button>
 </div>
 <div id="findbar" class="findbar" role="search" aria-label="Find in note" hidden>
 <input id="query" type="search" aria-label="Find" placeholder="Find in note" autocomplete="off" spellcheck="false">
@@ -95,40 +116,41 @@ ${tool('reset', 'reset', 'Reset')}
 :root { color-scheme: light dark; --line: light-dark(#e5e5e5,#292929); --hover: light-dark(#f0f0f0,#252525); --muted: light-dark(#6b6b6b,#a3a3a3); --ring: light-dark(#2563eb,#60a5fa); }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { margin: 0; font: 13px/1.5 system-ui,sans-serif; color: CanvasText; background: light-dark(#fff,#0b0b0b); }
+body { margin: 0; font: 13px/1.5 system-ui,sans-serif; color: CanvasText; background: var(--page, light-dark(#fff,#0b0b0b)); }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
 header span { opacity: .6; }
 nav { display: flex; gap: 4px; }
-button { font: inherit; color: inherit; border: 0; background: transparent; border-radius: 5px; padding: 4px 8px; cursor: pointer; }
+button { font: inherit; color: inherit; border: 0; background: transparent; border-radius: 8px; padding: 4px 8px; cursor: pointer; }
 button:hover,button[aria-pressed=true] { background: var(--hover); }
 button:disabled { opacity: .4; cursor: default; }
 button:focus-visible,input:focus-visible,select:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 .top { padding-inline: 24px; }
-.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-block: 8px; }
-.actions,.switch,.tools { display: flex; align-items: center; gap: 2px; }
-.actions { gap: 8px; flex: 1 1 auto; }
-#focus { margin-inline-start: auto; }
-.switch { gap: 0; padding: 2px; border-radius: 7px; background: var(--hover); }
-.switch button { border-radius: 5px; }
-.switch button[aria-pressed=true] { background: light-dark(#fff,#414141); box-shadow: 0 1px 2px #0002; }
-.appearance { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.appearance label { position: relative; display: inline-flex; align-items: center; color: var(--muted); font-size: 12px; }
-.appearance label::after { content: ''; position: absolute; right: 10px; top: 50%; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-70%) rotate(45deg); pointer-events: none; }
-.appearance select { appearance: none; max-width: 100%; padding: 6px 28px 6px 8px; border: 0; border-radius: 5px; background: transparent; color: CanvasText; font: inherit; cursor: pointer; }
-.appearance select:hover { background: var(--hover); }
-.appearance option { background: Canvas; color: CanvasText; }
+.bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px 16px; padding-block: 8px; }
+.switch,.tools,.appearance { display: flex; align-items: center; gap: 2px; }
+.switch { gap: 2px; }
+.switch button { padding: 6px 12px; font-size: 13px; line-height: 20px; }
+.switch button[aria-pressed=true] { background: var(--hover); }
+.appearance { justify-content: flex-end; gap: 8px; }
+#theme { display: inline-flex; align-items: center; gap: 8px; padding: 6px 9px; font-size: 13px; line-height: 20px; }
+#theme[aria-expanded=true] { background: var(--hover); }
+.choice-menu { position: fixed; z-index: 100; min-width: 170px; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--page, Canvas); color: CanvasText; box-shadow: 0 6px 20px #0002; }
+.choice-menu button { display: flex; align-items: center; justify-content: space-between; gap: 24px; width: 100%; text-align: left; padding: 7px 10px; }
+.choice-menu button span { visibility: hidden; }
+.choice-menu button[aria-checked=true] span { visibility: visible; }
+.choice-menu button:focus-visible { background: var(--hover); }
 .tool { display: inline-flex; align-items: center; justify-content: center; padding: 6px; }
 .tool svg { display: block; flex: none; }
 .sr-only,.demo-status:not(.status-error) { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .glyph-done,.done .glyph:not(.glyph-done) { display: none; }
 .done .glyph-done { display: inline-flex; }
 .findbar { display: flex; align-items: center; gap: 4px; padding-bottom: 8px; }
-.findbar input { flex: 1; min-width: 0; font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+.findbar input { flex: 1; min-width: 0; font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
 .demo-status.status-error { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
-#editor { ${fullPage ? '--inkkit-column-inset: max(var(--inkkit-padding-inline), calc((100% - 740px) / 2)); --inkkit-background-color: transparent;' : '--inkkit-reading-width: 100%;'} --inkkit-padding-inline: 24px; --inkkit-surface-focus-width: 0; min-height: 410px; padding-block: 18px; }
+#editor { ${fullPage ? '--inkkit-column-inset: max(var(--inkkit-padding-inline), calc((100% - 650px) / 2)); --inkkit-background-color: transparent; --inkkit-diagram-background: var(--page, Canvas); --inkkit-paragraph-spacing: 16px;' : '--inkkit-reading-width: 100%;'} --inkkit-padding-inline: 24px; --inkkit-surface-focus-width: 0; min-height: 410px; padding-block: 18px; }
 .compact-status:empty { display: none; }
 .compact-status { font-size: 12px; opacity: .65; padding: 0 24px 12px; margin: 0; }
 @media(max-width:520px) { .bar { gap: 8px; } .tool { padding: 7px; } .top { padding-inline: 16px; } }
+@media(max-width:600px) { .bar { grid-template-columns: 1fr auto; } .switch { grid-column: 1 / 3; grid-row: 1; justify-self: center; } .tools { grid-column: 1; grid-row: 2; } .appearance { grid-column: 2; grid-row: 2; } }
 @media(max-width:440px) { header { padding-inline: 12px; } header span { max-width: 110px; } #editor { --inkkit-padding-inline: 16px; } }
 </style></head><body>
 ${fullPage ? bar : compactHeader}
@@ -138,8 +160,8 @@ const full = ${fullPage};
 const $ = (id) => document.getElementById(id);
 const status = $('status');
 const root = $('editor');
-const initial = '# Design review\\n\\nWe tried the new note view with a few longer documents. The **quieter toolbar** leaves more room for writing.\\n\\n## What we learned\\n\\n- Keep the title visible when opening a note.\\n- Put less-used commands in the menu.\\n- Give attachments clear names.\\n\\n## Next steps\\n\\n- [x] Compare light and dark appearances\\n- [ ] Try a note with several tables\\n\\n| Area | Next step |\\n| --- | --- |\\n| Navigation | Check keyboard shortcuts |\\n| Writing | Review paste and undo |\\n\\n> Keep the writing easy to read, and leave room for the details.\\n\\nRead the [appearance guide](https://inkkit.cyzr.me/guides/appearance) to customise a preset. Inline code such as \`theme\` uses the same surface as the table header.\\n\\n\`\`\`ts\\nconst theme = "standard"\\nconst ready = true // Ready to write\\n\`\`\`\\n' + (full ? '\\n## A balanced week\\n\\n\`\`\`mermaid\\npie title A balanced week\\n  "Writing" : 35\\n  "Review" : 20\\n  "Planning" : 15\\n  "Research" : 12\\n  "Design" : 8\\n  "Support" : 5\\n  "Admin" : 3\\n  "Learning" : 2\\n\`\`\`\\n' : '');
-const idle = full ? '' : 'Your changes stay in this demo and are not saved.';
+const initial = "# A little room to think\\n\\nA good week starts with a little space. Before the messages and meetings arrive, take a moment to decide what deserves your attention.\\n\\nKeep the plan small: **one thing to finish**, a few things to explore, and enough room for the unexpected.\\n\\n## Start with what matters\\n\\n- Make time for work that needs a clear head.\\n- Keep useful ideas somewhere easy to find.\\n- Leave the rest until it becomes important.\\n\\nA note does not need to capture everything. It just needs to help you find your way back.\\n\\n> Leave room for the thought you have not had yet. A little space can make the next step easier to see.\\n\\n## Turn an idea into a plan\\n\\nSmall steps are easier to begin. Give each one a clear outcome, then put the list aside and get started.\\n\\n- [x] Choose one idea worth exploring\\n- [ ] Make a first version\\n- [ ] Share it with someone whose judgement you trust\\n\\n| When | Make room for |\\n| --- | --- |\\n| Morning | Focused work, before the day gets busy |\\n| Afternoon | Conversations, feedback and small tasks |\\n| Before you finish | A few notes for tomorrow |\\n\\n## Keep it simple\\n\\nThe same approach works in code. A short list and a clear intention are often enough to begin.\\n\\n\`\`\`ts\\nconst today = {\\n  focus: \\"Make a first version\\",\\n  next: [\\"Try it\\", \\"Ask for feedback\\"],\\n}\\n\`\`\`\\n\\nYou can change the typography and colours without changing the words. The [appearance guide](https://inkkit.cyzr.me/guides/appearance) explains how.\\n" + (full ? "\\n## Make space for the whole week\\n\\nA plan is a starting point, not a promise. This one leaves most of the week for making things, with time to talk, reflect and catch up.\\n\\n\`\`\`mermaid\\npie title Room for what matters\\n  \\"Making\\" : 50\\n  \\"Conversations\\" : 25\\n  \\"Thinking\\" : 15\\n  \\"The unexpected\\" : 10\\n\`\`\`\\n" : '');
+const idle = '';
 const say = (text, error = false) => { status.textContent = text; status.classList.toggle('status-error', error); };
 const icons = ${JSON.stringify({ focus: icons.focus, unfocus: icons.unfocus })};
 let editor;
@@ -148,15 +170,10 @@ let mode = 'formatted';
 let focused = false;
 let siteScheme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 const applyAppearance = () => {
-  const selected = $('appearance')?.value || 'system';
-  const scheme = selected === 'system' ? siteScheme : selected;
+  const scheme = siteScheme;
   document.documentElement.style.colorScheme = scheme;
   root.style.setProperty('--inkkit-color-scheme', scheme);
 };
-if (full) {
-  $('theme').onchange = () => { root.dataset.inkkitTheme = $('theme').value; };
-  $('appearance').onchange = applyAppearance;
-}
 applyAppearance();
 const renderFocus = () => {
   const button = $('focus');
@@ -166,8 +183,30 @@ const renderFocus = () => {
   button.setAttribute('aria-label', label);
   button.title = focused ? 'Exit focus (Esc)' : 'Focus';
 };
+const sourceMeasure = document.createElement('div');
+sourceMeasure.style.cssText = 'position:absolute;left:-100000px;top:0;visibility:hidden;white-space:pre-wrap;overflow-wrap:break-word;font:15px/1.5 ui-monospace,"SF Mono",Menlo,monospace';
+sourceMeasure.setAttribute('aria-hidden','true');
+document.body.append(sourceMeasure);
+const sizeSource = () => {
+  if (!editor || mode !== 'source') { root.style.removeProperty('--inkkit-min-height'); return; }
+  try {
+    const text = editor.snapshot(generation).text;
+    sourceMeasure.style.width = Math.max(1, Math.min(full ? 650 : Infinity, root.clientWidth - (innerWidth <= 440 ? 32 : 48))) + 'px';
+    sourceMeasure.textContent = text + String.fromCharCode(10);
+    root.style.setProperty('--inkkit-min-height', Math.max(410, sourceMeasure.getBoundingClientRect().height + 60) + 'px');
+  } catch { /* Keep the last height when a snapshot is temporarily unavailable. */ }
+};
+addEventListener('resize', sizeSource);
+if (full) {
+  let lastHeight = 0;
+  new ResizeObserver(() => {
+    const height = Math.ceil(document.body.getBoundingClientRect().height);
+    if (height !== lastHeight) { lastHeight = height; parent.postMessage({type:'inkkit-demo-height',height}, '*'); }
+  }).observe(document.body);
+}
 const renderState = (state) => {
   mode = state.mode;
+  sizeSource();
   if (full) {
     $('formatted').setAttribute('aria-pressed', String(mode === 'formatted'));
     $('source').setAttribute('aria-pressed', String(mode === 'source'));
@@ -180,17 +219,30 @@ addEventListener('message', (event) => {
   const data = event.data;
   if (data?.type === 'inkkit-demo-theme') {
     siteScheme = data.dark ? 'dark' : 'light';
+    if (typeof data.background === 'string' && CSS.supports('color', data.background)) document.documentElement.style.setProperty('--page', data.background);
     applyAppearance();
   } else if (data?.type === 'inkkit-demo-state') {
     focused = data.focused === true;
     renderFocus();
   }
 });
+    const copyText = async (text) => {
+      try { await navigator.clipboard.writeText(text); return true; } catch {}
+      const previous = document.activeElement;
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.cssText = 'position:fixed;top:0;opacity:0';
+      document.body.append(area);
+      area.select();
+      try { return document.execCommand('copy'); } catch { return false; } finally { area.remove(); previous?.focus(); }
+    };
 try {
   const { InkKitEditor } = await import('https://cdn.jsdelivr.net/npm/@aicayzer/inkkit@0.6.0/dist/${fullPage ? 'index' : 'core'}.js');
   editor = await InkKitEditor.mount(root, {
     openLink() {},
-    changed() { say(idle); },
+    copy(text) { void copyText(text).then(ok => { if (!ok) say('Your browser blocked copying.', true); }); },
+    changed() { say(idle); sizeSource(); },
     commandStateChanged: renderState,
     error(error) { say('That edit could not be applied (' + error.code + '). You can keep editing.', true); }
   }, { keymap: { bold: ['Mod-b'], italic: ['Mod-i'] }, ...(full ? { slashMenu: { enabled: true } } : {}) });
@@ -214,6 +266,45 @@ try {
     $('reset').onclick = reset;
   } else {
     const bar = document.querySelector('[role=toolbar]');
+    const themeButton = $('theme');
+    const themeMenu = $('theme-menu');
+    const themes = [...themeMenu.querySelectorAll('button')];
+    const closeTheme = (restore = false) => {
+      themeMenu.hidden = true;
+      themeButton.setAttribute('aria-expanded', 'false');
+      if (restore) themeButton.focus();
+    };
+    const openTheme = (keyboard = false) => {
+      themeMenu.hidden = false;
+      themeButton.setAttribute('aria-expanded', 'true');
+      const rect = themeButton.getBoundingClientRect();
+      themeMenu.style.left = Math.max(8, Math.min(innerWidth - themeMenu.offsetWidth - 8, rect.right - themeMenu.offsetWidth)) + 'px';
+      themeMenu.style.top = rect.bottom + 6 + 'px';
+      if (keyboard) themes.find(button => button.getAttribute('aria-checked') === 'true').focus();
+    };
+    themeButton.onclick = () => themeMenu.hidden ? openTheme() : closeTheme();
+    themeButton.addEventListener('keydown', event => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openTheme(true); }
+      if (event.key === 'Escape' && !themeMenu.hidden) { event.preventDefault(); closeTheme(true); }
+    });
+    themes.forEach(button => { button.onclick = () => {
+      root.dataset.inkkitTheme = button.dataset.theme;
+      themes.forEach(item => item.setAttribute('aria-checked', String(item === button)));
+      closeTheme(true);
+      sizeSource();
+    }; });
+    themeMenu.addEventListener('keydown', event => {
+      const at = themes.indexOf(document.activeElement);
+      const next = event.key === 'ArrowDown' ? (at + 1) % themes.length : event.key === 'ArrowUp' ? (at + themes.length - 1) % themes.length : event.key === 'Home' ? 0 : event.key === 'End' ? themes.length - 1 : null;
+      if (next !== null) { event.preventDefault(); event.stopPropagation(); themes[next].focus(); }
+      else if (event.key === 'Escape') { event.preventDefault(); closeTheme(true); }
+      else if (event.key === 'Tab') closeTheme(true);
+    });
+    document.addEventListener('pointerdown', event => {
+      if (!themeMenu.contains(event.target) && !themeButton.contains(event.target)) closeTheme();
+    });
+    addEventListener('resize', () => closeTheme());
+    addEventListener('scroll', () => closeTheme(), true);
     const findbar = $('findbar');
     const query = $('query');
     const copy = $('copy');
@@ -244,17 +335,6 @@ try {
       if (event.key === 'Escape') { event.preventDefault(); openFind(false); }
       else if (event.key === 'Enter') { event.preventDefault(); findNext(); }
     });
-    const copyText = async (text) => {
-      try { await navigator.clipboard.writeText(text); return true; } catch {}
-      const previous = document.activeElement;
-      const area = document.createElement('textarea');
-      area.value = text;
-      area.setAttribute('readonly', '');
-      area.style.cssText = 'position:fixed;top:0;opacity:0';
-      document.body.append(area);
-      area.select();
-      try { return document.execCommand('copy'); } catch { return false; } finally { area.remove(); previous?.focus(); }
-    };
     let copied;
     copy.onclick = async () => {
       say('');
@@ -274,7 +354,7 @@ try {
     document.addEventListener('keydown', () => { slashOpen = root.querySelector('[role=combobox][aria-expanded=true]') !== null; }, true);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
-        const handled = slashOpen || (event.defaultPrevented && !event.target.isContentEditable);
+        const handled = !themeMenu.hidden || slashOpen || (event.defaultPrevented && !event.target.isContentEditable);
         if (focused && !handled && !event.isComposing) parent.postMessage({ type: 'inkkit-demo-focus', focused: false }, '*');
       } else if ((event.key === 'F3' || (event.key === 'g' && (event.metaKey || event.ctrlKey))) && query.value) { event.preventDefault(); findNext(); }
     });
