@@ -1,3 +1,4 @@
+import { tracePreservation } from './diagnostics'
 import { leadingBOMLength } from './bom'
 import { remarkCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -96,6 +97,13 @@ export class Preservation {
     try {
       return this.serializeWith(doc)
     } catch (cause) {
+      tracePreservation(this.ctx, {
+        kind: 'preservation',
+        phase: 'refused',
+        code: 'preservation',
+        reason:
+          cause instanceof PreservationRefusal ? cause.reason : 'unexpected',
+      })
       if (cause instanceof PreservationError || isPreservationRefusal(cause))
         throw cause
       throw new PreservationError('Cannot preserve the edited Markdown', {
@@ -107,16 +115,25 @@ export class Preservation {
   }
 
   private serializeWith(doc: ProseNode): string {
-    if (this.unchanged(doc)) return this.source
+    if (this.unchanged(doc)) {
+      tracePreservation(this.ctx, { kind: 'preservation', path: 'unchanged' })
+      return this.source
+    }
     let local = this.localEdits(doc)
+    let path: 'local' | 'regions' | 'whole' = 'local'
     if (local === undefined)
       try {
+        path = 'regions'
         local = this.regions(doc)
       } catch (error) {
         if (!isPreservationRefusal(error)) throw error
         // The whole-document path decides, and refuses if it fails too.
         local = undefined
       }
+    tracePreservation(this.ctx, {
+      kind: 'preservation',
+      path: local === undefined ? 'whole' : path,
+    })
     return local === undefined
       ? this.wholeDocument(doc)
       : this.checked(doc, local)

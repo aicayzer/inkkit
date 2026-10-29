@@ -45,6 +45,49 @@ const contains = (path, includes, name) => ({
 const source =
   '\uFEFF# Preserved heading\r\n\r\nBefore [Alpha][Authored] and [Authored][] and [Authored], repeated[^Note].\r\n\r\n[Authored]: <https://example.com/original> "Shared title"\r\n\r\n[^Note]: Footnote body with [nested][Authored].\r\n\r\n    Second paragraph.\r\n\r\n[Unused]: https://example.com/unused\r\n\r\n[Unresolved][Missing]\r\n'
 const scenarios = {
+  'native-diagnostics-input-and-refusal': {
+    source: '### DIAGNOSTIC-CANARY &amp; \\*keep\\*\r\n',
+    operations: [
+      { op: 'diagnosticReport', name: 'disabled' },
+      assert('report.enabled', false, 'disabled'),
+      assert('report.events.length', 0, 'disabled'),
+      { op: 'setDiagnosticsEnabled', enabled: true },
+      { op: 'select', text: 'DIAGNOSTIC-CANARY' },
+      { op: 'diagnosticReport', name: 'heading' },
+      assert('report.presentation.headingLevel', 3, 'heading'),
+      assert('report.presentation.fontWeight', 600, 'heading'),
+      {
+        op: 'assert',
+        path: 'serialized',
+        excludes: 'DIAGNOSTIC-CANARY',
+        name: 'heading',
+      },
+      { op: 'nativeInput', keyCode: 7, characters: 'x' },
+      assert('snapshot.text', '### x &amp; \\*keep\\*\r\n'),
+      { op: 'undo' },
+      assert('snapshot.text', '### DIAGNOSTIC-CANARY &amp; \\*keep\\*\r\n'),
+      { op: 'redo' },
+      { op: 'composition', active: true },
+      { op: 'snapshot', expectedError: 'composition' },
+      { op: 'diagnosticReport', name: 'composing' },
+      assert('report.state.composing', true, 'composing'),
+      {
+        op: 'assert',
+        path: 'serialized',
+        excludes: 'DIAGNOSTIC-CANARY',
+        name: 'composing',
+      },
+      { op: 'composition', active: false },
+      { op: 'save' },
+      { op: 'reopen' },
+      assert('snapshot.text', '### x &amp; \\*keep\\*\r\n'),
+      { op: 'setDiagnosticsEnabled', enabled: false },
+      { op: 'diagnosticReport', name: 'cleared' },
+      assert('report.enabled', false, 'cleared'),
+      assert('report.events.length', 0, 'cleared'),
+      { op: 'assert', path: 'report.incident', truthy: false, name: 'cleared' },
+    ],
+  },
   'reference-lifecycle': {
     source,
     operations: [
@@ -2303,6 +2346,35 @@ const commentSource =
 }
 {
   Object.assign(scenarios, {
+    'linked-files-fill-card': {
+      files: true,
+      source: '![[FillArchive]]\r\n',
+      operations: [
+        { op: 'fileState', ready: true, name: 'ready' },
+        assert('cards.0.role', 'button', 'ready'),
+        assert('cards.0.tabIndex', 0, 'ready'),
+        assert('cards.0.fillsColumn', true, 'ready'),
+        assert('cards.0.openButtons', 0, 'ready'),
+        {
+          op: 'nativeInput',
+          selector: '[data-inkkit-file-activation="card"]',
+          keyCode: 36,
+          characters: '\r',
+        },
+        { op: 'fileState', name: 'keyboard' },
+        assert('opens.length', 1, 'keyboard'),
+        {
+          op: 'click',
+          selector: '[data-inkkit-file-activation="card"]',
+        },
+        { op: 'fileState', name: 'clicked' },
+        assert('opens.length', 2, 'clicked'),
+        assert('snapshot.text', '![[FillArchive]]\r\n'),
+        { op: 'save' },
+        { op: 'reopen' },
+        assert('snapshot.text', '![[FillArchive]]\r\n'),
+      ],
+    },
     'linked-files-source-sizing': {
       files: true,
       fixture: 'linked-files',
@@ -3175,6 +3247,7 @@ scenarios['host-keyboard-open-links'] = {
 }
 const names = Object.keys(scenarios)
 const groups = {
+  diagnostics: ['native-diagnostics-input-and-refusal'],
   core: [
     'reference-lifecycle',
     'source-spelling-cross-mode-history',
@@ -3203,6 +3276,10 @@ const groups = {
 }
 for (const [name, fixture] of Object.entries(scenarios))
   scenarios[name] = { fixture }
+scenarios['native-diagnostics-input-and-refusal'].native = [
+  { key: 'x', collapsed: false, selection: 'DIAGNOSTIC-CANARY' },
+]
+scenarios['linked-files-fill-card'].native = [{ key: 'Enter' }]
 Object.assign(scenarios, probeScenarios)
 Object.assign(groups, probeGroups)
 const selected = new Set()

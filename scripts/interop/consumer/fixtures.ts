@@ -823,6 +823,13 @@ export class ControlledFiles {
           message: 'Controlled missing bytes',
         }
       if (name === 'Archive') return { kind: 'file' as const, label }
+      if (name === 'FillArchive')
+        return {
+          kind: 'file' as const,
+          label,
+          layout: 'fill' as const,
+          activation: 'card' as const,
+        }
       const kind =
         name === 'Voice'
           ? 'audio'

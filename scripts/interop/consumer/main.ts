@@ -636,6 +636,16 @@ window.interop = {
             result = {
               kinds: nodes.map((node) => node.dataset.inkkitFileKind),
               states: nodes.map((node) => node.dataset.inkkitFileState),
+              cards: nodes.map((node) => ({
+                role: node.getAttribute('role'),
+                tabIndex: node.tabIndex,
+                fillsColumn:
+                  Math.abs(
+                    node.getBoundingClientRect().width -
+                      node.parentElement.getBoundingClientRect().width,
+                  ) < 1,
+                openButtons: node.querySelectorAll('.inkkit-file-open').length,
+              })),
               media: media.map((node) => ({
                 kind: node.tagName.toLowerCase(),
                 controls: node.controls,
@@ -979,6 +989,15 @@ window.interop = {
               JSON.stringify(editor.commandState(operation.generation)),
             )
             break
+          case 'setDiagnosticsEnabled':
+            editor.setDiagnosticsEnabled(operation.enabled)
+            result = true
+            break
+          case 'diagnosticReport': {
+            const report = editor.diagnosticReport()
+            result = { report, serialized: JSON.stringify(report) }
+            break
+          }
           case 'inputAttributes': {
             const surface = activeEditor()
             result = {

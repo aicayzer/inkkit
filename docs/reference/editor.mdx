@@ -35,7 +35,7 @@ Each member first throws `destroyed` if the editor was destroyed, then `invalid-
 
 | Members                                                                                                                                                                                                           | Expected generation                                    | Then throws                                                                                                                                                                               |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `formats`, `editable`, `editingMode`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`, `setHostActive`                                                                                               | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
+| `formats`, `editable`, `editingMode`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`, `setHostActive`, `setDiagnosticsEnabled`, `diagnosticReport`                                                  | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
 | `loadDocument`                                                                                                                                                                                                    | None.                                                  | `invalid-argument` when the generation isn't greater than the loaded one, then `preservation` when the Markdown can't be loaded. A format you didn't offer is a bad argument.             |
 | `setEditable`, `setTextInputPreferences`                                                                                                                                                                          | None.                                                  | `composition`.                                                                                                                                                                            |
 | `reloadDocument`                                                                                                                                                                                                  | Optional, the last parameter. Checked only when given. | `not-ready` and `stale-document`, only when the generation is given. Then the same errors as `loadDocument`.                                                                              |
@@ -68,6 +68,56 @@ Import from one entry throughout the app. If any module imports `@aicayzer/inkki
 import { InkKitEditor } from '@aicayzer/inkkit/core'
 import '@aicayzer/inkkit/style.css'
 ```
+
+## Local diagnostics
+
+{/* @api InkKitEditor.setDiagnosticsEnabled */}
+
+### setDiagnosticsEnabled
+
+`setDiagnosticsEnabled(enabled: boolean): void`
+
+Enables content-free local tracing, which is off by default. Enabling starts a new random session. Disabling removes diagnostic listeners and clears retained events and the incident. It accepts only a boolean and throws `invalid-argument` otherwise. It works before loading, while composing, while an import is pending, and in a read-only editor. Like other members, it throws `destroyed` after destruction.
+
+{/* @api InkKitEditor.diagnosticReport */}
+
+### diagnosticReport
+
+`diagnosticReport(): DiagnosticReport`
+
+Returns a detached [diagnostic report](#diagnosticreport) without saving or parsing the document. It works even when `snapshot()` refuses because of composition, a pending import or preservation. Requesting a report never changes the document, selection, revision or history. It throws `destroyed` after destruction.
+
+Reports stay local. Inkkit does not store them on disk or send them anywhere. The host decides whether to export a report and supplies package and application versions separately. No document text, HTML, clipboard content, input data, printable keys, link addresses, file paths, document identifiers, error messages or cause strings are recorded. Font family names are bounded declarations from the host's CSS, not a measurement of the font used for each rendered glyph.
+
+{/* @api DiagnosticReport */}
+
+### DiagnosticReport
+
+The version-one report contains `schemaVersion: 1`, `enabled`, a random `sessionId`, current `state`, and up to 200 `events`. The first preservation or internal failure freezes an `incident` with `triggerSequence` and up to 200 preceding events including that event. Its `tail` retains the first 40 subsequent events. Expected guard refusals, such as composition and stale generations, remain in the live events without occupying the incident. Later editing cannot overwrite the frozen incident. Toggle diagnostics off and on to start another capture. Reports are independent copies, so changing a returned object cannot change retained history.
+
+While enabled, `presentation` is measured only when requesting a report. If layout cannot be measured it is omitted. Disabled reports have empty events, no incident and no presentation; current numeric counters and guard state remain available. If the view state cannot be read, the report uses its last observed safe state, or initial unloaded state before any observation. Tracing is best effort and cannot interrupt an edit or replace its original error.
+
+{/* @api DiagnosticEvent */}
+
+### DiagnosticEvent
+
+Each event has a monotonically increasing `sequence`, integer `elapsedMs` since enabling, a `kind` and safe editor `state`. Kinds are `input`, `composition`, `focus`, `selection`, `operation`, `preservation`, `error` and `enabled`. Optional `phase` describes transitions or operation begin, success and refusal. `input` groups browser input into text, composition, delete, paste, drop, history, format or other. Raw browser input strings are never retained.
+
+Optional `operation` groups calls into snapshot, edit, history, load, configuration, output, selection, lifecycle or other. `code` is an existing `EditorErrorCode`. Preservation `path` is unchanged, local, regions or whole. A safe `reason` is matching-budget, source-location, reopen-mismatch, parse-refusal or unexpected. Diagnostic tracing does not enable the internal preservation cross-check, retain source comparisons or change edit validation.
+
+{/* @api DiagnosticState */}
+
+### DiagnosticState
+
+Current guard state records `ready`, `editable`, `composing` and `pending`, with numeric `revision` and optional `generation`, the document `format`, and `mode`. Optional `selection` contains numeric `from` and `to`. Formatted offsets are ProseMirror document positions; literal offsets are UTF-16 positions in the source surface. Document identifiers and selection text are excluded.
+
+{/* @api DiagnosticPresentation */}
+
+### DiagnosticPresentation
+
+The selected block's declared `fontFamily` is capped at 160 characters and permits only letters, numbers, spaces, commas, quotes, underscores and hyphens. `fontSize` and optional `lineHeight` are numeric CSS pixels. `fontWeight` is numeric, and `fontStyle` is normal, italic, oblique or other. Optional `headingLevel` is one through six for a heading. A normal line height is omitted. `block` is paragraph, heading, code, literal or other. `marks` contains at most 12 known mark names, with unknown names replaced by other. Mark attributes are excluded.
+
+`caretColor` is a bounded CSS colour or other. Optional `caret` contains left, top, right and bottom coordinates for the formatted selection. `viewport` contains the window width and height, and `scroll` contains left and top offsets of the configured scrolling container. Numeric presentation values are finite and bounded to ten million CSS pixels. The report reads configuration and geometry; it does not move the caret, focus the editor or change input preferences.
 
 ## Lifecycle
 

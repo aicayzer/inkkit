@@ -71,3 +71,10 @@ export type {
 } from './types'
 
 export type { SlashMenuOptions, SlashCommandName, SlashCommand } from './types'
+
+export type {
+  DiagnosticReport,
+  DiagnosticEvent,
+  DiagnosticState,
+  DiagnosticPresentation,
+} from './diagnostics'
