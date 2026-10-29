@@ -244,11 +244,19 @@ const quotes: Record<string, [opening: string, closing: string]> = {
   "'": ['\u2018', '\u2019'],
 }
 
+/** Input rules that are not Markdown syntax, which apply in every formatted document. */
+export const formatNeutralRules = new WeakSet<InputRule>()
+
+function formatNeutral(rule: InputRule): InputRule {
+  formatNeutralRules.add(rule)
+  return rule
+}
+
 export const smartPunctuation = [
   smartPunctuationCtx,
   inputTracking,
-  $inputRule(
-    (ctx) =>
+  $inputRule((ctx) =>
+    formatNeutral(
       new InputRule(
         /["']$/,
         (state, match, start, end) => {
@@ -261,9 +269,10 @@ export const smartPunctuation = [
         },
         { inCodeMark: false },
       ),
+    ),
   ),
-  $inputRule(
-    (ctx) =>
+  $inputRule((ctx) =>
+    formatNeutral(
       new InputRule(
         /--$/,
         (state, match, start, end) => {
@@ -283,9 +292,10 @@ export const smartPunctuation = [
         },
         { inCodeMark: false },
       ),
+    ),
   ),
-  $inputRule(
-    (ctx) =>
+  $inputRule((ctx) =>
+    formatNeutral(
       new InputRule(
         /\u2013-$/,
         (state, match, start, end) => {
@@ -300,6 +310,7 @@ export const smartPunctuation = [
         },
         { inCodeMark: false },
       ),
+    ),
   ),
 ].flat()
 

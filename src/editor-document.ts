@@ -89,7 +89,11 @@ export class EditorDocument {
           this.sourcePreservations.set(provenance, preservation)
         }
       }
-      text = preservation!.serialize!(cleanSourceDoc(doc), this.carried)
+      // A line typed in Markdown is complete only at its end; an RTF break is content.
+      text = preservation!.serialize!(
+        this.handler.richText ? doc : cleanSourceDoc(doc),
+        this.carried,
+      )
     } catch (error) {
       throw coded(error, 'preservation')
     }
@@ -143,7 +147,8 @@ export class EditorDocument {
     positions: readonly number[],
   ): Map<number, string> {
     const none = new Map<number, string>()
-    if (this.runtime.literal() || !positions.length) return none
+    if (this.runtime.literal() || this.handler.richText || !positions.length)
+      return none
     try {
       let marked = doc
       // Positions are in document order, so marking the last first leaves

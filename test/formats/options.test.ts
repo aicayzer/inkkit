@@ -77,7 +77,7 @@ test('a format list must name known formats once each', async () => {
   try {
     for (const formats of [
       [],
-      ['rtf'],
+      ['docx'],
       ['md', 'MD'],
       ['md', 'md'],
       ['txt', 'md', 'txt'],

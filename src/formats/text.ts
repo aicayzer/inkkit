@@ -29,6 +29,7 @@ export const textFormat: FormatHandler = {
   headings: false,
   nativeCopy: true,
   keepsInsertedLineEndings: false,
+  markdownInput: false,
   // The text stays on the literal surface, and the formatted document stays empty until an edit.
   load: (ctx) => paragraph(ctx, ''),
   parse: paragraph,

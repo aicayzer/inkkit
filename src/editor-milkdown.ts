@@ -7,13 +7,18 @@ import {
   editorViewOptionsCtx,
   remarkStringifyOptionsCtx,
   rootCtx,
+  inputRulesCtx,
 } from '@milkdown/kit/core'
 import type { Ctx, MilkdownPlugin } from '@milkdown/kit/ctx'
 import {
   EditorState,
-  type Plugin,
+  Plugin,
+  PluginKey,
   type Transaction,
 } from '@milkdown/kit/prose/state'
+import type { InputRule } from '@milkdown/kit/prose/inputrules'
+import { formatInput, formatInputCtx, type FormatInput } from './format-input'
+import { formatNeutralRules } from './smart-punctuation'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { SearchQuery, setSearchState } from 'prosemirror-search'
 import { terminalSelection } from './editor-selection'
@@ -78,6 +83,7 @@ interface MilkdownRuntime {
     policy: MilkdownPlugin
   }
   authoredSources: AuthoredSources
+  format: FormatInput
   smartPunctuation(): boolean
   linkSchemes: ReadonlySet<string>
   mutate(operation: () => boolean): boolean
@@ -104,6 +110,7 @@ export async function createMilkdownEditor(
         runtime.authoredSources(doc, positions),
       )
       ctx.set(smartPunctuationCtx.key, () => runtime.smartPunctuation())
+      ctx.set(formatInputCtx.key, runtime.format)
       ctx.set(linkSchemesCtx.key, runtime.linkSchemes)
       ctx.update(labelsCtx.key, () => ({
         ...defaultLabels,
@@ -165,6 +172,8 @@ export async function createMilkdownEditor(
     })
     .use(labelsCtx)
     .use(linkSchemesCtx)
+    .use(formatInputCtx)
+    .use(richTextGuard)
     .use(runtime.plugins.paste)
     .use(visibleClipboard)
     .use(runtime.plugins.suggestions)
@@ -237,7 +246,61 @@ export async function createMilkdownEditor(
         : [],
     )
     .create()
+    .then((editor) => {
+      markdownInputRules(editor.ctx)
+      return editor
+    })
 }
+
+type RuleHandler = Exclude<ConstructorParameters<typeof InputRule>[1], string>
+
+/** Markdown input rules, such as `# ` for a heading, do nothing in a format that is not Markdown.
+ *  Rules that are not Markdown syntax, such as smart punctuation, keep applying. */
+function markdownInputRules(ctx: Ctx): void {
+  for (const rule of ctx.get(inputRulesCtx)) {
+    if (formatNeutralRules.has(rule)) continue
+    const held = rule as InputRule & { handler: RuleHandler }
+    const handler = held.handler
+    held.handler = (state, match, start, end) =>
+      formatInput(ctx).markdownInput()
+        ? handler(state, match, start, end)
+        : null
+  }
+}
+
+/**
+ * In a format that holds less than Markdown, such as RTF, refuses any transaction that would bring
+ * in a node, mark or structure the format cannot hold, so a disallowed edit changes nothing. A
+ * link's underline, which RTF does not keep, is removed in the same step.
+ */
+const richTextGuard = $prose(
+  (ctx) =>
+    new Plugin({
+      key: new PluginKey('inkkitRichTextGuard'),
+      filterTransaction(tr, state) {
+        const rich = formatInput(ctx).richText()
+        return !rich || rich.allows(tr, state)
+      },
+      appendTransaction(transactions, oldState, newState) {
+        const rich = formatInput(ctx).richText()
+        if (!rich || !transactions.some((tr) => tr.docChanged)) return null
+        const start = oldState.doc.content.findDiffStart(newState.doc.content)
+        if (start == null) return null
+        const end = oldState.doc.content.findDiffEnd(newState.doc.content)!.b
+        const ranges = rich.linkedUnderlines(
+          newState.doc,
+          start,
+          Math.max(start, end),
+        )
+        if (!ranges.length) return null
+        const tr = newState.tr
+        for (const { from, to } of ranges)
+          tr.removeMark(from, to, newState.schema.marks.underline!)
+        if (newState.storedMarks) tr.setStoredMarks(newState.storedMarks)
+        return tr
+      },
+    }),
+)
 
 export function createDocumentState(ctx: Ctx, doc: ProseNode): EditorState {
   return EditorState.create(

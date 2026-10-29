@@ -73,8 +73,8 @@ async function markdownReached(entry: string): Promise<string[][]> {
     .map(([, chain]) => chain)
 }
 
-// Point another format's handler here, such as `src/formats/rich-text.ts`, when it is added.
-for (const entry of ['src/formats/text.ts'])
+// Each handler that is not Markdown, and every module it reaches.
+for (const entry of ['src/formats/text.ts', 'src/formats/rich-text.ts'])
   test(`${entry} reaches no Markdown parsing or preservation`, async () => {
     expect(await markdownReached(entry)).toEqual([])
   })

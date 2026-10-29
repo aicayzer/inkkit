@@ -157,53 +157,57 @@ Pass bindings in [`keymap`](/reference/options#editor-options) at mount, or repl
 {/* @api ShortcutName */}
 A `ShortcutName` identifies a configurable binding: formatting, history, link opening, block movement, list indentation or a table command.
 
-| `ShortcutName`         | Default keys           | What it does                |
-| ---------------------- | ---------------------- | --------------------------- |
-| `heading1`             | None                   | `format('heading1')`        |
-| `heading2`             | None                   | `format('heading2')`        |
-| `heading3`             | None                   | `format('heading3')`        |
-| `heading4`             | None                   | `format('heading4')`        |
-| `heading5`             | None                   | `format('heading5')`        |
-| `heading6`             | None                   | `format('heading6')`        |
-| `paragraph`            | None                   | `format('paragraph')`       |
-| `bold`                 | None                   | `format('bold')`            |
-| `italic`               | None                   | `format('italic')`          |
-| `strikethrough`        | None                   | `format('strikethrough')`   |
-| `highlight`            | None                   | `format('highlight')`       |
-| `underline`            | None                   | `format('underline')`       |
-| `superscript`          | None                   | `format('superscript')`     |
-| `subscript`            | None                   | `format('subscript')`       |
-| `code`                 | None                   | `format('code')`            |
-| `codeBlock`            | None                   | `format('codeBlock')`       |
-| `quote`                | None                   | `format('quote')`           |
-| `bulletList`           | None                   | `format('bulletList')`      |
-| `orderedList`          | None                   | `format('orderedList')`     |
-| `taskList`             | None                   | `format('taskList')`        |
-| `toggleTask`           | None                   | `format('toggleTask')`      |
-| `undo`                 | `Mod-z`                | `undo()`                    |
-| `redo`                 | `Mod-y`, `Shift-Mod-z` | `redo()`                    |
-| `openLink`             | None                   | Open the link at the caret  |
-| `moveBlockUp`          | `Alt-ArrowUp`          | `moveBlock('up')`           |
-| `moveBlockDown`        | `Alt-ArrowDown`        | `moveBlock('down')`         |
-| `indent`               | `Tab`                  | Indent the list item        |
-| `outdent`              | `Shift-Tab`            | Outdent the list item       |
-| `tableInsert`          | None                   | `table('insert')`           |
-| `tableAddRowBefore`    | None                   | `table('addRowBefore')`     |
-| `tableAddRowAfter`     | None                   | `table('addRowAfter')`      |
-| `tableAddColumnBefore` | None                   | `table('addColumnBefore')`  |
-| `tableAddColumnAfter`  | None                   | `table('addColumnAfter')`   |
-| `tableDeleteRow`       | None                   | `table('deleteRow')`        |
-| `tableDeleteColumn`    | None                   | `table('deleteColumn')`     |
-| `tableDeleteTable`     | None                   | `table('deleteTable')`      |
-| `tableAlignLeft`       | None                   | `table('alignLeft')`        |
-| `tableAlignCenter`     | None                   | `table('alignCenter')`      |
-| `tableAlignRight`      | None                   | `table('alignRight')`       |
-| `tableMoveRowUp`       | None                   | `table('moveRowUp')`        |
-| `tableMoveRowDown`     | None                   | `table('moveRowDown')`      |
-| `tableMoveColumnLeft`  | None                   | `table('moveColumnLeft')`   |
-| `tableMoveColumnRight` | None                   | `table('moveColumnRight')`  |
-| `tableSortRows`        | None                   | `table('sortRows')`         |
-| `tableExit`            | `Mod-Enter`, `Enter`   | `table('exit')`, in a table |
+| `ShortcutName`         | Default keys           | What it does                  |
+| ---------------------- | ---------------------- | ----------------------------- |
+| `heading1`             | None                   | `format('heading1')`          |
+| `heading2`             | None                   | `format('heading2')`          |
+| `heading3`             | None                   | `format('heading3')`          |
+| `heading4`             | None                   | `format('heading4')`          |
+| `heading5`             | None                   | `format('heading5')`          |
+| `heading6`             | None                   | `format('heading6')`          |
+| `paragraph`            | None                   | `format('paragraph')`         |
+| `bold`                 | None                   | `format('bold')`              |
+| `italic`               | None                   | `format('italic')`            |
+| `strikethrough`        | None                   | `format('strikethrough')`     |
+| `highlight`            | None                   | `format('highlight')`         |
+| `underline`            | None                   | `format('underline')`         |
+| `superscript`          | None                   | `format('superscript')`       |
+| `subscript`            | None                   | `format('subscript')`         |
+| `code`                 | None                   | `format('code')`              |
+| `codeBlock`            | None                   | `format('codeBlock')`         |
+| `quote`                | None                   | `format('quote')`             |
+| `bulletList`           | None                   | `format('bulletList')`        |
+| `orderedList`          | None                   | `format('orderedList')`       |
+| `taskList`             | None                   | `format('taskList')`          |
+| `toggleTask`           | None                   | `format('toggleTask')`        |
+| `alignLeft`            | None                   | `format('alignLeft')`, RTF    |
+| `alignCenter`          | None                   | `format('alignCenter')`, RTF  |
+| `alignRight`           | None                   | `format('alignRight')`, RTF   |
+| `alignJustify`         | None                   | `format('alignJustify')`, RTF |
+| `undo`                 | `Mod-z`                | `undo()`                      |
+| `redo`                 | `Mod-y`, `Shift-Mod-z` | `redo()`                      |
+| `openLink`             | None                   | Open the link at the caret    |
+| `moveBlockUp`          | `Alt-ArrowUp`          | `moveBlock('up')`             |
+| `moveBlockDown`        | `Alt-ArrowDown`        | `moveBlock('down')`           |
+| `indent`               | `Tab`                  | Indent the list item          |
+| `outdent`              | `Shift-Tab`            | Outdent the list item         |
+| `tableInsert`          | None                   | `table('insert')`             |
+| `tableAddRowBefore`    | None                   | `table('addRowBefore')`       |
+| `tableAddRowAfter`     | None                   | `table('addRowAfter')`        |
+| `tableAddColumnBefore` | None                   | `table('addColumnBefore')`    |
+| `tableAddColumnAfter`  | None                   | `table('addColumnAfter')`     |
+| `tableDeleteRow`       | None                   | `table('deleteRow')`          |
+| `tableDeleteColumn`    | None                   | `table('deleteColumn')`       |
+| `tableDeleteTable`     | None                   | `table('deleteTable')`        |
+| `tableAlignLeft`       | None                   | `table('alignLeft')`          |
+| `tableAlignCenter`     | None                   | `table('alignCenter')`        |
+| `tableAlignRight`      | None                   | `table('alignRight')`         |
+| `tableMoveRowUp`       | None                   | `table('moveRowUp')`          |
+| `tableMoveRowDown`     | None                   | `table('moveRowDown')`        |
+| `tableMoveColumnLeft`  | None                   | `table('moveColumnLeft')`     |
+| `tableMoveColumnRight` | None                   | `table('moveColumnRight')`    |
+| `tableSortRows`        | None                   | `table('sortRows')`           |
+| `tableExit`            | `Mod-Enter`, `Enter`   | `table('exit')`, in a table   |
 
 {/* @api Keymap */}
 A `Keymap` maps each name to an array of keys. An unknown name, or a value that isn't an array of strings, throws `invalid-argument`; a `null` entry counts as omitted.

@@ -1,10 +1,6 @@
 import { withFileSignal } from './files'
-import type { FormatHandler, FormatOutput } from './formats'
-import type {
-  ClipboardOutput,
-  DocumentSnapshot,
-  PrintableDocument,
-} from './types'
+import type { FormatHandler, FormatOutput, SavedText } from './formats'
+import type { ClipboardOutput, PrintableDocument } from './types'
 import type { SessionCapture } from './session'
 
 interface OutputRuntime extends FormatOutput {
@@ -42,7 +38,7 @@ export class EditorOutput {
   }
 
   async printable(
-    snapshot: DocumentSnapshot,
+    snapshot: SavedText,
     captured: SessionCapture,
   ): Promise<PrintableDocument> {
     const handler = this.runtime.handler()
@@ -74,7 +70,7 @@ export class EditorOutput {
 
   /** Rejects rather than throws, as an asynchronous member does. */
   clipboard(
-    snapshot: DocumentSnapshot,
+    snapshot: SavedText,
     captured: SessionCapture,
     all: boolean,
   ): Promise<ClipboardOutput> {

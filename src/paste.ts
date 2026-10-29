@@ -1,5 +1,6 @@
 import { isPortableImageMIME } from './portable-image'
 import { literalTextNodes } from './literal-text'
+import type { RichTextBehaviour } from './formats/types'
 import { htmlBreakAt } from './hard-break'
 import { replacementMarks } from './text-input'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
@@ -16,6 +17,7 @@ import {
 import {
   Plugin,
   PluginKey,
+  Selection,
   TextSelection,
   type Transaction,
 } from '@milkdown/kit/prose/state'
@@ -74,6 +76,9 @@ interface PasteControllerOptions {
   onPendingChanged?: () => void
   editable?: () => boolean
   literalText?: () => boolean
+  /** Set while the document is in a format that imports pastes its own way, such as RTF. */
+  richText?: () => RichTextBehaviour | undefined
+  linkSchemes?: ReadonlySet<string>
 }
 interface Anchor {
   from: number
@@ -166,6 +171,19 @@ export class PasteController {
                 : importableSlice(this.options.ctx(), slice),
             handlePaste: (view, event) => {
               this.claimed = false
+              // RTF imports every paste itself, so nothing it cannot hold arrives unconverted.
+              if (
+                this.options.richText?.() &&
+                event.clipboardData &&
+                view.editable
+              ) {
+                const data = event.clipboardData
+                void this.run({
+                  text: data.getData('text/plain'),
+                  html: data.getData('text/html') || undefined,
+                }).catch((error) => options.onError?.(error))
+                return true
+              }
               const claim = claimsPaste(view, event)
               if (claim === false) return false
               const data = event.clipboardData!
@@ -319,6 +337,26 @@ export class PasteController {
         to: view.state.selection.to,
       }),
       controller: new AbortController(),
+    }
+    const rich = this.options.richText?.()
+    if (rich) {
+      // Images and files are not part of an RTF document, so nothing is imported or waited for.
+      const anchor = operation
+      const state = view.state
+      const slice = input.plainText
+        ? rich.paste(
+            { text: input.text },
+            state,
+            this.options.linkSchemes ?? new Set(),
+          )
+        : rich.paste(input, state, this.options.linkSchemes ?? new Set())
+      const tr = state.tr.replaceRange(anchor.from, anchor.to, slice)
+      const end = tr.doc.resolve(tr.mapping.map(anchor.to, 1))
+      this.dispatch(
+        view,
+        tr.setSelection(Selection.near(end, -1)).scrollIntoView(),
+      )
+      return
     }
     const inCode = () =>
       view.state.doc.resolve(this.anchor(operation).from).parent.type.spec.code

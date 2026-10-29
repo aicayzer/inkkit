@@ -1,5 +1,9 @@
-/** `md` is Markdown; `txt` is literal text, shown and saved as typed. */
-export type DocumentFormat = 'md' | 'txt'
+/** `md` is Markdown; `txt` is literal text, shown and saved as typed; `rtf` is rich text, which the
+ *  host converts to and from a `RichTextDocument`. */
+export type DocumentFormat = 'md' | 'txt' | 'rtf'
+/** The formats whose document is text: Markdown and TXT. An editor mounted without `rtf` in its
+ *  `formats` has only these. */
+export type TextDocumentFormat = 'md' | 'txt'
 /** What saving promises for a format. `exact` saves the file exactly. `structure` keeps the
  *  structure and marks and replaces fonts, colors and sizes with Inkkit's style. `lossy` is a
  *  conversion that drops something and says what. */
@@ -16,13 +20,113 @@ export interface DocumentContext {
   generation: number
   operationId: string
 }
-/** A document to load. `generation` must be greater than the loaded one. */
-export interface DocumentInput {
+/** A document to load. `generation` must be greater than the loaded one. Markdown and TXT carry
+ *  their `text`; RTF carries the `document` the host read from the file. `F` is the formats the
+ *  editor was mounted with; without `rtf` among them, every input is text. */
+export type DocumentInput<F extends DocumentFormat = TextDocumentFormat> =
+  F extends 'rtf' ? RichTextDocumentInput : TextDocumentInput
+/** A Markdown or TXT document to load. */
+export interface TextDocumentInput {
   documentId: string
   generation: number
-  format: DocumentFormat
+  format: TextDocumentFormat
   text: string
 }
+/** An RTF document to load, as the host's converter read it. */
+export interface RichTextDocumentInput {
+  documentId: string
+  generation: number
+  format: 'rtf'
+  document: RichTextDocument
+}
+
+/** A rich text document: the JSON form of an RTF file that the host converts. Version 1 is the
+ *  only version. */
+export interface RichTextDocument {
+  version: 1
+  blocks: RichTextBlock[]
+}
+/** A paragraph, a list or a table. A list item holds a paragraph and then only lists. */
+export type RichTextBlock =
+  | {
+      type: 'paragraph'
+      /** Absent for left alignment. */
+      align?: 'center' | 'right' | 'justify'
+      content: RichTextInline[]
+    }
+  | {
+      type: 'list'
+      ordered: boolean
+      /** An ordered list's first number, 1 or more. Absent for 1. */
+      start?: number
+      items: RichTextListItem[]
+    }
+  | {
+      type: 'table'
+      /** Every row has the same number of cells. */
+      rows: RichTextTableCell[][]
+    }
+export interface RichTextListItem {
+  blocks: RichTextBlock[]
+}
+export interface RichTextTableCell {
+  content: RichTextInline[]
+}
+/** A run of text, never empty and without line or paragraph separators, or a line break. */
+export type RichTextInline =
+  { type: 'text'; text: string; marks?: RichTextMark[] } | { type: 'break' }
+/** An inline mark. A run holds each type at most once, and never both superscript and
+ *  subscript. */
+export type RichTextMark =
+  | {
+      type:
+        | 'bold'
+        | 'italic'
+        | 'underline'
+        | 'strikethrough'
+        | 'superscript'
+        | 'subscript'
+        | 'code'
+    }
+  | { type: 'link'; href: string }
+
+/** Something a conversion between formats could not keep. `count` is how many places lost it. */
+export interface FormatLoss {
+  code: FormatLossCode
+  count: number
+}
+/** The closed list of what a conversion can lose. The API reference describes each one. */
+export const formatLossCodes = [
+  'heading',
+  'code-block',
+  'diagram',
+  'quote',
+  'callout',
+  'task',
+  'rule',
+  'footnote',
+  'comment',
+  'highlight',
+  'image',
+  'file',
+  'wiki-link',
+  'literal',
+  'link',
+  'table-alignment',
+  'list-start',
+  'list-item-blocks',
+  'list-depth',
+  'alignment',
+] as const
+export type FormatLossCode = (typeof formatLossCodes)[number]
+/** A document converted to another format, for the host to load as a new generation. */
+export type ConvertedDocument =
+  | { format: 'md' | 'txt'; text: string; lost: readonly FormatLoss[] }
+  | {
+      format: 'rtf'
+      document: RichTextDocument
+      lost: readonly FormatLoss[]
+    }
 /** Which document an output describes: the load, named by its generation, and the revision of
  *  its content within that load. */
 export interface DocumentVersion {
@@ -30,8 +134,18 @@ export interface DocumentVersion {
   generation: number
   revision: number
 }
-/** The complete current text. `dirty` is true when it differs from the text of the last load. */
-export interface DocumentSnapshot extends DocumentInput, DocumentVersion {
+/** The complete current document. `dirty` is true when it differs from the last load. `F` is the
+ *  formats the editor was mounted with; without `rtf` among them, every snapshot is text. */
+export type DocumentSnapshot<F extends DocumentFormat = TextDocumentFormat> =
+  F extends 'rtf' ? RichTextDocumentSnapshot : TextDocumentSnapshot
+/** The complete current text of a Markdown or TXT document. */
+export interface TextDocumentSnapshot
+  extends TextDocumentInput, DocumentVersion {
+  dirty: boolean
+}
+/** The complete current RTF document, in canonical form, for the host to write as RTF. */
+export interface RichTextDocumentSnapshot
+  extends RichTextDocumentInput, DocumentVersion {
   dirty: boolean
 }
 /** The closed list of failure codes. The API reference describes each one. */

@@ -1,4 +1,5 @@
 import { fromMarkdown } from 'mdast-util-from-markdown'
+import { formatInput } from './format-input'
 import { gfmAutolinkLiteral } from 'micromark-extension-gfm-autolink-literal'
 import { gfmAutolinkLiteralFromMarkdown } from 'mdast-util-gfm-autolink-literal'
 import { parserCtx } from '@milkdown/kit/core'
@@ -585,6 +586,8 @@ export const autolinkLiterals = $prose(
     new Plugin({
       key: new PluginKey('autolinkLiterals'),
       appendTransaction(transactions, oldState, newState) {
+        // A bare address is a link only in Markdown.
+        if (!formatInput(ctx).markdownInput()) return null
         if (!transactions.some((tr) => tr.docChanged)) return null
         const base = newState.tr
         const written = transactions.every(isWrittenEdit)

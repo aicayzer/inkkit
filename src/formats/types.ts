@@ -1,12 +1,16 @@
 import type { Ctx } from '@milkdown/kit/ctx'
-import type { Fragment, Node as ProseNode } from '@milkdown/kit/prose/model'
+import type {
+  Fragment,
+  Node as ProseNode,
+  Slice,
+} from '@milkdown/kit/prose/model'
+import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import type { DiagramStore } from '../mermaid'
 import type {
   ClipboardInput,
   ClipboardOutput,
   DocumentContext,
   DocumentFormat,
-  DocumentSnapshot,
   DocumentVersion,
   EditorLabels,
   FileAdapter,
@@ -14,6 +18,39 @@ import type {
   ImageAdapter,
   PrintableDocument,
 } from '../types'
+
+/** The current document as the editor holds it: its text, which for RTF is the canonical JSON of
+ *  its `RichTextDocument`. */
+export interface SavedText extends DocumentVersion {
+  readonly format: DocumentFormat
+  readonly text: string
+  readonly dirty: boolean
+}
+
+/** What a format whose document is not source text adds to formatted editing. */
+export interface RichTextBehaviour {
+  /** Whether the document that `tr` reaches from `before` holds only what the format can. */
+  allows(tr: Transaction, before: EditorState): boolean
+  /** Runs in `from` to `to` that hold both a link and underline, which the format cannot keep. */
+  linkedUnderlines(
+    doc: ProseNode,
+    from: number,
+    to: number,
+  ): { from: number; to: number }[]
+  /** Whether the selection is all link text, where underline does nothing. */
+  inLink(state: EditorState): boolean
+  /** The slice a formatted paste inserts. */
+  paste(
+    input: ClipboardInput,
+    state: EditorState,
+    linkSchemes: ReadonlySet<string>,
+  ): Slice
+  /** What copying the selection writes. */
+  copy(
+    state: EditorState,
+    linkSchemes: ReadonlySet<string>,
+  ): { text: string; html: string }
+}
 
 /** What a format keeps from reading a text, to save edits to the document it read. */
 export interface FormatSource {
@@ -51,7 +88,7 @@ export type PrintableContent = Pick<
 >
 
 export interface PrintRequest {
-  /** The snapshot's text. */
+  /** The current text. */
   readonly text: string
   /** The document to print, which holds source typed but not yet settled. */
   readonly doc: ProseNode
@@ -60,7 +97,7 @@ export interface PrintRequest {
 }
 
 export interface ClipboardRequest {
-  readonly snapshot: DocumentSnapshot
+  readonly snapshot: SavedText
   /** The whole document, rather than the selection. */
   readonly all: boolean
   readonly version: DocumentVersion
@@ -96,6 +133,10 @@ export interface FormatHandler {
   /** Text inserted on the literal surface keeps its own line endings, rather than taking the
    *  document's. */
   readonly keepsInsertedLineEndings: boolean
+  /** Markdown input rules and bare-address links apply while typing in formatted mode. */
+  readonly markdownInput: boolean
+  /** Present for a format that is not Markdown source but edits in formatted mode. */
+  readonly richText?: RichTextBehaviour
   /** Reads loaded text into the formatted document. Throws when it cannot be shown. */
   load(ctx: Ctx, text: string): FormatSource
   /** Reads text from the literal surface into the formatted document. */

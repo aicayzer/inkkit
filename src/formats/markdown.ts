@@ -27,6 +27,7 @@ export const markdownFormat: FormatHandler = {
   headings: true,
   nativeCopy: false,
   keepsInsertedLineEndings: true,
+  markdownInput: true,
   load: (ctx, text) => Preservation.read(ctx, text),
   parse: (ctx, text) => Preservation.read(ctx, text),
   pendingExport: (ctx, text) => ctx.get(parserCtx)(text),

@@ -39,7 +39,11 @@ import { SourceSurface } from './editor-source'
 import { EditorDocument } from './editor-document'
 import { SourceHistory } from './editor-history'
 import { $prose } from '@milkdown/kit/utils'
-import { applyFormat, formatAvailability } from './editor-commands'
+import {
+  applyFormat,
+  caretAlignment,
+  formatAvailability,
+} from './editor-commands'
 import {
   createEditorKeymap,
   tableShortcut,
@@ -67,7 +71,19 @@ import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { literalRereadKey } from './literal-edits'
 import { defaultLabels } from './labels'
 import { extraLinkSchemes } from './link-safety'
-import { documentFormats, formatHandlers, type FormatSource } from './formats'
+import {
+  defaultFormats,
+  documentFormats,
+  formatHandlers,
+  type FormatSource,
+  type SavedText,
+} from './formats'
+import {
+  readRichTextDocument,
+  richTextFromText,
+  richTextText,
+} from './formats/rich-text-model'
+import { markdownToRichText, richTextToMarkdown } from './formats/convert'
 import { sourceAttribute, type SourceProvenance } from './source'
 import { referenceDefinitions } from './references'
 import { mediaPolicyEvent, requestRefresh } from './files'
@@ -85,6 +101,8 @@ import {
   type DocumentFormat,
   type DocumentInput,
   type DocumentSnapshot,
+  type ConvertedDocument,
+  type TextDocumentFormat,
   type DocumentContext,
   type ImageAdapter,
   type FileAdapter,
@@ -173,6 +191,8 @@ export interface CaretState {
   block: Block
   /** One quote holds the whole selection; the block is what sits inside it. */
   quoted: boolean
+  /** In an RTF document, the alignment of the paragraph that holds the start of the selection. */
+  align?: 'left' | 'center' | 'right' | 'justify'
 }
 
 const formatCommands = [
@@ -197,6 +217,10 @@ const formatCommands = [
   'orderedList',
   'taskList',
   'toggleTask',
+  'alignLeft',
+  'alignCenter',
+  'alignRight',
+  'alignJustify',
   'link',
 ] as const
 
@@ -377,10 +401,10 @@ function textInputPreferences(
 }
 
 /** Mount options. Adapters, `formats`, `labels`, `linkSchemes` and `rendering` are fixed at mount;
- *  the rest can change. */
-export interface EditorOptions {
+ *  the rest can change. `F` is the formats offered. */
+export interface EditorOptions<F extends DocumentFormat = TextDocumentFormat> {
   /** The formats the host offers, listed by `formats`. Defaults to `['md', 'txt']`. Fixed at mount. */
-  formats?: readonly DocumentFormat[]
+  formats?: readonly F[]
   /** Shows, imports and exports images. Without it and `files`, image Markdown stays literal. */
   images?: ImageAdapter
   /** Opt-in block suggestions on an empty line. Fixed at mount. */
@@ -516,10 +540,10 @@ export interface CommandState extends DocumentVersion {
   }
 }
 
-/** The host's handlers, passed to `mount`. Only `changed` is required. */
-export interface EditorEvents {
-  /** The document's text changed. Not sent for a load, a reload or a refused edit. */
-  changed(snapshot: DocumentSnapshot): void
+/** The host's handlers, passed to `mount`. Only `changed` is required. `F` is the formats offered. */
+export interface EditorEvents<F extends DocumentFormat = TextDocumentFormat> {
+  /** The document changed. Not sent for a load, a reload or a refused edit. */
+  changed(snapshot: DocumentSnapshot<F>): void
   /** Availability or the caret changed, and once after each load. */
   commandStateChanged?(state: CommandState): void
   /** A primary click with Mod on a link. Without it, links don't open. */
@@ -590,18 +614,59 @@ function hostEvents(value: unknown): EditorEvents {
   }) as unknown as EditorEvents
 }
 
-/** Checks a load's input. A format the host did not offer is refused like an unknown one. */
+/** A checked load: the document's text, which for RTF is its canonical JSON. */
+interface LoadInput {
+  documentId: string
+  generation: number
+  format: DocumentFormat
+  text: string
+}
+
+/** Checks a load's input. A format the host did not offer is refused like an unknown one, and an
+ *  RTF document is checked and put in canonical form. */
 function documentInput(
   value: unknown,
   offered: readonly DocumentFormat[],
-): DocumentInput {
+): LoadInput {
   const input = expectRecord(value, 'input')
+  const documentId = expectString(input.documentId, 'input.documentId')
+  const generation = expectGeneration(input.generation, 'input.generation')
+  const format = expectOneOf(input.format, offered, 'input.format')
+  if (format === 'rtf') {
+    if (!isOmitted(input.text))
+      throw invalidArgument('input.text must be left out for an RTF document')
+    return {
+      documentId,
+      generation,
+      format,
+      text: richTextText(
+        readRichTextDocument(input.document, 'input.document'),
+      ),
+    }
+  }
+  if (!isOmitted(input.document))
+    throw invalidArgument(`input.document must be left out for ${format}`)
   return {
-    documentId: expectString(input.documentId, 'input.documentId'),
-    generation: expectGeneration(input.generation, 'input.generation'),
-    format: expectOneOf(input.format, offered, 'input.format'),
+    documentId,
+    generation,
+    format,
     text: expectString(input.text, 'input.text'),
   }
+}
+
+/** The public snapshot of the editor's text for a document. */
+function publicSnapshot(saved: SavedText): DocumentSnapshot<DocumentFormat> {
+  const { documentId, generation, revision, format, text, dirty } = saved
+  return format === 'rtf'
+    ? {
+        documentId,
+        generation,
+        revision,
+        format,
+        document: richTextFromText(text),
+        dirty,
+      }
+    : { documentId, generation, revision, format, text, dirty }
 }
 
 /** A range's shape. Whether its offsets fit the snapshot is `invalid-range`, checked later. */
@@ -673,7 +738,7 @@ const stateEvents: readonly (string | symbol)[] = [
  * The editor. Create it with `InkKitEditor.mount`, load a document, and read it back with
  * `snapshot`. The reference is https://inkkit.cyzr.me/reference/editor.
  */
-export class InkKitEditor {
+export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private editor!: Editor
   private readonly document = new EditorDocument({
     ctx: () => this.editor.ctx,
@@ -769,7 +834,7 @@ export class InkKitEditor {
     element: () => this.source.element,
     replaceSelection: (text) => this.source.replaceLiteralSelection(text),
     writable: () => this.writable,
-    snapshot: () => this.snapshot(),
+    snapshot: () => this.savedText(),
     prepareSelection: () => this.clipboardSnapshot('selection'),
     capture: () => this.session.capture(),
     assertCut: (captured) => this.assertCut(captured),
@@ -844,7 +909,7 @@ export class InkKitEditor {
   private readingKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
 
-  private readonly events: EditorEvents
+  private readonly events: EditorEvents<F>
   /** The host's extra link schemes, in lower case. */
   private readonly linkSchemes: ReadonlySet<string>
   /** The formats the host offered, in its order. */
@@ -855,8 +920,8 @@ export class InkKitEditor {
   private readonly sentEvents = new Map<string | symbol, number>()
 
   private constructor(
-    events: EditorEvents,
-    private readonly options: EditorOptions,
+    events: EditorEvents<F>,
+    private readonly options: EditorOptions<F>,
   ) {
     // During a facade call, state events wait until the call has succeeded.
     this.events = new Proxy(events, {
@@ -875,7 +940,7 @@ export class InkKitEditor {
       },
     })
     this.linkSchemes = new Set(options.linkSchemes)
-    this.offered = options.formats ?? documentFormats
+    this.offered = options.formats ?? defaultFormats
     this.formatList = Object.freeze(
       this.offered.map((format) =>
         Object.freeze({ format, promise: formatHandlers[format].promise }),
@@ -898,13 +963,23 @@ export class InkKitEditor {
   }
 
   /** What `changed` reports for the document's new text. */
-  private changeSnapshot(text: string): DocumentSnapshot {
+  private changeSnapshot(text: string): DocumentSnapshot<F> {
+    return publicSnapshot(this.saved(text)) as DocumentSnapshot<F>
+  }
+
+  private saved(text: string): SavedText {
     return {
       ...this.session.version(),
       format: this.document.format,
       text,
       dirty: text !== this.document.original,
     }
+  }
+
+  /** The current text, as `snapshot` checks and reads it. */
+  private savedText(expectedGeneration?: unknown): SavedText {
+    this.assertCurrent(expectedGeneration)
+    return this.saved(this.document.currentText())
   }
 
   /** Throws unless the document `captured` describes is still current, alive, not composing and
@@ -1203,12 +1278,24 @@ export class InkKitEditor {
     const mutable =
       this.writable && !this.composing && !this.pasteController.pending
     const formatted = mutable && !this.literalSurface
-    const format = formatAvailability(this.editor, state, formatted)
+    const rich = this.document.handler.richText != null
+    const format = formatAvailability(
+      this.editor,
+      state,
+      formatted,
+      this.document.handler,
+    )
     const tables = formatted
       ? tableAvailability(this.editor.ctx)
       : (Object.fromEntries(
           tableCommands.map((name) => [name, false]),
         ) as Record<TableCommand, boolean>)
+    // An RTF table cell has no alignment of its own.
+    if (rich) tables.alignLeft = tables.alignCenter = tables.alignRight = false
+    const caret: CaretState = this.literalSurface
+      ? { marks: [], block: { type: 'paragraph' }, quoted: false }
+      : caretState(state)
+    if (rich) caret.align = caretAlignment(state)
     return {
       ...this.session.version(),
       format: this.document.format,
@@ -1216,9 +1303,7 @@ export class InkKitEditor {
       editable: this.writable,
       composing: this.composing,
       pending: this.pasteController.pending,
-      caret: this.literalSurface
-        ? { marks: [], block: { type: 'paragraph' }, quoted: false }
-        : caretState(state),
+      caret,
       table: this.literalSurface ? undefined : tableContext(state),
       commands: {
         undo: mutable && this.history.canUndo(state),
@@ -1226,13 +1311,13 @@ export class InkKitEditor {
         insertText: mutable,
         paste: mutable,
         replace: mutable,
-        replaceSource: mutable,
-        insertImages: formatted && this.canInsertImages,
-        appendImages: formatted && this.canInsertImages,
+        replaceSource: mutable && !rich,
+        insertImages: formatted && !rich && this.canInsertImages,
+        appendImages: formatted && !rich && this.canInsertImages,
         insertPaths: mutable,
-        insertFootnote: formatted,
+        insertFootnote: formatted && !rich,
         editReferenceDefinition:
-          formatted && referenceDefinitions(state.doc).size > 0,
+          formatted && !rich && referenceDefinitions(state.doc).size > 0,
         format,
         table: tables,
         moveBlockUp: formatted && canMoveBlock(state, 'up'),
@@ -1241,9 +1326,13 @@ export class InkKitEditor {
     }
   }
 
-  /** An image adapter shows and exports an inserted reference, and so does a file adapter. */
+  /** An image adapter shows and exports an inserted reference, and so does a file adapter. An RTF
+   *  document holds no images. */
   private get canInsertImages(): boolean {
-    return !!this.options.images || !!this.options.files
+    return (
+      (!!this.options.images || !!this.options.files) &&
+      !this.document.handler.richText
+    )
   }
 
   private historyInputPlugin = createHistoryInputPlugin({
@@ -1288,7 +1377,7 @@ export class InkKitEditor {
         // Source steps that were undone cannot be redone from the other mode.
         this.history.modeChanged()
       },
-      text: () => this.snapshot().text,
+      text: () => this.savedText().text,
       changed: () => {
         this.mode = mode
         this.session.modeChanged()
@@ -1326,6 +1415,8 @@ export class InkKitEditor {
     this.assertAlive()
     expectString(text, 'text')
     this.assertMutation(expectedGeneration)
+    if (this.document.handler.richText)
+      throw invalidArgument('An RTF document has no source to replace')
     const changed = this.history.applySource(text, true)
     if (changed) this.clipboard.clear()
     return changed
@@ -1343,17 +1434,51 @@ export class InkKitEditor {
     return this.history.redo()
   }
 
-  /** The complete current text, which is what a host saves. It throws rather than return partial
-   *  text. */
-  snapshot(expectedGeneration?: number): DocumentSnapshot {
-    this.assertCurrent(expectedGeneration)
-    const text = this.document.currentText()
-    return {
-      ...this.session.version(),
-      format: this.document.format,
-      text,
-      dirty: text !== this.document.original,
+  /** The complete current document, which is what a host saves. It throws rather than return a
+   *  partial document. */
+  snapshot(expectedGeneration?: number): DocumentSnapshot<F> {
+    return publicSnapshot(
+      this.savedText(expectedGeneration),
+    ) as DocumentSnapshot<F>
+  }
+
+  /**
+   * The loaded document converted to `format`, which must be offered, with what the conversion
+   * lost. It changes nothing: load the result as a new generation. Markdown converts to RTF and
+   * RTF to Markdown; the same format returns a copy. Throws `invalid-argument` for any other pair.
+   */
+  convertDocument(
+    format: DocumentFormat,
+    expectedGeneration?: number,
+  ): ConvertedDocument {
+    this.assertAlive()
+    expectOneOf(format, this.offered, 'format')
+    const saved = this.savedText(expectedGeneration)
+    const from = saved.format
+    if (from === format)
+      return from === 'rtf'
+        ? {
+            format: 'rtf',
+            document: richTextFromText(saved.text),
+            lost: Object.freeze([]),
+          }
+        : { format: from, text: saved.text, lost: Object.freeze([]) }
+    if (from === 'md' && format === 'rtf') {
+      const { document, lost } = markdownToRichText(
+        this.document.exportDocument(saved.text),
+      )
+      return { format, document, lost }
     }
+    if (from === 'rtf' && format === 'md') {
+      const { text, lost } = richTextToMarkdown(
+        this.editor.ctx,
+        richTextFromText(saved.text),
+      )
+      return { format, text, lost }
+    }
+    throw invalidArgument(
+      `Inkkit does not convert ${from} to ${format}; ${from === 'txt' || format === 'txt' ? 'the host converts plain text' : 'convert through another format'}`,
+    )
   }
 
   /** The whole document as standalone HTML for printing. Rejects rather than return partial
@@ -1361,7 +1486,7 @@ export class InkKitEditor {
   async printableSnapshot(
     expectedGeneration?: number,
   ): Promise<PrintableDocument> {
-    const snapshot = this.snapshot(expectedGeneration)
+    const snapshot = this.savedText(expectedGeneration)
     const captured = this.session.capture()
     return this.output.printable(snapshot, captured)
   }
@@ -1377,7 +1502,7 @@ export class InkKitEditor {
       (isOmitted(scope)
         ? 'document'
         : expectOneOf(scope, clipboardScopes, 'scope')) === 'document'
-    const snapshot = this.snapshot(expectedGeneration)
+    const snapshot = this.savedText(expectedGeneration)
     const captured = this.session.capture()
     return this.output.clipboard(snapshot, captured, all)
   }
@@ -1429,7 +1554,21 @@ export class InkKitEditor {
         true,
         this.document.handler.keepsInsertedLineEndings,
       )
-    else insertPlainText(this.editor.ctx.get(editorViewCtx), text)
+    else if (this.document.handler.richText) {
+      const view = this.editor.ctx.get(editorViewCtx)
+      const slice = this.document.handler.richText.paste(
+        { text },
+        view.state,
+        this.linkSchemes,
+      )
+      const lines = /[\r\n\u000c\u0085\u2028\u2029\u000b]/.test(text)
+      const tr = view.state.tr.replaceSelection(slice).scrollIntoView()
+      view.dispatch(lines ? closeHistory(tr) : tr)
+      if (lines)
+        view.dispatch(
+          closeHistory(view.state.tr).setMeta('addToHistory', false),
+        )
+    } else insertPlainText(this.editor.ctx.get(editorViewCtx), text)
   }
 
   /** Runs a table command and returns whether it applied. False in source and TXT modes, outside a
@@ -1528,7 +1667,9 @@ export class InkKitEditor {
         this.refuse(
           new InkKitError(
             'preservation',
-            `The edit was not applied because its Markdown could not be preserved: ${error instanceof Error ? error.message : String(error)}`,
+            this.document.handler.richText
+              ? `The edit was not applied because the document could not be saved as RTF: ${error instanceof Error ? error.message : String(error)}`
+              : `The edit was not applied because its Markdown could not be preserved: ${error instanceof Error ? error.message : String(error)}`,
             { cause: error },
           ),
         )
@@ -1540,17 +1681,28 @@ export class InkKitEditor {
   }
 
   /** Builds the editor in `root`. It has no document until `loadDocument`. Rejects with
-   *  `invalid-argument` for a bad root, handler or option. */
+   *  `invalid-argument` for a bad root, handler or option. The editor's type follows `formats`:
+   *  without `rtf` among them, its documents are text. */
+  static async mount<F extends DocumentFormat>(
+    root: HTMLElement,
+    events: EditorEvents<F>,
+    options: EditorOptions<F> & { formats: readonly F[] },
+  ): Promise<InkKitEditor<F>>
   static async mount(
     root: HTMLElement,
     events: EditorEvents,
     options?: EditorOptions,
-  ): Promise<InkKitEditor> {
+  ): Promise<InkKitEditor>
+  static async mount<F extends DocumentFormat>(
+    root: HTMLElement,
+    events: EditorEvents<F>,
+    options?: EditorOptions<F>,
+  ): Promise<InkKitEditor<F>> {
     if (!(root instanceof HTMLElement))
       throw invalidArgument('root must be an HTML element')
-    events = hostEvents(events)
-    options = editorOptions(options)
-    const instance = new InkKitEditor(events, options)
+    events = hostEvents(events) as unknown as EditorEvents<F>
+    options = editorOptions(options) as unknown as EditorOptions<F>
+    const instance = new InkKitEditor<F>(events, options)
     events = instance.events
     instance.root = root
     instance.ownsRootClass = !root.classList.contains('inkkit-root')
@@ -1565,6 +1717,8 @@ export class InkKitEditor {
       literalText: () => instance.literalSurface,
       editable: () => instance.writable && !instance.literalSurface,
       onPendingChanged: () => instance.publishCommandState(),
+      richText: () => instance.document.handler.richText,
+      linkSchemes: instance.linkSchemes,
     })
     instance.suggestions = createEditorSuggestions({
       root,
@@ -1587,51 +1741,60 @@ export class InkKitEditor {
       chooseWiki: (session, name) => instance.chooseWiki(session, name),
       report: (error) => instance.report(error),
     })
-    instance.editor = await createMilkdownEditor(root, options, {
-      diagrams: instance.diagrams,
-      plugins: {
-        indent: instance.indentPlugin,
-        paste: instance.pasteController.plugin,
-        suggestions: $prose(() => instance.suggestions!.plugin()),
-        keymap: instance.keymapPlugin,
-        change: instance.changePlugin,
-        historyInput: instance.historyInputPlugin,
-        policy: instance.policyPlugin,
+    instance.editor = await createMilkdownEditor(
+      root,
+      options as EditorOptions,
+      {
+        diagrams: instance.diagrams,
+        plugins: {
+          indent: instance.indentPlugin,
+          paste: instance.pasteController.plugin,
+          suggestions: $prose(() => instance.suggestions!.plugin()),
+          keymap: instance.keymapPlugin,
+          change: instance.changePlugin,
+          historyInput: instance.historyInputPlugin,
+          policy: instance.policyPlugin,
+        },
+        format: {
+          markdownInput: () => instance.document.handler.markdownInput,
+          richText: () => instance.document.handler.richText,
+        },
+        authoredSources: (doc, positions) =>
+          instance.document.authoredSources(doc, positions),
+        smartPunctuation: () =>
+          instance.inputPreferences.smartPunctuation === true,
+        linkSchemes: instance.linkSchemes,
+        mutate: (operation) =>
+          instance.forPerson(
+            () =>
+              instance.facadeCall(() => {
+                instance.assertMutation()
+                return !instance.literalSurface && operation()
+              }),
+            false,
+          ),
+        dispatchTransaction: (view, tr) =>
+          instance.dispatchTransaction(view, tr),
+        revealSelection: () => {
+          if (!instance.loading && instance.ready)
+            instance.revealCurrentSelection()
+        },
+        visibleRect: () => instance.viewport().rect,
+        capture: () => instance.adapterCapture(),
+        active: () =>
+          instance.ready && !instance.destroyed && !instance.literalSurface,
+        canMutate: () => {
+          try {
+            instance.assertMutation()
+            return true
+          } catch {
+            return false
+          }
+        },
+        report: (error) => instance.report(error),
+        copy: events.copy ? (text) => events.copy?.(text) : undefined,
       },
-      authoredSources: (doc, positions) =>
-        instance.document.authoredSources(doc, positions),
-      smartPunctuation: () =>
-        instance.inputPreferences.smartPunctuation === true,
-      linkSchemes: instance.linkSchemes,
-      mutate: (operation) =>
-        instance.forPerson(
-          () =>
-            instance.facadeCall(() => {
-              instance.assertMutation()
-              return !instance.literalSurface && operation()
-            }),
-          false,
-        ),
-      dispatchTransaction: (view, tr) => instance.dispatchTransaction(view, tr),
-      revealSelection: () => {
-        if (!instance.loading && instance.ready)
-          instance.revealCurrentSelection()
-      },
-      visibleRect: () => instance.viewport().rect,
-      capture: () => instance.adapterCapture(),
-      active: () =>
-        instance.ready && !instance.destroyed && !instance.literalSurface,
-      canMutate: () => {
-        try {
-          instance.assertMutation()
-          return true
-        } catch {
-          return false
-        }
-      },
-      report: (error) => instance.report(error),
-      copy: events.copy ? (text) => events.copy?.(text) : undefined,
-    })
+    )
     configureTableMovement(instance.editor.ctx, () => {
       try {
         instance.assertCurrent()
@@ -1671,9 +1834,9 @@ export class InkKitEditor {
 
   /** Replaces the document. The generation must be greater than the loaded one. A failed load
    *  changes nothing. */
-  loadDocument(input: DocumentInput): void {
+  loadDocument(document: DocumentInput<F>): void {
     this.assertAlive()
-    input = documentInput(input, this.offered)
+    const input = documentInput(document, this.offered)
     this.session.checkLoad(input.generation, 'input.generation')
     const handler = formatHandlers[input.format]
     // A literal-only format keeps its text on the literal surface, not in the formatted document.
@@ -1683,10 +1846,10 @@ export class InkKitEditor {
     try {
       source = handler.load(this.editor.ctx, markdown)
     } catch (error) {
-      throw new InkKitError(
+      throw coded(
+        error,
         'preservation',
         'The document was not loaded because its Markdown could not be shown without losing part of it',
-        { cause: error },
       )
     }
     const container = this.geometry.container
@@ -1706,7 +1869,8 @@ export class InkKitEditor {
     this.source.reset()
     this.search.reset()
     this.document.handler = handler
-    this.source.setSourceValue(input.text)
+    // An RTF document has no source text to show.
+    this.source.setSourceValue(handler.richText ? '' : input.text)
     this.source.element.setSelectionRange(
       this.source.element.value.length,
       this.source.element.value.length,
@@ -1734,9 +1898,12 @@ export class InkKitEditor {
   /** Replaces the document with a newer version of it, keeping the selection, focus, scroll
    *  position and Markdown editing mode. With `expectedGeneration`, the loaded document must be
    *  that generation. */
-  reloadDocument(input: DocumentInput, expectedGeneration?: number): void {
+  reloadDocument(
+    document: DocumentInput<F>,
+    expectedGeneration?: number,
+  ): void {
     this.assertAlive()
-    input = documentInput(input, this.offered)
+    const input = documentInput(document, this.offered)
     if (!isOmitted(expectedGeneration)) this.assertReady(expectedGeneration)
     this.session.checkLoad(input.generation, 'input.generation')
     const view = this.editor.ctx.get(editorViewCtx)
@@ -1751,7 +1918,7 @@ export class InkKitEditor {
     )
     this.reportingSuppressed = true
     try {
-      this.loadDocument(input)
+      this.loadDocument(document)
       if (
         previous.sourceMode &&
         this.document.handler.sourceMode &&
@@ -2285,8 +2452,18 @@ export class InkKitEditor {
     if (this.literalSurface) return false
     const view = this.editor.ctx.get(editorViewCtx)
     const before = view.state
-    applyFormat(this.editor, command, checked, (destination) =>
-      this.link(destination),
+    // Alignment, and anything an RTF document cannot hold, applies only where it is available.
+    if (
+      (this.document.handler.richText || command.startsWith('align')) &&
+      !this.commandState().commands.format[command]
+    )
+      return false
+    applyFormat(
+      this.editor,
+      command,
+      checked,
+      (destination) => this.link(destination),
+      this.document.handler.richText != null,
     )
     this.focus()
     const after = view.state
@@ -2335,7 +2512,7 @@ export class InkKitEditor {
     )
     optionalString(title, 'title')
     this.assertMutation(expectedGeneration)
-    if (this.literalSurface) return false
+    if (this.literalSurface || this.document.handler.richText) return false
     return editReferenceDefinition(
       this.editor.ctx.get(editorViewCtx),
       label,
@@ -2354,11 +2531,11 @@ export class InkKitEditor {
         'A footnote label must be 1 to 999 characters without whitespace, brackets or backslashes',
       )
     this.assertMutation(expectedGeneration)
-    if (this.literalSurface) return false
+    if (this.literalSurface || this.document.handler.richText) return false
     insertFootnote(
       this.editor.ctx.get(editorViewCtx),
       label,
-      () => this.snapshot().text,
+      () => this.savedText().text,
     )
     this.focus()
     return true
@@ -2387,6 +2564,7 @@ export class InkKitEditor {
       'loadDocument',
       'reloadDocument',
       'snapshot',
+      'convertDocument',
       'printableSnapshot',
       'clipboardSnapshot',
       'paste',
@@ -2463,13 +2641,13 @@ export class InkKitEditor {
       })
     }
     const mount = InkKitEditor.mount
-    InkKitEditor.mount = async (...args) => {
+    InkKitEditor.mount = (async (...args: Parameters<typeof mount>) => {
       try {
         return await mount(...args)
       } catch (error) {
         throw coded(error)
       }
-    }
+    }) as typeof mount
   }
 }
 

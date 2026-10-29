@@ -18,13 +18,9 @@ import {
 import { isImage } from './image-blocks'
 import { isMermaid } from './mermaid'
 import { coded } from './errors'
-import {
-  InkKitError,
-  type ClipboardOutput,
-  type DocumentSnapshot,
-} from './types'
+import { InkKitError, type ClipboardOutput } from './types'
 import type { SessionCapture } from './session'
-import type { FormatHandler } from './formats'
+import type { FormatHandler, SavedText } from './formats'
 
 interface ClipboardRuntime {
   ctx(): Ctx
@@ -33,7 +29,7 @@ interface ClipboardRuntime {
   element(): HTMLTextAreaElement
   replaceSelection(text: string): void
   writable(): boolean
-  snapshot(): DocumentSnapshot
+  snapshot(): SavedText
   prepareSelection(): Promise<ClipboardOutput>
   capture(): SessionCapture
   assertCut(captured: SessionCapture): void
@@ -258,6 +254,25 @@ export class EditorClipboard {
       return
     }
     const view = this.runtime.ctx().get(editorViewCtx)
+    const rich = this.runtime.handler().richText
+    if (rich) {
+      // An RTF document holds no images, comments or Markdown source: the copy is its text and
+      // semantic HTML.
+      if (!event.clipboardData || view.state.selection.empty) return
+      event.preventDefault()
+      event.stopPropagation()
+      try {
+        this.runtime.snapshot()
+        const output = rich.copy(view.state, this.runtime.linkSchemes())
+        event.clipboardData.setData('text/plain', output.text)
+        event.clipboardData.setData('text/html', output.html)
+        if (event.type === 'cut' && this.runtime.writable())
+          view.dispatch(view.state.tr.deleteSelection().scrollIntoView())
+      } catch (error) {
+        this.runtime.report(error)
+      }
+      return
+    }
     const fragment = commentSelectionContent(
       view.state.doc,
       view.state.selection.from,
