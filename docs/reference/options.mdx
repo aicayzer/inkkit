@@ -36,7 +36,8 @@ The document formats this editor opens, in the order your app lists them. [`edit
 
 - **Entries:** each is a [`DocumentFormat`](/reference/editor#documents). The list needs at least one entry and can't name a format twice.
 - **Refused lists:** an empty list, an unknown or repeated format, and a value that isn't a list make `mount` reject with `invalid-argument`. `null` counts as omitted.
-- **Default:** without the option, the editor opens Markdown and TXT, as it always has.
+- **Default:** without the option, the editor opens Markdown and TXT, as it always has. RTF is offered only when you list `'rtf'`; your app then converts the file with the `InkKitRTF` package ([host RTF documents](/guides/web-view#host-rtf-documents)).
+- **Type:** the list sets the editor's type argument, so `mount` with `formats: ['md', 'rtf']` returns an `InkKitEditor<'md' | 'rtf'>` whose snapshots can be RTF. See [`mount`](/reference/editor#mount).
 
 See [formats and what they promise](/concepts/documents#formats-and-what-they-promise).
 
@@ -295,6 +296,12 @@ One block quote holds the whole selection; `block` is what sits inside it. Callo
 
 </ResponseField>
 
+<ResponseField name="align" type="'left' | 'center' | 'right' | 'justify'">
+
+Present only in an RTF document: the alignment of the paragraph that holds the start of the selection, for a toolbar's alignment buttons. A table cell is always `'left'`.
+
+</ResponseField>
+
 </Expandable>
 
 </ResponseField>
@@ -329,16 +336,16 @@ What each command can do now. Every entry is `false` while the editor is read-on
 
 {/* @api-scope CommandState.commands */}
 
-| Entry                                                            | `true` when                                                                                                                                     |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `undo`, `redo`                                                   | There is a step to undo or redo, including steps taken in source mode.                                                                          |
-| `insertText`, `paste`, `replace`, `replaceSource`, `insertPaths` | The editor can change, in any mode. `paste` also covers `pasteAsPlainText`, and `replace` also covers `replaceAll`.                             |
-| `insertImages`, `appendImages`                                   | The editor can change, the mode is formatted, and `images` or `files` is set.                                                                   |
-| `insertFootnote`                                                 | The editor can change and the mode is formatted.                                                                                                |
-| `editReferenceDefinition`                                        | The editor can change, the mode is formatted, and the document has at least one reference definition.                                           |
-| `format`                                                         | A `Record<FormatCommand, boolean>`: each [format command](#format-commands) that applies to the selection. All `false` in source and TXT modes. |
-| `table`                                                          | A `Record<TableCommand, boolean>`: each [table command](#table-commands) that applies to the selection. All `false` in source and TXT modes.    |
-| `moveBlockUp`, `moveBlockDown`                                   | [`moveBlock`](/reference/editor#moveblock) would move the blocks at the selection. `false` in source and TXT modes and in a table.              |
+| Entry                                                            | `true` when                                                                                                                                                                                                      |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `undo`, `redo`                                                   | There is a step to undo or redo, including steps taken in source mode.                                                                                                                                           |
+| `insertText`, `paste`, `replace`, `replaceSource`, `insertPaths` | The editor can change, in any mode. `paste` also covers `pasteAsPlainText`, and `replace` also covers `replaceAll`. `replaceSource` is `false` in RTF.                                                           |
+| `insertImages`, `appendImages`                                   | The editor can change, the mode is formatted, `images` or `files` is set, and the document isn't RTF.                                                                                                            |
+| `insertFootnote`                                                 | The editor can change, the mode is formatted, and the document isn't RTF.                                                                                                                                        |
+| `editReferenceDefinition`                                        | The editor can change, the mode is formatted, and the document has at least one reference definition.                                                                                                            |
+| `format`                                                         | A `Record<FormatCommand, boolean>`: each [format command](#format-commands) that applies to the selection. All `false` in source and TXT modes. In RTF, the commands for what RTF can't hold are always `false`. |
+| `table`                                                          | A `Record<TableCommand, boolean>`: each [table command](#table-commands) that applies to the selection. All `false` in source and TXT modes. In RTF, column alignment is always `false`.                         |
+| `moveBlockUp`, `moveBlockDown`                                   | [`moveBlock`](/reference/editor#moveblock) would move the blocks at the selection. `false` in source and TXT modes and in a table.                                                                               |
 
 {/* @api FormatCommand */}
 
@@ -355,7 +362,10 @@ What each command can do now. Every entry is `false` while the editor is read-on
 | `quote`                                                                                         | Quotes the selected blocks, or the whole list when the selection is in a list item, or removes the quote that holds them.                                                                                                                                                                                                                        |
 | `bulletList`, `orderedList`                                                                     | Makes the blocks a list of that kind, converts a list of the other kind, or lifts the items out of a list of the same kind.                                                                                                                                                                                                                      |
 | `taskList`                                                                                      | Makes the selected list items tasks, making the blocks a bullet list first when they aren't in one, or makes them ordinary items when they're all tasks.                                                                                                                                                                                         |
+| `alignLeft`, `alignCenter`, `alignRight`, `alignJustify`                                        | RTF only. Aligns every paragraph the selection touches, including those in list items; a table cell has no alignment. `alignLeft` removes an alignment. Applying a paragraph's current alignment changes nothing. Shortcut names exist, with no default keys.                                                                                    |
 | `link`                                                                                          | With `options.destination`, links the selection or sets the destination of the link at or beside the caret; elsewhere at a caret, starts a link for the text typed next ([typing at a link's edges](/concepts/markdown#typing-at-a-links-edges)). Without it, removes the link and keeps its text.                                               |
+
+**In an RTF document,** `heading1` to `heading6`, `paragraph`, `highlight`, `codeBlock`, `quote`, `taskList` and `toggleTask` are unavailable and return `false`, since RTF can't hold what they make. `underline` is unavailable when the selection, or the caret, is all link text, because RTF keeps no underline on a link; on a selection that is partly a link, it underlines the rest. `bulletList` and `orderedList` make each selected paragraph its own item. Markdown typed as text, such as `# ` or `**bold**`, stays text. See [rich text](/concepts/rich-text).
 
 `FormatOptions` has two optional fields. Any other field, a field with another command, or an unknown command throws `invalid-argument`.
 

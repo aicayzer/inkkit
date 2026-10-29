@@ -86,7 +86,7 @@ The shim mounts the editor, exposes a few functions on `window`, and posts event
 import {
   InkKitEditor,
   InkKitError,
-  type DocumentFormat,
+  type TextDocumentFormat,
 } from '@aicayzer/inkkit/core'
 import '@aicayzer/inkkit/style.css'
 
@@ -99,6 +99,7 @@ declare global {
       >
     }
     editorBridge?: Bridge
+    richText?: unknown
   }
 }
 
@@ -134,7 +135,7 @@ const bridge = {
   load: (
     documentId: string,
     generation: number,
-    format: DocumentFormat,
+    format: TextDocumentFormat,
     text: string,
   ) =>
     reply(() => editor.loadDocument({ documentId, generation, format, text })),
@@ -164,7 +165,7 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
     var onReady: (() -> Void)?
     var onChanged: (() -> Void)?
     private let contentController = WKUserContentController()
-    private var generation = 0
+    var generation = 0
 
     override init() {
         let configuration = WKWebViewConfiguration()
@@ -201,7 +202,7 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
     }
 
     @discardableResult
-    private func call(_ body: String, _ arguments: [String: Any] = [:]) async throws -> [String: Any] {
+    func call(_ body: String, _ arguments: [String: Any] = [:]) async throws -> [String: Any] {
         let result = try await webView.callAsyncJavaScript(
             body, arguments: arguments, contentWorld: .page)
         guard let reply = result as? [String: Any] else {
@@ -232,6 +233,115 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
 </CodeGroup>
 
 The `changed` message carries only the document version. Take the text with `snapshot` at the save boundary. If `snapshotText()` throws, don't save and keep the document open: a failed snapshot is not an unchanged document. [Documents and saving](/concepts/documents) has the full save loop, and `reloadDocument` for files that change on disk.
+
+## Host RTF documents
+
+To open and save RTF files, your app converts them with the `InkKitRTF` Swift package, which reads and writes RTF with Apple's text system, and Inkkit edits the converted document. [Rich text](/concepts/rich-text) describes what an RTF document keeps, what it drops and what Inkkit refuses.
+
+Add the package to your app with Swift Package Manager, using the same version as the Inkkit package you bundle, and depend on its `InkKitRTF` product:
+
+```swift Package.swift
+dependencies: [
+    .package(url: "https://github.com/aicayzer/inkkit", exact: "0.4.0"),
+],
+targets: [
+    .target(name: "Notes", dependencies: [
+        .product(name: "InkKitRTF", package: "inkkit"),
+    ]),
+]
+```
+
+Offer RTF when you mount, and pass the document across the bridge as JSON text. Both sides read the same JSON form: `RichTextDocument.jsonData()` writes it, and `RichTextDocument(json:)` reads, checks and canonicalizes it.
+
+<CodeGroup>
+
+```ts shim.ts
+const editor = await InkKitEditor.mount(
+  document.getElementById('editor')!,
+  { changed() {} },
+  { formats: ['md', 'txt', 'rtf'] },
+)
+
+const richText = {
+  load: (documentId: string, generation: number, json: string) =>
+    reply(() =>
+      editor.loadDocument({
+        documentId,
+        generation,
+        format: 'rtf',
+        document: JSON.parse(json),
+      }),
+    ),
+  snapshot: (generation: number) =>
+    reply(() => {
+      const snapshot = editor.snapshot(generation)
+      if (snapshot.format !== 'rtf') throw new Error('Not an RTF document')
+      return { json: JSON.stringify(snapshot.document), dirty: snapshot.dirty }
+    }),
+}
+window.richText = richText
+```
+
+```swift RichTextFiles.swift
+import Foundation
+import InkKitRTF
+
+extension EditorBridge {
+    /// Opens an RTF file. A file that holds pictures, merged cells or other content the
+    /// document can't represent is refused, never opened with that content missing.
+    func openRTF(at url: URL) async throws {
+        let document = try RTFConverter.document(contentsOf: url)
+        let json = String(decoding: try document.jsonData(), as: UTF8.self)
+        generation += 1
+        try await call(
+            "return await window.richText.load(documentId, generation, json)",
+            ["documentId": url.path, "generation": generation, "json": json])
+    }
+
+    /// Writes the current document as RTF, in the style of TextEdit's default document.
+    func saveRTF(to url: URL) async throws {
+        let value = try await call(
+            "return await window.richText.snapshot(generation)",
+            ["generation": generation])
+        guard let json = value["json"] as? String else {
+            throw EditorFailure(code: "bridge", message: "The snapshot has no document")
+        }
+        let document = try RichTextDocument(json: Data(json.utf8))
+        try RTFConverter.rtfData(from: document).write(to: url, options: .atomic)
+    }
+}
+```
+
+</CodeGroup>
+
+Write the file only after an edit: the first save rewrites the whole file in Inkkit's style, so an unedited file keeps its own fonts and colors. `rtfData(from:)` writes RTF, never RTFD, and the functions don't need the main thread.
+
+Every conversion failure is an `RTFConversionError`, whose `code` is stable. Map the codes to your app's own messages:
+
+```swift
+func message(for error: RTFConversionError) -> String {
+    switch error {
+    case .notRTF:
+        "This file isn't an RTF document."
+    case .unreadable:
+        "This RTF document is damaged and can't be opened."
+    case .unsupportedContent(let kinds):
+        // Sorted and unique: attachment, table, mergedTableCells, nestedTable,
+        // listInTableCell, headerOrFooter, footnote and comment.
+        kinds.contains(.attachment)
+            ? "This document has pictures or attachments, which would be lost."
+            : "This document has content that can't be edited here without losing it."
+    case .invalidDocument:
+        "The document couldn't be saved."
+    case .writeFailed:
+        "The RTF document couldn't be written."
+    }
+}
+```
+
+`notRTF`, `unreadable` and `unsupportedContent` come from reading; offer to open the file as plain text, or not at all. `invalidDocument` from `RichTextDocument(json:)` or `rtfData(from:)` means the JSON isn't a valid document, which an Inkkit snapshot never is; treat it as a failed save and keep the document open. On iOS, `rtfData(from:)` throws `unsupportedContent([.table])` for a document with a table, because UIKit has no RTF tables. `RTFConversionError.description` gives an English message for logs.
+
+To switch a document between TXT and RTF, use the package's `RichTextDocument(plainText:)` and `plainText`. To switch between Markdown and RTF, use [`convertDocument`](/reference/editor#convertdocument), which also lists what the conversion loses.
 
 ## Call native code from adapters
 

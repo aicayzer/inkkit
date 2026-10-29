@@ -1,0 +1,79 @@
+---
+title: 'Rich text'
+description: 'How Inkkit edits RTF documents: what an RTF file keeps and drops, what the editor refuses, how paste and conversion work, and what saving promises.'
+---
+
+Inkkit edits RTF (Rich Text Format) documents in formatted mode, beside Markdown and TXT. Your app converts the file, and Inkkit edits the converted document. Offer RTF by listing `'rtf'` in the [`formats`](/reference/options#formats) option; it is never offered by default.
+
+## How a host opens and saves RTF
+
+Inkkit never reads or writes RTF itself. Apple's text system reads RTF reliably and a browser can't, so your app converts the file with the `InkKitRTF` Swift package and gives Inkkit a [`RichTextDocument`](/reference/editor#rich-text-documents), a JSON form of the document's blocks and runs:
+
+1. Your app reads the file with `RTFConverter.document(fromRTF:)` and passes the document's JSON to [`loadDocument`](/reference/editor#loaddocument) as `{ format: 'rtf', document }`.
+2. The person edits it in formatted mode.
+3. Your app takes [`snapshot`](/reference/editor#snapshot), whose `document` is the current document, and writes it with `RTFConverter.rtfData(from:)`.
+
+[Host RTF documents](/guides/web-view#host-rtf-documents) shows the Swift side. Snapshots stay synchronous: no call to the native converter happens during a save.
+
+## What an RTF document keeps
+
+| Kept                                                                                       | Dropped by the converter                 |
+| ------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| Paragraphs, with left, centered, right and justified alignment                             | Fonts and font sizes                     |
+| Bulleted and numbered lists, nested up to 9 levels, with a starting number                 | Text and background colors, highlighting |
+| Simple tables, with the same number of cells in every row                                  | Indents, spacing, tab stops and kerning  |
+| Line breaks inside a paragraph or cell                                                     |                                          |
+| Bold, italic, underline, strikethrough, superscript, subscript, monospace (code) and links |                                          |
+
+Inkkit's own style replaces what the converter drops. That is the `structure` promise: saving keeps the structure and marks, and **the first save after an edit rewrites the whole file in Inkkit's style**, the style of TextEdit's default document. An unedited document is never written by Inkkit, so your app can keep the original bytes until the person changes something.
+
+A link's underline is how the link is drawn, so a run with a link never also has underline: the converter and Inkkit both remove it, and the underline command is unavailable on link text.
+
+### Refused, never dropped
+
+The converter refuses a file that holds content the document can't represent, rather than losing it: pictures and attachments (RTFD), merged table cells, tables inside tables, lists inside tables, headers and footers, footnotes and comments. It throws `RTFConversionError.unsupportedContent` with the kinds it found, and your app tells the person the file can't be opened for editing. Old-style Word `\pntext` list markers read as plain paragraphs, keeping their text.
+
+## Why there are no headings
+
+RTF has no heading that its readers report: a heading written to RTF comes back as a bold paragraph, whichever app wrote it. An RTF document in Inkkit therefore has no headings. `headings()` is empty, and the heading commands are unavailable. A heading converted or pasted from elsewhere becomes a bold paragraph.
+
+## What the editor refuses
+
+An RTF document holds paragraphs, lists, tables, line breaks and the eight marks, and nothing else. Inkkit keeps everything else out in three ways:
+
+- **Commands.** [`commandState`](/reference/options#command-state) reports the commands for headings, code blocks, quotes, callouts, tasks, highlight, images, footnotes and reference definitions as unavailable, and [`format`](/reference/editor#format) returns `false` for them. Table column alignment is unavailable, because an RTF cell has none.
+- **Typing.** Markdown that a person types stays text: `# `, `> `, `- `, three backticks, `---`, `==`, `[ ]`, `**bold**` and the rest make no headings, quotes, lists, code, rules, highlights or tasks. A bare web address stays text too. Smart punctuation, when on, still applies.
+- **Every edit.** Any edit that would bring in something RTF can't hold is refused, and the document, revision and history stay as they were.
+
+There is no source mode: `setEditingMode('source')` returns `false`, and `replaceSource` throws `invalid-argument`.
+
+## Alignment
+
+The format commands `alignLeft`, `alignCenter`, `alignRight` and `alignJustify` align every paragraph the selection touches, including paragraphs in list items. They are available only in RTF; a table cell has no alignment. Their shortcut names have no default keys, so bind them through [`keymap`](/reference/appearance#shortcuts). `commandState().caret.align` reports the alignment at the selection, for a toolbar's alignment buttons.
+
+## Paste
+
+A paste into an RTF document keeps what RTF holds:
+
+- **HTML** keeps paragraphs and their alignment, lists, tables, line breaks and the eight marks, including from styled spans such as a word processor writes. Headings become bold paragraphs, code blocks become paragraphs in code, and quotes and other containers give up their paragraphs. Images, rules and anything that shows no text are left out. Pasted HTML is read without running it, and a link whose address Inkkit wouldn't open keeps its text without the link.
+- **Plain text** pastes a paragraph for each line, with the marks of the text around it.
+- **Explicit Markdown** in `ClipboardInput.markdown` pastes as its text, unparsed.
+
+A paste into a table cell keeps to the cell, as lines of it, and a table pasted into a list item becomes lines of tab-separated cells.
+
+## Copy and print
+
+Copying gives readable text and semantic HTML, with `<u>`, `<sup>` and `<sub>` for underline, superscript and subscript and `text-align` for alignment. [`clipboardSnapshot`](/reference/editor#clipboardsnapshot) returns the readable text as `markdown` too, since an RTF document has no Markdown source. [`printableSnapshot`](/reference/editor#printablesnapshot) prints the document with its marks and alignment.
+
+## Convert between Markdown and RTF
+
+[`convertDocument`](/reference/editor#convertdocument) converts the loaded Markdown document to RTF, or the loaded RTF document to Markdown, for a Save As to the other format. It changes nothing in the editor and returns the result with a list of what was lost, as stable [`FormatLossCode`](/reference/editor#convertdocument) values, so your app can tell the person before saving. Load the result as a new generation.
+
+- **Markdown to RTF** turns headings into bold paragraphs and code blocks into paragraphs in code, and reports those and everything else RTF can't hold, such as quotes, tasks, images and footnotes.
+- **RTF to Markdown** writes underline, superscript and subscript as `<u>`, `<sup>` and `<sub>`, and reports alignment as lost.
+
+Inkkit doesn't convert TXT to or from RTF. The Swift package's `RichTextDocument(plainText:)` and `plainText` do that.
+
+## What stays as in Markdown
+
+Find and replace, undo and redo, revisions, generation and stale-document checks, `reloadDocument` keeping the selection, `textSnapshot` and the readable-text ranges, read-only mode, composition guards and `changed` events work as they do in formatted Markdown. A snapshot's `dirty` compares canonical documents, so undoing every edit makes it clean again.
