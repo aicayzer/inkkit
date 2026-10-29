@@ -1,6 +1,10 @@
 import { expect, test } from 'vitest'
 import { fixtures as golden } from './harness'
-import { richTextFixtures as fixtures } from '../../../scripts/interop/consumer/fixtures'
+import {
+  allFixtures,
+  fixtures as textFixtures,
+  richTextFixtures as fixtures,
+} from '../../../scripts/interop/consumer/fixtures'
 
 test('the playground RTF fixtures are the golden documents', () => {
   expect(fixtures.rtf).toMatchObject({
@@ -19,4 +23,10 @@ test('the playground RTF fixtures are the golden documents', () => {
     format: 'rtf',
     document: golden['word-style'],
   })
+})
+
+test('the playground offers every fixture', () => {
+  for (const name of [...Object.keys(textFixtures), ...Object.keys(fixtures)])
+    expect(allFixtures, name).toHaveProperty([name])
+  expect(allFixtures).toHaveProperty(['linked-files'])
 })

@@ -554,12 +554,6 @@ richTextFixtures['rtf-word'] = {
   },
 }
 
-/** Every fixture, by name, for a page that loads any format. */
-export const allFixtures: Record<string, Fixture | RichTextFixture> = {
-  ...fixtures,
-  ...richTextFixtures,
-}
-
 export const configurations = ['minimal', 'rich'] as const
 export type AdapterMode =
   'normal' | 'reject' | 'reject-coded' | 'hold' | 'corrupt'
@@ -910,4 +904,11 @@ export class ControlledFiles {
       })
     },
   }
+}
+
+/** Every fixture, by name, for a page that loads any format. Built last, after every fixture
+ *  above is assigned, so none is left out. */
+export const allFixtures: Record<string, Fixture | RichTextFixture> = {
+  ...fixtures,
+  ...richTextFixtures,
 }
