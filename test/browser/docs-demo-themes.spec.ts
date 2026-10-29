@@ -63,6 +63,25 @@ test('official playground switches real presets without changing the document @p
   await expect
     .poll(() => page.locator('#status').textContent())
     .not.toBe('Loading editor…')
+  const toolbar = page.getByRole('toolbar', { name: 'Editor controls' })
+  await expect(toolbar).toHaveText('')
+  await expect(toolbar.getByRole('button')).toHaveCount(8)
+  for (const label of [
+    'Formatted',
+    'Source',
+    'Find',
+    'Undo',
+    'Redo',
+    'Copy Markdown',
+    'Reset',
+    'Focus',
+  ]) {
+    await expect(
+      toolbar.getByRole('button', { name: label, exact: true }),
+    ).toHaveAttribute('title', label)
+  }
+  await expect(page.locator('.hint')).toHaveCount(0)
+  await expect(page.locator('#status')).not.toHaveClass(/status-error/)
   await expect(
     page.getByRole('combobox', { name: 'Theme', exact: true }),
   ).toHaveValue('standard')
@@ -130,18 +149,39 @@ test('official playground switches real presets without changing the document @p
   await expect(source).not.toHaveValue(/A theme edit\./)
   await page.getByRole('button', { name: 'Redo', exact: true }).click()
   await expect(source).toHaveValue(/A theme edit\./)
-  await page.setViewportSize({ width: 360, height: 800 })
   await page.getByRole('button', { name: 'Formatted', exact: true }).click()
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 800 })
+    expect((await toolbar.boundingBox())?.x).toBe(width <= 520 ? 16 : 24)
+    await expect(
+      page.getByRole('combobox', { name: 'Theme', exact: true }),
+    ).toBeVisible()
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true)
+    for (const scheme of ['light', 'dark']) {
+      await page
+        .getByRole('combobox', { name: 'Appearance', exact: true })
+        .selectOption(scheme)
+      await page.screenshot({
+        path: testInfo.outputPath(`official-${width}-${scheme}.png`),
+      })
+    }
+  }
+  await page.getByRole('button', { name: 'Find', exact: true }).click()
+  const query = page.getByRole('searchbox', { name: 'Find', exact: true })
+  await query.fill('a phrase absent from the demo')
+  await query.press('Enter')
+  await expect(page.locator('#status')).toHaveClass(/status-error/)
+  await expect(page.locator('#status')).toBeVisible()
+  await expect(page.locator('#status')).toContainText('No matches')
+  await page.getByRole('button', { name: 'Close find', exact: true }).click()
   await expect(
-    page.getByRole('combobox', { name: 'Theme', exact: true }),
-  ).toBeVisible()
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true)
-  await page.screenshot({
-    path: testInfo.outputPath('official-narrow.png'),
-    fullPage: true,
-  })
+    page.getByRole('button', { name: 'Find', exact: true }),
+  ).toBeFocused()
+  await page.screenshot({ path: testInfo.outputPath('official-focus.png') })
+  await page.getByRole('button', { name: 'Reset', exact: true }).hover()
+  await page.screenshot({ path: testInfo.outputPath('official-hover.png') })
 })
