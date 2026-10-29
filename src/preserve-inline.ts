@@ -104,9 +104,10 @@ export function locateChildren(node: SourceNode, text: string): void {
   }
 }
 
-// The text a run of text, breaks and links written bare or in angle
-// brackets reads as, with the offset in `text` of each character and the
-// range of each link, or undefined for any other run.
+// A run's text and source offsets. Other inline nodes take one opaque token,
+// compared by structure rather than spelling, so a mark that splits a text
+// node does not prevent retaining the text around it. Links and opaque nodes
+// are indivisible and take their canonical form when an edit touches them.
 function runOffsets(
   nodes: readonly SourceNode[],
   text: string,
@@ -118,12 +119,14 @@ function runOffsets(
       offsets: number[]
       links: Array<[number, number]>
       breaks: Set<number>
+      tokens: Map<number, string>
     }
   | undefined {
   let decoded = ''
   const offsets = [from]
   const links: Array<[number, number]> = []
   const breaks = new Set<number>()
+  const tokens = new Map<number, string>()
   let at = from
   let afterBreak = false
   for (const node of nodes) {
@@ -137,10 +140,9 @@ function runOffsets(
     }
     if (start !== at) return undefined
     const raw = text.slice(start, end)
-    if (node.type === 'link') {
-      const label = inlineText(node)
-      const angle = raw === `<${label}>`
-      if (raw !== label && !angle) return undefined
+    const label = node.type === 'link' ? inlineText(node) : undefined
+    const angle = label !== undefined && raw === `<${label}>`
+    if (label !== undefined && (raw === label || angle)) {
       links.push([decoded.length, decoded.length + label.length])
       decoded += label
       // An edit widens to whole links, so only their ends are used.
@@ -157,17 +159,21 @@ function runOffsets(
       breaks.add(decoded.length)
       decoded += '\n'
       offsets.push(end)
-    } else return undefined
+    } else {
+      tokens.set(decoded.length, signature(node))
+      links.push([decoded.length, decoded.length + 1])
+      decoded += '\uFFFC'
+      offsets.push(end)
+    }
     afterBreak = node.type === 'break'
     at = end
   }
-  return at === to ? { decoded, offsets, links, breaks } : undefined
+  return at === to ? { decoded, offsets, links, breaks, tokens } : undefined
 }
 
-// A run of text, breaks and addresses keeps its source outside the edit.
-// The edit, widened to the addresses it touches before or after, is written
-// as the canonical writer writes it, since escapes kept beside a new address
-// could stop it reading as one.
+// A run keeps its source outside the edit. The edit, widened to the inline
+// syntax it touches before or after, is written as the canonical writer
+// writes it: kept escapes or delimiters could change how new neighbours read.
 export function retainRun(
   before: readonly SourceNode[],
   after: readonly SourceNode[],
@@ -186,6 +192,7 @@ export function retainRun(
     prefix < a.length &&
     prefix < b.length &&
     a[prefix] === b[prefix] &&
+    old.tokens.get(prefix) === now.tokens.get(prefix) &&
     old.breaks.has(prefix) === now.breaks.has(prefix)
   )
     prefix++
@@ -194,12 +201,50 @@ export function retainRun(
     suffix < a.length - prefix &&
     suffix < b.length - prefix &&
     a[a.length - 1 - suffix] === b[b.length - 1 - suffix] &&
+    old.tokens.get(a.length - 1 - suffix) ===
+      now.tokens.get(b.length - 1 - suffix) &&
     old.breaks.has(a.length - 1 - suffix) ===
       now.breaks.has(b.length - 1 - suffix)
   )
     suffix++
+  const reference = /^&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);$/
+  const encodedBoundary = (oldIndex: number, newIndex: number) =>
+    reference.test(
+      canonical.slice(now.offsets[newIndex], now.offsets[newIndex + 1]),
+    ) &&
+    !reference.test(
+      source.slice(old.offsets[oldIndex], old.offsets[oldIndex + 1]),
+    )
   for (let widened = true; widened;) {
     widened = false
+    // Attention delimiters can require a neighbouring character reference:
+    // a==.==b needs encoded letters so the punctuation stays highlighted.
+    // Authored references already provide that boundary and keep their form.
+    if (prefix > 0 && encodedBoundary(prefix - 1, prefix - 1)) {
+      prefix--
+      widened = true
+    }
+    if (suffix > 0 && encodedBoundary(a.length - suffix, b.length - suffix)) {
+      suffix--
+      widened = true
+    }
+    // One entity can read as several characters. A boundary inside it has
+    // the same source offset as the next boundary, so widen to include the
+    // whole entity rather than retaining or dropping only part of its value.
+    for (const { offsets, decoded } of [old, now]) {
+      while (prefix > 0 && offsets[prefix] === offsets[prefix + 1]) {
+        prefix--
+        widened = true
+      }
+      while (
+        suffix > 0 &&
+        offsets[decoded.length - suffix] ===
+          offsets[decoded.length - suffix + 1]
+      ) {
+        suffix--
+        widened = true
+      }
+    }
     for (const [links, length] of [
       [old.links, a.length],
       [now.links, b.length],
