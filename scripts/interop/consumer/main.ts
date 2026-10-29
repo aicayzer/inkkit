@@ -979,6 +979,15 @@ window.interop = {
               JSON.stringify(editor.commandState(operation.generation)),
             )
             break
+          case 'setDiagnosticsEnabled':
+            editor.setDiagnosticsEnabled(operation.enabled)
+            result = true
+            break
+          case 'diagnosticReport': {
+            const report = editor.diagnosticReport()
+            result = { report, serialized: JSON.stringify(report) }
+            break
+          }
           case 'inputAttributes': {
             const surface = activeEditor()
             result = {
