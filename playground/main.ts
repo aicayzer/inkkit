@@ -19,6 +19,9 @@ import {
 } from '../scripts/interop/consumer/fixtures'
 import { generateDocument, parseGenerate, type GenerateSpec } from './generate'
 import '../src/style.css'
+import '../src/themes/standard.css'
+import '../src/themes/calm.css'
+import '../src/themes/essential.css'
 import './style.css'
 
 const params = new URLSearchParams(location.search)
@@ -38,6 +41,26 @@ function choose(name: string, valid: readonly string[], fallback: string) {
 }
 let fixtureId = choose('fixture', Object.keys(fixtures), 'everyday')
 let configuration = choose('configuration', configurations, 'rich')
+let theme = choose(
+  'theme',
+  ['default', 'standard', 'calm', 'essential'],
+  'default',
+)
+let appearance = choose('appearance', ['system', 'light', 'dark'], 'system')
+function applyAppearance() {
+  const editors = element('editors')
+  if (theme === 'default') delete editors.dataset.inkkitTheme
+  else editors.dataset.inkkitTheme = theme
+  document.documentElement.style.colorScheme =
+    appearance === 'system' ? 'light dark' : appearance
+  editors.style.setProperty(
+    '--inkkit-color-scheme',
+    appearance === 'system' ? 'light dark' : appearance,
+  )
+  element<HTMLSelectElement>('theme').value = theme
+  element<HTMLSelectElement>('appearance').value = appearance
+}
+applyAppearance()
 let adapterMode = choose(
   'adapter',
   ['normal', 'reject', 'hold'],
@@ -68,6 +91,8 @@ function syncUrl() {
       : url.searchParams.set(name, value)
   write('fixture', fixtureId, 'everyday')
   write('configuration', configuration, 'rich')
+  write('theme', theme, 'default')
+  write('appearance', appearance, 'system')
   write('adapter', adapterMode, 'normal')
   write('editable', String(settings.editable), 'true')
   write('editors', settings.editors ? '2' : '1', '1')
@@ -929,6 +954,16 @@ click('navigate-heading', () =>
 )
 element('fixture').addEventListener('change', () => {
   void act(() => reset(element<HTMLSelectElement>('fixture').value))
+})
+element('theme').addEventListener('change', () => {
+  theme = element<HTMLSelectElement>('theme').value
+  applyAppearance()
+  syncUrl()
+})
+element('appearance').addEventListener('change', () => {
+  appearance = element<HTMLSelectElement>('appearance').value
+  applyAppearance()
+  syncUrl()
 })
 element('files-toggle').addEventListener('change', () => {
   settings.files = element<HTMLInputElement>('files-toggle').checked

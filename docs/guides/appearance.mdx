@@ -5,6 +5,50 @@ description: 'Match your app’s typography, colors and language.'
 
 Inkkit's styles apply only inside the mounted root, so the rest of your page keeps its own.
 
+## Choose a preset
+
+Try **Theme** and **Appearance** in the [editor playground](/editor). Standard is the playground's default. Changing either control keeps your document and undo history.
+
+| Preset    | Appearance                                                     | Table and code block corners |
+| --------- | -------------------------------------------------------------- | ---------------------------- |
+| Standard  | Inkkit's familiar colors and a light code surface.             | 8px                          |
+| Calm      | Softer colors, including diagram categories at 35% strength.   | 8px                          |
+| Essential | Neutral grays, including code highlighting and pie categories. | 4px                          |
+
+Every preset includes light and dark colors, system sans typography at 15px, normal paragraph spacing and a neutral 3px quote rule with rounded ends. They use system fonts already on the device and need no network access.
+
+Import the base stylesheet and the preset you want, then apply its attribute to your own editor root:
+
+```ts
+import '@aicayzer/inkkit/style.css'
+import '@aicayzer/inkkit/themes/standard.css'
+```
+
+```html
+<div id="editor" data-inkkit-theme="standard"></div>
+```
+
+Use `themes/calm.css` with `data-inkkit-theme="calm"`, or `themes/essential.css` with `data-inkkit-theme="essential"`. The attribute can also go on an ancestor shared by editors that use the same preset. Each stylesheet sets only public tokens under its matching attribute. It does not style the rest of the page.
+
+To offer a switcher, import all three files and change your root's `data-inkkit-theme` value. This changes CSS without remounting the editor or loading the document again. The preset supplies the editor background; your app still owns the page background and controls.
+
+The base stylesheet on its own keeps the existing appearance. It does not automatically apply Standard.
+
+### Customize or copy a preset
+
+Set your own tokens on the same root to override a preset. Preset selectors use `:where()`, so a normal class selector takes precedence:
+
+```css
+.document-editor {
+  --inkkit-reading-width: 48rem;
+  --inkkit-padding-inline: 24px;
+  --inkkit-code-radius: 6px;
+  --inkkit-quote-rule-color: light-dark(#777777, #aaaaaa);
+}
+```
+
+For a preset you maintain yourself, copy its CSS from the installed package's `dist/themes/` directory, rename the attribute value and import that file alongside `style.css`. Keep the public tokens and customize their values. A copied file stays under your control when Inkkit updates; compare it with the package preset when you upgrade.
+
 ## Set tokens
 
 Import the stylesheet once, then set tokens on the root or any ancestor. Each editor root can have its own values.
@@ -31,7 +75,7 @@ To align your own header with the writing column, set `--inkkit-column-inset` on
 
 By default the editor follows the system setting. Its default colors use CSS `light-dark()` and system colors such as `CanvasText`, so text, menus and code highlighting switch with the scheme.
 
-When your app has its own theme setting, set `--inkkit-color-scheme` to `light` or `dark` with the rest of your theme. Inkkit doesn't paint a background behind the text, so set your page's `color-scheme` and background in the same rule:
+When your app has its own theme setting, set `--inkkit-color-scheme` to `light` or `dark` with the rest of your theme. The base stylesheet leaves the editor background transparent. Presets set `--inkkit-background-color`; set your page's `color-scheme` and background in the same rule:
 
 ```css
 :root[data-theme='light'] {
@@ -47,7 +91,7 @@ body {
 }
 ```
 
-Your own token values can follow the scheme too, for example `--inkkit-accent-color: light-dark(#286343, #7bc89a)`. Diagram previews stay on a light card in both schemes, because the same rendering becomes the image in clipboard and print output.
+Your own token values can follow the scheme too, for example `--inkkit-accent-color: light-dark(#286343, #7bc89a)`. Presets use this to switch their colors without a JavaScript theme option. Diagram previews follow the editor's appearance; clipboard and print diagrams keep the light palette for portable output.
 
 ## Adjust the focus ring
 
@@ -61,11 +105,11 @@ To draw no ring around the text while keeping the controls' rings:
 }
 ```
 
-Footnote references and wiki links draw their ring outside the text, in the current text color. The Copy and language buttons on code blocks keep a fixed accent ring that the focus tokens don't change.
+Footnote references and wiki links draw their ring outside the text, in the current text color. The Copy and language buttons on code blocks use the control focus tokens too.
 
 ## Links
 
-Links and wiki links take `--inkkit-accent-color` and gain an underline on hover. A wiki link that `WikiLinkAdapter.resolve` reports as missing keeps a dashed underline, so people who can't tell its color apart still see it, and it also shows in forced-colors mode. Assistive technology receives the `wikiMissing` label as the link's description. The underline has no token of its own. Light-mode contrast of the default accent is a known gap, listed under accessibility below.
+Links and wiki links take `--inkkit-accent-color` and gain an underline on hover. A wiki link that `WikiLinkAdapter.resolve` reports as missing keeps a dashed underline, so people who can't tell its color apart still see it, and it also shows in forced-colors mode. Assistive technology receives the `wikiMissing` label as the link's description. The underline has no token of its own.
 
 ## Style the selection
 
@@ -115,13 +159,6 @@ If a change you need has no token, [open an issue](https://github.com/aicayzer/i
 
 Inkkit gives the editing surfaces accessible names from `formattedEditor`, `sourceEditor` and `plainTextEditor`. Its controls are buttons that the keyboard reaches, with names from labels. File cards, footnote definitions, author comments and preserved Markdown blocks carry roles and names, and the slash and suggestion menus expose a listbox with the selected option announced.
 
-<Accordion title="Known accessibility gaps">
+Task items expose checkboxes that the keyboard can reach and toggle. Read-only editors expose that state to assistive technology. Bind `openLink` in your [keymap](/reference/appearance#shortcuts) so a person can open the link at the caret with the keyboard.
 
-Known gaps are tracked under the [`accessibility` label](https://github.com/aicayzer/inkkit/issues?q=is%3Aissue%20is%3Aopen%20label%3Aaccessibility). These are the ones a host is most likely to work around:
-
-- A read-only editor isn't exposed as read-only ([#161](https://github.com/aicayzer/inkkit/issues/161)).
-- A link can't be opened from the keyboard ([#160](https://github.com/aicayzer/inkkit/issues/160)).
-- Task items don't expose a checkbox or toggle from the keyboard ([#154](https://github.com/aicayzer/inkkit/issues/154)).
-- In light mode, the default accent color on link text and the unchecked task checkbox border fall below WCAG contrast minimums ([#158](https://github.com/aicayzer/inkkit/issues/158)). A darker `--inkkit-accent-color` fixes the link text; the checkbox border has no token.
-
-</Accordion>
+The default colors and presets provide contrast on their own backgrounds. Check text, controls, selection and focus when you customize tokens or place the editor on a different background. Remaining issues are tracked under the [`accessibility` label](https://github.com/aicayzer/inkkit/issues?q=is%3Aissue%20is%3Aopen%20label%3Aaccessibility).
