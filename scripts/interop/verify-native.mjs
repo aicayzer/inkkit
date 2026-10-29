@@ -1215,7 +1215,7 @@ const commentSource =
   const original = '# Heading\n\n[Label](https://example.com)\n'
   const spelling = '# Heading\n\n[Label](<https://example.com>)\n'
   const incompleteDiagramDiagnostic =
-    "Parse error on line 3:\nflowchart LRA -->\n-----------------^\nExpecting 'AMP', 'COLON', 'PIPE', 'TESTSTR', 'DOWN', 'DEFAULT', 'NUM', 'COMMA', 'NODE_STRING', 'BRKT', 'MINUS', 'MULT', 'UNICODE_TEXT', got 'EOF'"
+    "Parse error on line 2:\nA -->\n-----^\nExpecting 'NODE_STRING', got 'EOF'"
   const distantSource =
     '# Start\n\n' +
     Array.from(
