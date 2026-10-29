@@ -54,6 +54,7 @@ The browser suite includes the bounded long-note scaling check. Run it alone wit
 | Final code or package candidate                                                         | `pnpm check`, `pnpm format:check`, `pnpm build:playground`, `pnpm test:built-playground`, actual packed-consumer verification and the whole browser suite in Chromium and WebKit. |
 | Changed editor behaviour                                                                | Focused regression tests and selected browser cases for the changed contract, including failure and untidy input.                                                                 |
 | Changed WKWebView, focus/input, bridge, clipboard, print or resource lifecycle boundary | Selected native core plus relevant feature cases from the existing WKWebView runner, using the actual candidate archive.                                                          |
+| Changed Swift package or RTF fixtures                                                   | `swift test` on macOS 27 with Xcode 27.                                                                                                                                           |
 | Source-only documentation change                                                        | Review changed facts and examples; no editor or native run. Mintlify page, asset or configuration changes validate the site.                                                      |
 | Publication                                                                             | Clean committed candidate evidence, exact registry-version consumer and archive/integrity comparison under [releases](releasing.md).                                              |
 
@@ -80,6 +81,22 @@ Use `pnpm exec playwright test --config playwright.diagnostics.config.ts --proje
 App integrations and app releases follow package publication as a separate delivery phase. Temporary `file:` dependencies must not enter merged app lockfiles.
 
 Documentation-only changes to Markdown guides, the README or agent instructions run a formatting check and skip editor tests. Mintlify pages, assets and configuration run `mint validate`. Unknown file types, mixed changes and release runs retain the full checks. The workflow still starts for every pull request so required checks resolve; it skips expensive steps rather than filtering out the workflow.
+
+## Swift package
+
+`InkKitRTF` is a Swift package for reading and writing RTF. `Package.swift` is at the repository root, the sources are in `apple/Sources/InkKitRTF` and the tests are in `apple/Tests/InkKitRTFTests`. The tests share fixtures with the editor in `test/formats/rtf/fixtures/`.
+
+The package has no version of its own. It is versioned and tagged with the npm package: SwiftPM resolves the `v<version>` tag that the release creates. The `files` allowlist in `package.json` keeps `Package.swift` and `apple/` out of the npm package.
+
+The package targets macOS 27 and iOS 27. To test it, use a macOS 27 machine with Xcode 27:
+
+```sh
+swift test
+```
+
+Golden fixture JSON records the expected parse of each RTF fixture. Regenerate it only with `INKKIT_RTF_UPDATE_GOLDEN=1 swift test`, then review every changed file before you commit. A regenerated golden file that nobody reviewed hides a regression.
+
+CI runs `swift test --parallel` in the `swift` job on the `xcode-27` runner. The job runs when a change touches `Package.swift`, `apple/`, `test/formats/rtf/fixtures/` or `ci.yml`, and a release always runs it.
 
 ## GitHub workflow
 
