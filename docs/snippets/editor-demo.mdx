@@ -139,7 +139,7 @@ const $ = (id) => document.getElementById(id);
 const status = $('status');
 const root = $('editor');
 const initial = '# Design review\\n\\nWe tried the new note view with a few longer documents. The **quieter toolbar** leaves more room for writing.\\n\\n## What we learned\\n\\n- Keep the title visible when opening a note.\\n- Put less-used commands in the menu.\\n- Give attachments clear names.\\n\\n## Next steps\\n\\n- [x] Compare light and dark appearances\\n- [ ] Try a note with several tables\\n\\n| Area | Next step |\\n| --- | --- |\\n| Navigation | Check keyboard shortcuts |\\n| Writing | Review paste and undo |\\n\\n> Keep the writing easy to read, and leave room for the details.\\n\\nRead the [appearance guide](https://inkkit.cyzr.me/guides/appearance) to customise a preset. Inline code such as \`theme\` uses the same surface as the table header.\\n\\n\`\`\`ts\\nconst theme = "standard"\\nconst ready = true // Ready to write\\n\`\`\`\\n' + (full ? '\\n## A balanced week\\n\\n\`\`\`mermaid\\npie title A balanced week\\n  "Writing" : 35\\n  "Review" : 20\\n  "Planning" : 15\\n  "Research" : 12\\n  "Design" : 8\\n  "Support" : 5\\n  "Admin" : 3\\n  "Learning" : 2\\n\`\`\`\\n' : '');
-const idle = full ? '' : 'Your changes stay in this demo and are not saved.';
+const idle = '';
 const say = (text, error = false) => { status.textContent = text; status.classList.toggle('status-error', error); };
 const icons = ${JSON.stringify({ focus: icons.focus, unfocus: icons.unfocus })};
 let editor;
