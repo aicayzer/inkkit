@@ -28,10 +28,30 @@ describe('clipboard output from an RTF document', () => {
       ])
         expect(output.html).toContain(tag)
       expect(output.html).toContain('<a href="https://example.com/a?b=1"')
-      // An RTF document has no Markdown source: the Markdown field is its readable text.
-      expect(output.markdown).toBe(output.text)
+      // Markdown shows the copied content; it is written, not the readable text.
+      expect(output.markdown).toContain('**bold**')
+      expect(output.markdown).toContain('<u>underline</u>')
       expect(output.images).toEqual([])
       expect(output.diagrams).toEqual([])
+    }))
+
+  test('copied text that looks like Markdown stays text in the Markdown', () =>
+    withRichEditor({}, async ({ editor }) => {
+      editor.loadDocument(
+        rich(
+          doc(
+            para('**literal** # not'),
+            para({ type: 'text', text: 'b', marks: [{ type: 'bold' }] }),
+          ),
+        ),
+      )
+      expect((await editor.clipboardSnapshot('document')).markdown).toBe(
+        '\\*\\*literal\\*\\* # not\n\n**b**\n',
+      )
+      select(editor, 'literal')
+      expect((await editor.clipboardSnapshot('selection')).markdown).toBe(
+        'literal\n',
+      )
     }))
 
   test('a selection copies only itself, with its alignment', () =>

@@ -10,7 +10,9 @@ import {
 import {
   InlineBuilder,
   canonicalMarks,
+  linkProblem,
   maximumListDepth,
+  textProblem,
 } from './rich-text-model'
 
 // The mapping between rich text and the editor's shared schema, in both directions.
@@ -177,18 +179,15 @@ function richMarksOf(marks: readonly Mark[]): RichTextMark[] {
   return canonicalMarks(result)
 }
 
-const forbiddenText = /[\u0000\n\r\u000b\u000c\u0085\u2028\u2029\ufffc]/
-
 function richInlines(node: ProseNode): RichTextInline[] {
   const builder = new InlineBuilder()
   node.forEach((child) => {
     if (child.type.name === 'hardbreak') builder.break()
     else if (child.isText) {
       const text = child.text!
-      if (forbiddenText.test(text))
-        throw unrepresentable('a separator in its text')
+      if (textProblem(text)) throw unrepresentable('a separator in its text')
       const marks = richMarksOf(child.marks)
-      if (marks.some((mark) => mark.type === 'link' && !mark.href))
+      if (marks.some((mark) => mark.type === 'link' && linkProblem(mark.href)))
         throw unrepresentable('a link without an address')
       builder.text(text, marks)
     } else throw unrepresentable(`a ${child.type.name}`)
@@ -313,7 +312,9 @@ function refusal(
   if (!allowedNodes.has(name)) return name
   for (const mark of node.marks)
     if (!richMarks[mark.type.name]) return mark.type.name
-  if (node.isText && forbiddenText.test(node.text!)) return 'a separator'
+  if (node.isText && textProblem(node.text!)) return 'text'
+  const href = node.type.schema.marks.link?.isInSet(node.marks)?.attrs.href
+  if (href !== undefined && linkProblem(String(href ?? ''))) return 'link'
   if (name === 'paragraph' && node.attrs.align != null && inCell)
     return 'aligned cell'
   if (name === 'list_item') {

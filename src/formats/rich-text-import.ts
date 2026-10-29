@@ -11,8 +11,9 @@ import {
   InlineBuilder,
   appendText,
   canonicalMarks,
+  linkProblem,
   maximumListDepth,
-  plainTextBlocks,
+  textBlocks,
 } from './rich-text-model'
 import { proseBlock } from './rich-text-prose'
 
@@ -130,7 +131,7 @@ function elementMarks(
   if (tag === 'A') {
     const href = element.getAttribute('href')?.trim()
     // An address that is unsafe or empty keeps its text without the link.
-    if (href && isSafeLinkTarget(href, schemes))
+    if (href && isSafeLinkTarget(href, schemes) && !linkProblem(href))
       marks = withMark(withoutMark(marks, 'link'), { type: 'link', href })
   }
   const style = element instanceof HTMLElement ? element.style : undefined
@@ -185,6 +186,8 @@ class Reader {
   flush(): void {
     if (!this.inline) return
     const content = this.inline.finish()
+    // A browser draws no line for a break that ends a block, so `<p><br></p>` is one empty line.
+    if (content.at(-1)?.type === 'break') content.pop()
     this.blocks.push(
       this.align
         ? { type: 'paragraph', align: this.align, content }
@@ -210,6 +213,12 @@ class Reader {
     }
     const collapsed = value.replace(/[ \t\n\r\f]+/g, ' ')
     if (!collapsed) return
+    // Whitespace alone, such as the indentation between tags, starts no paragraph; it is a space
+    // only between text.
+    if (collapsed === ' ') {
+      if (this.inline?.content.length) this.space ??= marks
+      return
+    }
     const builder = this.open()
     const empty = !builder.content.length
     let text = collapsed
@@ -266,13 +275,16 @@ class Reader {
       return
     }
     if (tag === 'TABLE') {
-      const rows = tableRows(element, marks, this.schemes)
+      const table = this.depth === 0 && !spansRows(element)
+      const rows = tableRows(element, marks, this.schemes, table)
       if (!rows.length) return
-      if (this.depth === 0) this.push({ type: 'table', rows })
-      // A list item cannot hold a table: each row is a line of tab-separated cells.
+      if (table) this.push({ type: 'table', rows })
+      // A list item cannot hold a table, and a cell that spans rows would shift the cells below
+      // it: each row is a paragraph of tab-separated cells.
       else
         for (const row of rows) {
           this.paragraph(element)
+          this.open()
           row.forEach((cell, index) => {
             if (index) this.open().text('\t', [])
             for (const inline of cell.content)
@@ -287,6 +299,8 @@ class Reader {
     if (/^H[1-6]$/.test(tag)) inner = withMark(inner, { type: 'bold' })
     const block = blockTags.has(tag)
     if (block) this.paragraph(element)
+    // A paragraph or heading is a line even when it is empty, unlike a container such as `div`.
+    if (tag === 'P' || /^H[1-6]$/.test(tag)) this.open()
     const preformatted =
       pre ||
       tag === 'PRE' ||
@@ -387,10 +401,20 @@ function itemBlocks(
   ]
 }
 
+/** Whether a cell of `table` itself, not of a table inside it, spans more than one row. */
+function spansRows(table: Element): boolean {
+  return [...table.querySelectorAll('td[rowspan], th[rowspan]')].some(
+    (cell) =>
+      cell.closest('table') === table &&
+      Number(cell.getAttribute('rowspan')) > 1,
+  )
+}
+
 function tableRows(
   table: Element,
   marks: Marks,
   schemes: ReadonlySet<string>,
+  even: boolean,
 ): { content: RichTextInline[] }[][] {
   const rows: { content: RichTextInline[] }[][] = []
   for (const row of table.querySelectorAll('tr')) {
@@ -431,7 +455,8 @@ function tableRows(
     }
     if (cells.length) rows.push(cells)
   }
-  const width = Math.max(0, ...rows.map((row) => row.length))
+  // A table's rows are padded to the same width; rows read as lines keep their own.
+  const width = even ? Math.max(0, ...rows.map((row) => row.length)) : 0
   for (const row of rows) while (row.length < width) row.push({ content: [] })
   return rows
 }
@@ -498,12 +523,12 @@ export function richTextPaste(
       ? htmlBlocks(input.html, schemes)
       : undefined
   const plain = html == null
-  let blocks = html ?? plainTextBlocks(input.markdown ?? input.text)
+  let blocks = html ?? textBlocks(input.markdown ?? input.text)
   if (
     html &&
     !blocks.some((block) => block.type !== 'paragraph' || block.content.length)
   )
-    blocks = plainTextBlocks(input.text)
+    blocks = textBlocks(input.text)
   let cell = false
   let lists = 0
   for (let depth = $from.depth; depth > 0; depth--) {
@@ -519,11 +544,13 @@ export function richTextPaste(
         return asLines([block])
       return [block]
     })
-  // Typed text takes the marks around it, but not a link, which ends where its text ends.
+  // Plain text takes the marks typing would: those stored for the next typed text, or else the
+  // marks around it, but not a link, which ends where its text ends.
   const marks = plain
-    ? ($from.marksAcross($to) ?? $from.marks()).filter(
+    ? (state.storedMarks ??
+      ($from.marksAcross($to) ?? $from.marks()).filter(
         (mark) => mark.type.name !== 'link',
-      )
+      ))
     : []
   const nodes = blocks.map((block) => proseBlock(schema, block, marks))
   if (!nodes.length) return Slice.empty

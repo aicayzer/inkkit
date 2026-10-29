@@ -1,7 +1,6 @@
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
-import type { Fragment } from '@milkdown/kit/prose/model'
-import type { EditorState } from '@milkdown/kit/prose/state'
+import { Slice } from '@milkdown/kit/prose/model'
 import { clipboardContent, clipboardText } from '../clipboard'
 import { printableMarkdown } from '../print'
 import { richTextFromText, richTextText } from './rich-text-model'
@@ -25,10 +24,6 @@ function source(ctx: Ctx, text: string): FormatSource {
     baseline: richTextToProse(schema, document),
     serialize: (doc) => richTextText(proseToRichText(doc, emptyAsNone)),
   }
-}
-
-function selectedContent(state: EditorState, all: boolean): Fragment {
-  return all ? state.doc.content : state.selection.content().content
 }
 
 /** Rich text, which the host converts to and from RTF. The editor holds the canonical JSON as the
@@ -55,7 +50,7 @@ export const richTextFormat: FormatHandler = {
     inLink,
     paste: richTextPaste,
     copy(state, linkSchemes) {
-      const content = selectedContent(state, false)
+      const content = state.selection.content().content
       return clipboardContent(content, state.schema, linkSchemes)
     },
   },
@@ -71,7 +66,12 @@ export const richTextFormat: FormatHandler = {
   },
   async clipboard({ all, version, output, assertCurrent }) {
     const { state } = output.ctx().get(editorViewCtx)
-    const content = selectedContent(state, all)
+    const slice = all
+      ? new Slice(state.doc.content, 0, 0)
+      : state.selection.content()
+    const content = slice.content
+    // Markdown that shows the copied content, so text such as `**literal**` stays text.
+    const markdown = output.richTextMarkdown(slice)
     const { html } = clipboardContent(
       content,
       state.schema,
@@ -79,8 +79,6 @@ export const richTextFormat: FormatHandler = {
     )
     const text = clipboardText(content)
     assertCurrent()
-    // Markdown is not this document's source, so the explicit Markdown field holds its readable
-    // text: pasted into a Markdown document, it arrives as typed text, never as syntax.
-    return { ...version, text, html, markdown: text, images: [], diagrams: [] }
+    return { ...version, text, html, markdown, images: [], diagrams: [] }
   },
 }

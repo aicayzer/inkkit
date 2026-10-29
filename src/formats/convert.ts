@@ -1,7 +1,9 @@
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
+import { Transform } from '@milkdown/kit/prose/transform'
 import {
   Fragment,
+  type Slice,
   type Mark,
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
@@ -20,6 +22,7 @@ import {
   InlineBuilder,
   appendText,
   canonicalMarks,
+  linkProblem,
   maximumListDepth,
 } from './rich-text-model'
 import { richTextToProse } from './rich-text-prose'
@@ -73,7 +76,7 @@ class MarkdownReader {
       if (result.some((held) => held.type === type)) continue
       if (type === 'link') {
         const href = String(mark.attrs.href ?? '')
-        if (!href) {
+        if (linkProblem(href)) {
           this.lost.add('link')
           continue
         }
@@ -389,6 +392,15 @@ function sameDocument(a: RichTextDocument, b: RichTextDocument): boolean {
         : document.blocks,
     )
   return text(a) === text(b)
+}
+
+/** Markdown for content copied from a rich text document. Unlike a conversion it reports no
+ *  losses and isn't read back: a copy may lose alignment. */
+export function richContentMarkdown(ctx: Ctx, content: Slice): string {
+  const { schema } = ctx.get(editorViewCtx).state
+  const empty = schema.topNodeType.createAndFill()!
+  const doc = new Transform(empty).replace(0, empty.content.size, content).doc
+  return serialize(ctx, htmlBreaksInCells(doc))
 }
 
 /** `node` with each line break in a table cell written as `<br />`, since a cell is one line of

@@ -79,11 +79,16 @@ import {
   type SavedText,
 } from './formats'
 import {
+  linkProblem,
   readRichTextDocument,
   richTextFromText,
   richTextText,
 } from './formats/rich-text-model'
-import { markdownToRichText, richTextToMarkdown } from './formats/convert'
+import {
+  markdownToRichText,
+  richContentMarkdown,
+  richTextToMarkdown,
+} from './formats/convert'
 import { sourceAttribute, type SourceProvenance } from './source'
 import { referenceDefinitions } from './references'
 import { mediaPolicyEvent, requestRefresh } from './files'
@@ -813,6 +818,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private readonly output: EditorOutput = new EditorOutput({
     ctx: () => this.editor.ctx,
     exportDocument: (text) => this.document.exportDocument(text),
+    richTextMarkdown: (content) =>
+      richContentMarkdown(this.editor.ctx, content),
     diagrams: () => this.diagrams,
     root: () => this.root,
     handler: () => this.document.handler,
@@ -2478,11 +2485,20 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
 
   /**
    * Refuses a link destination that is empty, that opens anything but a web, mail or phone address
-   * or a scheme the host listed, or that the Markdown writer cannot save so that it reads back the
-   * same.
+   * or a scheme the host listed, or, in Markdown, that the writer cannot save so that it reads back
+   * the same. In RTF, it also refuses what the rich text link rule refuses.
    */
   private checkDestination(destination: string, name: string): void {
-    checkDestination(this.editor.ctx, destination, name, this.linkSchemes)
+    const rich = this.document.handler.richText != null
+    checkDestination(
+      this.editor.ctx,
+      destination,
+      name,
+      this.linkSchemes,
+      !rich,
+    )
+    const problem = rich ? linkProblem(destination) : undefined
+    if (problem) throw invalidArgument(`${name}: ${problem}`)
   }
 
   /**

@@ -74,6 +74,9 @@ export interface FormatOutput {
   context(): DocumentContext
   diagrams(): DiagramStore
   root(): HTMLElement
+  /** Markdown for rich content copied from a document that is not Markdown. A copy may lose what
+   *  Markdown can't hold, such as alignment. */
+  richTextMarkdown(content: Slice): string
   remember<T extends { text: string; html: string }>(
     output: T,
     markdown: string,

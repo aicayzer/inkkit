@@ -21,6 +21,7 @@ export function checkDestination(
   destination: string,
   name: string,
   linkSchemes: ReadonlySet<string>,
+  markdown = true,
 ): void {
   if (destination.trim() === '')
     throw invalidArgument(`${name} must not be empty`)
@@ -28,6 +29,8 @@ export function checkDestination(
     throw invalidArgument(
       `${name} must be relative, or an address with an allowed scheme (http, https, mailto, tel or one of linkSchemes), with no control characters`,
     )
+  // A rich text link keeps any address that link safety allows; only Markdown must also write it.
+  if (!markdown) return
   const { schema } = ctx.get(editorViewCtx).state
   const written = serialize(
     ctx,

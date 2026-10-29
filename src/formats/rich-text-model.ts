@@ -20,6 +20,24 @@ const forbidden = /[\u0000\n\r\u000b\u000c\u0085\u2028\u2029\ufffc]/
 const loneSurrogate =
   /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
 
+/** Why a run cannot hold `text`, or undefined. Loading and editing share the rule. */
+export function textProblem(text: string): string | undefined {
+  const bad = forbidden.exec(text)
+  if (bad) return `text cannot hold ${scalarName(bad[0])}`
+  if (loneSurrogate.test(text)) return 'text cannot hold a lone surrogate'
+  return undefined
+}
+
+/** Why `href` cannot be a link's address, or undefined. Any address that is not empty and holds
+ *  no control character is kept, as the host's converter keeps it; loading, editing, paste and the
+ *  converter share the rule. Edits and paste also apply Inkkit's link safety. */
+export function linkProblem(href: string): string | undefined {
+  if (!href) return 'a link needs an address'
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(href))
+    return 'a link address cannot hold a control character'
+  return undefined
+}
+
 /** The canonical order of marks. */
 export const markRank = {
   bold: 0,
@@ -124,8 +142,8 @@ function readMarks(value: unknown, path: Path): RichTextMark[] {
     if (types.has(mark.type))
       invalid(path, `the ${mark.type} mark appears more than once`)
     types.add(mark.type)
-    if (mark.type === 'link' && !mark.href)
-      invalid(path, 'a link needs an address')
+    const problem = mark.type === 'link' ? linkProblem(mark.href) : undefined
+    if (problem) invalid(path, problem)
   }
   if (types.has('superscript') && types.has('subscript'))
     invalid(path, 'a run cannot be both superscript and subscript')
@@ -151,10 +169,8 @@ function readInlines(value: unknown, path: Path): RichTextInline[] {
     const text = inline.text
     if (typeof text !== 'string') invalid(`${at}.text`, 'must be text')
     if (!text) invalid(`${at}.text`, 'a text run cannot be empty')
-    const bad = forbidden.exec(text)
-    if (bad) invalid(`${at}.text`, `text cannot hold ${scalarName(bad[0])}`)
-    if (loneSurrogate.test(text))
-      invalid(`${at}.text`, 'text cannot hold a lone surrogate')
+    const problem = textProblem(text)
+    if (problem) invalid(`${at}.text`, problem)
     builder.text(
       text,
       isOmitted(inline.marks) ? [] : readMarks(inline.marks, `${at}.marks`),
@@ -339,17 +355,14 @@ export function appendText(
   })
 }
 
-/** Plain text as paragraphs, as the host's `RichTextDocument(plainText:)` reads it: each line is a
- *  paragraph, and a final line ending adds none. */
-export function plainTextBlocks(text: string): RichTextBlock[] {
-  const blocks: RichTextBlock[] = []
-  const lines = text.split(/\r\n|[\n\r\u000c\u0085\u2029]/)
-  if (lines.length > 1 && lines.at(-1) === '') lines.pop()
-  if (text === '') return blocks
-  for (const line of lines) {
+/** Typed or pasted text as paragraphs: each paragraph separator ends one, including a final one,
+ *  so inserting `'a\n'` leaves the caret in a new paragraph. A line separator is a line break.
+ *  Unlike the host's `RichTextDocument(plainText:)`, which reads a file, nothing is trimmed. */
+export function textBlocks(text: string): RichTextBlock[] {
+  if (text === '') return []
+  return text.split(/\r\n|[\n\r\u000c\u0085\u2029]/).map((line) => {
     const builder = new InlineBuilder()
     appendText(builder, line, [])
-    blocks.push({ type: 'paragraph', content: builder.finish() })
-  }
-  return blocks
+    return { type: 'paragraph', content: builder.finish() }
+  })
 }
