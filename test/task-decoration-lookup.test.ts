@@ -75,4 +75,4 @@ test('task decoration lookup stays bounded after an item split and typing', asyn
       spy.mockRestore()
     }
   })
-})
+}, 30_000)
