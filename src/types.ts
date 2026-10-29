@@ -4,6 +4,11 @@ export type DocumentFormat = 'md' | 'txt'
  *  structure and marks and replaces fonts, colors and sizes with Inkkit's style. `lossy` is a
  *  conversion that drops something and says what. */
 export type FormatPromise = 'exact' | 'structure' | 'lossy'
+/** A format the host offered at mount, with what saving it promises. */
+export interface OfferedFormat {
+  format: DocumentFormat
+  promise: FormatPromise
+}
 /** What every adapter call receives, to tell which document, load and call it belongs to. The
  *  operation ID is opaque and differs for each call from one editor. */
 export interface DocumentContext {

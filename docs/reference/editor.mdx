@@ -26,8 +26,8 @@ Each member first throws `destroyed` if the editor was destroyed, then `invalid-
 
 | Members                                                                                                                                                                                                           | Expected generation                                    | Then throws                                                                                                                                                                               |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `editable`, `editingMode`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`, `setHostActive`                                                                                                          | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
-| `loadDocument`                                                                                                                                                                                                    | None.                                                  | `invalid-argument` when the generation isn't greater than the loaded one, then `preservation` when the Markdown can't be loaded.                                                          |
+| `formats`, `editable`, `editingMode`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`, `setHostActive`                                                                                               | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
+| `loadDocument`                                                                                                                                                                                                    | None.                                                  | `invalid-argument` when the generation isn't greater than the loaded one, then `preservation` when the Markdown can't be loaded. A format you didn't offer is a bad argument.             |
 | `setEditable`, `setTextInputPreferences`                                                                                                                                                                          | None.                                                  | `composition`.                                                                                                                                                                            |
 | `reloadDocument`                                                                                                                                                                                                  | Optional, the last parameter. Checked only when given. | `not-ready` and `stale-document`, only when the generation is given. Then the same errors as `loadDocument`.                                                                              |
 | `commandState`, `focus`, `blur`, `cancelPendingImports`, `refreshReferences`                                                                                                                                      | Optional, the last parameter.                          | `not-ready`, `stale-document`.                                                                                                                                                            |
@@ -83,7 +83,34 @@ Cancels pending work, releases the editor and removes `inkkit-root` from the roo
 ## Documents
 
 {/* @api DocumentFormat */}
-`DocumentFormat` is `'md'` for Markdown or `'txt'` for literal text. TXT has no formatted mode. See [documents and saving](/concepts/documents) for load and version rules.
+`DocumentFormat` is `'md'` for Markdown or `'txt'` for literal text. TXT has no formatted mode. An editor loads only the formats you offer in [`formats`](/reference/options#formats). See [documents and saving](/concepts/documents) for load and version rules.
+
+{/* @api FormatPromise */}
+`FormatPromise` states what saving a format keeps. Markdown and TXT are both `'exact'`. See [what each format promises](/concepts/documents#formats-and-what-they-promise).
+
+| Value         | Meaning                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `'exact'`     | Saves your file exactly: an unedited document saves the bytes it loaded, and an edit changes only what it touched. |
+| `'structure'` | Keeps the structure and marks, and replaces fonts, colors and sizes with Inkkit's style.                           |
+| `'lossy'`     | A conversion that drops something, and says what it drops.                                                         |
+
+{/* @api OfferedFormat */}
+An `OfferedFormat` is one entry of [`formats`](#formats): a format you offered, with what saving it promises.
+
+{/* @api-scope OfferedFormat */}
+
+| Field     | Type             | Meaning                                      |
+| --------- | ---------------- | -------------------------------------------- |
+| `format`  | `DocumentFormat` | The format you offered at mount.             |
+| `promise` | `FormatPromise`  | What saving a document in this format keeps. |
+
+{/* @api InkKitEditor.formats */}
+
+### formats
+
+`readonly formats: readonly OfferedFormat[]`
+
+The formats you offered in the [`formats`](/reference/options#formats) option, in your order, each with its `promise`. Without the option, the list is Markdown and then TXT. The list is frozen and fixed at mount, so a host can read it once to fill an Open or Save As menu. It works before the first load.
 
 {/* @api DocumentVersion */}
 A `DocumentVersion` identifies one revision within a loaded document. Outputs and command state carry these fields.
@@ -105,7 +132,7 @@ A `DocumentInput` supplies the complete source and its identity for a load or re
 | ------------ | ---------------- | ---------------------------------------------------------------------------------- |
 | `documentId` | `string`         | The host's document identity, preserved in later snapshots.                        |
 | `generation` | `number`         | An integer greater than the loaded generation; the first load accepts any integer. |
-| `format`     | `DocumentFormat` | The document format: Markdown or literal text.                                     |
+| `format`     | `DocumentFormat` | The document format, one of those in [`formats`](#formats).                        |
 | `text`       | `string`         | The complete authored text. An empty string loads an empty document.               |
 
 {/* @api InkKitEditor.loadDocument */}
@@ -114,7 +141,7 @@ A `DocumentInput` supplies the complete source and its identity for a load or re
 
 `loadDocument(input: DocumentInput): void`
 
-Replaces the document. The generation must be greater than the loaded one; the first load accepts any integer. A generation that isn't greater throws `invalid-argument`. Markdown that can't be kept even as literal source throws `preservation`. Either way the load changes nothing.
+Replaces the document. The generation must be greater than the loaded one; the first load accepts any integer. A generation that isn't greater, or a format that isn't in [`formats`](#formats), throws `invalid-argument`. Markdown that can't be kept even as literal source throws `preservation`. Either way the load changes nothing.
 
 A load clears the undo history, returns to formatted mode, cancels pending imports and exports, and sends one `commandStateChanged` and no `changed`. [Load a document](/concepts/documents#load-a-document) lists everything it resets.
 

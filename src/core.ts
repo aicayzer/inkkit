@@ -18,6 +18,8 @@ export type {
 export { InkKitError } from './types'
 export type {
   DocumentFormat,
+  FormatPromise,
+  OfferedFormat,
   EditorLabels,
   Heading,
   TableCommand,

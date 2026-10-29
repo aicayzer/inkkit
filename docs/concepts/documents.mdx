@@ -29,12 +29,12 @@ These leave it unchanged: selection and caret moves, `setEditingMode`, `setEdita
 
 `loadDocument(input)` replaces the document. `input` is a `DocumentInput`:
 
-| Field        | Type              | Meaning                                                                         |
-| ------------ | ----------------- | ------------------------------------------------------------------------------- |
-| `documentId` | `string`          | Your name for the document.                                                     |
-| `generation` | integer           | Greater than the loaded document's generation.                                  |
-| `format`     | `'md'` or `'txt'` | `md` is Markdown. `txt` is literal text, with no formatted mode.                |
-| `text`       | `string`          | The complete text, with its line endings. An empty string is an empty document. |
+| Field        | Type              | Meaning                                                                                           |
+| ------------ | ----------------- | ------------------------------------------------------------------------------------------------- |
+| `documentId` | `string`          | Your name for the document.                                                                       |
+| `generation` | integer           | Greater than the loaded document's generation.                                                    |
+| `format`     | `'md'` or `'txt'` | `md` is Markdown. `txt` is literal text, with no formatted mode. It must be a format you offered. |
+| `text`       | `string`          | The complete text, with its line endings. An empty string is an empty document.                   |
 
 A load:
 
@@ -45,7 +45,21 @@ A load:
 - Sends one `commandStateChanged` and no `changed`.
 - Works while the editor is read-only, and keeps editability, input preferences and the keymap as they are.
 
-A generation that isn't greater throws `invalid-argument`. Markdown that Inkkit can't show without losing part of it throws `preservation`. Either way the load changes nothing, and the previous document stays loaded. A block that Inkkit can't build in full loads as literal source and keeps its bytes; see [Preservation](/concepts/preservation).
+A generation that isn't greater, or a format you didn't offer, throws `invalid-argument`. Markdown that Inkkit can't show without losing part of it throws `preservation`. Either way the load changes nothing, and the previous document stays loaded. A block that Inkkit can't build in full loads as literal source and keeps its bytes; see [Preservation](/concepts/preservation).
+
+## Formats and what they promise
+
+Your app chooses which formats an editor opens with the [`formats`](/reference/options#formats) option. Without it, an editor opens Markdown and TXT. A load of a format you didn't offer throws `invalid-argument` and changes nothing, so an app that offers only TXT can't open a file as Markdown by mistake.
+
+[`editor.formats`](/reference/editor#formats) lists the formats you offered, in your order. Each entry has a `promise` that says what saving keeps:
+
+| Promise     | What saving keeps                                                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `exact`     | Your file, exactly. An unedited document saves the bytes it loaded, and an edit changes only the text it touched.                          |
+| `structure` | The structure and marks, such as headings, lists, bold and links. Fonts, colors and sizes are replaced with Inkkit's style.                |
+| `lossy`     | A conversion that drops something. The format says what it drops, so your app can tell the person before they save over the original file. |
+
+Markdown and TXT are both `exact`. Use the promise to decide what your app tells the person, for example whether to warn before saving over a file that was converted.
 
 ## Reload a changed document
 

@@ -106,6 +106,7 @@ import {
   type TableCommand,
   type TableOptions,
   type BlockMoveDirection,
+  type OfferedFormat,
 } from './types'
 import type { TextProjection } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
@@ -364,8 +365,11 @@ function textInputPreferences(
   }
 }
 
-/** Mount options. Adapters, `labels`, `linkSchemes` and `rendering` are fixed at mount; the rest can change. */
+/** Mount options. Adapters, `formats`, `labels`, `linkSchemes` and `rendering` are fixed at mount;
+ *  the rest can change. */
 export interface EditorOptions {
+  /** The formats the host offers, listed by `formats`. Defaults to `['md', 'txt']`. Fixed at mount. */
+  formats?: readonly DocumentFormat[]
   /** Shows, imports and exports images. Without it and `files`, image Markdown stays literal. */
   images?: ImageAdapter
   /** Opt-in block suggestions on an empty line. Fixed at mount. */
@@ -394,6 +398,21 @@ export interface EditorOptions {
 
 const adapterNames = ['images', 'files', 'wikiLinks'] as const
 
+/** Checks the host's format list: at least one known format, none repeated. */
+function offeredFormats(
+  value: unknown,
+  name: string,
+): readonly DocumentFormat[] {
+  const formats = expectArray(value, name).map((format, index) =>
+    expectOneOf(format, documentFormats, `${name}[${index}]`),
+  )
+  if (!formats.length)
+    throw invalidArgument(`${name} must list at least one format`)
+  if (new Set(formats).size !== formats.length)
+    throw invalidArgument(`${name} must not list a format twice`)
+  return formats
+}
+
 /** Checks mount options and returns them with omitted values removed. */
 function editorOptions(value: unknown): EditorOptions {
   const options =
@@ -406,6 +425,7 @@ function editorOptions(value: unknown): EditorOptions {
       'linkSchemes',
       'rendering',
       'slashMenu',
+      'formats',
     ]) ?? {}
   for (const name of adapterNames)
     optionalRecord(options[name], `options.${name}`)
@@ -436,6 +456,9 @@ function editorOptions(value: unknown): EditorOptions {
   )
   return {
     ...options,
+    formats: isOmitted(options.formats)
+      ? undefined
+      : offeredFormats(options.formats, 'options.formats'),
     slashMenu: slashMenuOptions(options.slashMenu),
     linkSchemes,
     labels:
@@ -556,12 +579,16 @@ function hostEvents(value: unknown): EditorEvents {
   }) as unknown as EditorEvents
 }
 
-function documentInput(value: unknown): DocumentInput {
+/** Checks a load's input. A format the host did not offer is refused like an unknown one. */
+function documentInput(
+  value: unknown,
+  offered: readonly DocumentFormat[],
+): DocumentInput {
   const input = expectRecord(value, 'input')
   return {
     documentId: expectString(input.documentId, 'input.documentId'),
     generation: expectGeneration(input.generation, 'input.generation'),
-    format: expectOneOf(input.format, documentFormats, 'input.format'),
+    format: expectOneOf(input.format, offered, 'input.format'),
     text: expectString(input.text, 'input.text'),
   }
 }
@@ -809,6 +836,9 @@ export class InkKitEditor {
   private readonly events: EditorEvents
   /** The host's extra link schemes, in lower case. */
   private readonly linkSchemes: ReadonlySet<string>
+  /** The formats the host offered, in its order. */
+  private readonly offered: readonly DocumentFormat[]
+  private readonly formatList: readonly OfferedFormat[]
 
   /** How many of each state event the host has been sent. */
   private readonly sentEvents = new Map<string | symbol, number>()
@@ -834,6 +864,12 @@ export class InkKitEditor {
       },
     })
     this.linkSchemes = new Set(options.linkSchemes)
+    this.offered = options.formats ?? documentFormats
+    this.formatList = Object.freeze(
+      this.offered.map((format) =>
+        Object.freeze({ format, promise: formatHandlers[format].promise }),
+      ),
+    )
     this.writable = options.editable ?? true
     this.inputPreferences = textInputPreferences(
       options.textInput ?? {},
@@ -1059,6 +1095,12 @@ export class InkKitEditor {
     return this.literalSurface
       ? this.source.composing
       : this.editor.ctx.get(editorViewCtx).composing
+  }
+
+  /** The formats the host offered at mount, in its order, with what saving each promises. */
+  get formats(): readonly OfferedFormat[] {
+    this.assertAlive()
+    return this.formatList
   }
 
   /** Whether the person can edit. A read-only editor still permits selection, copying and find. */
@@ -1620,7 +1662,7 @@ export class InkKitEditor {
    *  changes nothing. */
   loadDocument(input: DocumentInput): void {
     this.assertAlive()
-    input = documentInput(input)
+    input = documentInput(input, this.offered)
     this.session.checkLoad(input.generation, 'input.generation')
     const handler = formatHandlers[input.format]
     // A literal-only format keeps its text on the literal surface, not in the formatted document.
@@ -1683,7 +1725,7 @@ export class InkKitEditor {
    *  that generation. */
   reloadDocument(input: DocumentInput, expectedGeneration?: number): void {
     this.assertAlive()
-    input = documentInput(input)
+    input = documentInput(input, this.offered)
     if (!isOmitted(expectedGeneration)) this.assertReady(expectedGeneration)
     this.session.checkLoad(input.generation, 'input.generation')
     const view = this.editor.ctx.get(editorViewCtx)

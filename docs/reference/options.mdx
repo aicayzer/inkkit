@@ -23,12 +23,24 @@ const editor = await InkKitEditor.mount(root, events, options)
 
 Three options can change after mount, through a method. The rest are fixed at mount; to change one, destroy the editor and mount a new one.
 
-| Option                                                                            | After mount                                                                                                  |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `editable`                                                                        | [`setEditable`](/reference/editor#editable-and-seteditable)                                                  |
-| `textInput`                                                                       | [`setTextInputPreferences`](/reference/editor#settextinputpreferences)                                       |
-| `keymap`                                                                          | [`setKeymap`](/reference/editor#setkeymap)                                                                   |
-| `images`, `files`, `wikiLinks`, `labels`, `linkSchemes`, `rendering`, `slashMenu` | Fixed. Whether `events.copy` is set is fixed too, because it decides whether code blocks draw a Copy button. |
+| Option                                                                                       | After mount                                                                                                  |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `editable`                                                                                   | [`setEditable`](/reference/editor#editable-and-seteditable)                                                  |
+| `textInput`                                                                                  | [`setTextInputPreferences`](/reference/editor#settextinputpreferences)                                       |
+| `keymap`                                                                                     | [`setKeymap`](/reference/editor#setkeymap)                                                                   |
+| `formats`, `images`, `files`, `wikiLinks`, `labels`, `linkSchemes`, `rendering`, `slashMenu` | Fixed. Whether `events.copy` is set is fixed too, because it decides whether code blocks draw a Copy button. |
+
+<ResponseField name="formats" type="readonly DocumentFormat[]" default="['md', 'txt']">
+
+The document formats this editor opens, in the order your app lists them. [`editor.formats`](/reference/editor#formats) returns the list with what saving each format promises, so your app can offer only those formats in its Open and Save menus. `loadDocument` and `reloadDocument` throw `invalid-argument` for a format that isn't in the list, and change nothing.
+
+- **Entries:** each is a [`DocumentFormat`](/reference/editor#documents). The list needs at least one entry and can't name a format twice.
+- **Refused lists:** an empty list, an unknown or repeated format, and a value that isn't a list make `mount` reject with `invalid-argument`. `null` counts as omitted.
+- **Default:** without the option, the editor opens Markdown and TXT, as it always has.
+
+See [formats and what they promise](/concepts/documents#formats-and-what-they-promise).
+
+</ResponseField>
 
 <ResponseField name="images" type="ImageAdapter">
 
@@ -225,9 +237,9 @@ If the handler throws or rejects, Inkkit reports `clipboard-unavailable` and a c
 
 The inherited `documentId`, `generation` and `revision` fields identify the document this state describes. See [`DocumentVersion`](/reference/editor#documents).
 
-<ResponseField name="format" type="'md' | 'txt'">
+<ResponseField name="format" type="DocumentFormat">
 
-The document format.
+The loaded document's format, one of those in [`formats`](#formats).
 
 </ResponseField>
 
