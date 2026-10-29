@@ -5,6 +5,7 @@ import {
   type TableCommand,
   type FormatCommand,
   type Heading,
+  type DocumentFormat,
 } from '../src/index'
 import {
   fixtures,
@@ -354,7 +355,7 @@ function updateControls() {
 }
 function load(
   text: string,
-  format: 'md' | 'txt',
+  format: DocumentFormat,
   documentId = `fixture:${fixtureId}`,
 ) {
   editor.loadDocument({ documentId, generation: ++generation, format, text })

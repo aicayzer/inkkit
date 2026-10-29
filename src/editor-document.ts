@@ -1,11 +1,15 @@
-import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
+import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
   Fragment,
   Slice,
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
-import { Preservation } from './preserve'
+import {
+  formatHandlers,
+  type FormatHandler,
+  type FormatSource,
+} from './formats'
 import {
   sourceAttribute,
   cleanSourceDoc,
@@ -13,6 +17,7 @@ import {
 } from './source'
 import { assertCommentsEndWhereWritten } from './comments'
 import { coded } from './errors'
+import type { DocumentFormat } from './types'
 
 interface DocumentRuntime {
   ctx(): Ctx
@@ -22,23 +27,28 @@ interface DocumentRuntime {
 
 /** Source provenance and successful save caches for the loaded document. */
 export class EditorDocument {
-  format: 'md' | 'txt' = 'md'
+  /** The loaded document's format, set on each load. */
+  handler: FormatHandler = formatHandlers.md
   original = ''
-  private sourcePreservations = new WeakMap<SourceProvenance, Preservation>()
+  private sourcePreservations = new WeakMap<SourceProvenance, FormatSource>()
   private sourceTexts = new WeakMap<ProseNode, string>()
-  private preservation?: Preservation
+  private preservation?: FormatSource
   // Moved blocks retain their authored source for this loaded document.
   private carried?: WeakSet<ProseNode>
 
   constructor(private readonly runtime: DocumentRuntime) {}
+
+  get format(): DocumentFormat {
+    return this.handler.format
+  }
 
   resetCaches(): void {
     this.sourcePreservations = new WeakMap()
     this.sourceTexts = new WeakMap()
   }
 
-  loaded(preservation: Preservation): void {
-    this.preservation = preservation
+  loaded(source: FormatSource): void {
+    this.preservation = source
     this.carried = undefined
   }
 
@@ -51,19 +61,10 @@ export class EditorDocument {
   }
 
   parseSource(text: string, provenance: SourceProvenance): ProseNode {
-    const view = this.runtime.ctx().get(editorViewCtx)
     try {
-      if (this.format === 'txt')
-        return view.state.schema.topNodeType.create(
-          null,
-          view.state.schema.nodes.paragraph!.create(
-            null,
-            text ? view.state.schema.text(text) : undefined,
-          ),
-        )
-      const preservation = Preservation.read(this.runtime.ctx(), text)
-      this.sourcePreservations.set(provenance, preservation)
-      return preservation.baseline
+      const source = this.handler.parse(this.runtime.ctx(), text)
+      if (source.serialize) this.sourcePreservations.set(provenance, source)
+      return source.baseline
     } catch (error) {
       throw coded(error, 'preservation')
     }
@@ -76,18 +77,19 @@ export class EditorDocument {
     const cached = this.sourceTexts.get(doc)
     if (cached !== undefined) return cached
     const provenance = doc.attrs[sourceAttribute] as SourceProvenance | null
-    if (this.format === 'txt') return provenance?.text ?? this.original
+    // A literal-only format saves the literal surface's text, which provenance records.
+    if (this.handler.literalOnly) return provenance?.text ?? this.original
     let text: string
     try {
       let preservation = this.preservation
       if (provenance) {
         preservation = this.sourcePreservations.get(provenance)
         if (!preservation) {
-          preservation = Preservation.read(this.runtime.ctx(), provenance.text)
+          preservation = this.handler.parse(this.runtime.ctx(), provenance.text)
           this.sourcePreservations.set(provenance, preservation)
         }
       }
-      text = preservation!.serialize(cleanSourceDoc(doc), this.carried)
+      text = preservation!.serialize!(cleanSourceDoc(doc), this.carried)
     } catch (error) {
       throw coded(error, 'preservation')
     }
@@ -102,9 +104,8 @@ export class EditorDocument {
    */
   exportDocument(text: string): ProseNode {
     const { doc } = this.runtime.ctx().get(editorViewCtx).state
-    return this.runtime.pending() !== undefined && this.format === 'md'
-      ? this.runtime.ctx().get(parserCtx)(text)
-      : doc
+    if (this.runtime.pending() === undefined) return doc
+    return this.handler.pendingExport(this.runtime.ctx(), text) ?? doc
   }
 
   /** Whether two documents are the same note. A move of blocks that read alike, such as a setext

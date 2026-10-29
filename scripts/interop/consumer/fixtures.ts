@@ -1,3 +1,6 @@
+// Type-only, so the copied consumer build never resolves this path.
+import type { DocumentFormat } from '../../../src/types'
+
 export const imageData =
   'iVBORw0KGgoAAAANSUhEUgAAAFAAAAAoCAYAAABpYH0BAAAAAXNSR0IArs4c6QAAADhlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAAqACAAQAAAABAAAAUKADAAQAAAABAAAAKAAAAADbisV7AAAAlUlEQVRoBe3SMQ0AIQAEQR4X6MC/Nj5BAtvO9dtM7jtrn2HPAvO5FF4BgPEIAAFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPBBgFYu6BAKNAzD0QYBSIuQcCjAIx90CAUSDmHggwCsTcAwFGgZh7IMAoEHMPjIA/2VgCmiePpoIAAAAASUVORK5CYII='
 export const imageBytes = () =>
@@ -5,7 +8,7 @@ export const imageBytes = () =>
 
 export interface Fixture {
   label: string
-  format: 'md' | 'txt'
+  format: DocumentFormat
   text: string
 }
 export const wrappedSearchText =

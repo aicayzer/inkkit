@@ -12,11 +12,11 @@ import { sourceAttribute, type SourceProvenance } from './source'
 import { sourceReplacement } from './comments'
 import { terminalSelection } from './editor-selection'
 import { undoSmartPunctuation } from './smart-punctuation'
-import { InkKitError } from './types'
+import { InkKitError, type DocumentFormat } from './types'
 
 interface HistoryRuntime {
   ctx(): Ctx
-  format(): 'md' | 'txt'
+  format(): DocumentFormat
   literal(): boolean
   writable(): boolean
   currentText(doc?: ProseNode): string

@@ -1,11 +1,12 @@
 import { matchingTextEdges } from './text-edges'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { literalCommentSpans } from './comments'
+import type { DocumentFormat } from './types'
 
 export const sourceAttribute = 'inkkitSource'
 export interface SourceProvenance {
   readonly text: string
-  readonly format: 'md' | 'txt'
+  readonly format: DocumentFormat
   readonly from: number
   readonly to: number
 }

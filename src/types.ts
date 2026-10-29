@@ -1,5 +1,9 @@
 /** `md` is Markdown; `txt` is literal text, shown and saved as typed. */
 export type DocumentFormat = 'md' | 'txt'
+/** What saving promises for a format. `exact` saves the file exactly. `structure` keeps the
+ *  structure and marks and replaces fonts, colors and sizes with Inkkit's style. `lossy` is a
+ *  conversion that drops something and says what. */
+export type FormatPromise = 'exact' | 'structure' | 'lossy'
 /** What every adapter call receives, to tell which document, load and call it belongs to. The
  *  operation ID is opaque and differs for each call from one editor. */
 export interface DocumentContext {
