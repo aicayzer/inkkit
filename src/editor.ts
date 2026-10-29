@@ -1,3 +1,12 @@
+import {
+  Diagnostics,
+  diagnosticOperation,
+  diagnosticNumber,
+  diagnosticReason,
+  type DiagnosticReport,
+  type DiagnosticState,
+  type DiagnosticPresentation,
+} from './diagnostics'
 import { EditorActivation } from './editor-activation'
 import {
   createEditorSuggestions,
@@ -745,6 +754,7 @@ const stateEvents: readonly (string | symbol)[] = [
  */
 export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private editor!: Editor
+  private readonly diagnostics = new Diagnostics(() => this.diagnosticState())
   private readonly document = new EditorDocument({
     ctx: () => this.editor.ctx,
     literal: () => this.literalSurface,
@@ -897,7 +907,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     try {
       markdown = this.document.currentText(view.state.doc)
     } catch (error) {
-      this.events.error?.(coded(error, 'preservation'))
+      this.report(coded(error, 'preservation'))
       return
     }
     if (this.literalSurface)
@@ -1163,13 +1173,28 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
 
   /** Reports a refused edit to the facade call that made it, or else to `events.error`. */
   private refuse(error: InkKitError): void {
+    this.diagnostics.capture({
+      kind: 'error',
+      code: error.code,
+      ...(error.code === 'preservation'
+        ? { reason: diagnosticReason(error) }
+        : {}),
+    })
     if (this.call) this.call.refusal ??= error
     else this.events.error?.(error)
   }
 
   /** Reports a failure no call is waiting for. */
   private report(error: unknown): void {
-    this.events.error?.(coded(error))
+    const failure = coded(error)
+    this.diagnostics.capture({
+      kind: 'error',
+      code: failure.code,
+      ...(failure.code === 'preservation'
+        ? { reason: diagnosticReason(failure) }
+        : {}),
+    })
+    this.events.error?.(failure)
   }
 
   /** Runs a facade method for something the person did, such as a shortcut. Its failure goes to
@@ -1188,6 +1213,155 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     return this.literalSurface
       ? this.source.composing
       : this.editor.ctx.get(editorViewCtx).composing
+  }
+
+  private diagnosticState(): DiagnosticState {
+    const view = this.editor?.ctx.get(editorViewCtx)
+    const literal = this.source && this.literalSurface
+    return {
+      ready: this.ready,
+      revision: this.session.revision,
+      generation: this.session.generation,
+      format: this.document.format,
+      mode: literal ? 'source' : 'formatted',
+      editable: this.writable,
+      composing: Boolean(literal ? this.source.composing : view?.composing),
+      pending: Boolean(this.pasteController?.pending),
+      ...(view
+        ? {
+            selection: literal
+              ? {
+                  from: this.source.element.selectionStart,
+                  to: this.source.element.selectionEnd,
+                }
+              : {
+                  from: view.state.selection.from,
+                  to: view.state.selection.to,
+                },
+          }
+        : {}),
+    }
+  }
+
+  /** Starts or clears content-free local tracing. Disabled by default. */
+  setDiagnosticsEnabled(enabled: boolean): void {
+    this.assertAlive()
+    if (typeof enabled !== 'boolean')
+      throw invalidArgument('enabled must be a boolean')
+    this.diagnostics.setEnabled(enabled, this.root, this.editor.ctx)
+  }
+
+  /** Reads diagnostics without serializing the document or requiring an editable surface. */
+  diagnosticReport(): DiagnosticReport {
+    this.assertAlive()
+    let presentation: DiagnosticPresentation | undefined
+    if (this.diagnostics.enabled) {
+      try {
+        const view = this.editor.ctx.get(editorViewCtx)
+        const literal = this.literalSurface
+        const selection = view.state.selection
+        const dom = literal
+          ? this.source.element
+          : view.domAtPos(selection.from).node
+        const element =
+          dom.nodeType === 1
+            ? (dom as HTMLElement)
+            : (dom.parentElement ?? view.dom)
+        const window = this.root.ownerDocument.defaultView!
+        const style = window.getComputedStyle(element)
+        const fontFamily = style.fontFamily
+          .slice(0, 160)
+          .replace(/[^\p{L}\p{N} ,"'_-]/gu, '')
+        const type = selection.$from.parent.type.name
+        const block: DiagnosticPresentation['block'] = literal
+          ? 'literal'
+          : type === 'paragraph'
+            ? 'paragraph'
+            : type === 'heading'
+              ? 'heading'
+              : type === 'code_block'
+                ? 'code'
+                : 'other'
+        const markNames = [
+          'strong',
+          'emphasis',
+          'inlineCode',
+          'strike_through',
+          'link',
+          'highlight',
+        ] as const
+        const marks: DiagnosticPresentation['marks'] = literal
+          ? []
+          : (view.state.storedMarks ?? selection.$from.marks())
+              .slice(0, 12)
+              .map(
+                (mark) =>
+                  markNames.find((name) => name === mark.type.name) ?? 'other',
+              )
+        const bounds = literal ? undefined : view.coordsAtPos(selection.from)
+        presentation = {
+          fontFamily,
+          fontSize: diagnosticNumber(Number.parseFloat(style.fontSize)),
+          fontWeight: diagnosticNumber(
+            style.fontWeight === 'normal'
+              ? 400
+              : style.fontWeight === 'bold'
+                ? 700
+                : Number.parseFloat(style.fontWeight),
+          ),
+          fontStyle:
+            style.fontStyle === 'normal' ||
+            style.fontStyle === 'italic' ||
+            style.fontStyle === 'oblique'
+              ? style.fontStyle
+              : 'other',
+          ...(!literal &&
+          type === 'heading' &&
+          [1, 2, 3, 4, 5, 6].includes(selection.$from.parent.attrs.level)
+            ? {
+                headingLevel: selection.$from.parent.attrs.level as
+                  1 | 2 | 3 | 4 | 5 | 6,
+              }
+            : {}),
+          ...(style.lineHeight !== 'normal'
+            ? {
+                lineHeight: diagnosticNumber(
+                  Number.parseFloat(style.lineHeight),
+                ),
+              }
+            : {}),
+          block,
+          marks,
+          caretColor:
+            /^(?:rgba?\([\d.,% ]+\)|#[\da-f]{3,8}|auto|transparent|currentcolor)$/i.test(
+              style.caretColor,
+            )
+              ? style.caretColor.slice(0, 80)
+              : 'other',
+          ...(bounds
+            ? {
+                caret: {
+                  left: diagnosticNumber(bounds.left),
+                  top: diagnosticNumber(bounds.top),
+                  right: diagnosticNumber(bounds.right),
+                  bottom: diagnosticNumber(bounds.bottom),
+                },
+              }
+            : {}),
+          viewport: {
+            width: diagnosticNumber(window.innerWidth),
+            height: diagnosticNumber(window.innerHeight),
+          },
+          scroll: {
+            left: diagnosticNumber(this.geometry.container.scrollLeft),
+            top: diagnosticNumber(this.geometry.container.scrollTop),
+          },
+        }
+      } catch {
+        // Layout may be unavailable while a surface is being replaced.
+      }
+    }
+    return this.diagnostics.report(presentation)
   }
 
   /** The formats the host offered at mount, in its order, with what saving each promises. */
@@ -1632,6 +1806,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
    *  throws `destroyed`. */
   async destroy(): Promise<void> {
     if (this.destroyed) return
+    this.diagnostics.destroy(this.editor.ctx)
     this.destroyed = true
     this.clipboard.clear()
     this.ready = false
@@ -2652,6 +2827,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       'headings',
       'navigateHeading',
       'destroy',
+      'setDiagnosticsEnabled',
+      'diagnosticReport',
     ] as const satisfies readonly PublicMethod[]
     const everyMethod: [
       Exclude<PublicMethod, (typeof methods)[number]>,
@@ -2666,7 +2843,45 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       ) => unknown
       Object.defineProperty(InkKitEditor.prototype, name, {
         value(this: InkKitEditor, ...args: unknown[]) {
-          return this.facadeCall(() => method.apply(this, args))
+          if (name === 'setDiagnosticsEnabled' || name === 'diagnosticReport')
+            return method.apply(this, args)
+          if (!this.diagnostics.enabled)
+            return this.facadeCall(() => method.apply(this, args))
+          const operation = diagnosticOperation(name)
+          this.diagnostics.capture({
+            kind: 'operation',
+            phase: 'begin',
+            operation,
+          })
+          const success = (value: unknown) => {
+            this.diagnostics.capture({
+              kind: 'operation',
+              phase: 'success',
+              operation,
+            })
+            return value
+          }
+          const refused = (error: unknown): never => {
+            const failure = coded(error)
+            this.diagnostics.capture({
+              kind: 'operation',
+              phase: 'refused',
+              operation,
+              code: failure.code,
+              ...(failure.code === 'preservation'
+                ? { reason: diagnosticReason(failure) }
+                : {}),
+            })
+            throw failure
+          }
+          try {
+            const result = this.facadeCall(() => method.apply(this, args))
+            return result instanceof Promise
+              ? result.then(success, refused)
+              : success(result)
+          } catch (error) {
+            return refused(error)
+          }
         },
         writable: true,
         configurable: true,
