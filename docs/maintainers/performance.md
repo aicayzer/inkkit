@@ -2,9 +2,9 @@
 
 ## List and source input, 29 October 2026
 
-Compared released 0.3.5 (`b4f5822`) with the 0.3.6 runtime candidate (`37148f8`) on Apple M4 (10 cores, 16 GB), macOS 27.0, Node.js 26.11.0, pnpm 11.0.9, Playwright 1.64.0, Chromium 156.0.8078.4 and WebKit 27.2. System WKWebView uses the same machine and its 60 Hz display. These are interaction measurements, separate from package or test-suite elapsed times.
+Compared released 0.3.5 (`b4f5822`) with the 0.3.6 runtime candidate (`28b9bbb`) on Apple M4 (10 cores, 16 GB), macOS 27.0, Node.js 26.11.0, pnpm 11.0.9, Playwright 1.64.0, Chromium 156.0.8078.4 and WebKit 27.2. System WKWebView uses the same machine and its 60 Hz display. The candidate includes the independently merged format-list option in #429. These are interaction measurements, separate from package or test-suite elapsed times.
 
-Five paired browser rounds used baseline/candidate order, then candidate/baseline, alternating the order each round. Each action has five fresh-page samples per engine and condition. Two paired native rounds reversed their order, with five trusted AppKit keys per phase, giving ten samples per phase and condition. Every phase uses a fresh document. A process monitor recorded **177 samples with no competing test or build job**. Background services remained active and an existing development server stayed idle. All measured correctness checks passed.
+Five paired browser rounds used baseline/candidate order, then candidate/baseline, alternating the order each round. Each action has five fresh-page samples per engine and condition. Two paired native rounds reversed their order, with five trusted AppKit keys per phase, giving ten samples per phase and condition. Every phase uses a fresh document. A process monitor recorded **179 samples with no competing test or build job**. Background services remained active and an existing development server stayed idle. All measured correctness checks passed.
 
 Use the same harness from the candidate in both checkouts, with each checkout's own frozen dependencies. Set `INKKIT_MEASURE_RUNS=1` for each browser round and a separate output directory for every run. The browser fixture builds before timing; setup, document load, selection and saving are outside the measured keydown-to-next-frame interval.
 
@@ -27,11 +27,11 @@ Values are **median (minimum–maximum), in milliseconds**.
 
 | Action    |   Chromium baseline | Chromium candidate | WebKit baseline | WebKit candidate |
 | --------- | ------------------: | -----------------: | --------------: | ---------------: |
-| enter     | 762.1 (756.1–798.1) |   46.5 (45.5–49.7) |   770 (767–921) |       67 (66–72) |
-| typing    | 716.8 (710.2–778.3) |   20.4 (19.7–20.7) |   802 (799–953) |       38 (36–40) |
-| backspace | 724.2 (715.5–761.8) |   23.6 (18.8–29.6) |   766 (761–934) |       52 (50–54) |
+| enter     |   764 (759.8–776.1) |     46 (45.8–48.3) |   909 (799–924) |       68 (67–70) |
+| typing    | 714.4 (710.2–720.5) |       20.4 (20–21) |   939 (793–958) |       38 (37–39) |
+| backspace | 724.6 (719.9–742.2) |   18.7 (18.5–29.3) |   917 (759–920) |       51 (49–52) |
 
-Candidate paragraph-control medians were **14.8 / 12.2 / 9.3 ms** in Chromium and **21 / 16 / 14 ms** in WebKit, for Enter / typing / Backspace. List actions still cost more than paragraph controls, but now complete in tens of milliseconds rather than approximately 0.7–0.8 seconds on this fixture. These five-sample results do not establish tail latency or equal rendering cost.
+Candidate paragraph-control medians were **14.1 / 12.3 / 9.4 ms** in Chromium and **21 / 16 / 15 ms** in WebKit, for Enter / typing / Backspace. List actions still cost more than paragraph controls, but now complete in tens of milliseconds rather than approximately 0.7–0.9 seconds on this fixture. These five-sample results do not establish tail latency or equal rendering cost.
 
 The correction has three parts: validate affected item runs with their neighbours instead of reparsing the whole list; refresh task-checkbox labels only where items changed; and use binary search over ProseMirror's sorted decoration-child offsets. A read-only transition still updates all task controls. Deterministic facade regressions fail on the baseline: a structural edit reads/writes over a million preservation characters instead of fewer than 10,000; one edit rewrites 500 checkbox labels instead of fewer than ten; a decoration lookup reads 1,026 offsets instead of fewer than 32. Each regression also checks exact saving, history and reopening. Four hundred independent list seeds compare accepted edits with the complete preservation path.
 
@@ -43,10 +43,10 @@ The source fixture has 10,000 Unicode paragraphs, 478,888 UTF-8 bytes and CRLF e
 
 | Phase | Chromium baseline | Chromium candidate | WebKit baseline | WebKit candidate | WKWebView baseline | WKWebView candidate |
 | ----- | ----------------: | -----------------: | --------------: | ---------------: | -----------------: | ------------------: |
-| entry |  17.8 (15.6–18.3) |   17.6 (17.4–18.1) |      44 (42–44) |       42 (41–43) |       53.5 (44–67) |        65.5 (39–71) |
-| undo  |   10.2 (9.9–11.8) |   11.5 (10.7–12.7) |      39 (36–40) |       39 (37–39) |         56 (37–64) |          61 (37–62) |
-| redo  |      11 (10.6–24) |   15.6 (10.9–25.9) |      38 (36–44) |       37 (36–39) |       48.5 (38–62) |          61 (37–64) |
-| paste |    12 (11.7–12.2) |   12.2 (11.8–27.4) |      40 (38–42) |       41 (38–42) |       62.5 (38–65) |          62 (40–66) |
+| entry |  16.7 (15.6–17.6) |   16.9 (14.3–30.9) |      43 (42–45) |       44 (42–46) |       65.5 (42–67) |        62.5 (41–69) |
+| undo  |  10.9 (10.5–12.4) |   10.6 (10.4–12.3) |      39 (38–40) |       38 (37–39) |       56.5 (34–63) |        46.5 (36–62) |
+| redo  |  11.4 (11.1–11.9) |     11.2 (11–15.4) |      38 (36–54) |       38 (37–39) |         57 (38–62) |          55 (36–62) |
+| paste |  12.5 (12.3–13.7) |   13.4 (12.4–27.6) |      39 (38–42) |       39 (39–41) |         57 (39–64) |        61.5 (39–64) |
 
 **The under-35 ms criterion in [#206](https://github.com/aicayzer/inkkit/issues/206) remains unmet in WebKit and native WKWebView on this fixture.** Native ranges overlap, and this work demonstrates no source-typing improvement. Correctness passes do not satisfy the latency criterion.
 
