@@ -264,8 +264,10 @@ function shareFormatting(children: PhrasingContent[]): void {
     const link = { ...child, children: formatting.children } as PhrasingContent
     const previous = children[index - 1]
     const next = children[index + 1]
-    const before = previous && same(previous, formatting)
-    const after = next && same(next, formatting)
+    // Booleans, since the count of nodes replaced below is computed from them: with no node on
+    // one side, `undefined` would make it NaN, remove nothing and write the content twice.
+    const before = Boolean(previous && same(previous, formatting))
+    const after = Boolean(next && same(next, formatting))
     if (!before && !after) continue
     const merged = {
       ...formatting,
