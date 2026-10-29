@@ -28,7 +28,7 @@ Implementation and publication require explicit delivery authority. Record publi
 
 Pushing a later matching version tag starts npm publication. Complete the gate **before pushing the tag**, within an explicitly authorised release session.
 
-1. Confirm the milestone's acceptance criteria and review compatibility changes. Use the smallest version increment that reflects compatibility. Document public API changes and migration requirements; do not describe every pre-1.0 increment as a bug fix.
+1. Confirm the milestone's acceptance criteria and review compatibility changes. During early development, use patch increments within the current minor version. A minor or major increment requires an explicit, operator-initiated instruction naming the target version; general implementation or release approval does not authorize it. Document public API changes and migration requirements regardless of the version increment.
 2. Run the checks in [development](development.md), using the bounded browser/native selection policy and relevant changed-contract checks. Update API and supported-syntax documentation to match the implemented behaviour.
 3. Record the reviewed release commit, tested tarball SHA-256, npm integrity, decompressed tar SHA-256, offline bundle SHA-256 and verification results in the milestone publication checklist and release evidence. Retain the candidate and its evidence in `_local/release/<version>/`. Review the packed file allowlist and confirm version/tag agreement.
 4. Check the npm trusted-publisher configuration, then tag the reviewed commit `v<version>` and push that tag. Inspect the hosted workflow's validation and publication results.
