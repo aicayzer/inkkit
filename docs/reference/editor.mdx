@@ -6,6 +6,15 @@ description: 'Every InkKitEditor member: signature, result, the state it checks 
 {/* @api InkKitEditor */}
 `InkKitEditor` is the editor facade. You create it with `InkKitEditor.mount`, load a document, and read it back with `snapshot`. Options and events are in [Options and events](/reference/options), adapter interfaces in [Adapters](/reference/adapters), and every error code in [Errors](/reference/errors).
 
+## Upgrading from 0.3
+
+Version 0.4 adds RTF documents. A host that offers only Markdown and TXT keeps its behavior, and most code compiles unchanged, because `InkKitEditor`, `EditorOptions`, `EditorEvents`, `DocumentInput` and `DocumentSnapshot` take the offered formats as a type argument that defaults to `TextDocumentFormat`. Check these:
+
+- **`DocumentFormat` includes `'rtf'`.** A text load whose format variable is typed `DocumentFormat` no longer compiles, because an RTF load has a `document` instead of `text`. Type it `TextDocumentFormat`.
+- **A `Record<DocumentFormat, …>` needs an `rtf` key.** For example, a map of file extensions or menu titles by format.
+- **Four format commands are added:** `alignLeft`, `alignCenter`, `alignRight` and `alignJustify`. `FormatCommand`, `ShortcutName` and `CommandState.commands.format` include them; they are always `false` outside RTF. Code that lists every command, or a toolbar built from the record's keys, sees them.
+- **`InkKitEditor<F>` is generic.** `mount` with `formats` that include `'rtf'` returns an `InkKitEditor<'md' | 'rtf'>`, say, whose snapshots and `changed` events can be RTF; narrow on `format`. A helper that accepts any editor takes `InkKitEditor<DocumentFormat>`, since an editor typed with text formats only doesn't accept RTF loads.
+
 ## Conventions
 
 These rules apply to every member:
@@ -238,28 +247,32 @@ A `FormatLoss` names one kind of content a conversion couldn't keep.
 {/* @api FormatLossCode */}
 `FormatLossCode` is the closed list of what a conversion can lose. A new code is added only in a minor release.
 
-| Code                 | Direction     | What happened                                                                                                     |
-| -------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `'heading'`          | Markdown, RTF | A heading became a bold paragraph.                                                                                |
-| `'code-block'`       | Markdown, RTF | A code block became one paragraph in code for each line.                                                          |
-| `'diagram'`          | Markdown, RTF | A diagram became its source, as paragraphs in code.                                                               |
-| `'quote'`            | Markdown, RTF | A quote gave up its paragraphs.                                                                                   |
-| `'callout'`          | Markdown, RTF | A callout gave up its title, as a bold paragraph, and its paragraphs.                                             |
-| `'task'`             | Markdown, RTF | A task item became a plain list item, without its checkbox.                                                       |
-| `'rule'`             | Markdown, RTF | A horizontal rule was left out.                                                                                   |
-| `'footnote'`         | Markdown, RTF | A footnote reference became its label in brackets, and a footnote's text a paragraph that starts with its label.  |
-| `'comment'`          | Markdown, RTF | An author comment was left out.                                                                                   |
-| `'highlight'`        | Markdown, RTF | Highlighted text kept its text without the highlight.                                                             |
-| `'image'`            | Markdown, RTF | An image was left out.                                                                                            |
-| `'file'`             | Markdown, RTF | A file embed was left out.                                                                                        |
-| `'wiki-link'`        | Markdown, RTF | A wiki link became its text.                                                                                      |
-| `'literal'`          | Markdown, RTF | Markdown kept as authored, or raw HTML, became its source as text.                                                |
-| `'link'`             | Markdown, RTF | A link with an empty address, or one with a control character, became its text.                                   |
-| `'table-alignment'`  | Markdown, RTF | A table lost its column alignment.                                                                                |
-| `'list-start'`       | Markdown, RTF | A numbered list that started below 1 starts at 1, and one above 2,147,483,647 starts at 2,147,483,647.            |
-| `'list-item-blocks'` | Markdown, RTF | A list item's further paragraphs, code or table became lines of its first paragraph, since an RTF item holds one. |
-| `'list-depth'`       | Markdown, RTF | Lists deeper than 9 levels became lines of the item at the ninth level.                                           |
-| `'alignment'`        | RTF, Markdown | A centered, right-aligned or justified paragraph became left-aligned.                                             |
+| Code                  | Direction     | What happened                                                                                                                              |
+| --------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `'heading'`           | Markdown, RTF | A heading became a bold paragraph.                                                                                                         |
+| `'code-block'`        | Markdown, RTF | A code block became one paragraph in code for each line.                                                                                   |
+| `'diagram'`           | Markdown, RTF | A diagram became its source, as paragraphs in code.                                                                                        |
+| `'quote'`             | Markdown, RTF | A quote gave up its paragraphs.                                                                                                            |
+| `'callout'`           | Markdown, RTF | A callout gave up its title, as a bold paragraph, and its paragraphs.                                                                      |
+| `'task'`              | Markdown, RTF | A task item became a plain list item, without its checkbox.                                                                                |
+| `'rule'`              | Markdown, RTF | A horizontal rule was left out.                                                                                                            |
+| `'footnote'`          | Markdown, RTF | A footnote reference became its label in brackets, and a footnote's text a paragraph that starts with its label.                           |
+| `'comment'`           | Markdown, RTF | An author comment was left out.                                                                                                            |
+| `'highlight'`         | Markdown, RTF | Highlighted text kept its text without the highlight.                                                                                      |
+| `'image'`             | Markdown, RTF | An image was left out.                                                                                                                     |
+| `'file'`              | Markdown, RTF | A file embed was left out.                                                                                                                 |
+| `'wiki-link'`         | Markdown, RTF | A wiki link became its text.                                                                                                               |
+| `'literal'`           | Markdown, RTF | Markdown kept as authored, or raw HTML, became its source as text.                                                                         |
+| `'link'`              | Markdown, RTF | A link with an empty address, or one with a control character, became its text.                                                            |
+| `'table-alignment'`   | Markdown, RTF | A table lost its column alignment.                                                                                                         |
+| `'list-start'`        | Markdown, RTF | A numbered list that started below 1 starts at 1, and one above 2,147,483,647 starts at 2,147,483,647.                                     |
+| `'list-item-blocks'`  | Markdown, RTF | A list item's further paragraphs, code or table became lines of its first paragraph, since an RTF item holds one.                          |
+| `'list-depth'`        | Markdown, RTF | Lists deeper than 9 levels became lines of the item at the ninth level.                                                                    |
+| `'link-underline'`    | Markdown, RTF | Underlined link text lost its underline, which RTF draws on every link.                                                                    |
+| `'invalid-character'` | Markdown, RTF | A character RTF can't hold as text, U+0000, U+FFFC or a lone surrogate, became U+FFFD.                                                     |
+| `'alignment'`         | RTF, Markdown | A centered, right-aligned or justified paragraph became left-aligned.                                                                      |
+| `'mark-spaces'`       | RTF, Markdown | Spaces at the edge of an underlined, struck-through or linked run moved outside it, since Markdown can't start or end a mark with a space. |
+| `'empty-line'`        | RTF, Markdown | A paragraph of only a line break became an empty paragraph, or an empty paragraph at the end was left out.                                 |
 
 ## Rich text documents
 
