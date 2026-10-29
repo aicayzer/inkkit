@@ -87,6 +87,7 @@ enum RTFWriter {
                 case .bold, .italic, .code:
                     break
                 case .underline:
+                    // Canonical form removes underline from link runs, so links get none.
                     attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
                 case .strikethrough:
                     attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue

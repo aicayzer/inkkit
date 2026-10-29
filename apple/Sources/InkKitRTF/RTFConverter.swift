@@ -7,6 +7,9 @@ import Foundation
 /// indents, spacing and tab stops, which Inkkit's own style replaces. It never drops content:
 /// anything the model cannot hold makes the conversion throw ``RTFConversionError``.
 ///
+/// A link run never reads as underlined, because Word and HTML underline every hyperlink as
+/// link styling, and links are written without an underline attribute.
+///
 /// The functions do not need the main thread.
 public enum RTFConverter {
     /// Reads an RTF document.

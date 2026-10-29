@@ -13,10 +13,17 @@ extension RichTextDocument {
 
     /// Checks the document, then returns its canonical form.
     ///
-    /// The canonical form sorts marks, merges adjacent text runs with equal marks and omits an
-    /// ordered list's `start` of 1. A document is invalid when its version is not 1, a text run
-    /// is empty or holds a forbidden character, a mark repeats, a run has two links, both
-    /// superscript and subscript, or a link without an address, an unordered list has a start or an ordered list starts below 1,
+    /// The canonical form sorts marks, merges adjacent text runs with equal marks, normalizes
+    /// text to Unicode NFC, drops `underline` from a run that has a link, and omits an ordered
+    /// list's `start` of 1.
+    ///
+    /// A link is always drawn underlined, so an underline on a link run is link styling rather
+    /// than a mark: RTF from Word and HTML underlines every hyperlink. NFC keeps JSON stable
+    /// across RTF, whose writer composes decomposed characters such as `e` + U+0301.
+    ///
+    /// A document is invalid when its version is not 1, a text run is empty or holds a forbidden
+    /// character, a mark repeats, a run has two links, both superscript and subscript, or a link
+    /// without an address, an unordered list has a start or an ordered list starts below 1,
     /// a list or list item is empty, a list item does not start with a paragraph or holds a
     /// table, lists nest deeper than ``maximumListDepth``, or a table has no rows or rows of
     /// different lengths.
@@ -132,7 +139,12 @@ extension RichTextDocument {
                 builder.append(text, marks: try canonical(marks, at: "\(runPath).marks"))
             }
         }
-        return builder.content
+        // Normalize after merging, because joining two NFC strings can leave a sequence that
+        // composes further.
+        return builder.content.map { inline in
+            guard case .text(let text, let marks) = inline else { return inline }
+            return .text(text.precomposedStringWithCanonicalMapping, marks: marks)
+        }
     }
 
     private static func canonical(_ marks: [Mark], at path: String) throws(RTFConversionError) -> [Mark] {
@@ -150,6 +162,9 @@ extension RichTextDocument {
         }
         if types.contains("superscript") && types.contains("subscript") {
             throw .invalidDocument("\(path): a run cannot be both superscript and subscript")
+        }
+        if types.contains("link") {
+            return sorted.filter { $0 != .underline }
         }
         return sorted
     }

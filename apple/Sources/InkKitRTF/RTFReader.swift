@@ -149,7 +149,9 @@ enum RTFReader {
             if traits.italic { marks.append(.italic) }
             if traits.monospace { marks.append(.code) }
         }
-        if let underline = (attributes[.underlineStyle] as? NSNumber)?.intValue, underline != 0 {
+        // Word and HTML underline every hyperlink as link styling, so a link run never takes
+        // the underline mark.
+        if attributes[.link] == nil, let underline = (attributes[.underlineStyle] as? NSNumber)?.intValue, underline != 0 {
             marks.append(.underline)
         }
         if let strike = (attributes[.strikethroughStyle] as? NSNumber)?.intValue, strike != 0 {

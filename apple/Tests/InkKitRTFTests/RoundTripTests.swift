@@ -42,6 +42,7 @@ enum RoundTripCases {
             p(t("see "), t("bold link", .bold, .link(href: "https://example.com/1")), t(" and "), t("code link", .code, .link(href: "mailto:a@example.com"))),
             p(t("one", .link(href: "https://a.example/")), t("two", .link(href: "https://b.example/"))),
             p(t("half bold", .link(href: "https://c.example/")), t(" half plain", .bold, .link(href: "https://c.example/"))),
+            p(t("underlined", .underline), t("underlined link", .underline, .link(href: "https://d.example/")), t("underlined", .underline)),
             p(t("fragment", .link(href: "#section")), t(" relative", .link(href: "docs/page.html")))
         )),
         NamedDocument("nested lists three deep", doc(
@@ -91,7 +92,7 @@ enum RoundTripCases {
             p(t("Café – naïve – “quotes” – ‘single’ – €100 – ½ – ß – Æ – Œ")),
             p(t("日本語のテキスト、中文、한국어, Ελληνικά, Русский, ქართული, हिन्दी")),
             p(t("emoji 😀 👩‍👩‍👧‍👦 🏳️‍🌈 👍🏽 🇬🇧 ❤️")),
-            p(t("precomposed é å ñ, and combining marks with no precomposed form Z\u{335}\u{321}\u{35C}a\u{337} q\u{301}")),
+            p(t("decomposed e\u{301} a\u{30A} n\u{303} \u{1100}\u{1161}, precomposed é å ñ, and combining marks with no precomposed form Z\u{335}\u{321}\u{35C}a\u{337} q\u{301}")),
             p(t("astral 𝔘𝔫𝔦𝔠𝔬𝔡𝔢 𝟙𝟚𝟛 and private use \u{E000}")),
             p(t("zero width\u{200B}space, joiner\u{200D}, no-break\u{00A0}space, BOM\u{FEFF}inside")),
             p(t("controls \u{01}\u{1F}\u{7F} survive"))
@@ -162,13 +163,28 @@ struct RoundTripTests {
         #expect(rtf.contains("{\\listtext\t\\uc0\\u8226 \t}\t\\'95\tliteral"))
     }
 
-    @Test("The RTF writer composes decomposed characters, so they return canonically equivalent but precomposed")
+    @Test("Decomposed text is NFC in canonical form, so RTF returns identical JSON")
     func decomposedCharacters() throws {
-        let document = doc(p(t("e\u{301} a\u{30A} n\u{303}")))
+        let decomposed = "e\u{301} a\u{30A} n\u{303} \u{1100}\u{1161} Z\u{35C}\u{321}"
+        let document = doc(p(t(decomposed)), .table(Doc.Table(rows: [[Doc.Cell([t("e"), t("\u{301}")])]])))
+        let expected = doc(p(t("\u{E9} \u{E5} \u{F1} \u{AC00} Z\u{321}\u{35C}")), table([t("\u{E9}")]))
+        let canonical = try document.canonicalized()
+        #expect(try canonical.jsonData() == expected.jsonData())
         let back = try RTFConverter.document(fromRTF: RTFConverter.rtfData(from: document))
-        #expect(back == document) // Swift compares strings by canonical equivalence.
-        #expect(try back.jsonData() == doc(p(t("\u{E9} \u{E5} \u{F1}"))).jsonData())
-        #expect(try back.jsonData() != document.jsonData())
+        #expect(try back.jsonData() == canonical.jsonData())
+        let json = Data(#"{"version":1,"blocks":[{"type":"paragraph","content":[{"type":"text","text":"e\u0301"}]}]}"#.utf8)
+        #expect(String(decoding: try Doc(json: json).jsonData(), as: UTF8.self)
+            == #"{"blocks":[{"content":[{"text":"\#u{E9}","type":"text"}],"type":"paragraph"}],"version":1}"#)
+    }
+
+    @Test("A link run never reads or writes an underline, but underline around it stays")
+    func linkUnderline() throws {
+        let read = try RTFConverter.document(fromRTF: Data(#"{\rtf1\ansi \ul before {\field{\*\fldinst{HYPERLINK "https://example.com/"}}{\fldrslt link}} after\ulnone\par}"#.utf8))
+        #expect(read == doc(p(t("before ", .underline), t("link", .link(href: "https://example.com/")), t(" after", .underline))))
+        let rtf = rtfText(try RTFConverter.rtfData(from: doc(p(t("link", .underline, .link(href: "https://example.com/"))))))
+        #expect(rtf.contains(#"HYPERLINK "https://example.com/""#))
+        #expect(!rtf.contains(#"\ul"#))
+        #expect(try doc(p(t("a", .underline, .link(href: "https://x/")))).canonicalized() == doc(p(t("a", .link(href: "https://x/")))))
     }
 
     @Test("Link addresses are written as URLs, so Foundation percent-encodes characters outside URL syntax")
