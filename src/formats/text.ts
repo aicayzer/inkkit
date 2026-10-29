@@ -25,6 +25,7 @@ export const textFormat: FormatHandler = {
   promise: 'exact',
   literalOnly: true,
   sourceMode: false,
+  formattedLabel: 'formattedEditor',
   literalLabel: 'plainTextEditor',
   headings: false,
   nativeCopy: true,

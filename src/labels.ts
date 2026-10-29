@@ -26,6 +26,7 @@ export const defaultLabels: Readonly<EditorLabels> = {
   slashCaution: 'Caution',
 
   formattedEditor: 'Formatted Markdown editor',
+  richTextEditor: 'Rich text editor',
   plainTextEditor: 'Plain text editor',
   sourceEditor: 'Markdown source editor',
   placeholder: 'Start typing…',

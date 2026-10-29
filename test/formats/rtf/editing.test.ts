@@ -430,3 +430,63 @@ describe('what works as in Markdown formatted mode', () => {
       })
     }))
 })
+
+describe('the formatted surface names the format', () => {
+  test('an RTF document is a rich text editor, and Markdown keeps its name', () =>
+    withRichEditor({}, ({ editor, root }) => {
+      const label = () =>
+        root.querySelector('.ProseMirror')?.getAttribute('aria-label')
+      editor.loadDocument(rich(doc(para('a'))))
+      expect(label()).toBe('Rich text editor')
+      editor.loadDocument({
+        documentId: 'md',
+        generation: 9000,
+        format: 'md',
+        text: 'a',
+      })
+      expect(label()).toBe('Formatted Markdown editor')
+    }))
+
+  test('a host label replaces it', () =>
+    withRichEditor(
+      { labels: { richTextEditor: 'Document' } },
+      ({ editor, root }) => {
+        editor.loadDocument(rich(doc(para('a'))))
+        expect(
+          root.querySelector('.ProseMirror')?.getAttribute('aria-label'),
+        ).toBe('Document')
+      },
+    ))
+})
+
+test('alignment shortcuts run the command of the same name', () =>
+  withRichEditor(
+    {
+      keymap: {
+        alignLeft: ['Mod-Alt-l'],
+        alignCenter: ['Mod-Alt-c'],
+        alignRight: ['Mod-Alt-r'],
+        alignJustify: ['Mod-Alt-j'],
+      },
+    },
+    ({ editor }) => {
+      editor.loadDocument(rich(doc(para('Text'))))
+      select(editor, 'Text')
+      const { generation } = editor.commandState()
+      for (const [key, align] of [
+        ['c', 'center'],
+        ['r', 'right'],
+        ['j', 'justify'],
+        ['l', undefined],
+      ] as const) {
+        expect(
+          editor.keyDown({ key, metaKey: true, altKey: true }, generation),
+        ).toBe(true)
+        expect(richSnapshot(editor).document.blocks[0]).toEqual(
+          align
+            ? { type: 'paragraph', align, content: [t('Text')] }
+            : para('Text'),
+        )
+      }
+    },
+  ))

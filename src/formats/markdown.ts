@@ -23,6 +23,7 @@ export const markdownFormat: FormatHandler = {
   promise: 'exact',
   literalOnly: false,
   sourceMode: true,
+  formattedLabel: 'formattedEditor',
   literalLabel: 'sourceEditor',
   headings: true,
   nativeCopy: false,

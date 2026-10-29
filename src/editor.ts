@@ -1249,7 +1249,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       this.editor.ctx.get(editorViewCtx),
       this.source.element,
       this.inputPreferences,
-      this.options.labels?.formattedEditor ?? defaultLabels.formattedEditor,
+      this.options.labels?.[this.document.handler.formattedLabel] ??
+        defaultLabels[this.document.handler.formattedLabel],
       {
         writable: () => this.writable,
         literal: () => this.literalSurface,

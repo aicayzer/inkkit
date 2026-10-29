@@ -422,6 +422,8 @@ export interface EditorLabels {
   slashCaution: string
 
   formattedEditor: string
+  /** Accessible name of the formatted surface while an RTF document is loaded. */
+  richTextEditor: string
   plainTextEditor: string
   sourceEditor: string
   placeholder: string

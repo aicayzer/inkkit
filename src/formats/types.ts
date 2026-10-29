@@ -121,6 +121,11 @@ export interface FormatHandler {
   readonly literalOnly: boolean
   /** A source mode exists beside formatted mode. */
   readonly sourceMode: boolean
+  /** The label that names the formatted surface. */
+  readonly formattedLabel: keyof Pick<
+    EditorLabels,
+    'formattedEditor' | 'richTextEditor'
+  >
   /** The label that names the literal surface. */
   readonly literalLabel: keyof Pick<
     EditorLabels,

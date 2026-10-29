@@ -35,6 +35,7 @@ export const richTextFormat: FormatHandler = {
   promise: 'structure',
   literalOnly: false,
   sourceMode: false,
+  formattedLabel: 'richTextEditor',
   literalLabel: 'sourceEditor',
   headings: false,
   nativeCopy: false,
