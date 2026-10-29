@@ -50,6 +50,9 @@ export const blocks: Array<(i: number) => string> = [
   (i) => `See [STRASSE] and [Straße] and [ẞ] ${i} [l](/l).`,
   (i) => `Case [FOO  bar] and [foo bar][] ${i}.`,
   (i) => `[^f${i}]: Foot [l](/l)\n\n    [inner${i}]: /in`,
+  (i) =>
+    `Marks ${i} <u>under [l](/u)</u>, x<sup>2</sup> &amp; H<sub>**2**</sub>O.`,
+  (i) => `- <u>item ${i}</u> [l](/l)\n- <U>kept ${i}</U> <u class=x>y</u>`,
 ]
 export const definitions = [
   '[Strasse]: /s',

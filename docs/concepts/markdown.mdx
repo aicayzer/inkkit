@@ -3,7 +3,7 @@ title: 'Markdown support'
 description: 'Which Markdown Inkkit renders and edits, which it keeps as literal source, what needs an adapter, and the rules for each construct.'
 ---
 
-Inkkit edits CommonMark and GitHub Flavored Markdown (GFM) in formatted mode, plus footnotes, callouts, highlights and author comments. Anything else stays in the document as literal source that people can still edit and save. Source mode edits every document as plain Markdown text.
+Inkkit edits CommonMark and GitHub Flavored Markdown (GFM) in formatted mode, plus footnotes, callouts, highlights, underline, superscript, subscript and author comments. Anything else stays in the document as literal source that people can still edit and save. Source mode edits every document as plain Markdown text.
 
 ## Support at a glance
 
@@ -19,6 +19,7 @@ The status applies to formatted mode.
 | Reference links                                                                    | `[text][id]`, `[id][]`, `[id]` with `[id]: /url`                      | Rendered and editable when the label has a definition; otherwise literal |
 | Callouts                                                                           | `> [!NOTE]- Details`                                                  | Rendered and editable for five types; other types literal                |
 | Highlights                                                                         | `==important==`                                                       | Rendered and editable                                                    |
+| Underline, superscript and subscript                                               | `<u>text</u>`, `x<sup>2</sup>`, `H<sub>2</sub>O`                      | Rendered and editable when written exactly so; other forms literal       |
 | Author comments                                                                    | `<!-- note -->`, `%% note %%`                                         | Hidden by default; editable when shown                                   |
 | Mermaid diagrams                                                                   | A `mermaid` fence                                                     | Editable source with an offline preview                                  |
 | Images                                                                             | `![Alt](reference)`                                                   | Needs the `images` or `files` option; literal without it                 |
@@ -81,6 +82,26 @@ In the body, Enter starts a new paragraph, and Enter in an empty last paragraph 
 ## Highlights
 
 `==text==` is highlighted text. It needs exactly two `=` on each side; escaped delimiters and code stay literal. `format('highlight')` toggles it. The `highlight` shortcut name has no default key. Ordinary copy writes it as `<mark>`.
+
+## Underline, superscript and subscript
+
+Markdown has no syntax for underline, superscript or subscript, so Inkkit saves them as HTML tags: `<u>text</u>`, `<sup>text</sup>` and `<sub>text</sub>`. A document that holds them saves unchanged, and an edit to one block leaves the tags in other blocks as written.
+
+A pair of tags is formatted only when all of these are true:
+
+- **Exact tags:** both tags are lowercase, with no attributes and no spaces inside the angle brackets.
+- **One inline parent:** both tags are in the same paragraph, heading, table cell or list item paragraph, and in the same bold, italic, strikethrough, highlight or link.
+- **Balanced:** each opening tag has its own closing tag, and pairs don't cross, as they do in `<u><sup>x</u></sup>`.
+- **Content:** the pair holds something other than spaces.
+- **No repeat:** the pair isn't inside a pair of its own kind. Underline can't hold underline, and superscript and subscript can't hold each other.
+
+Any other form, such as `<U>x</U>`, `<u class="x">x</u>`, `<u >x</u >` or a tag without its partner, is raw HTML and keeps its block literal. So does a block that holds a formatted pair and other raw HTML, apart from line breaks and comments. Tags in code spans and code blocks are code.
+
+The formats nest with bold, italic, strikethrough, highlights and links, in either order, and can hold code spans. A footnote reference can be inside a superscript, and stays a footnote reference.
+
+- `format('underline')`, `format('superscript')` and `format('subscript')` toggle the format. Applying superscript to subscript text replaces it, and the reverse. The shortcut names of the same names have no default keys.
+- In formatted mode, typing the `>` that completes an exact pair, such as `<u>text</u>`, formats the text between the tags. Text typed in code stays code. Other typed tags that don't complete an exact pair are saved as typed, with their brackets escaped.
+- Ordinary copy and print write `<u>`, `<sup>` and `<sub>` elements. Pasted HTML keeps only their text; see [Web pages](/concepts/clipboard#web-pages). Pasted Markdown keeps the tags as written.
 
 ## Comments
 
@@ -154,7 +175,7 @@ A primary click with Mod (Command on Apple platforms, Control elsewhere) calls `
 
 Front matter is a YAML block between `---` lines, or a TOML block between `+++` lines, at the very start of the document. It stays literal, and edits to it are saved as typed.
 
-Raw HTML, in a block or inline, keeps its block literal. Inkkit never renders or executes it. It's saved as written and isn't checked for scripts or unsafe addresses, so an app that renders notes as HTML elsewhere must sanitize it.
+Raw HTML, in a block or inline, keeps its block literal. The exceptions are line breaks and the exact tags for [underline, superscript and subscript](#underline-superscript-and-subscript). Inkkit never renders or executes it. It's saved as written and isn't checked for scripts or unsafe addresses, so an app that renders notes as HTML elsewhere must sanitize it.
 
 ## TXT documents
 

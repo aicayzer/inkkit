@@ -19,6 +19,9 @@ const markNames: Record<string, Mark> = {
   emphasis: 'italic',
   strike_through: 'strikethrough',
   highlight: 'highlight',
+  underline: 'underline',
+  superscript: 'superscript',
+  subscript: 'subscript',
   inlineCode: 'code',
   link: 'link',
 }

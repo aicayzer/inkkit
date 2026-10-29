@@ -43,7 +43,7 @@ blockquote { margin-inline: 0; padding-inline-start: 1em; border-inline-start: 3
 .inkkit-callout-title { display: block; margin-bottom: .4em; }
 .inkkit-callout-body { display: block; }
 .inkkit-print-footnote { border-inline-start: 2px solid #aaa; padding-inline-start: 1em; margin-bottom: 1em; }
-sup { font-size: .75em; }
+sup, sub { font-size: .75em; }
 .inkkit-print-task-marker { font-family: ui-monospace, Menlo, monospace; }
 table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: .95em; }
 th, td { border: 1px solid #aaa; padding: .4em .6em; vertical-align: top; overflow-wrap: anywhere; }
@@ -228,6 +228,7 @@ const semanticTags = new Set([
   'DEL',
   'S',
   'MARK',
+  'U',
   'A',
   'SUP',
   'SUB',

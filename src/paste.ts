@@ -1115,7 +1115,6 @@ function unsupportedClipboardTable(table: HTMLTableElement): boolean {
     'A',
     'MARK',
     'SPAN',
-    'SUP',
     'FONT',
     'IMG',
   ])

@@ -27,6 +27,11 @@ import {
 } from '@milkdown/kit/preset/commonmark'
 import { toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm'
 import { toggleHighlightCommand } from './inline-highlight'
+import {
+  toggleSubscriptCommand,
+  toggleSuperscriptCommand,
+  toggleUnderlineCommand,
+} from './inline-html-marks'
 import { setTextblockType } from './block-conversion'
 import { taskAtCaret, toggleTask, toggleTaskList } from './tasks'
 import {
@@ -71,6 +76,9 @@ export function formatAvailability(
     italic: check(toggleEmphasisCommand.key),
     strikethrough: check(toggleStrikethroughCommand.key),
     highlight: check(toggleHighlightCommand.key),
+    underline: check(toggleUnderlineCommand.key),
+    superscript: check(toggleSuperscriptCommand.key),
+    subscript: check(toggleSubscriptCommand.key),
     code:
       formatted &&
       (state.selection.empty
@@ -296,6 +304,15 @@ export function applyFormat(
       break
     case 'highlight':
       run(toggleHighlightCommand.key)
+      break
+    case 'underline':
+      run(toggleUnderlineCommand.key)
+      break
+    case 'superscript':
+      run(toggleSuperscriptCommand.key)
+      break
+    case 'subscript':
+      run(toggleSubscriptCommand.key)
       break
     case 'code':
       toggleInlineCode(editor)
