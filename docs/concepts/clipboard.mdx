@@ -10,7 +10,7 @@ Ordinary copy gives other apps readable text and semantic HTML, never Markdown s
 When a person copies or cuts in the editor, Inkkit handles the browser's event and writes two formats:
 
 - **Plain text:** the text a reader sees, with no Markdown syntax or escapes.
-- **HTML:** semantic markup, such as headings, lists, `<strong>`, `<mark>`, tables, links and footnotes.
+- **HTML:** semantic markup, such as headings, lists, `<strong>`, `<mark>`, `<u>`, `<sup>`, `<sub>`, tables, links and footnotes.
 
 Both leave out author comments (even when shown), private image display URLs, and the fold state of callouts, whose full body is copied. Reference definitions are left out because the copied links show their addresses; definitions copied on their own are copied as `[label]: address "title"`. A link whose address isn't [kept](#links-that-inkkit-keeps) is copied as its text.
 
@@ -127,7 +127,7 @@ Dropping HTML from outside the editor imports it the same way as a paste, as who
 Pasted or dropped HTML keeps only what reads back as the same structure. Before inserting it, Inkkit writes the content as Markdown and reads it back as GitHub Flavored Markdown, as strict CommonMark and as CommonMark with raw HTML turned off. A part that would read back differently in any of them, or would hold a link address that Inkkit doesn't keep, is imported in a simpler form: first without Inkkit's metadata, such as a callout or reference label, then without its formatting, keeping its text.
 
 - **Left out:** HTML comments, `style`, `meta`, `title`, `input`, the contents of `template` and `noscript`, and elements hidden with the `hidden` attribute or an inline `display: none`.
-- **Simplified:** `u`, `sub`, `small`, `abbr`, `cite` and similar wrappers keep their text without the wrapper. `figure` keeps its image and caption text. A definition list becomes a bold term and a plain paragraph for each entry. A checkbox at the start of a list item makes a task item.
+- **Simplified:** `u`, `sup`, `sub`, `small`, `abbr`, `cite` and similar wrappers keep their text without the wrapper. Inkkit saves underline, superscript and subscript as HTML tags, which CommonMark with raw HTML turned off reads as text, so pasted HTML doesn't keep them as formatting. `figure` keeps its image and caption text. A definition list becomes a bold term and a plain paragraph for each entry. A checkbox at the start of a list item makes a task item.
 - **Whitespace** collapses as in a browser, except in `pre`, `code` and elements whose inline style preserves whitespace, so copied code keeps its indentation. Style sheets aren't read.
 - **Literal source:** custom elements, `script`, `iframe`, `svg`, `math`, `object`, form controls such as `button` and `textarea`, and other unrecognized elements stay literal source when it reads back as written, and otherwise import as a code block with the same text. HTML is never executed.
 - **Images** are never saved by address: your adapter stores the bytes and returns the reference.
@@ -175,7 +175,7 @@ The Markdown source keeps every address as written. Pasted Markdown and typed te
 `printableSnapshot` returns the whole document as a standalone HTML page for printing. Your app owns the Print and PDF commands, dialogs and files: load `html` into a print view and print it.
 
 - It doesn't depend on the selection, scrolling, folding or comment visibility, and it doesn't change the source, revision or history.
-- It includes footnotes, resolved reference links, tables, images, highlights, Mermaid diagrams as images, and the full body of folded callouts. It leaves out author comments and editor controls, even when comments are shown. TXT prints as literal text.
+- It includes footnotes, resolved reference links, tables, images, highlights, underline, superscript and subscript, Mermaid diagrams as images, and the full body of folded callouts. It leaves out author comments and editor controls, even when comments are shown. TXT prints as literal text.
 - Images are embedded as `data:` URLs from your adapter, and `assets` holds copies of their bytes. `styles` holds the print CSS on its own, which wraps long text and fits images to the page; adapt it to your paper and layout.
 
 Degraded content prints and adds a warning to `warnings`:
