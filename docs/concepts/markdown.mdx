@@ -160,6 +160,8 @@ Raw HTML, in a block or inline, keeps its block literal. Inkkit never renders or
 
 A document loaded with `format: 'txt'` is plain text. Every character is literal: no Markdown, no formatted mode and no diagrams. `setEditingMode` returns `false`, and copy and print give the text as written.
 
+TXT saves exactly what was loaded and typed, so its [promise](/concepts/documents#formats-and-what-they-promise) is `exact`. An app can offer TXT without Markdown, or Markdown without TXT, with the [`formats`](/reference/options#formats) option.
+
 ## Wiki links and file embeds
 
 These need adapters that you pass at mount. Without one, the syntax keeps its block literal, and typed brackets are saved escaped.

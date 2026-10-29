@@ -24,10 +24,11 @@ import {
   type DocumentSnapshot,
 } from './types'
 import type { SessionCapture } from './session'
+import type { FormatHandler } from './formats'
 
 interface ClipboardRuntime {
   ctx(): Ctx
-  format(): 'md' | 'txt'
+  handler(): FormatHandler
   sourceMode(): boolean
   element(): HTMLTextAreaElement
   replaceSelection(text: string): void
@@ -251,7 +252,7 @@ export class EditorClipboard {
   }
 
   private readonly copyHandler = (event: ClipboardEvent): void => {
-    if (this.runtime.format() === 'txt') return
+    if (this.runtime.handler().nativeCopy) return
     if (this.runtime.sourceMode()) {
       this.copySourceSelection(event)
       return

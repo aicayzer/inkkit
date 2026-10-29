@@ -18,9 +18,15 @@
 - `editor-suggestions.ts` assembles slash/wiki providers, applies their transactions and handles host action results. The facade captures the current session and chosen state, validates the eventual commit and temporarily supplies the slash transaction's base state. Host action failures and editor insertion failures retain separate reporting paths.
 - `editor-focus.ts` releases text-surface focus and captures/restores selection, focus and scroll around reload. The facade owns load/mode transitions and suppresses intermediate command-state events.
 
+## Document formats
+
+`formats/` holds one `FormatHandler` per document format: `markdown.ts` and `text.ts`, registered in `formats/index.ts`, with the shared interface in `formats/types.ts`. A handler states what differs by format: how text loads and reads into the formatted document, whether only the literal surface edits it, whether source mode and headings exist, how the literal surface pastes and inserts text, and how the format prints and fills the clipboard. Its `promise` is the public `FormatPromise`.
+
+`EditorDocument` sets the handler on each load, and the facade and its collaborators read its fields directly, so a keystroke does no lookup. The Markdown handler wraps `Preservation`, the dialect parser, Markdown printing and the portable Markdown clipboard; those modules are unchanged. The TXT handler reaches none of them. `test/formats/boundary.test.ts` walks the runtime import graph of each non-Markdown handler and fails if it reaches `preserve*.ts`, `dialect.ts`, `html-import.ts` or `paste-html.ts`. Format commands, tables and block moves follow `literalOnly`, because a literal-only format has no formatted surface.
+
 ## Document and source history
 
-- `editor-document.ts` owns the loaded source, preservation instances, carried-block identities and successful save caches. Cache identity is scoped to a document load. It also supplies authored block text and temporary export documents without settling pending source.
+- `editor-document.ts` owns the loaded format handler, the loaded source, the format sources read from it, carried-block identities and successful save caches. Cache identity is scoped to a document load. It also supplies authored block text and temporary export documents without settling pending source.
 - `editor-history.ts` owns pending source, typed undo steps and the permitted formatted redo tail. A pending source edit is already authoritative. Settling it updates the formatted document without another revision or change event. Dispatch reports accepted state transitions to history; the facade captures and restores its rollback state.
 - `editor-source.ts` owns the source/TXT textarea, composition and input selection state, literal editing, and mode-switch selection and scroll mapping. Large textarea replacements retain the off-tree assignment needed by WebKit.
 
@@ -36,7 +42,7 @@ The facade keeps public declarations, argument validation, readiness and mutatio
 
 ## Output and clipboard
 
-- `editor-output.ts` owns export cancellation and preparation of portable clipboard and printable documents. It reads temporary export documents without settling pending source history. The facade supplies the validated snapshot, session capture and final freshness guard; the guard still runs from the export cleanup path, so staleness can supersede an export failure.
+- `editor-output.ts` owns export cancellation and the freshness checks around portable clipboard and printable output, which the format handler prepares. It reads temporary export documents without settling pending source history. The facade supplies the validated snapshot, session capture and final freshness guard; the guard still runs from the export cleanup path, so staleness can supersede an export failure.
 - `editor-clipboard.ts` owns the capturing copy/cut listeners and local-copy provenance. It retains authored private comments only for matching text and HTML from this editor, clears provenance at the existing load, source replacement and destruction boundaries, and leaves TXT copying to the source surface.
 - Source and formatted portable cuts use one deferred pipeline: prepare output, refuse missing image or diagram output, await the host clipboard write, retain provenance, validate the original capture and delete the captured selection. A selection movement does not redirect deletion; a document or editability change prevents it. Synchronous ordinary copies retain their surface-specific fallback and event handling.
 

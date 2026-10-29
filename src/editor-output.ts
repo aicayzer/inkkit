@@ -1,53 +1,15 @@
-import { editorViewCtx, parserCtx, remarkCtx } from '@milkdown/kit/core'
-import type { Ctx } from '@milkdown/kit/ctx'
-import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
-import { portableClipboard } from './clipboard'
 import { withFileSignal } from './files'
-import { coded } from './errors'
-import { sourceSelection, rawOffset } from './source'
-import { Preservation } from './preserve'
-import { commentSelectionContent } from './comments'
-import {
-  selectionContent,
-  selectionMarkdown,
-  referenceMetadata,
-  withReferenceMetadata,
-} from './reference-clipboard'
-import { isMermaid, type DiagramStore } from './mermaid'
-import {
-  hasAuthoredImagesInLiterals,
-  printableText,
-  printableMarkdown,
-} from './print'
-import {
-  InkKitError,
-  type ClipboardOutput,
-  type DocumentSnapshot,
-  type PrintableDocument,
-  type DocumentContext,
-  type ImageAdapter,
-  type FileAdapter,
+import type { FormatHandler, FormatOutput } from './formats'
+import type {
+  ClipboardOutput,
+  DocumentSnapshot,
+  PrintableDocument,
 } from './types'
 import type { SessionCapture } from './session'
 
-interface OutputRuntime {
-  diagrams(): DiagramStore
-  root(): HTMLElement
-  ctx(): Ctx
-  exportDocument(text: string): ProseNode
-  sourceMode(): boolean
-  element(): HTMLTextAreaElement
-  images(): ImageAdapter | undefined
-  files(): FileAdapter | undefined
-  linkSchemes(): ReadonlySet<string>
-  context(): DocumentContext
+interface OutputRuntime extends FormatOutput {
+  handler(): FormatHandler
   assertCaptured(captured: SessionCapture, aborted?: boolean): void
-  remember<T extends { text: string; html: string }>(
-    output: T,
-    markdown: string,
-    content: Fragment,
-    privateSource?: boolean,
-  ): T
 }
 
 /** Portable output and cancellation, without committing pending source history. */
@@ -83,35 +45,12 @@ export class EditorOutput {
     snapshot: DocumentSnapshot,
     captured: SessionCapture,
   ): Promise<PrintableDocument> {
-    const state = this.runtime.ctx().get(editorViewCtx).state
+    const handler = this.runtime.handler()
     const doc = this.runtime.exportDocument(snapshot.text)
     this.runtime.diagrams().reconcile(doc)
-    const output = await this.exportContent(captured, async (signal) => {
-      if (
-        snapshot.format === 'md' &&
-        !this.runtime.images() &&
-        !this.runtime.files() &&
-        hasAuthoredImagesInLiterals(doc.content, (source) =>
-          this.runtime.ctx().get(remarkCtx).parse(source),
-        )
-      )
-        throw new InkKitError(
-          'image-unavailable',
-          'No image adapter is configured for the authored images.',
-        )
-      return snapshot.format === 'txt'
-        ? printableText(snapshot.text)
-        : printableMarkdown(
-            doc.content,
-            state.schema,
-            this.runtime.images(),
-            this.runtime.context(),
-            this.runtime.files(),
-            signal,
-            this.runtime.diagrams(),
-            this.runtime.root(),
-          )
-    })
+    const output = await this.exportContent(captured, (signal) =>
+      handler.print({ text: snapshot.text, doc, signal, output: this.runtime }),
+    )
     return Object.freeze({
       documentId: snapshot.documentId,
       generation: snapshot.generation,
@@ -133,120 +72,20 @@ export class EditorOutput {
     })
   }
 
-  async clipboard(
+  /** Rejects rather than throws, as an asynchronous member does. */
+  clipboard(
     snapshot: DocumentSnapshot,
     captured: SessionCapture,
     all: boolean,
   ): Promise<ClipboardOutput> {
     const { documentId, generation, revision } = captured
-    const version = { documentId, generation, revision }
-    if (snapshot.format === 'txt') {
-      const text = all
-        ? snapshot.text
-        : snapshot.text.slice(
-            rawOffset(snapshot.text, this.runtime.element().selectionStart),
-            rawOffset(snapshot.text, this.runtime.element().selectionEnd),
-          )
-      const pre = document.createElement('pre')
-      pre.textContent = text
-      return {
-        ...version,
-        text,
-        html: pre.outerHTML,
-        markdown: text,
-        images: [],
-        diagrams: [],
-      }
-    }
-    const { schema, selection } = this.runtime.ctx().get(editorViewCtx).state
-    // A partial copy in the source editor reads only the selected source.
-    const doc =
-      all || !this.runtime.sourceMode()
-        ? this.runtime.exportDocument(snapshot.text)
-        : this.runtime.ctx().get(editorViewCtx).state.doc
-    if (all || !this.runtime.sourceMode())
-      this.runtime.diagrams().reconcile(doc)
-    const selectedSource =
-      !all && this.runtime.sourceMode()
-        ? sourceSelection(
-            snapshot.text,
-            this.runtime.element().selectionStart,
-            this.runtime.element().selectionEnd,
-          )
-        : undefined
-    const selectedDoc = selectedSource
-      ? this.runtime.ctx().get(parserCtx)(selectedSource.shareable)
-      : undefined
-    const completeDiagrams = new Set<string>()
-    ;(selectedDoc ?? doc).descendants((node, pos) => {
-      if (
-        isMermaid(node) &&
-        (selectedDoc
-          ? Boolean(node.attrs.authoredFence?.close)
-          : all ||
-            (selection.from <= pos + 1 &&
-              selection.to >= pos + node.nodeSize - 1))
-      ) {
-        completeDiagrams.add(node.textContent.replace(/\r\n?/g, '\n'))
-      }
+    return this.runtime.handler().clipboard({
+      snapshot,
+      all,
+      version: { documentId, generation, revision },
+      output: this.runtime,
+      run: (operation) => this.exportContent(captured, operation),
+      assertCurrent: () => this.runtime.assertCaptured(captured),
     })
-    const content = selectedDoc
-      ? selectedDoc.content
-      : all
-        ? doc.content
-        : commentSelectionContent(
-            doc,
-            selection.from,
-            selection.to,
-            selection.content().content,
-          )
-    const valid = content.firstChild?.isInline
-      ? Fragment.from(schema.nodes.paragraph!.create(null, content))
-      : content
-    let markdown: string
-    try {
-      markdown = selectedSource
-        ? selectedSource.markdown
-        : all
-          ? snapshot.text
-          : completeDiagrams.size
-            ? Preservation.read(this.runtime.ctx(), snapshot.text).serialize(
-                doc.type.create(null, selectionContent(doc, valid)),
-              )
-            : selectionMarkdown(this.runtime.ctx(), doc, valid)
-    } catch (error) {
-      throw coded(error, 'preservation')
-    }
-    const result = await this.exportContent(captured, (signal) =>
-      portableClipboard(
-        all || selectedDoc ? content : selectionContent(doc, content),
-        schema,
-        markdown,
-        this.runtime.images(),
-        this.runtime.context(),
-        completeDiagrams,
-        this.runtime.files(),
-        signal,
-        this.runtime.linkSchemes(),
-        this.runtime.diagrams(),
-        this.runtime.root(),
-      ),
-    )
-    const metadata = referenceMetadata(
-      this.runtime.ctx(),
-      selectedDoc ?? doc,
-      content,
-    )
-    if (metadata != null)
-      result.html = withReferenceMetadata(result.html, metadata)
-    this.runtime.assertCaptured(captured)
-    this.runtime.remember(
-      result,
-      markdown,
-      content,
-      selectedSource != null &&
-        selectedSource.markdown !== selectedSource.shareable,
-    )
-    return { ...version, ...result }
   }
 }

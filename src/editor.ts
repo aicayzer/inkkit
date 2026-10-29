@@ -67,7 +67,7 @@ import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { literalRereadKey } from './literal-edits'
 import { defaultLabels } from './labels'
 import { extraLinkSchemes } from './link-safety'
-import { Preservation } from './preserve'
+import { documentFormats, formatHandlers, type FormatSource } from './formats'
 import { sourceAttribute, type SourceProvenance } from './source'
 import { referenceDefinitions } from './references'
 import { mediaPolicyEvent, requestRefresh } from './files'
@@ -82,6 +82,7 @@ import {
 import {
   InkKitError,
   type ClientPoint,
+  type DocumentFormat,
   type DocumentInput,
   type DocumentSnapshot,
   type DocumentContext,
@@ -105,6 +106,7 @@ import {
   type TableCommand,
   type TableOptions,
   type BlockMoveDirection,
+  type OfferedFormat,
 } from './types'
 import type { TextProjection } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
@@ -363,8 +365,11 @@ function textInputPreferences(
   }
 }
 
-/** Mount options. Adapters, `labels`, `linkSchemes` and `rendering` are fixed at mount; the rest can change. */
+/** Mount options. Adapters, `formats`, `labels`, `linkSchemes` and `rendering` are fixed at mount;
+ *  the rest can change. */
 export interface EditorOptions {
+  /** The formats the host offers, listed by `formats`. Defaults to `['md', 'txt']`. Fixed at mount. */
+  formats?: readonly DocumentFormat[]
   /** Shows, imports and exports images. Without it and `files`, image Markdown stays literal. */
   images?: ImageAdapter
   /** Opt-in block suggestions on an empty line. Fixed at mount. */
@@ -393,6 +398,21 @@ export interface EditorOptions {
 
 const adapterNames = ['images', 'files', 'wikiLinks'] as const
 
+/** Checks the host's format list: at least one known format, none repeated. */
+function offeredFormats(
+  value: unknown,
+  name: string,
+): readonly DocumentFormat[] {
+  const formats = expectArray(value, name).map((format, index) =>
+    expectOneOf(format, documentFormats, `${name}[${index}]`),
+  )
+  if (!formats.length)
+    throw invalidArgument(`${name} must list at least one format`)
+  if (new Set(formats).size !== formats.length)
+    throw invalidArgument(`${name} must not list a format twice`)
+  return formats
+}
+
 /** Checks mount options and returns them with omitted values removed. */
 function editorOptions(value: unknown): EditorOptions {
   const options =
@@ -405,6 +425,7 @@ function editorOptions(value: unknown): EditorOptions {
       'linkSchemes',
       'rendering',
       'slashMenu',
+      'formats',
     ]) ?? {}
   for (const name of adapterNames)
     optionalRecord(options[name], `options.${name}`)
@@ -435,6 +456,9 @@ function editorOptions(value: unknown): EditorOptions {
   )
   return {
     ...options,
+    formats: isOmitted(options.formats)
+      ? undefined
+      : offeredFormats(options.formats, 'options.formats'),
     slashMenu: slashMenuOptions(options.slashMenu),
     linkSchemes,
     labels:
@@ -452,7 +476,7 @@ function editorOptions(value: unknown): EditorOptions {
 
 /** What the editor can do now. Availability is the state at the time of the call, not a promise. */
 export interface CommandState extends DocumentVersion {
-  format: 'md' | 'txt'
+  format: DocumentFormat
   mode: EditingMode
   editable: boolean
   /** Text composition (IME) is in progress. */
@@ -555,14 +579,16 @@ function hostEvents(value: unknown): EditorEvents {
   }) as unknown as EditorEvents
 }
 
-const documentFormats = ['md', 'txt'] as const
-
-function documentInput(value: unknown): DocumentInput {
+/** Checks a load's input. A format the host did not offer is refused like an unknown one. */
+function documentInput(
+  value: unknown,
+  offered: readonly DocumentFormat[],
+): DocumentInput {
   const input = expectRecord(value, 'input')
   return {
     documentId: expectString(input.documentId, 'input.documentId'),
     generation: expectGeneration(input.generation, 'input.generation'),
-    format: expectOneOf(input.format, documentFormats, 'input.format'),
+    format: expectOneOf(input.format, offered, 'input.format'),
     text: expectString(input.text, 'input.text'),
   }
 }
@@ -713,6 +739,7 @@ export class InkKitEditor {
     exportDocument: (text) => this.document.exportDocument(text),
     diagrams: () => this.diagrams,
     root: () => this.root,
+    handler: () => this.document.handler,
     sourceMode: () => this.mode === 'source',
     element: () => this.source.element,
     images: () => this.options.images,
@@ -726,7 +753,7 @@ export class InkKitEditor {
   })
   private readonly clipboard: EditorClipboard = new EditorClipboard({
     ctx: () => this.editor.ctx,
-    format: () => this.document.format,
+    handler: () => this.document.handler,
     sourceMode: () => this.mode === 'source',
     element: () => this.source.element,
     replaceSelection: (text) => this.source.replaceLiteralSelection(text),
@@ -809,6 +836,9 @@ export class InkKitEditor {
   private readonly events: EditorEvents
   /** The host's extra link schemes, in lower case. */
   private readonly linkSchemes: ReadonlySet<string>
+  /** The formats the host offered, in its order. */
+  private readonly offered: readonly DocumentFormat[]
+  private readonly formatList: readonly OfferedFormat[]
 
   /** How many of each state event the host has been sent. */
   private readonly sentEvents = new Map<string | symbol, number>()
@@ -834,6 +864,12 @@ export class InkKitEditor {
       },
     })
     this.linkSchemes = new Set(options.linkSchemes)
+    this.offered = options.formats ?? documentFormats
+    this.formatList = Object.freeze(
+      this.offered.map((format) =>
+        Object.freeze({ format, promise: formatHandlers[format].promise }),
+      ),
+    )
     this.writable = options.editable ?? true
     this.inputPreferences = textInputPreferences(
       options.textInput ?? {},
@@ -1061,6 +1097,12 @@ export class InkKitEditor {
       : this.editor.ctx.get(editorViewCtx).composing
   }
 
+  /** The formats the host offered at mount, in its order, with what saving each promises. */
+  get formats(): readonly OfferedFormat[] {
+    this.assertAlive()
+    return this.formatList
+  }
+
   /** Whether the person can edit. A read-only editor still permits selection, copying and find. */
   get editable(): boolean {
     this.assertAlive()
@@ -1210,7 +1252,7 @@ export class InkKitEditor {
   })
 
   private get literalSurface(): boolean {
-    return this.document.format === 'txt' || this.mode === 'source'
+    return this.document.handler.literalOnly || this.mode === 'source'
   }
 
   /** `formatted` or `source`. A TXT document is always `source`. */
@@ -1225,7 +1267,7 @@ export class InkKitEditor {
     this.assertAlive()
     expectOneOf(mode, editingModes, 'mode')
     this.assertCurrent(expectedGeneration)
-    if (this.document.format === 'txt' || this.mode === mode) return false
+    if (!this.document.handler.sourceMode || this.mode === mode) return false
     return this.source.setMode(mode, {
       ctx: this.editor.ctx,
       wasSource: this.literalSurface,
@@ -1258,12 +1300,10 @@ export class InkKitEditor {
   private updateSurface(): void {
     this.source.element.hidden = !this.literalSurface
     this.applyInputPolicy()
+    const label = this.document.handler.literalLabel
     this.source.element.setAttribute(
       'aria-label',
-      this.document.format === 'txt'
-        ? (this.options.labels?.plainTextEditor ??
-            defaultLabels.plainTextEditor)
-        : (this.options.labels?.sourceEditor ?? defaultLabels.sourceEditor),
+      this.options.labels?.[label] ?? defaultLabels[label],
     )
     this.editor.ctx.get(editorViewCtx).dom.parentElement!.hidden =
       this.literalSurface
@@ -1347,11 +1387,7 @@ export class InkKitEditor {
     input = this.clipboard.restore(clipboardInput(input))
     this.assertMutation(expectedGeneration)
     if (this.literalSurface) {
-      this.pasteAsPlainText(
-        this.mode === 'source' && this.document.format === 'md'
-          ? (input.markdown ?? input.text)
-          : input.text,
-      )
+      this.pasteAsPlainText(this.document.handler.literalPaste(input))
       return
     }
     await this.pasteController.paste(input)
@@ -1380,7 +1416,7 @@ export class InkKitEditor {
       this.source.replaceLiteralSelection(
         text,
         true,
-        this.document.format === 'md',
+        this.document.handler.keepsInsertedLineEndings,
       )
     else insertPlainText(this.editor.ctx.get(editorViewCtx), text)
   }
@@ -1626,13 +1662,15 @@ export class InkKitEditor {
    *  changes nothing. */
   loadDocument(input: DocumentInput): void {
     this.assertAlive()
-    input = documentInput(input)
+    input = documentInput(input, this.offered)
     this.session.checkLoad(input.generation, 'input.generation')
-    const markdown = input.format === 'txt' ? '' : input.text
+    const handler = formatHandlers[input.format]
+    // A literal-only format keeps its text on the literal surface, not in the formatted document.
+    const markdown = handler.literalOnly ? '' : input.text
     // Parsed before anything changes, so Markdown that cannot be loaded changes nothing.
-    let preservation: Preservation
+    let source: FormatSource
     try {
-      preservation = Preservation.read(this.editor.ctx, markdown)
+      source = handler.load(this.editor.ctx, markdown)
     } catch (error) {
       throw new InkKitError(
         'preservation',
@@ -1656,13 +1694,13 @@ export class InkKitEditor {
     this.mode = 'formatted'
     this.source.reset()
     this.search.reset()
-    this.document.format = input.format
+    this.document.handler = handler
     this.source.setSourceValue(input.text)
     this.source.element.setSelectionRange(
       this.source.element.value.length,
       this.source.element.value.length,
     )
-    this.load(markdown, preservation)
+    this.load(markdown, source)
     this.document.original = input.text
     this.lastMarkdown = input.text
     this.updateSurface()
@@ -1687,13 +1725,13 @@ export class InkKitEditor {
    *  that generation. */
   reloadDocument(input: DocumentInput, expectedGeneration?: number): void {
     this.assertAlive()
-    input = documentInput(input)
+    input = documentInput(input, this.offered)
     if (!isOmitted(expectedGeneration)) this.assertReady(expectedGeneration)
     this.session.checkLoad(input.generation, 'input.generation')
     const view = this.editor.ctx.get(editorViewCtx)
     const wasLiteral = this.literalSurface
     const previousMode = this.editingMode
-    const previousFormat = this.document.format
+    const previous = this.document.handler
     const saved = captureReloadSurface(
       view,
       this.source.element,
@@ -1704,8 +1742,8 @@ export class InkKitEditor {
     try {
       this.loadDocument(input)
       if (
-        previousFormat === 'md' &&
-        input.format === 'md' &&
+        previous.sourceMode &&
+        this.document.handler.sourceMode &&
         previousMode === 'source'
       )
         this.setEditingMode('source', input.generation)
@@ -1852,18 +1890,18 @@ export class InkKitEditor {
     this.geometry.revealLiteralSelection()
   }
 
-  private load(markdown: string, preservation: Preservation): void {
+  private load(markdown: string, source: FormatSource): void {
     this.clipboard.clear()
     this.document.original = markdown
     const { ctx } = this.editor
     const view = ctx.get(editorViewCtx)
     this.loading = true
     try {
-      view.updateState(createDocumentState(ctx, preservation.baseline))
+      view.updateState(createDocumentState(ctx, source.baseline))
     } finally {
       this.loading = false
     }
-    this.document.loaded(preservation)
+    this.document.loaded(source)
     this.lastMarkdown = markdown
     view.dispatch(initialDocumentSelection(view.state))
   }
@@ -1910,7 +1948,7 @@ export class InkKitEditor {
   /** The outline in document order. Entries go stale when the document changes. */
   headings(expectedGeneration?: number): readonly Heading[] {
     this.assertCurrent(expectedGeneration)
-    if (this.document.format === 'txt') return Object.freeze([])
+    if (!this.document.handler.headings) return Object.freeze([])
     return this.mode === 'source'
       ? collectSourceHeadings(
           this.editor.ctx,
@@ -1928,7 +1966,7 @@ export class InkKitEditor {
     this.assertAlive()
     headingEntry(heading)
     this.assertCurrent(heading.generation)
-    if (this.document.format === 'txt')
+    if (!this.document.handler.headings)
       throw new InkKitError(
         'stale-document',
         'The heading is no longer current',
