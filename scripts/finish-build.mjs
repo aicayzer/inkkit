@@ -1,6 +1,16 @@
-import { copyFile, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 
 await copyFile('src/style.css', 'dist/style.css')
+await mkdir('dist/themes', { recursive: true })
+for (const theme of ['standard', 'calm', 'essential'])
+  await copyFile(`src/themes/${theme}.css`, `dist/themes/${theme}.css`)
 
 // TypeScript resolves source imports with bundler semantics; native ESM
 // consumers need the extension.

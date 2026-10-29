@@ -3,6 +3,7 @@
   box-sizing: border-box;
   color-scheme: var(--inkkit-color-scheme, light dark);
   color: var(--inkkit-text-color, CanvasText);
+  background: var(--inkkit-background-color, transparent);
   font-family: var(
     --inkkit-font-family,
     -apple-system,
@@ -628,7 +629,7 @@
   font-size: calc(var(--_inkkit-font-size) * 0.867);
   line-height: 1.5;
   background: var(--_inkkit-code-bg);
-  border-radius: 8px;
+  border-radius: var(--inkkit-code-radius, 8px);
   padding: calc(var(--_inkkit-font-size) * 0.8)
     calc(var(--_inkkit-font-size) * 0.933);
   margin: 0 0 calc(var(--_inkkit-font-size) * 0.8);
@@ -679,9 +680,27 @@
 }
 
 .inkkit-root .ProseMirror blockquote {
+  position: relative;
   margin: 0 0 calc(var(--_inkkit-font-size) * 0.8);
-  padding: 2px 0 2px calc(var(--_inkkit-font-size) * 0.8);
-  border-left: 2px solid var(--_inkkit-accent);
+  padding: 2px 0 2px
+    calc(var(--_inkkit-font-size) * 0.8 + var(--inkkit-quote-rule-width, 2px));
+}
+
+.inkkit-root .ProseMirror blockquote::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--inkkit-quote-rule-width, 2px);
+  border-radius: var(--inkkit-quote-rule-radius, 0px);
+  background: var(--inkkit-quote-rule-color, var(--_inkkit-accent));
+  pointer-events: none;
+}
+
+@media (forced-colors: active) {
+  .inkkit-root .ProseMirror blockquote::before {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
 }
 
 .inkkit-root .ProseMirror blockquote > :first-child {

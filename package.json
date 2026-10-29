@@ -17,7 +17,10 @@
       "types": "./dist/core.d.ts",
       "import": "./dist/core.js"
     },
-    "./style.css": "./dist/style.css"
+    "./style.css": "./dist/style.css",
+    "./themes/standard.css": "./dist/themes/standard.css",
+    "./themes/calm.css": "./dist/themes/calm.css",
+    "./themes/essential.css": "./dist/themes/essential.css"
   },
   "types": "./dist/index.d.ts",
   "files": [

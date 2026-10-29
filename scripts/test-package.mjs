@@ -163,6 +163,33 @@ async function runConsumer(file, engineName, entry) {
       fail(`undo saved ${JSON.stringify(steps.afterUndo)}`)
     if (!steps.redone || steps.afterRedo !== edited)
       fail(`redo saved ${JSON.stringify(steps.afterRedo)}`)
+    for (const theme of ['standard', 'calm', 'essential']) {
+      const themed = await page.evaluate((theme) => {
+        const root = document.getElementById('editor')
+        const before = window.editor.snapshot(2)
+        root.dataset.inkkitTheme = theme
+        const style = getComputedStyle(root)
+        return {
+          before,
+          after: window.editor.snapshot(2),
+          size: style.fontSize,
+          radius: style.getPropertyValue('--inkkit-code-radius').trim(),
+          background: style.backgroundColor,
+        }
+      }, theme)
+      if (
+        JSON.stringify(themed.before) !== JSON.stringify(themed.after) ||
+        themed.size !== '15px' ||
+        themed.radius !== (theme === 'essential' ? '4px' : '8px') ||
+        themed.background === 'rgba(0, 0, 0, 0)'
+      )
+        fail(
+          `the ${theme} CSS preset did not style the offline consumer safely`,
+        )
+    }
+    await page.evaluate(() => {
+      delete document.getElementById('editor').dataset.inkkitTheme
+    })
     const diagramSource =
       '```mermaid\r\nflowchart TD\r\nA[Café] --> B[Saved]\r\n```'
     await page.evaluate((text) => {
@@ -273,7 +300,7 @@ async function buildConsumer(packageSpec, version, entry) {
     )
     await writeFile(
       join(temp, 'main.ts'),
-      `import {InkKitEditor, InkKitError, type DocumentSnapshot, type DocumentVersion, type ClipboardOutput, type ClipboardScope, type ImageAdapter, type PrintableDocument, type PrintableWarning, type TableCommand, type TableOptions, type EditingMode, type Heading, type EditorOptions, type TextInputPreferences, type CommandState, type EditorLabels, type TextRange, type ReadableTextSnapshot, type TextRect, type ViewportOptions, type ViewportSnapshot, type ViewportInsets, type FileAdapter, type FileReference, type FileContext, type FilePresentation, type PortableImage, type WikiLinkAdapter, type WikiLinkReference, type DocumentContext, type ClientPoint} from '@aicayzer/inkkit${entry}';\nimport '@aicayzer/inkkit/style.css';\nconst fileReference: FileReference = {raw:'![[opaque/photo#page=2|320]]',reference:'opaque/photo#page=2',kind:'wiki',target:'opaque/photo',fragment:'page=2',label:'Photo',width:320};
+      `import {InkKitEditor, InkKitError, type DocumentSnapshot, type DocumentVersion, type ClipboardOutput, type ClipboardScope, type ImageAdapter, type PrintableDocument, type PrintableWarning, type TableCommand, type TableOptions, type EditingMode, type Heading, type EditorOptions, type TextInputPreferences, type CommandState, type EditorLabels, type TextRange, type ReadableTextSnapshot, type TextRect, type ViewportOptions, type ViewportSnapshot, type ViewportInsets, type FileAdapter, type FileReference, type FileContext, type FilePresentation, type PortableImage, type WikiLinkAdapter, type WikiLinkReference, type DocumentContext, type ClientPoint} from '@aicayzer/inkkit${entry}';\nimport '@aicayzer/inkkit/style.css';\nimport '@aicayzer/inkkit/themes/standard.css';\nimport '@aicayzer/inkkit/themes/calm.css';\nimport '@aicayzer/inkkit/themes/essential.css';\nconst fileReference: FileReference = {raw:'![[opaque/photo#page=2|320]]',reference:'opaque/photo#page=2',kind:'wiki',target:'opaque/photo',fragment:'page=2',label:'Photo',width:320};
 const presentations: readonly FilePresentation[] = [{kind:'image',url:'blob:fixture',mimeType:'image/png'}, {kind:'audio',url:'blob:fixture',label:'Voice'}, {kind:'video',url:'blob:fixture'}, {kind:'pdf',url:'blob:fixture',mimeType:'application/pdf'}, {kind:'file',label:'Archive'}, {kind:'missing',label:'Unavailable'}, {kind:'error',message:'Unavailable bytes'}];
 const files: FileAdapter = {
   async resolve(reference:FileReference, context:FileContext):Promise<FilePresentation> {const signal:AbortSignal=context.signal; void context.documentId; void context.generation; void context.operationId; void reference.kind; void reference.fragment; void reference.label; void reference.width; if(signal.aborted) throw new DOMException('Aborted','AbortError'); return presentations[4]!},
@@ -366,6 +393,7 @@ async function testPackage() {
         'fresh npm install',
         'public declarations',
         'CSS export',
+        'three opt-in theme CSS exports in both offline consumers',
         'bundled license notices',
         'host notice generation for both entries',
         'offline Vite bundle',
