@@ -316,8 +316,10 @@ function cleanSemantics(
     if (id && localIDs.has(id)) element.setAttribute('id', id)
     if (order && /^\d+$/.test(order)) element.setAttribute('start', order)
     if (
-      /^(left|center|right)$/.test(alignment) &&
-      /^(TH|TD)$/.test(element.tagName)
+      (/^(left|center|right)$/.test(alignment) &&
+        /^(TH|TD)$/.test(element.tagName)) ||
+      // Only an RTF paragraph has an alignment.
+      (/^(center|right|justify)$/.test(alignment) && element.tagName === 'P')
     )
       element.setAttribute('style', `text-align: ${alignment}`)
   }

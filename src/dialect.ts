@@ -692,11 +692,33 @@ const imageWriter: MilkdownPlugin = (ctx) => async () => {
 }
 
 // The preset drops the final empty paragraph, which makes trailing spacers shrink on each reload.
+// `align` belongs to RTF documents. Markdown has no syntax for it: nothing that reads Markdown or
+// HTML sets it, and the writer ignores it, so a Markdown paragraph always has the default.
 const preserveSpacerParagraphs = paragraphSchema.extendSchema(
   (base) => (ctx) => {
     const schema = base(ctx)
     return {
       ...schema,
+      attrs: { ...schema.attrs, align: { default: null } },
+      // The preset's rule reads no attributes, so pasted alignment never reaches Markdown.
+      parseDOM: [{ tag: 'p' }],
+      toDOM: (node) => {
+        const [tag, attrs, hole] = schema.toDOM!(node) as [
+          string,
+          Record<string, string>,
+          0,
+        ]
+        return node.attrs.align
+          ? [
+              tag,
+              {
+                ...attrs,
+                style: `text-align: ${String(node.attrs.align)}`,
+              },
+              hole,
+            ]
+          : [tag, attrs, hole]
+      },
       parseMarkdown: {
         ...schema.parseMarkdown,
         runner(state, node, type) {
