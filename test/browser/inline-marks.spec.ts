@@ -3,6 +3,31 @@ import { test, expect, observe, operation, caretAfterMatch } from './fixtures'
 
 const saved = async (page: Page) => (await observe(page)).snapshot!.text
 
+test('a punctuation-only highlight keeps its encoded boundaries when saved and reopened @inline-marks', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  const source = 'Keep &AMP; a.b \\*literal\\* 日本語\r\n'
+  const expected = source.replace('a.b', '&#x61;==.==&#x62;')
+  await operation(page, 'reload', { text: source })
+  await operation(page, 'keymap', {
+    keymap: { highlight: ['Mod-Shift-h'] },
+  })
+  expect(await operation(page, 'find', { text: '.' })).toBe(true)
+  await page.keyboard.press('ControlOrMeta+Shift+h')
+  await expect.poll(() => saved(page)).toBe(expected)
+  const highlight = page.locator('mark').filter({ hasText: '.' })
+  await expect(highlight).toHaveCount(1)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => saved(page)).toBe(source)
+  await page.keyboard.press('Shift+ControlOrMeta+z')
+  await expect.poll(() => saved(page)).toBe(expected)
+  await operation(page, 'reload', { text: expected })
+  await expect.poll(() => saved(page)).toBe(expected)
+  await expect(highlight).toHaveCount(1)
+})
+
 const marks = [
   { name: 'underline', key: 'u', tag: 'u' },
   { name: 'superscript', key: '.', tag: 'sup' },

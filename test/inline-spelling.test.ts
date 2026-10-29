@@ -92,6 +92,22 @@ for (const paragraph of paragraphs)
       await savedEdit(editor, source, source.replace('words', 'typed café 👩🏽‍💻'))
     }))
 
+for (const [word, highlighted] of [
+  ['a.b', '&#x61;==.==&#x62;'],
+  ['a&#46;b', '&#x61;==.==&#x62;'],
+  ['&#97;.&#98;', '&#97;==.==&#98;'],
+])
+  test(`a punctuation-only highlight retains required boundaries: ${word}`, () =>
+    session(async (editor) => {
+      const source =
+        `Keep &AMP; \\*literal\\* ${word} &#169; 日本語\r\n\r\n` +
+        '+   untouched &copy; é\r\n'
+      load(editor, source)
+      expect(editor.find('.')).toBe(true)
+      expect(editor.format('highlight')).toBe(true)
+      await savedEdit(editor, source, source.replace(word!, highlighted!))
+    }))
+
 test('a literal replacement character is distinct from inline syntax', () =>
   session(async (editor) => {
     const source = 'Keep &amp; \uFFFC `code` \\*tail\\*\r\n'

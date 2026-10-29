@@ -207,8 +207,27 @@ export function retainRun(
       now.breaks.has(b.length - 1 - suffix)
   )
     suffix++
+  const reference = /^&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);$/
+  const encodedBoundary = (oldIndex: number, newIndex: number) =>
+    reference.test(
+      canonical.slice(now.offsets[newIndex], now.offsets[newIndex + 1]),
+    ) &&
+    !reference.test(
+      source.slice(old.offsets[oldIndex], old.offsets[oldIndex + 1]),
+    )
   for (let widened = true; widened;) {
     widened = false
+    // Attention delimiters can require a neighbouring character reference:
+    // a==.==b needs encoded letters so the punctuation stays highlighted.
+    // Authored references already provide that boundary and keep their form.
+    if (prefix > 0 && encodedBoundary(prefix - 1, prefix - 1)) {
+      prefix--
+      widened = true
+    }
+    if (suffix > 0 && encodedBoundary(a.length - suffix, b.length - suffix)) {
+      suffix--
+      widened = true
+    }
     // One entity can read as several characters. A boundary inside it has
     // the same source offset as the next boundary, so widen to include the
     // whole entity rather than retaining or dropping only part of its value.
