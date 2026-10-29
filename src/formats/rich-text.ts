@@ -17,9 +17,13 @@ import type { FormatHandler, FormatSource } from './types'
 
 function source(ctx: Ctx, text: string): FormatSource {
   const { schema } = ctx.get(editorViewCtx).state
+  const document = richTextFromText(text)
+  // A document of one empty paragraph and an empty one look the same in the editor; each saves
+  // as it loaded.
+  const emptyAsNone = document.blocks.length === 0
   return {
-    baseline: richTextToProse(schema, richTextFromText(text)),
-    serialize: (doc) => richTextText(proseToRichText(doc)),
+    baseline: richTextToProse(schema, document),
+    serialize: (doc) => richTextText(proseToRichText(doc, emptyAsNone)),
   }
 }
 

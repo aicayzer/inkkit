@@ -280,12 +280,16 @@ function richBlock(node: ProseNode, listDepth: number): RichTextBlock {
 }
 
 /** The canonical rich text document for an editor document. Throws `preservation` when the
- *  document holds something RTF cannot. */
-export function proseToRichText(doc: ProseNode): RichTextDocument {
+ *  document holds something RTF cannot. The editor always holds a block, so its one empty
+ *  paragraph is an empty document when `emptyAsNone`, as it is when the document loaded empty. */
+export function proseToRichText(
+  doc: ProseNode,
+  emptyAsNone = true,
+): RichTextDocument {
   const blocks: RichTextBlock[] = []
   doc.forEach((node) => blocks.push(richBlock(node, 0)))
-  // The editor's one empty paragraph is an empty document.
   if (
+    emptyAsNone &&
     blocks.length === 1 &&
     blocks[0]!.type === 'paragraph' &&
     !blocks[0]!.align &&

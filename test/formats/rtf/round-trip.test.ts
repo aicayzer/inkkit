@@ -59,6 +59,7 @@ function markCombinations(): RichTextMark[][] {
 
 const handBuilt: Record<string, RichTextDocument> = {
   'an empty document': doc(),
+  'one empty paragraph': doc(para()),
   'empty paragraphs': doc(para(), para('Between'), para()),
   'every mark and pair of marks': doc(
     para(

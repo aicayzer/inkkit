@@ -302,3 +302,41 @@ describe('other conversions', () => {
       )
     }))
 })
+
+test('text that looks like Markdown, edge spaces and table pipes read back the same', () =>
+  withRichEditor({}, ({ editor }) => {
+    for (const document of [
+      doc(
+        para(' lead and trail '),
+        para('\tTab start'),
+        para('1. not a list'),
+        para('# not heading'),
+        para('<u>literal</u> *x* _y_ `z` \\ back'),
+        para('end', { type: 'break' }),
+        para('a  b'),
+        para('&amp; &#x20;'),
+      ),
+      doc({
+        type: 'table',
+        rows: [
+          [{ content: [] }, { content: [t('a | b')] }],
+          [{ content: [t(' x ')] }, { content: [{ type: 'break' }] }],
+        ],
+      }),
+      doc({
+        type: 'list',
+        ordered: false,
+        items: [{ blocks: [para()] }, { blocks: [para('- dash')] }],
+      }),
+    ]) {
+      editor.loadDocument(rich(document))
+      const converted = editor.convertDocument('md')
+      if (converted.format !== 'md') throw new Error('not Markdown')
+      editor.loadDocument(text('md', converted.text))
+      expect(editor.convertDocument('rtf')).toEqual({
+        format: 'rtf',
+        document,
+        lost: [],
+      })
+    }
+  }))

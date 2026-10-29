@@ -1,4 +1,4 @@
-import { editorViewCtx } from '@milkdown/kit/core'
+import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import {
   Fragment,
@@ -7,6 +7,7 @@ import {
 } from '@milkdown/kit/prose/model'
 import { serialize } from '../dialect'
 import {
+  InkKitError,
   formatLossCodes,
   type FormatLoss,
   type FormatLossCode,
@@ -345,7 +346,49 @@ export function richTextToMarkdown(
     if (node.type.name === 'paragraph' && node.attrs.align)
       lost.add('alignment')
   })
-  return { text: serialize(ctx, htmlBreaksInCells(doc)), lost: lost.list() }
+  const text = serialize(ctx, htmlBreaksInCells(doc))
+  // The Markdown must read back as the document less its alignment, or the conversion would lose
+  // something it doesn't report.
+  let reread: RichTextDocument | undefined
+  try {
+    reread = markdownToRichText(ctx.get(parserCtx)(text)).document
+  } catch {
+    reread = undefined
+  }
+  if (!reread || !sameDocument(reread, withoutAlignment(document)))
+    throw new InkKitError(
+      'preservation',
+      'The document could not be written as Markdown that reads back the same',
+    )
+  return { text, lost: lost.list() }
+}
+
+function withoutAlignment(document: RichTextDocument): RichTextDocument {
+  const strip = (block: RichTextBlock): RichTextBlock =>
+    block.type === 'paragraph'
+      ? { type: 'paragraph', content: block.content }
+      : block.type === 'list'
+        ? {
+            ...block,
+            items: block.items.map((item) => ({
+              blocks: item.blocks.map(strip),
+            })),
+          }
+        : block
+  return { version: 1, blocks: document.blocks.map(strip) }
+}
+
+/** Whether two documents are the same, counting one empty paragraph as an empty document. */
+function sameDocument(a: RichTextDocument, b: RichTextDocument): boolean {
+  const text = (document: RichTextDocument) =>
+    JSON.stringify(
+      document.blocks.length === 1 &&
+        document.blocks[0]!.type === 'paragraph' &&
+        !document.blocks[0]!.content.length
+        ? []
+        : document.blocks,
+    )
+  return text(a) === text(b)
 }
 
 /** `node` with each line break in a table cell written as `<br />`, since a cell is one line of

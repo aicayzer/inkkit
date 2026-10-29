@@ -217,7 +217,7 @@ It throws `preservation` when the current content can't be written as Markdown t
 Converts the loaded document to `format`, which must be in [`formats`](#formats), and returns the result with what the conversion lost. It changes nothing in the editor: load the result as a new generation when the person confirms, for example after a Save As to another format.
 
 - **Markdown to RTF** reads the formatted document, including what was typed in source mode. Headings become bold paragraphs and code blocks become paragraphs in code; the [loss codes](#convertdocument) list everything else.
-- **RTF to Markdown** writes the document with Inkkit's Markdown writer. Underline, superscript and subscript become `<u>`, `<sup>` and `<sub>`, and a line break in a table cell becomes `<br />`. Alignment is the only loss.
+- **RTF to Markdown** writes the document with Inkkit's Markdown writer. Underline, superscript and subscript become `<u>`, `<sup>` and `<sub>`, and a line break in a table cell becomes `<br />`. Alignment is the only loss. Inkkit reads the Markdown back, and if it wouldn't give the same document less its alignment, the call throws `preservation` rather than return a conversion that loses something unreported.
 - **The same format** returns a copy with no losses.
 
 Any other pair, such as TXT to or from RTF, throws `invalid-argument`: your converter's plain-text helpers convert TXT, and Markdown and TXT share their text. It has the same state checks as `snapshot`.
