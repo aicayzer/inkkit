@@ -636,6 +636,16 @@ window.interop = {
             result = {
               kinds: nodes.map((node) => node.dataset.inkkitFileKind),
               states: nodes.map((node) => node.dataset.inkkitFileState),
+              cards: nodes.map((node) => ({
+                role: node.getAttribute('role'),
+                tabIndex: node.tabIndex,
+                fillsColumn:
+                  Math.abs(
+                    node.getBoundingClientRect().width -
+                      view().getBoundingClientRect().width,
+                  ) < 1,
+                openButtons: node.querySelectorAll('.inkkit-file-open').length,
+              })),
               media: media.map((node) => ({
                 kind: node.tagName.toLowerCase(),
                 controls: node.controls,

@@ -2346,6 +2346,35 @@ const commentSource =
 }
 {
   Object.assign(scenarios, {
+    'linked-files-fill-card': {
+      files: true,
+      source: '![[FillArchive]]\r\n',
+      operations: [
+        { op: 'fileState', ready: true, name: 'ready' },
+        assert('cards.0.role', 'button', 'ready'),
+        assert('cards.0.tabIndex', 0, 'ready'),
+        assert('cards.0.fillsColumn', true, 'ready'),
+        assert('cards.0.openButtons', 0, 'ready'),
+        {
+          op: 'nativeInput',
+          selector: '[data-inkkit-file-activation="card"]',
+          keyCode: 36,
+          characters: '\r',
+        },
+        { op: 'fileState', name: 'keyboard' },
+        assert('opens.length', 1, 'keyboard'),
+        {
+          op: 'click',
+          selector: '[data-inkkit-file-activation="card"]',
+        },
+        { op: 'fileState', name: 'clicked' },
+        assert('opens.length', 2, 'clicked'),
+        assert('snapshot.text', '![[FillArchive]]\r\n'),
+        { op: 'save' },
+        { op: 'reopen' },
+        assert('snapshot.text', '![[FillArchive]]\r\n'),
+      ],
+    },
     'linked-files-source-sizing': {
       files: true,
       fixture: 'linked-files',
@@ -3250,6 +3279,7 @@ for (const [name, fixture] of Object.entries(scenarios))
 scenarios['native-diagnostics-input-and-refusal'].native = [
   { key: 'x', collapsed: false, selection: 'DIAGNOSTIC-CANARY' },
 ]
+scenarios['linked-files-fill-card'].native = [{ key: 'Enter' }]
 Object.assign(scenarios, probeScenarios)
 Object.assign(groups, probeGroups)
 const selected = new Set()
