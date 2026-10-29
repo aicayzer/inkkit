@@ -82,7 +82,7 @@ describe('lone surrogates', () => {
       const before = view.state.doc
       expect(
         editor.insertText('\uD800', editor.commandState().generation),
-      ).toBe(true)
+      ).toBe(false)
       view.dispatch(view.state.tr.insertText('x\uDC00', 2))
       expect(view.state.doc).toBe(before)
       expect(changes).toEqual([])
@@ -297,5 +297,81 @@ describe('the largest list start', () => {
         }),
       )
       expect(view.state.doc).toBe(before)
+    }))
+})
+
+describe('link addresses follow the text rule', () => {
+  test('a lone surrogate or separator in an address is refused on load and edit', () =>
+    withRichEditor({}, ({ editor }) => {
+      for (const href of ['https://a/\uD800', 'https://a/ ', 'https://a/￼'])
+        expect(() =>
+          editor.loadDocument(rich(doc(para(t('x', { type: 'link', href }))))),
+        ).toThrow(expect.objectContaining({ code: 'invalid-argument' }))
+      editor.loadDocument(rich(doc(para('x'))))
+      select(editor, 'x')
+      expect(() =>
+        editor.format('link', { destination: 'https://a/\uD800' }),
+      ).toThrow(expect.objectContaining({ code: 'invalid-argument' }))
+      const view = ctxOf(editor).get(editorViewCtx)
+      const before = view.state.doc
+      view.dispatch(
+        view.state.tr.addMark(
+          1,
+          2,
+          view.state.schema.marks.link!.create({ href: 'https://a/\uD800' }),
+        ),
+      )
+      expect(view.state.doc).toBe(before)
+    }))
+
+  test('an edited address loses the spaces at its ends', () =>
+    withRichEditor({}, ({ editor }) => {
+      editor.loadDocument(rich(doc(para('x'))))
+      select(editor, 'x')
+      expect(
+        editor.format('link', { destination: '  https://a.example/  ' }),
+      ).toBe(true)
+      expect(richSnapshot(editor).document).toEqual(
+        doc(para(t('x', { type: 'link', href: 'https://a.example/' }))),
+      )
+    }))
+})
+
+describe('refused edits report it', () => {
+  test('text an RTF run cannot hold returns false and changes nothing', () =>
+    withRichEditor({}, ({ editor }) => {
+      editor.loadDocument(rich(doc(para('ab'))))
+      select(editor, 'a', { caret: 'end' })
+      const { generation } = editor.commandState()
+      for (const character of ['\u0000', '￼', ' '])
+        expect(
+          editor.insertText(character, generation),
+          escape(character),
+        ).toBe(false)
+      expect(editor.replaceAll('b', 'c\u0000')).toBe(0)
+      expect(editor.replace('b', '￼')).toBe(false)
+      expect(richSnapshot(editor)).toMatchObject({
+        document: doc(para('ab')),
+        revision: 0,
+      })
+      expect(editor.replaceAll('b', 'c')).toBe(1)
+      expect(richSnapshot(editor).document).toEqual(doc(para('ac')))
+    }))
+})
+
+describe('Markdown to RTF reports every loss', () => {
+  test('underline on a link and characters RTF cannot hold', () =>
+    withRichEditor({}, ({ editor }) => {
+      editor.loadDocument(text('md', '<u>[x](https://a.example/)</u> y￼z\n'))
+      expect(editor.convertDocument('rtf')).toEqual({
+        format: 'rtf',
+        document: doc(
+          para(t('x', { type: 'link', href: 'https://a.example/' }), ' y�z'),
+        ),
+        lost: [
+          { code: 'link-underline', count: 1 },
+          { code: 'invalid-character', count: 1 },
+        ],
+      })
     }))
 })

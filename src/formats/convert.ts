@@ -26,7 +26,7 @@ import {
   maximumListDepth,
   maximumListStart,
 } from './rich-text-model'
-import { richTextToProse } from './rich-text-prose'
+import { proseToRichText, richTextToProse } from './rich-text-prose'
 
 // Conversion between Markdown and rich text. It is the one module that reads both formats; the
 // rich text handler itself reaches no Markdown code.
@@ -63,6 +63,21 @@ const isList = (node: ProseNode) =>
 class MarkdownReader {
   readonly lost = new Losses()
 
+  /** Appends text, counting characters RTF can't hold, which become U+FFFD. */
+  private append(
+    builder: InlineBuilder,
+    text: string,
+    marks: readonly RichTextMark[],
+  ): void {
+    if (
+      /[\u0000\ufffc]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(
+        text,
+      )
+    )
+      this.lost.add('invalid-character')
+    appendText(builder, text, marks)
+  }
+
   private marks(
     marks: readonly Mark[],
     extra: readonly RichTextMark[],
@@ -84,6 +99,12 @@ class MarkdownReader {
         result.push({ type: 'link', href })
       } else result.push({ type })
     }
+    // RTF keeps no underline on a link.
+    if (
+      result.some((mark) => mark.type === 'link') &&
+      result.some((mark) => mark.type === 'underline')
+    )
+      this.lost.add('link-underline')
     // The schema keeps superscript and subscript apart; a heading's bold may repeat a strong mark.
     return canonicalMarks(result)
   }
@@ -97,18 +118,18 @@ class MarkdownReader {
     node.forEach((child) => {
       const name = child.type.name
       if (child.isText)
-        appendText(builder, child.text!, this.marks(child.marks, extra))
+        this.append(builder, child.text!, this.marks(child.marks, extra))
       else if (name === 'hardbreak') builder.break()
       else if (name === 'footnote_reference') {
         this.lost.add('footnote')
-        appendText(
+        this.append(
           builder,
           `[${String(child.attrs.label)}]`,
           this.marks(child.marks, extra),
         )
       } else if (name === 'inkkit_wiki_link') {
         this.lost.add('wiki-link')
-        appendText(
+        this.append(
           builder,
           String(
             child.attrs.label || child.attrs.target || child.attrs.raw || '',
@@ -124,7 +145,7 @@ class MarkdownReader {
       } else if (name === 'comment_inline') this.lost.add('comment')
       else if (name === 'html') {
         this.lost.add('literal')
-        appendText(
+        this.append(
           builder,
           String(child.attrs.value ?? ''),
           this.marks(child.marks, extra),
@@ -145,7 +166,7 @@ class MarkdownReader {
   private lines(text: string, marks: readonly RichTextMark[]): RichTextBlock[] {
     return text.split(/\r\n|[\n\r]/).map((line) => {
       const builder = new InlineBuilder()
-      appendText(builder, line, marks)
+      this.append(builder, line, marks)
       return { type: 'paragraph', content: builder.finish() }
     })
   }
@@ -348,12 +369,8 @@ export function richTextToMarkdown(
 ): { text: string; lost: readonly FormatLoss[] } {
   const lost = new Losses()
   const { schema } = ctx.get(editorViewCtx).state
-  const doc = richTextToProse(schema, document)
-  doc.descendants((node) => {
-    if (node.type.name === 'paragraph' && node.attrs.align)
-      lost.add('alignment')
-  })
-  const text = serialize(ctx, htmlBreaksInCells(doc))
+  const ready = markdownReady(document, lost)
+  const text = serialize(ctx, htmlBreaksInCells(richTextToProse(schema, ready)))
   // The Markdown must read back as the document less its alignment, or the conversion would lose
   // something it doesn't report.
   let reread: RichTextDocument | undefined
@@ -362,7 +379,7 @@ export function richTextToMarkdown(
   } catch {
     reread = undefined
   }
-  if (!reread || !sameDocument(reread, withoutAlignment(document)))
+  if (!reread || !sameDocument(reread, ready))
     throw new InkKitError(
       'preservation',
       'The document could not be written as Markdown that reads back the same',
@@ -370,19 +387,107 @@ export function richTextToMarkdown(
   return { text, lost: lost.list() }
 }
 
-function withoutAlignment(document: RichTextDocument): RichTextDocument {
-  const strip = (block: RichTextBlock): RichTextBlock =>
-    block.type === 'paragraph'
-      ? { type: 'paragraph', content: block.content }
-      : block.type === 'list'
-        ? {
-            ...block,
-            items: block.items.map((item) => ({
-              blocks: item.blocks.map(strip),
-            })),
-          }
-        : block
-  return { version: 1, blocks: document.blocks.map(strip) }
+/** Marks that show on a space: moving a space out of one changes what the reader sees. */
+const visibleOnSpace = new Set<RichTextMark['type']>([
+  'underline',
+  'strikethrough',
+  'link',
+])
+
+/**
+ * `content` as Markdown can write it. An emphasis, strikethrough, link or HTML mark can't start or
+ * end with a space, so leading and trailing spaces move outside the run, and a run of only spaces
+ * loses its marks. A code span keeps its spaces. Counts `mark-spaces` where a visible mark moved.
+ */
+function markdownInlines(
+  content: readonly RichTextInline[],
+  lost: Losses,
+): RichTextInline[] {
+  const builder = new InlineBuilder()
+  for (const inline of content) {
+    if (inline.type === 'break') {
+      builder.break()
+      continue
+    }
+    let marks = inline.marks ?? []
+    // A code span of only spaces is written without its other marks, and would otherwise run
+    // into a code span beside it; it keeps only its code mark.
+    if (
+      /^ +$/.test(inline.text) &&
+      marks.some((mark) => mark.type === 'code')
+    ) {
+      const kept = marks.filter((mark) => mark.type === 'code')
+      if (
+        marks.some(
+          (mark) => mark.type !== 'code' && visibleOnSpace.has(mark.type),
+        )
+      )
+        lost.add('mark-spaces')
+      marks = kept
+    }
+    const match = /^( *)([^]*?)( *)$/.exec(inline.text)!
+    const [, lead, core, trail] = match
+    if (
+      !marks.length ||
+      marks.some((mark) => mark.type === 'code') ||
+      (!lead && !trail)
+    ) {
+      builder.text(inline.text, marks)
+      continue
+    }
+    if (marks.some((mark) => visibleOnSpace.has(mark.type)))
+      lost.add('mark-spaces')
+    builder.text(lead!, [])
+    builder.text(core!, marks)
+    builder.text(trail!, [])
+  }
+  return builder.finish()
+}
+
+/**
+ * `document` as Markdown can hold it, with what that drops counted in `lost`: alignment, a mark's
+ * edge spaces, a paragraph's only line break, which Markdown reads back as an empty paragraph, and
+ * empty paragraphs at the end, which Markdown doesn't keep.
+ */
+function markdownReady(
+  document: RichTextDocument,
+  lost: Losses,
+): RichTextDocument {
+  const block = (item: RichTextBlock): RichTextBlock => {
+    if (item.type === 'paragraph') {
+      if (item.align) lost.add('alignment')
+      let content = markdownInlines(item.content, lost)
+      if (content.length === 1 && content[0]!.type === 'break') {
+        lost.add('empty-line')
+        content = []
+      }
+      return { type: 'paragraph', content }
+    }
+    if (item.type === 'list')
+      return {
+        ...item,
+        items: item.items.map((listItem) => ({
+          blocks: listItem.blocks.map(block),
+        })),
+      }
+    return {
+      type: 'table',
+      rows: item.rows.map((row) =>
+        row.map((cell) => ({ content: markdownInlines(cell.content, lost) })),
+      ),
+    }
+  }
+  const blocks = document.blocks.map(block)
+  // Markdown keeps no empty paragraph at the end of a document.
+  while (
+    blocks.length > 1 &&
+    blocks.at(-1)!.type === 'paragraph' &&
+    !(blocks.at(-1) as { content: unknown[] }).content.length
+  ) {
+    blocks.pop()
+    lost.add('empty-line')
+  }
+  return { version: 1, blocks }
 }
 
 /** Whether two documents are the same, counting one empty paragraph as an empty document. */
@@ -403,7 +508,15 @@ function sameDocument(a: RichTextDocument, b: RichTextDocument): boolean {
 export function richContentMarkdown(ctx: Ctx, content: Slice): string {
   const { schema } = ctx.get(editorViewCtx).state
   const empty = schema.topNodeType.createAndFill()!
-  const doc = new Transform(empty).replace(0, empty.content.size, content).doc
+  let doc = new Transform(empty).replace(0, empty.content.size, content).doc
+  try {
+    doc = richTextToProse(
+      schema,
+      markdownReady(proseToRichText(doc, false), new Losses()),
+    )
+  } catch {
+    // Content the rich text model can't read is written as it is.
+  }
   return serialize(ctx, htmlBreaksInCells(doc))
 }
 

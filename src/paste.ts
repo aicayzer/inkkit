@@ -356,6 +356,12 @@ export class PasteController {
         view,
         tr.setSelection(Selection.near(end, -1)).scrollIntoView(),
       )
+      // A paste the document can't hold is refused by its guard; it never fails silently.
+      if (slice.size && view.state.doc === state.doc)
+        throw new InkKitError(
+          'preservation',
+          'The paste was not applied because the RTF document cannot hold it there',
+        )
       return
     }
     const inCode = () =>

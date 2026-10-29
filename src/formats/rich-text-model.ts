@@ -39,7 +39,9 @@ export function linkProblem(href: string): string | undefined {
   if (!href) return 'a link needs an address'
   if (/[\u0000-\u001f\u007f-\u009f]/.test(href))
     return 'a link address cannot hold a control character'
-  return undefined
+  // An address follows the rule for text too, such as no lone surrogate.
+  const problem = textProblem(href)
+  return problem && `a link address ${problem.replace(/^text /, '')}`
 }
 
 /** The canonical order of marks. */

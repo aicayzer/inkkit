@@ -116,7 +116,11 @@ export const formatLossCodes = [
   'list-start',
   'list-item-blocks',
   'list-depth',
+  'link-underline',
+  'invalid-character',
   'alignment',
+  'mark-spaces',
+  'empty-line',
 ] as const
 export type FormatLossCode = (typeof formatLossCodes)[number]
 /** A document converted to another format, for the host to load as a new generation. */

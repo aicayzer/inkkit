@@ -1,10 +1,16 @@
-import { Fragment, Slice } from '@milkdown/kit/prose/model'
+import {
+  Fragment,
+  Slice,
+  type Mark,
+  type Node as ProseNode,
+} from '@milkdown/kit/prose/model'
 import type { EditorState } from '@milkdown/kit/prose/state'
 import { isSafeLinkTarget } from '../link-safety'
 import type {
   ClipboardInput,
   RichTextBlock,
   RichTextInline,
+  RichTextListItem,
   RichTextMark,
 } from '../types'
 import {
@@ -361,7 +367,7 @@ class Reader {
 }
 
 /** A list item's blocks as RTF holds them: one paragraph, then lists. Further paragraphs join the
- *  first as lines, and lists deeper than RTF can hold give their items as lines too. */
+ *  first as lines. Lists keep every level here; the paste lifts those deeper than RTF holds. */
 function itemBlocks(
   blocks: readonly RichTextBlock[],
   depth: number,
@@ -385,15 +391,11 @@ function itemBlocks(
       for (const row of block.rows) for (const cell of row) line(cell.content)
   }
   for (const block of blocks) {
-    if (block.type === 'list' && depth < maximumListDepth) nested.push(block)
+    if (block.type === 'list') nested.push(block)
     else if (block.type === 'paragraph' && !nested.length) {
       if (!lines) align = block.align
       line(block.content)
-    } else if (
-      block.type === 'paragraph' ||
-      block.type === 'table' ||
-      block.type === 'list'
-    ) {
+    } else {
       // Text after a nested list starts a line of the item's paragraph too.
       flatten(block)
     }
@@ -512,6 +514,72 @@ function asLines(blocks: readonly RichTextBlock[]): RichTextBlock[] {
   return [{ type: 'paragraph', content: builder.finish() }]
 }
 
+type ListBlock = RichTextBlock & { type: 'list' }
+
+/** `list`, at `depth` lists deep, with every level beyond the deepest RTF holds lifted to the
+ *  deepest: the items of a list that would be too deep become items of its parent list. */
+function liftDeepLevels(list: ListBlock, depth: number): ListBlock {
+  const flat = (deep: ListBlock): RichTextListItem[] =>
+    deep.items.flatMap((item) => [
+      { blocks: [item.blocks[0]!] },
+      ...item.blocks.slice(1).flatMap((nested) => flat(nested as ListBlock)),
+    ])
+  return {
+    ...list,
+    items: list.items.flatMap((item) => {
+      const [paragraph, ...nested] = item.blocks
+      const kept: RichTextBlock[] = []
+      const lifted: RichTextListItem[] = []
+      for (const child of nested as ListBlock[])
+        if (depth + 1 <= maximumListDepth)
+          kept.push(liftDeepLevels(child, depth + 1))
+        else lifted.push(...flat(child))
+      return [{ blocks: [paragraph!, ...kept] }, ...lifted]
+    }),
+  }
+}
+
+/**
+ * A paste of several blocks into a list item, which holds one paragraph: each paragraph becomes
+ * an item beside the one at the caret, at its level. The first joins the item at the caret, the
+ * text after the caret moves to the last, and a pasted list nests in the item before it.
+ */
+function listItemsSlice(
+  schema: EditorState['schema'],
+  blocks: readonly RichTextBlock[],
+  list: ProseNode,
+  depth: number,
+  marks: readonly Mark[],
+): Slice {
+  const empty: RichTextBlock = { type: 'paragraph', content: [] }
+  const items: RichTextListItem[] = []
+  for (const block of blocks) {
+    if (block.type === 'paragraph') items.push({ blocks: [block] })
+    else if (block.type === 'list') {
+      if (!items.length) items.push({ blocks: [empty] })
+      items.at(-1)!.blocks.push(block)
+    } else for (const line of asLines([block])) items.push({ blocks: [line] })
+  }
+  // The text after the caret needs a paragraph to join.
+  if (!items.length || items.at(-1)!.blocks.length > 1)
+    items.push({ blocks: [empty] })
+  const ordered = list.type.name === 'ordered_list'
+  const lifted = liftDeepLevels({ type: 'list', ordered, items }, depth)
+  const nodes = lifted.items.map((item) =>
+    schema.nodes.list_item!.create(
+      {
+        label: ordered ? '1.' : '•',
+        listType: ordered ? 'ordered' : 'bullet',
+        spread: false,
+        checked: null,
+      },
+      item.blocks.map((block) => proseBlock(schema, block, marks)),
+    ),
+  )
+  // Items at both ends open their paragraphs, which join the text around the selection.
+  return new Slice(Fragment.fromArray(nodes), 2, 2)
+}
+
 /**
  * The slice that `input` pastes into an RTF document at the selection. Explicit Markdown pastes as
  * its text, unparsed; HTML keeps what RTF can hold; plain text gives a paragraph for each line.
@@ -537,19 +605,22 @@ export function richTextPaste(
     blocks = textBlocks(input.text)
   let cell = false
   let lists = 0
+  let list: ProseNode | undefined
   for (let depth = $from.depth; depth > 0; depth--) {
-    const name = $from.node(depth).type.name
+    const node = $from.node(depth)
+    const name = node.type.name
     if (name === 'table_cell' || name === 'table_header') cell = true
-    if (name === 'bullet_list' || name === 'ordered_list') lists++
+    if (name === 'bullet_list' || name === 'ordered_list') {
+      lists++
+      list ??= node
+    }
   }
   if (cell) blocks = asLines(blocks)
-  else if (lists)
-    blocks = blocks.flatMap((block): RichTextBlock[] => {
-      if (block.type === 'table') return asLines([block])
-      if (block.type === 'list' && lists + 1 > maximumListDepth)
-        return asLines([block])
-      return [block]
-    })
+  // Pasted lists keep their levels as far as RTF goes.
+  else
+    blocks = blocks.map((block) =>
+      block.type === 'list' ? liftDeepLevels(block, lists + 1) : block,
+    )
   // Plain text takes the marks typing would: those stored for the next typed text, or else the
   // marks around it, but not a link, which ends where its text ends.
   const marks = plain
@@ -558,6 +629,12 @@ export function richTextPaste(
         (mark) => mark.type.name !== 'link',
       ))
     : []
+  if (
+    list &&
+    !cell &&
+    !(blocks.length === 1 && blocks[0]!.type === 'paragraph')
+  )
+    return listItemsSlice(schema, blocks, list, lists, marks)
   const nodes = blocks.map((block) => proseBlock(schema, block, marks))
   if (!nodes.length) return Slice.empty
   // Paragraphs at either end join the text around the selection.

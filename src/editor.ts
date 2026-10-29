@@ -1551,8 +1551,24 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     expectString(text, 'text')
     this.assertMutation(expectedGeneration)
     const before = this.session.capture()
+    const doc = this.editor.ctx.get(editorViewCtx).state.doc
     this.insertPlainText(text)
+    // An RTF paste that changes nothing was refused; it never fails silently.
+    if (text && this.refusedRichEdit(doc))
+      throw new InkKitError(
+        'preservation',
+        'The text was not pasted because the RTF document cannot hold it there',
+      )
     return !before.isCurrent()
+  }
+
+  /** Whether an RTF edit that should have changed `before` was refused. */
+  private refusedRichEdit(before: ProseNode): boolean {
+    return (
+      this.document.handler.richText != null &&
+      !this.literalSurface &&
+      this.editor.ctx.get(editorViewCtx).state.doc === before
+    )
   }
 
   private insertPlainText(text: string): void {
@@ -2110,7 +2126,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     expectString(search, 'search')
     expectString(replacement, 'replacement')
     this.assertMutation(expectedGeneration)
-    return this.search.replace(search, replacement, false) > 0
+    const doc = this.editor.ctx.get(editorViewCtx).state.doc
+    const replaced = this.search.replace(search, replacement, false) > 0
+    return replaced && (replacement === search || !this.refusedRichEdit(doc))
   }
 
   /** Replaces every non-overlapping match once and returns how many. */
@@ -2123,7 +2141,12 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     expectString(search, 'search')
     expectString(replacement, 'replacement')
     this.assertMutation(expectedGeneration)
-    return this.search.replace(search, replacement, true)
+    const doc = this.editor.ctx.get(editorViewCtx).state.doc
+    const count = this.search.replace(search, replacement, true)
+    // A replacement an RTF document can't hold is refused, so nothing was replaced.
+    return count && replacement !== search && this.refusedRichEdit(doc)
+      ? 0
+      : count
   }
 
   private outlineContext(): OutlineContext {
@@ -2193,11 +2216,12 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       this.source.replaceLiteralSelection(text, false)
       return true
     }
-    if (/[\r\n]/.test(text)) {
-      this.pasteAsPlainText(text)
-      return true
-    }
-    return insertNativeText(this.editor.ctx.get(editorViewCtx), text)
+    const doc = this.editor.ctx.get(editorViewCtx).state.doc
+    if (/[\r\n]/.test(text)) this.insertPlainText(text)
+    else if (!insertNativeText(this.editor.ctx.get(editorViewCtx), text))
+      return false
+    // Text an RTF document can't hold, such as U+0000, is refused.
+    return !(text && this.refusedRichEdit(doc))
   }
 
   /**
@@ -2454,6 +2478,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   ): boolean {
     this.assertAlive()
     const checked = formatOptions(command, options)
+    // A rich text link's address loses the spaces at its ends, as a pasted link's does.
+    if (checked?.destination !== undefined && this.document.handler.richText)
+      checked.destination = checked.destination.trim()
     if (checked?.destination !== undefined)
       this.checkDestination(checked.destination, 'options.destination')
     this.assertMutation(expectedGeneration)
