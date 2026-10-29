@@ -175,8 +175,7 @@ export function codeControlsPlugin(
                       }
                       search.addEventListener('input', render)
                       popup.addEventListener('pointerdown', () => {
-                        if (popup)
-                          popup.dataset.inkkitInputModality = 'pointer'
+                        if (popup) popup.dataset.inkkitInputModality = 'pointer'
                       })
                       popup.addEventListener('keydown', (event) => {
                         if (

@@ -1307,7 +1307,8 @@
 .inkkit-root .inkkit-code-language-list button:hover,
 .inkkit-root
   .inkkit-code-language-menu[data-inkkit-input-modality='keyboard']
-  .inkkit-code-language-list button:focus,
+  .inkkit-code-language-list
+  button:focus,
 .inkkit-root .inkkit-code-language-list button[aria-pressed='true'] {
   background: color-mix(in srgb, CanvasText 8%, transparent);
 }
