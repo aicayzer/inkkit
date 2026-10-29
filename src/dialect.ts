@@ -92,6 +92,7 @@ import {
 import { references, remarkReferencesPlugin } from './references'
 import { callouts, remarkCalloutsPlugin } from './callouts'
 import { inlineHighlight } from './inline-highlight'
+import { htmlMarks, htmlMarkTypes } from './inline-html-marks'
 import { smartPunctuation } from './smart-punctuation'
 import { comments, remarkCommentsPlugin } from './comments'
 import { hiddenCommentEditing } from './hidden-comments'
@@ -146,8 +147,15 @@ function balanced(url: string): boolean {
 // Formatting a bare address can sit inside. Its delimiters are punctuation,
 // which may come before an address, and those of emphasis and strikethrough
 // are also characters an address does not end with, so what follows them
-// decides whether the address runs on.
-const wrappers = new Set(['emphasis', 'strong', 'delete', 'highlight'])
+// decides whether the address runs on. An address always ends at the `<` of
+// an HTML tag, so nothing beyond one can run into it.
+const wrappers = new Set([
+  'emphasis',
+  'strong',
+  'delete',
+  'highlight',
+  ...htmlMarkTypes,
+])
 const transparent = new Set(['emphasis', 'strong', 'delete'])
 const blocks = new Set(['paragraph', 'heading', 'tableCell'])
 
@@ -207,7 +215,7 @@ function writesBare(node: Link, index: number, ancestors: Parents[]): boolean {
             ? beforeURL.test(sibling.value) && !sibling.value.endsWith('/')
             : follows(parent, sibling))
         )
-      if (blocks.has(parent.type)) return true
+      if (blocks.has(parent.type) || htmlMarkTypes.has(parent.type)) return true
       if (!wrappers.has(parent.type)) return false
       if (step < 0 || !transparent.has(parent.type)) return step < 0
       current = parent
@@ -378,7 +386,8 @@ const formOf = (node: Link): LinkForm =>
 
 // Formatting around a whole address is written outside it, as `*https://…*`,
 // so that the address stays bare or in angle brackets. A bare address ends
-// before `*`, `_` and `~`, but would run into other delimiters such as `==`.
+// before `*`, `_`, `~` and the `<` of a tag, but would run into other
+// delimiters such as `==`.
 function formattedOutside(node: Link): PhrasingContent | undefined {
   const literal = formOf(node) === 'literal'
   const wrappers: Array<PhrasingContent & { children: PhrasingContent[] }> = []
@@ -389,7 +398,8 @@ function formattedOutside(node: Link): PhrasingContent | undefined {
     'children' in inner &&
     inner.type !== 'link' &&
     inner.children.length === 1 &&
-    (!literal || ['emphasis', 'strong', 'delete'].includes(inner.type))
+    (!literal ||
+      ['emphasis', 'strong', 'delete', ...htmlMarkTypes].includes(inner.type))
   ) {
     wrappers.push(inner as PhrasingContent & { children: PhrasingContent[] })
     inner = inner.children[0]
@@ -1038,6 +1048,7 @@ export function createDialect(
     comments,
     hiddenCommentEditing,
     inlineHighlight,
+    htmlMarks,
     preservingCodeBlocks,
     authoredSourcesCtx,
     codeBlockInputRule,

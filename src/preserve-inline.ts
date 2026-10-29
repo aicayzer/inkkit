@@ -9,6 +9,7 @@ import {
   lf,
 } from './preserve-shape'
 import { regutter } from './preserve-list'
+import { htmlMarkTypes } from './inline-html-marks'
 
 // The text Markdown inline source reads as, with the source offset of each of
 // its characters; undefined where it holds more than escapes and entities, or
@@ -499,10 +500,12 @@ export function rewrittenAddress(
   }
   // Delimiters open and close the same beside a space or punctuation, but
   // not always beside other text; where that changed, the formatting takes
-  // the form the edited document writes.
+  // the form the edited document writes. HTML tags open and close the same
+  // beside anything.
   const kind = (text: string) => text === '' || /^[\s\p{P}\p{S}]/u.test(text)
   if (
     formatting.has(old.type) &&
+    !htmlMarkTypes.has(old.type) &&
     (kind(following[0]!) !== kind(following[1]!) ||
       kind(preceding[0]!) !== kind(preceding[1]!)) &&
     slice(old, source) !== slice(now, canonical)

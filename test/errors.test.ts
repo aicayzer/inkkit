@@ -138,7 +138,7 @@ test('each bad argument throws invalid-argument and changes nothing', () =>
       ['find text', () => editor.find(bad(1))],
       ['replace replacement', () => editor.replace('text', bad(1))],
       ['replaceAll search', () => editor.replaceAll(bad(null), 'x')],
-      ['format command', () => editor.format(bad('underline'))],
+      ['format command', () => editor.format(bad('overline'))],
       ['format heading level', () => editor.format(bad('heading'))],
       ['format options', () => editor.format('bold', bad('x'))],
       [
@@ -227,7 +227,7 @@ test('each bad argument throws invalid-argument and changes nothing', () =>
         () => editor.setTextInputPreferences(bad({ spellCheck: true })),
       ],
       ['setCommentsVisible', () => editor.setCommentsVisible(bad(1))],
-      ['setKeymap name', () => editor.setKeymap(bad({ underline: ['Mod-u'] }))],
+      ['setKeymap name', () => editor.setKeymap(bad({ overline: ['Mod-u'] }))],
       [
         'setKeymap old heading name',
         () => editor.setKeymap(bad({ heading: ['Mod-h'] })),
@@ -305,8 +305,7 @@ test('async methods reject bad arguments instead of throwing', () =>
       () => InkKitEditor.mount(root, bad({ ...events, error: 'log' })),
       () => InkKitEditor.mount(root, events, bad({ editable: 'yes' })),
       () => InkKitEditor.mount(root, events, bad({ theme: 'dark' })),
-      () =>
-        InkKitEditor.mount(root, events, bad({ keymap: { underline: [] } })),
+      () => InkKitEditor.mount(root, events, bad({ keymap: { overline: [] } })),
       () => InkKitEditor.mount(root, events, bad({ labels: { copyCode: 1 } })),
     ])
       await expect(mount()).rejects.toEqual(code('invalid-argument'))

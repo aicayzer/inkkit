@@ -1,6 +1,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Root } from 'mdast'
 import { lineBreakHTML } from './literals'
+import { htmlMarkTypes } from './inline-html-marks'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { type SourceNode } from './preserve-types'
 
@@ -46,7 +47,13 @@ export function signature(node: SourceNode): string {
   })
 }
 
-export const formatting = new Set(['emphasis', 'strong', 'delete', 'highlight'])
+export const formatting = new Set([
+  'emphasis',
+  'strong',
+  'delete',
+  'highlight',
+  ...htmlMarkTypes,
+])
 
 const linkTypes = new Set(['link', 'linkReference'])
 
@@ -168,6 +175,7 @@ export const inlineParents = new Set([
   'strong',
   'delete',
   'highlight',
+  ...htmlMarkTypes,
   'link',
 ])
 

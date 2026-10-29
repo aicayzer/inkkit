@@ -35,7 +35,6 @@ const rich = new Set([
   'TD',
   'IMG',
   'SPAN',
-  'SUP',
   'DIV',
   'FONT',
   'SECTION',
@@ -47,10 +46,14 @@ const rich = new Set([
 // Document furniture and form inputs hold no content of their own. A
 // template never keeps `head`, so it is not listed.
 const dropped = new Set(['STYLE', 'META', 'LINK', 'TITLE', 'SOURCE', 'INPUT'])
-// The dialect has no underline, subscript or similar marks, so these keep
-// their children and lose only the wrapper.
+// These keep their children and lose only the wrapper. Markdown has no
+// syntax for most of them. Underline, superscript and subscript are saved as
+// raw HTML tags, which CommonMark without raw HTML reads as text, so HTML
+// import keeps their text only. A footnote reference arrives as `sup` too,
+// once its metadata is removed, and also imports as its text.
 const unwrapped = new Set([
   'U',
+  'SUP',
   'SUB',
   'SMALL',
   'TIME',
@@ -355,7 +358,6 @@ const inline = new Set([
   'STRIKE',
   'A',
   'SPAN',
-  'SUP',
   'FONT',
 ])
 const space = /[ \t\r\n\f]+/g

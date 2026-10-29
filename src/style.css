@@ -912,6 +912,30 @@
   color: inherit;
 }
 
+.inkkit-root .ProseMirror u {
+  text-decoration-line: underline;
+  text-decoration-thickness: var(--inkkit-underline-thickness, auto);
+  text-underline-offset: var(--inkkit-underline-offset, auto);
+}
+
+/* Shifted rather than vertically aligned, so a line holding them keeps its
+   height. A footnote reference is also a `sup` and keeps its own style. */
+.inkkit-root .ProseMirror sup:not([data-inkkit-footnote-reference]),
+.inkkit-root .ProseMirror sub {
+  position: relative;
+  font-size: var(--inkkit-script-size, 0.75em);
+  line-height: 0;
+  vertical-align: baseline;
+}
+
+.inkkit-root .ProseMirror sup:not([data-inkkit-footnote-reference]) {
+  top: calc(var(--inkkit-superscript-shift, 0.5em) * -1);
+}
+
+.inkkit-root .ProseMirror sub {
+  bottom: calc(var(--inkkit-subscript-shift, 0.25em) * -1);
+}
+
 .inkkit-root .ProseMirror .inkkit-callout {
   --_inkkit-callout-color: var(--_inkkit-accent);
   border-inline-start: 3px solid var(--_inkkit-callout-color);

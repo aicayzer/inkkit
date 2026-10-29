@@ -143,7 +143,15 @@ import { diagramsAvailable, DiagramStore } from './mermaid'
 
 /** An inline format that `CaretState` can report. */
 export type Mark =
-  'bold' | 'italic' | 'strikethrough' | 'highlight' | 'code' | 'link'
+  | 'bold'
+  | 'italic'
+  | 'strikethrough'
+  | 'highlight'
+  | 'underline'
+  | 'superscript'
+  | 'subscript'
+  | 'code'
+  | 'link'
 
 /** The kind of block that holds the start of the selection. Any other block reports `paragraph`. */
 export type Block =
@@ -179,6 +187,9 @@ const formatCommands = [
   'italic',
   'strikethrough',
   'highlight',
+  'underline',
+  'superscript',
+  'subscript',
   'code',
   'codeBlock',
   'quote',
