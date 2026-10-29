@@ -5,6 +5,7 @@ import { scenarios as sourceRedo } from './source-redo.mjs'
 import { scenarios as structuralDeletion } from './structural-deletion.mjs'
 import { scenarios as longList } from './long-list.mjs'
 import { scenarios as imageDrag } from './image-drag.mjs'
+import { scenarios as richText } from './rich-text.mjs'
 
 const families = {
   'native-literal-paste': literalPaste,
@@ -14,6 +15,7 @@ const families = {
   'native-structural-deletion': structuralDeletion,
   'native-image-drag': imageDrag,
   'native-long-list': longList,
+  'native-rich-text': richText,
 }
 export const probeScenarios = Object.assign({}, ...Object.values(families))
 export const probeGroups = Object.fromEntries(
@@ -23,7 +25,9 @@ export const probeGroups = Object.fromEntries(
   ]),
 )
 probeGroups['native-editing'] = Object.entries(families)
-  .filter(([name]) => name !== 'native-image-drag')
+  .filter(
+    ([name]) => name !== 'native-image-drag' && name !== 'native-rich-text',
+  )
   .flatMap(([, scenarios]) => Object.keys(scenarios))
 
 const contracts = {
@@ -41,6 +45,8 @@ const contracts = {
     'Trusted AppKit Enter, typing and structural Backspaces, exact bytes, shared undo/redo and save/reopen.',
   'native-image-drag':
     'WKWebView drag data observed by an AppKit destination; drop refused.',
+  'native-rich-text':
+    'An RTF document loaded through the facade, trusted AppKit typing and a host underline key.',
 }
 for (const [family, scenarios] of Object.entries(families))
   for (const scenario of Object.values(scenarios))
