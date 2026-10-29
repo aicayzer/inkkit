@@ -66,8 +66,8 @@ export const EditorDemo = ({
 <div class="actions" role="toolbar" aria-label="Editor controls">
 <div class="switch" role="group" aria-label="View"><button type="button" id="formatted" class="tool" aria-label="Formatted" title="Formatted" aria-pressed="true" disabled>${icons.formatted}</button><button type="button" id="source" class="tool" aria-label="Source" title="Source" aria-pressed="false" disabled>${icons.source}</button></div>
 <div class="tools">
-<button type="button" id="find" class="tool" aria-label="Find" title="Find" aria-expanded="false" aria-controls="findbar" disabled>${icons.find}</button>
 ${tool('undo', 'undo', 'Undo')}${tool('redo', 'redo', 'Redo')}
+<button type="button" id="find" class="tool" aria-label="Find" title="Find" aria-expanded="false" aria-controls="findbar" disabled>${icons.find}</button>
 <button type="button" id="copy" class="tool" aria-label="Copy Markdown" title="Copy Markdown" disabled><span class="glyph">${icons.copy}</span><span class="glyph glyph-done">${icons.done}</span></button>
 ${tool('reset', 'reset', 'Reset')}
 </div>
@@ -95,7 +95,7 @@ ${tool('reset', 'reset', 'Reset')}
 :root { color-scheme: light dark; --line: light-dark(#e5e5e5,#292929); --hover: light-dark(#f0f0f0,#252525); --muted: light-dark(#6b6b6b,#a3a3a3); --ring: light-dark(#2563eb,#60a5fa); }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { margin: 0; font: 13px/1.5 system-ui,sans-serif; color: CanvasText; background: ${fullPage ? 'transparent' : 'light-dark(#fff,#0b0b0b)'}; }
+body { margin: 0; font: 13px/1.5 system-ui,sans-serif; color: CanvasText; background: light-dark(#fff,#0b0b0b); }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
 header span { opacity: .6; }
 nav { display: flex; gap: 4px; }
@@ -106,11 +106,17 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline: 2px sol
 .top { padding-inline: 24px; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-block: 8px; }
 .actions,.switch,.tools { display: flex; align-items: center; gap: 2px; }
-.actions { gap: 8px; }
-.switch button[aria-pressed=true] { background: var(--hover); }
+.actions { gap: 8px; flex: 1 1 auto; }
+#focus { margin-inline-start: auto; }
+.switch { gap: 0; padding: 2px; border-radius: 7px; background: var(--hover); }
+.switch button { border-radius: 5px; }
+.switch button[aria-pressed=true] { background: light-dark(#fff,#414141); box-shadow: 0 1px 2px #0002; }
 .appearance { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.appearance label { display: inline-flex; align-items: center; color: var(--muted); font-size: 12px; }
-.appearance select { max-width: 100%; padding: 4px 8px; border: 1px solid var(--line); border-radius: 5px; background: Canvas; color: CanvasText; font: inherit; }
+.appearance label { position: relative; display: inline-flex; align-items: center; color: var(--muted); font-size: 12px; }
+.appearance label::after { content: ''; position: absolute; right: 10px; top: 50%; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.appearance select { appearance: none; max-width: 100%; padding: 6px 28px 6px 8px; border: 0; border-radius: 5px; background: transparent; color: CanvasText; font: inherit; cursor: pointer; }
+.appearance select:hover { background: var(--hover); }
+.appearance option { background: Canvas; color: CanvasText; }
 .tool { display: inline-flex; align-items: center; justify-content: center; padding: 6px; }
 .tool svg { display: block; flex: none; }
 .sr-only,.demo-status:not(.status-error) { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
@@ -119,7 +125,7 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline: 2px sol
 .findbar { display: flex; align-items: center; gap: 4px; padding-bottom: 8px; }
 .findbar input { flex: 1; min-width: 0; font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
 .demo-status.status-error { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
-#editor { ${fullPage ? '' : '--inkkit-reading-width: 100%; '} --inkkit-padding-inline: 24px; --inkkit-surface-focus-width: 0; min-height: 410px; padding-block: 18px; }
+#editor { ${fullPage ? '--inkkit-column-inset: max(var(--inkkit-padding-inline), calc((100% - 740px) / 2)); --inkkit-background-color: transparent;' : '--inkkit-reading-width: 100%;'} --inkkit-padding-inline: 24px; --inkkit-surface-focus-width: 0; min-height: 410px; padding-block: 18px; }
 .compact-status:empty { display: none; }
 .compact-status { font-size: 12px; opacity: .65; padding: 0 24px 12px; margin: 0; }
 @media(max-width:520px) { .bar { gap: 8px; } .tool { padding: 7px; } .top { padding-inline: 16px; } }
