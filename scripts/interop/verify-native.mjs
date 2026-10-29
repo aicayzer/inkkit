@@ -45,7 +45,7 @@ const contains = (path, includes, name) => ({
 const source =
   '\uFEFF# Preserved heading\r\n\r\nBefore [Alpha][Authored] and [Authored][] and [Authored], repeated[^Note].\r\n\r\n[Authored]: <https://example.com/original> "Shared title"\r\n\r\n[^Note]: Footnote body with [nested][Authored].\r\n\r\n    Second paragraph.\r\n\r\n[Unused]: https://example.com/unused\r\n\r\n[Unresolved][Missing]\r\n'
 const scenarios = {
-  'diagnostics-input-and-refusal': {
+  'native-diagnostics-input-and-refusal': {
     source: '### DIAGNOSTIC-CANARY &amp; \\*keep\\*\r\n',
     operations: [
       { op: 'diagnosticReport', name: 'disabled' },
@@ -3218,7 +3218,7 @@ scenarios['host-keyboard-open-links'] = {
 }
 const names = Object.keys(scenarios)
 const groups = {
-  diagnostics: ['diagnostics-input-and-refusal'],
+  diagnostics: ['native-diagnostics-input-and-refusal'],
   core: [
     'reference-lifecycle',
     'source-spelling-cross-mode-history',
@@ -3247,6 +3247,9 @@ const groups = {
 }
 for (const [name, fixture] of Object.entries(scenarios))
   scenarios[name] = { fixture }
+scenarios['native-diagnostics-input-and-refusal'].native = [
+  { key: 'x', collapsed: false, selection: 'DIAGNOSTIC-CANARY' },
+]
 Object.assign(scenarios, probeScenarios)
 Object.assign(groups, probeGroups)
 const selected = new Set()
