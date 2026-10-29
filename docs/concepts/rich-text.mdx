@@ -17,17 +17,21 @@ Inkkit never reads or writes RTF itself. Apple's text system reads RTF reliably 
 
 ## What an RTF document keeps
 
-| Kept                                                                                       | Dropped by the converter                 |
-| ------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| Paragraphs, with left, centered, right and justified alignment                             | Fonts and font sizes                     |
-| Bulleted and numbered lists, nested up to 9 levels, with a starting number                 | Text and background colors, highlighting |
-| Simple tables, with the same number of cells in every row                                  | Indents, spacing, tab stops and kerning  |
-| Line breaks inside a paragraph or cell                                                     |                                          |
-| Bold, italic, underline, strikethrough, superscript, subscript, monospace (code) and links |                                          |
+| Kept                                                                                               | Dropped by the converter                 |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Paragraphs, with left, centered, right and justified alignment                                     | Fonts and font sizes                     |
+| Bulleted and numbered lists, nested up to 9 levels, with a starting number from 1 to 2,147,483,647 | Text and background colors, highlighting |
+| Simple tables, with the same number of cells in every row                                          | Indents, spacing, tab stops and kerning  |
+| Line breaks inside a paragraph or cell                                                             |                                          |
+| Bold, italic, underline, strikethrough, superscript, subscript, monospace (code) and links         |                                          |
 
 Inkkit's own style replaces what the converter drops. That is the `structure` promise: saving keeps the structure and marks, and **the first save after an edit rewrites the whole file in Inkkit's style**, the style of TextEdit's default document. An unedited document is never written by Inkkit, so your app can keep the original bytes until the person changes something.
 
 A link's underline is how the link is drawn, so a run with a link never also has underline: the converter and Inkkit both remove it, and the underline command is unavailable on link text.
+
+**One link rule.** A link keeps any address that isn't empty and has no control character, such as `http://[`, whether it was loaded, added or pasted, and the converter writes it back unchanged. The converter refuses to write a document with two different addresses that RTF would store the same, such as `http://[` and `http://%5B`, rather than merge them. A link that a person adds or pastes must also pass Inkkit's [link safety](/reference/options#editor-options): a relative address, or an `http`, `https`, `mailto` or `tel` address or a scheme in `linkSchemes`. A link loaded from a file keeps its address whatever its scheme, and Inkkit opens it only when link safety allows.
+
+**Text.** A run never holds a line or paragraph separator, U+FFFC, U+0000 or a lone surrogate. Loading refuses such a document, and an edit that would leave one in the text is refused and changes nothing.
 
 ### Refused, never dropped
 
@@ -55,15 +59,15 @@ The format commands `alignLeft`, `alignCenter`, `alignRight` and `alignJustify` 
 
 A paste into an RTF document keeps what RTF holds:
 
-- **HTML** keeps paragraphs and their alignment, lists, tables, line breaks and the eight marks, including from styled spans such as a word processor writes. Headings become bold paragraphs, code blocks become paragraphs in code, and quotes and other containers give up their paragraphs. Images, rules and anything that shows no text are left out. Pasted HTML is read without running it, and a link whose address Inkkit wouldn't open keeps its text without the link.
-- **Plain text** pastes a paragraph for each line, with the marks of the text around it.
+- **HTML** keeps paragraphs and their alignment, lists, tables, line breaks and the eight marks, including from styled spans such as a word processor writes. Headings become bold paragraphs, code blocks become paragraphs in code, and quotes and other containers give up their paragraphs. Images, rules and anything that shows no text are left out. Whitespace between tags, such as indentation, makes no paragraph or list item, while an empty `<p></p>` is an empty paragraph; a break that ends a block is dropped, as a browser draws it. A table whose cells span rows becomes one paragraph for each row, with its cells separated by tabs, because spanned cells would shift; cells that span columns keep the table, padded with empty cells. Pasted HTML is read without running it, and a link whose address Inkkit wouldn't open keeps its text without the link.
+- **Plain text** pastes a paragraph for each line. Every paragraph separator, including a final one, starts a new paragraph, so typing or pasting `'\n'` at the end of a paragraph leaves the caret in a new one; a line separator (U+2028) is a line break. The text takes the marks the next typed text would: those you set at the caret, or else those of the text around it.
 - **Explicit Markdown** in `ClipboardInput.markdown` pastes as its text, unparsed.
 
 A paste into a table cell keeps to the cell, as lines of it, and a table pasted into a list item becomes lines of tab-separated cells.
 
 ## Copy and print
 
-Copying gives readable text and semantic HTML, with `<u>`, `<sup>` and `<sub>` for underline, superscript and subscript and `text-align` for alignment. [`clipboardSnapshot`](/reference/editor#clipboardsnapshot) returns the readable text as `markdown` too, since an RTF document has no Markdown source. [`printableSnapshot`](/reference/editor#printablesnapshot) prints the document with its marks and alignment.
+Copying gives readable text and semantic HTML, with `<u>`, `<sup>` and `<sub>` for underline, superscript and subscript and `text-align` for alignment. [`clipboardSnapshot`](/reference/editor#clipboardsnapshot) also returns `markdown`, the copied content written as Markdown, so text such as `**literal**` stays text when it is pasted into a Markdown document; alignment is left out. [`printableSnapshot`](/reference/editor#printablesnapshot) prints the document with its marks and alignment.
 
 ## Convert between Markdown and RTF
 

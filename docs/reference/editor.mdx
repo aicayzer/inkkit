@@ -254,9 +254,9 @@ A `FormatLoss` names one kind of content a conversion couldn't keep.
 | `'file'`             | Markdown, RTF | A file embed was left out.                                                                                        |
 | `'wiki-link'`        | Markdown, RTF | A wiki link became its text.                                                                                      |
 | `'literal'`          | Markdown, RTF | Markdown kept as authored, or raw HTML, became its source as text.                                                |
-| `'link'`             | Markdown, RTF | A link with an empty address became its text.                                                                     |
+| `'link'`             | Markdown, RTF | A link with an empty address, or one with a control character, became its text.                                   |
 | `'table-alignment'`  | Markdown, RTF | A table lost its column alignment.                                                                                |
-| `'list-start'`       | Markdown, RTF | A numbered list that started below 1 starts at 1.                                                                 |
+| `'list-start'`       | Markdown, RTF | A numbered list that started below 1 starts at 1, and one above 2,147,483,647 starts at 2,147,483,647.            |
 | `'list-item-blocks'` | Markdown, RTF | A list item's further paragraphs, code or table became lines of its first paragraph, since an RTF item holds one. |
 | `'list-depth'`       | Markdown, RTF | Lists deeper than 9 levels became lines of the item at the ninth level.                                           |
 | `'alignment'`        | RTF, Markdown | A centered, right-aligned or justified paragraph became left-aligned.                                             |
@@ -279,7 +279,7 @@ A `RichTextDocument` is a whole RTF document.
 A `RichTextBlock` is one of three blocks, told apart by `type`:
 
 - `{ type: 'paragraph', align?, content }`: a paragraph of `RichTextInline` content. `align` is `'center'`, `'right'` or `'justify'`, and absent for left alignment.
-- `{ type: 'list', ordered, start?, items }`: a bulleted or numbered list of `RichTextListItem`s. `start` is a numbered list's first number, 1 or more, and absent for 1. Lists nest up to 9 levels.
+- `{ type: 'list', ordered, start?, items }`: a bulleted or numbered list of `RichTextListItem`s. `start` is a numbered list's first number, from 1 to 2,147,483,647, the largest that RTF writes and reads back, and absent for 1. Lists nest up to 9 levels.
 - `{ type: 'table', rows }`: a table of rows of `RichTextTableCell`s. It has at least one row and one cell, every row has the same number of cells, and it can't be inside a list.
 
 {/* @api RichTextListItem */}
@@ -301,10 +301,10 @@ A `RichTextTableCell` is one table cell.
 | `content` | `RichTextInline[]` | The cell's text and line breaks, as one line of content. |
 
 {/* @api RichTextInline */}
-A `RichTextInline` is `{ type: 'text', text, marks? }`, a run of text, or `{ type: 'break' }`, a line break inside a paragraph or cell. A run is never empty and never holds `\n`, `\r`, U+000B, U+000C, U+0085, U+2028, U+2029, U+FFFC or U+0000, or a lone surrogate.
+A `RichTextInline` is `{ type: 'text', text, marks? }`, a run of text, or `{ type: 'break' }`, a line break inside a paragraph or cell. A run is never empty and never holds `\n`, `\r`, U+000B, U+000C, U+0085, U+2028, U+2029, U+FFFC or U+0000, or a lone surrogate. An edit that would leave one in the text is refused.
 
 {/* @api RichTextMark */}
-A `RichTextMark` is `{ type }` for `'bold'`, `'italic'`, `'underline'`, `'strikethrough'`, `'superscript'`, `'subscript'` and `'code'`, or `{ type: 'link', href }` for a link. A run has each type at most once, never both superscript and subscript, and a link's `href` is never empty.
+A `RichTextMark` is `{ type }` for `'bold'`, `'italic'`, `'underline'`, `'strikethrough'`, `'superscript'`, `'subscript'` and `'code'`, or `{ type: 'link', href }` for a link. A run has each type at most once, never both superscript and subscript, and a link's `href` is never empty and has no control character. Any other address is kept as given, such as `http://[`; links that a person adds or pastes must also pass link safety.
 
 **Canonical form.** Inkkit's snapshots, and your converter's output, are canonical: marks are in the order above, a run with a link has no underline, adjacent runs with equal marks are merged, runs are in Unicode Normalization Form C, and `align` and `start` are left out for left alignment and 1. A load accepts a document that isn't canonical and puts it in canonical form; that alone doesn't make it dirty.
 
@@ -579,7 +579,7 @@ These members prepare content for a host that writes the native clipboard or pri
 
 `clipboardSnapshot(scope?: ClipboardScope, expectedGeneration?: number): Promise<ClipboardOutput>`
 
-Resolves with clipboard content and the version it was copied from. It rejects with `stale-document` if the document, its revision or the editing mode changes before the output is ready, and with `preservation` when the selection can't be written as Markdown. Resolve it before you touch the native clipboard, and keep the existing clipboard on failure. A missing image or diagram picture is reported in the `error` of its `ClipboardImage` or `ClipboardDiagram` entry, not as a rejection. From an RTF document, the output has no images or diagrams, and `markdown` is the readable `text`, since the document has no Markdown source: pasted into Markdown, it arrives as typed text.
+Resolves with clipboard content and the version it was copied from. It rejects with `stale-document` if the document, its revision or the editing mode changes before the output is ready, and with `preservation` when the selection can't be written as Markdown. Resolve it before you touch the native clipboard, and keep the existing clipboard on failure. A missing image or diagram picture is reported in the `error` of its `ClipboardImage` or `ClipboardDiagram` entry, not as a rejection. From an RTF document, the output has no images or diagrams, and `markdown` is the copied content written as Markdown, without alignment: text such as `**literal**` is escaped, so it stays text.
 
 {/* @api ClipboardOutput */}
 A `ClipboardOutput` combines the copied content with `DocumentVersion`, so the host can identify the revision it copied.
