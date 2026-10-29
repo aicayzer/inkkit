@@ -15,9 +15,8 @@ for (const { name, key, tag } of marks)
     openFixture,
   }) => {
     await openFixture()
-    // The reference sits in the other block: an edit can still respell one in its own block (#430).
     const source =
-      'Keep these words here\r\n\r\nOther &amp; <u>kept</u> line\r\n'
+      'Keep &amp; \\*literal\\* these words here\r\n\r\nOther &amp; <u>kept</u> line\r\n'
     await operation(page, 'reload', { text: source })
     await operation(page, 'keymap', {
       keymap: {
@@ -67,4 +66,7 @@ for (const { name, key, tag } of marks)
     await expect(marked('words')).toHaveCount(0)
     // The other block's tags were never rewritten.
     expect(await saved(page)).toContain('Other &amp; <u>kept</u> line\r\n')
+    await operation(page, 'reload', { text: typed })
+    await expect.poll(() => saved(page)).toBe(typed)
+    await expect(marked('worXds')).toHaveCount(1)
   })
