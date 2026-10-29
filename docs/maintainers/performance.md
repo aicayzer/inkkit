@@ -1,5 +1,57 @@
 # Performance evidence
 
+## List and source input, 29 October 2026
+
+Compared released 0.3.5 (`b4f5822`) with the 0.3.6 runtime candidate (`8ddeb8c`) on Apple M4 (10 cores, 16 GB), macOS 27.0, Node.js 26.11.0, pnpm 11.0.9, Playwright 1.64.0, Chromium 156.0.8078.4 and WebKit 27.2. System WKWebView uses the same machine and its 60 Hz display. The candidate includes the independently merged format-list option and inline marks in #429 and #431. These are interaction measurements, separate from package or test-suite elapsed times.
+
+Five paired browser rounds used baseline/candidate order, then candidate/baseline, alternating the order each round. Each action has five fresh-page samples per engine and condition. Two paired native rounds reversed their order, with five trusted AppKit keys per phase, giving ten samples per phase and condition. Every phase uses a fresh document. A process monitor recorded **178 samples with no competing test or build job**. Background services remained active and an existing development server stayed idle. All measured correctness checks passed.
+
+Use the same harness from the candidate in both checkouts, with each checkout's own frozen dependencies. Set `INKKIT_MEASURE_RUNS=1` for each browser round and a separate output directory for every run. The browser fixture builds before timing; setup, document load, selection and saving are outside the measured keydown-to-next-frame interval.
+
+```sh
+INKKIT_BROWSER_FIXTURE=built INKKIT_PLAYGROUND_PORT=4193 \
+  INKKIT_MEASURE=_local/performance/round INKKIT_MEASURE_RUNS=1 \
+  node scripts/test-browser.mjs --project=chromium --project=webkit \
+  test/browser/measure-editing-input.spec.ts
+INKKIT_MEASURE_RUNS=5 node scripts/interop/verify-long-source.mjs \
+  ARCHIVE BUNDLE OUTPUT HOST
+```
+
+The browser probe mounts the public core facade in the shared fixture, without playground observation or control refresh in the timed path. Native consumers use each condition's actual package archive. All timings include the complete input work through the next frame and timer. No reset or deferred work is excluded from an input measurement.
+
+### Long task list
+
+The fixture has 5,000 single-line `+ [ ]` items, Unicode and CRLF endings. At item 2,500, a trusted Enter splits the list item, the next trusted key types `x`, and a trusted Backspace at the new item's start joins the items while retaining two paragraphs. A matched 5,000-paragraph document supplies the control. All before/after saved-output hashes agree in both engines; unchanged neighbours and exact save/reopen bytes are asserted.
+
+Values are **median (minimum–maximum), in milliseconds**.
+
+| Action    |   Chromium baseline | Chromium candidate | WebKit baseline | WebKit candidate |
+| --------- | ------------------: | -----------------: | --------------: | ---------------: |
+| enter     |   758.1 (756–759.9) |   45.9 (45.2–46.4) |   911 (805–929) |       68 (65–70) |
+| typing    | 715.3 (713.1–721.1) |   19.9 (19.8–20.5) |   942 (788–952) |       37 (36–39) |
+| backspace |   730 (718.2–743.7) |   18.5 (18.1–29.8) |   908 (767–927) |       51 (49–52) |
+
+Candidate paragraph-control medians were **14.2 / 12.1 / 9.5 ms** in Chromium and **21 / 16 / 14 ms** in WebKit, for Enter / typing / Backspace. List actions still cost more than paragraph controls, but now complete in tens of milliseconds rather than approximately 0.7–0.9 seconds on this fixture. These five-sample results do not establish tail latency or equal rendering cost.
+
+The correction has three parts: validate affected item runs with their neighbours instead of reparsing the whole list; refresh task-checkbox labels only where items changed; and use binary search over ProseMirror's sorted decoration-child offsets. A read-only transition still updates all task controls. Deterministic facade regressions fail on the baseline: a structural edit reads/writes over a million preservation characters instead of fewer than 10,000; one edit rewrites 500 checkbox labels instead of fewer than ten; a decoration lookup reads 1,026 offsets instead of fewer than 32. Each regression also checks exact saving, history and reopening. Four hundred independent list seeds compare accepted edits with the complete preservation path.
+
+Ordered-list renumbering, carried moves, repeated item openings with ambiguous authored spelling, unsafe HTML/comment contexts and empty introductions to multi-block items retain complete validation. Simple, uniquely named items with canonical gaps can delimit independent distant runs; more complex lists use one checked span or the whole document. These fallbacks retain existing saved bytes and can retain the older cost.
+
+### Source typing and the remaining limit
+
+The source fixture has 10,000 Unicode paragraphs, 478,888 UTF-8 bytes and CRLF endings. Keys are inserted at offset 20 after entering source mode, undo, redo or a 500-paragraph plain paste. The textarea, focus, selection and exact saved/reopened bytes pass. Source input runtime code is unchanged by this patch.
+
+| Phase | Chromium baseline | Chromium candidate | WebKit baseline | WebKit candidate | WKWebView baseline | WKWebView candidate |
+| ----- | ----------------: | -----------------: | --------------: | ---------------: | -----------------: | ------------------: |
+| entry |  14.8 (14.3–17.1) |     16.8 (14.5–17) |      44 (41–45) |       42 (41–43) |         65 (41–68) |          64 (43–67) |
+| undo  |  10.9 (10.5–24.6) |   10.8 (10.3–10.9) |      37 (37–39) |       38 (38–39) |         60 (35–62) |          59 (36–64) |
+| redo  |  11.5 (11.1–24.5) |     11.2 (11–24.2) |      38 (37–41) |       38 (37–40) |       60.5 (38–62) |        60.5 (37–63) |
+| paste |  12.4 (12.1–26.4) |   12.5 (12.3–12.6) |      38 (38–40) |       41 (37–42) |         63 (40–64) |        62.5 (38–64) |
+
+**The under-35 ms criterion in [#206](https://github.com/aicayzer/inkkit/issues/206) remains unmet in WebKit and native WKWebView on this fixture.** Native ranges overlap, and this work demonstrates no source-typing improvement. Correctness passes do not satisfy the latency criterion.
+
+A separate listener-free textarea diagnostic reproduced the native delay. Intercepting insertion with `setRangeText()`, disabling wrapping, layout containment and disabling spelling/correction did not meet the target. Resetting the textarea during input was slower when its full cost was included. A five-second `sample PID 5 1 -file OUTPUT` capture during repeated trusted input placed most sampled insertion work in WebCore's insertion/layout stack. These diagnostics support further engine-level investigation; none is shipped as a workaround.
+
 ## Browser fixture comparison, 28 October 2026
 
 The opt-in built fixture reduced the wall time of a fixed browser-test workload on candidate `91802f4`. The source, lockfile, tests and browser versions were identical between modes. These are browser-test timings; package consumers and WKWebView have separate checks.

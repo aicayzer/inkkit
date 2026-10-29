@@ -67,7 +67,7 @@ Each editor owns a `DiagramStore` from `mermaid.ts`. It retains geometry for dia
 The remaining collaborators separate state by responsibility:
 
 - `preserve-source.ts` owns the loaded trees, authored block offsets, canonical forms and incremental source reading. Reuse is tied to the same parser context and loaded source.
-- `preserve-context.ts` validates block edits with the definition context they need. `preserve-local.ts` owns validated block/item caches; `preserve-regions.ts` validates changed regions and neighbours.
+- `preserve-context.ts` validates block edits with the definition context they need. `preserve-local.ts` owns validated block/item caches; `preserve-item-regions.ts` validates structural item runs within bullet and task lists; `preserve-regions.ts` validates changed top-level regions and neighbours.
 - `preserve-moves.ts` tracks carried block identities and correspondence for the current save. `preserve-reconstruction.ts` assembles authored and newly written pieces, including list boundaries and changed link forms.
 
 `Preservation` selects the local, regional or whole-document path and retains final reparse validation. It also owns the recent-instance cache and cross-check policy. Collaborators receive only the fields and operations they use; they do not receive the coordinator or an editor. Temporary move and link-rewrite state is cleared after each attempt. The extraction keeps fallback eligibility, cache lifetimes, work budgets and exact output unchanged.

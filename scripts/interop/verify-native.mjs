@@ -1215,7 +1215,7 @@ const commentSource =
   const original = '# Heading\n\n[Label](https://example.com)\n'
   const spelling = '# Heading\n\n[Label](<https://example.com>)\n'
   const incompleteDiagramDiagnostic =
-    "Parse error on line 3:\nflowchart LRA -->\n-----------------^\nExpecting 'AMP', 'COLON', 'PIPE', 'TESTSTR', 'DOWN', 'DEFAULT', 'NUM', 'COMMA', 'NODE_STRING', 'BRKT', 'MINUS', 'MULT', 'UNICODE_TEXT', got 'EOF'"
+    "Parse error on line 2:\nA -->\n-----^\nExpecting 'NODE_STRING', got 'EOF'"
   const distantSource =
     '# Start\n\n' +
     Array.from(
@@ -1258,7 +1258,6 @@ const commentSource =
         { op: 'reopen' },
         same('snapshot.text', 'saved', 'text'),
         assert('snapshot.dirty', false),
-        // Reopening identical source can retain the preview without a new error event.
         {
           op: 'awaitDOM',
           selector: '.inkkit-mermaid-preview[data-state="error"]',
@@ -1269,6 +1268,13 @@ const commentSource =
           `Diagram unavailable: ${incompleteDiagramDiagnostic}`,
           'reopenedPreview',
         ),
+        assert('errorCode', 'diagram-unavailable'),
+        assert('error', incompleteDiagramDiagnostic),
+        {
+          op: 'acknowledgeError',
+          code: 'diagram-unavailable',
+          message: incompleteDiagramDiagnostic,
+        },
       ],
     },
     'source-spelling-cross-mode-history': {

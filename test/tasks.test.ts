@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { InkKitEditor } from '../src/core'
 
 async function open(
@@ -172,3 +172,59 @@ test('checkboxes follow edits, list conversions, undo and document replacement',
     expect(editor.snapshot().text).toBe('- [ ] Replacement\n')
     expect(boxes()).toEqual([['Replacement', 'false']])
   }))
+
+test('editing one task refreshes only changed checkbox labels and keeps read-only controls current', () => {
+  const source =
+    Array.from(
+      { length: 500 },
+      (_, index) => `+ [ ] Item ${index} café 😀`,
+    ).join('\r\n') + '\r\n'
+  return open(source, (editor, root) => {
+    expect(editor.find('Item 250')).toBe(true)
+    const boxes = () => [
+      ...root.querySelectorAll<HTMLElement>('[role="checkbox"]'),
+    ]
+    const first = boxes()[0]!
+    const setAttribute = Element.prototype.setAttribute
+    let labels = 0
+    const spy = vi
+      .spyOn(Element.prototype, 'setAttribute')
+      .mockImplementation(function (this: Element, name, value) {
+        if (name === 'aria-label' && this.getAttribute('role') === 'checkbox')
+          labels++
+        setAttribute.call(this, name, value)
+      })
+    try {
+      expect(editor.insertText('Edited 雪', 1)).toBe(true)
+      expect(labels).toBeLessThan(10)
+      expect(labels).toBeGreaterThan(0)
+      expect(boxes()[250]!.getAttribute('aria-label')).toBe('Edited 雪 café 😀')
+      expect(boxes()[0]).toBe(first)
+      const saved = source.replace('Item 250', 'Edited 雪')
+      expect(editor.snapshot().text).toBe(saved)
+      editor.setEditable(false)
+      expect(
+        boxes().every((box) => box.getAttribute('aria-readonly') === 'true'),
+      ).toBe(true)
+      editor.setEditable(true)
+      expect(
+        boxes().every((box) => box.getAttribute('aria-readonly') === 'false'),
+      ).toBe(true)
+      editor.undo()
+      expect(editor.snapshot().text).toBe(source)
+      expect(boxes()[250]!.getAttribute('aria-label')).toBe('Item 250 café 😀')
+      editor.redo()
+      expect(editor.snapshot().text).toBe(saved)
+      editor.loadDocument({
+        documentId: 'reopened',
+        generation: 2,
+        format: 'md',
+        text: saved,
+      })
+      expect(editor.snapshot().text).toBe(saved)
+      expect(boxes()[250]!.getAttribute('aria-label')).toBe('Edited 雪 café 😀')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})

@@ -16,6 +16,11 @@ import {
 import { $prose } from '@milkdown/kit/utils'
 import { editorLabels } from './labels'
 
+type TaskControl = HTMLSpanElement & {
+  cleanup(): void
+  refresh(): void
+}
+
 // The marker is a pseudo-element, so its events target the list item. Keep
 // clicks in the item's padding or nested-list margins out of the control.
 function onTaskMarker(event: MouseEvent): boolean {
@@ -38,7 +43,7 @@ function onTaskMarker(event: MouseEvent): boolean {
 }
 export function taskListPlugin(run: (operation: () => boolean) => boolean) {
   return $prose((ctx) => {
-    const controls = new Set<() => void>()
+    const controls = new Set<TaskControl>()
     function decorations(
       doc: ProseNode,
       from = 0,
@@ -55,7 +60,7 @@ export function taskListPlugin(run: (operation: () => boolean) => boolean) {
           Decoration.widget(
             pos + 1,
             (view, getPos) => {
-              const checkbox = document.createElement('span')
+              const checkbox = document.createElement('span') as TaskControl
               checkbox.className = 'inkkit-task-checkbox'
               checkbox.contentEditable = 'false'
               checkbox.tabIndex = 0
@@ -64,8 +69,7 @@ export function taskListPlugin(run: (operation: () => boolean) => boolean) {
                 const at = getPos()
                 return at == null ? undefined : view.state.doc.nodeAt(at - 1)
               }
-              const update = () => {
-                const task = current()
+              const update = (task = current()) => {
                 checkbox.setAttribute(
                   'aria-checked',
                   String(!!task?.attrs.checked),
@@ -77,8 +81,9 @@ export function taskListPlugin(run: (operation: () => boolean) => boolean) {
                     editorLabels(ctx).taskCheckbox,
                 )
               }
-              controls.add(update)
-              update()
+              controls.add(checkbox)
+              checkbox.refresh = () => update()
+              update(node)
               const toggle = () => {
                 const at = getPos()
                 const focused = document.activeElement === checkbox
@@ -105,8 +110,7 @@ export function taskListPlugin(run: (operation: () => boolean) => boolean) {
                 event.stopPropagation()
                 toggle()
               })
-              ;(checkbox as HTMLElement & { cleanup: () => void }).cleanup =
-                () => controls.delete(update)
+              checkbox.cleanup = () => controls.delete(checkbox)
               return checkbox
             },
             {
@@ -114,8 +118,7 @@ export function taskListPlugin(run: (operation: () => boolean) => boolean) {
               key: 'task-checkbox',
               ignoreSelection: true,
               stopEvent: () => true,
-              destroy: (node) =>
-                (node as HTMLElement & { cleanup: () => void }).cleanup(),
+              destroy: (node) => (node as TaskControl).cleanup(),
             },
           ),
         )
@@ -189,8 +192,33 @@ export function taskListPlugin(run: (operation: () => boolean) => boolean) {
               editable === view.editable
             )
               return
-            editable = view.editable
-            controls.forEach((update) => update())
+            if (previousState.doc !== view.state.doc) {
+              const from = previousState.doc.content.findDiffStart(
+                view.state.doc.content,
+              )
+              const end = previousState.doc.content.findDiffEnd(
+                view.state.doc.content,
+              )
+              if (from != null && end)
+                view.state.doc.nodesBetween(
+                  from,
+                  Math.max(from, end.b),
+                  (node, pos) => {
+                    if (node.isTextblock) return false
+                    if (node.type.name === 'list_item')
+                      (view.nodeDOM(pos) as HTMLElement | null)
+                        ?.querySelector<TaskControl>(
+                          ':scope > .inkkit-task-checkbox',
+                        )
+                        ?.refresh()
+                  },
+                )
+            }
+            if (editable !== view.editable) {
+              editable = view.editable
+              for (const checkbox of controls)
+                checkbox.setAttribute('aria-readonly', String(!editable))
+            }
           },
         }
       },
