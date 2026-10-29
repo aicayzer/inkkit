@@ -4,6 +4,10 @@ extension RichTextDocument {
     /// The deepest list nesting RTF can hold (`\ilvl` 0 to 8).
     public static let maximumListDepth = 9
 
+    /// The largest first number of an ordered list that the writer and reader keep: RTF's
+    /// `\\levelstartat` is a 32-bit number, and a larger start reads back as 1.
+    public static let maximumListStart = 2_147_483_647
+
     /// Characters that text runs never hold, because they would change the structure
     /// (`\n`, `\r`, U+000B, U+000C, U+0085, U+2028, U+2029), stand for an attachment (U+FFFC)
     /// or end the text when RTF is written (U+0000).
@@ -23,7 +27,8 @@ extension RichTextDocument {
     ///
     /// A document is invalid when its version is not 1, a text run is empty or holds a forbidden
     /// character, a mark repeats, a run has two links, both superscript and subscript, or a link
-    /// without an address, an unordered list has a start or an ordered list starts below 1,
+    /// whose address is empty or holds a control character, an unordered list has a start or an
+    /// ordered list starts below 1 or above ``maximumListStart``,
     /// a list or list item is empty, a list item does not start with a paragraph or holds a
     /// table, lists nest deeper than ``maximumListDepth``, or a table has no rows or rows of
     /// different lengths.
@@ -94,6 +99,9 @@ extension RichTextDocument {
             guard value >= 1 else {
                 throw .invalidDocument("\(path).start: the start must be at least 1")
             }
+            guard value <= maximumListStart else {
+                throw .invalidDocument("\(path).start: the start must be at most \(maximumListStart)")
+            }
             if value == 1 { start = nil }
         }
         guard !list.items.isEmpty else {
@@ -155,8 +163,13 @@ extension RichTextDocument {
                 throw .invalidDocument("\(path): the \(mark.typeName) mark appears more than once")
             }
             if case .link(let href) = mark {
-                guard !href.isEmpty, URL(string: href) != nil else {
+                // Any other address is kept as given, as the editor keeps it; the writer stores
+                // one that isn't a URL as text.
+                guard !href.isEmpty else {
                     throw .invalidDocument("\(path): a link needs an address")
+                }
+                guard !href.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
+                    throw .invalidDocument("\(path): a link address cannot hold a control character")
                 }
             }
         }

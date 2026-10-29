@@ -20,18 +20,22 @@ enum RTFWriter {
             try writer.append(block)
         }
         let output = writer.output
+        let data: Data
         do {
-            return try output.data(
+            data = try output.data(
                 from: NSRange(location: 0, length: output.length),
                 documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
         } catch {
             throw .writeFailed
         }
+        return try LinkAddresses.record(writer.links, in: data)
     }
 
     private struct Builder {
         let output = NSMutableAttributedString()
         var fonts = WriterFonts()
+        /// Every link address written.
+        var links: Set<String> = []
 
         mutating func append(_ block: Doc.Block) throws(RTFConversionError) {
             switch block {
@@ -96,8 +100,10 @@ enum RTFWriter {
                 case .subscript:
                     attributes[.inkkitSuperscript] = -1
                 case .link(let href):
-                    // Validation guarantees the address parses.
-                    if let url = URL(string: href) { attributes[.link] = url }
+                    // A URL when one keeps the address exactly, and otherwise the text. The
+                    // system still percent-encodes the field, so the address is also recorded.
+                    attributes[.link] = LinkAddresses.linkValue(href)
+                    links.insert(href)
                 }
             }
             return attributes

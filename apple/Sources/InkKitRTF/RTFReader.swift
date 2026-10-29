@@ -37,7 +37,9 @@ enum RTFReader {
         }
         let records = paragraphs(of: attributed, unsupported: &unsupported)
         guard unsupported.isEmpty else { throw .unsupported(unsupported) }
-        let document = Doc(blocks: blocks(from: records))
+        var document = Doc(blocks: blocks(from: records))
+        let addresses = LinkAddresses.table(in: data)
+        if !addresses.isEmpty { document = LinkAddresses.restore(document, from: addresses) }
         // The reader builds canonical content, so this only guards against a reader bug
         // producing a document the editor would refuse.
         return try document.canonicalized()

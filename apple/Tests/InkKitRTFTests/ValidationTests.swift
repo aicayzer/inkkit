@@ -61,6 +61,11 @@ struct ValidationTests {
         expectInvalid(paragraphJSON(#"{"type":"text","text":"a","marks":[{"type":"link","href":"https://a/"},{"type":"link","href":"https://b/"}]}"#), containing: "link mark appears more than once")
         expectInvalid(paragraphJSON(#"{"type":"text","text":"a","marks":[{"type":"subscript"},{"type":"superscript"}]}"#), containing: "both superscript and subscript")
         expectInvalid(paragraphJSON(#"{"type":"text","text":"a","marks":[{"type":"link","href":""}]}"#), containing: "a link needs an address")
+        for control in ["\\u0001", "\\u007f", "\\u0085", "\\n"] {
+            expectInvalid(paragraphJSON(#"{"type":"text","text":"a","marks":[{"type":"link","href":"https://a\#(control)b/"}]}"#), containing: "cannot hold a control character")
+        }
+        // An address that isn't a URL is still an address.
+        #expect(throws: Never.self) { try Doc(json: Data(self.paragraphJSON(#"{"type":"text","text":"a","marks":[{"type":"link","href":"http://["}]}"#).utf8)) }
     }
 
     @Test("Lists must be well formed")
@@ -70,6 +75,7 @@ struct ValidationTests {
         expectInvalid(list(#""ordered":false,"start":3,"items":[\#(item)]"#), containing: "only an ordered list has a start")
         expectInvalid(list(#""ordered":true,"start":-1,"items":[\#(item)]"#), containing: "the start must be at least 1")
         expectInvalid(list(#""ordered":true,"start":0,"items":[\#(item)]"#), containing: "the start must be at least 1")
+        expectInvalid(list(#""ordered":true,"start":\#(Doc.maximumListStart + 1),"items":[\#(item)]"#), containing: "the start must be at most \(Doc.maximumListStart)")
         expectInvalid(list(#""ordered":true,"items":[]"#), containing: "blocks[0].items: a list needs at least one item")
         expectInvalid(list(#""ordered":true,"items":[{"blocks":[]}]"#), containing: "must start with a paragraph")
         expectInvalid(list(#""ordered":true,"items":[{"blocks":[{"type":"list","ordered":false,"items":[\#(item)]}]}]"#), containing: "must start with a paragraph")

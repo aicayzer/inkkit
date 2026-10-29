@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+#if canImport(AppKit)
+import AppKit
+#endif
 @testable import InkKitRTF
 
 /// Documents that must come back unchanged from `document → RTF → document`.
@@ -187,11 +190,33 @@ struct RoundTripTests {
         #expect(try doc(p(t("a", .underline, .link(href: "https://x/")))).canonicalized() == doc(p(t("a", .link(href: "https://x/")))))
     }
 
-    @Test("Link addresses are written as URLs, so Foundation percent-encodes characters outside URL syntax")
-    func linkEncoding() throws {
-        let document = doc(p(t("x", .link(href: "https://example.com/a b/ü"))))
-        let back = try RTFConverter.document(fromRTF: RTFConverter.rtfData(from: document))
-        #expect(back == doc(p(t("x", .link(href: "https://example.com/a%20b/%C3%BC")))))
+    @Test("Any allowed link address comes back as given, whether or not it is a URL", arguments: [
+        "http://[", "https://example.com/a b/ü", "https://例え.jp/パス", "http://[::1]:80/", "https://x/%zz",
+        "relative/path", "#fragment", "mailto:a@cyzr.me", "javascript:alert(1)", #"a"b\c{d}"#,
+    ])
+    func linkAddresses(_ href: String) throws {
+        try expectRoundTrip(doc(p(t("before "), t("x", .link(href: href)), t(" after"))))
+    }
+
+    @Test("Two link addresses that RTF would write the same are refused, not merged")
+    func linkAddressCollision() {
+        #expect(throws: RTFConversionError.self) {
+            try RTFConverter.rtfData(from: doc(p(t("a", .link(href: "http://[")), t(" b", .link(href: "http://%5B")))))
+        }
+    }
+
+    @Test("Another RTF reader skips the address record and sees the link as the system writes it")
+    func linkRecordIsIgnorable() throws {
+        let data = try RTFConverter.rtfData(from: doc(p(t("before "), t("x", .link(href: "http://[")), t(" after"))))
+        #expect(rtfText(data).contains(#"{\*\inkkitlinks"#))
+        let read = try NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil)
+        #expect(read.string == "before x after\n")
+        #expect((read.attribute(.link, at: 7, effectiveRange: nil) as? URL)?.absoluteString == "http://%5B")
+    }
+
+    @Test("The largest list start comes back, and the writer keeps it")
+    func largestListStart() throws {
+        try expectRoundTrip(doc(.list(numbers(start: Doc.maximumListStart, item(t("last")), item(t("next"))))))
     }
 
     #endif
