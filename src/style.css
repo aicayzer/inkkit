@@ -3,6 +3,7 @@
   box-sizing: border-box;
   color-scheme: var(--inkkit-color-scheme, light dark);
   color: var(--inkkit-text-color, CanvasText);
+  background: var(--inkkit-background-color, transparent);
   font-family: var(
     --inkkit-font-family,
     -apple-system,
@@ -628,7 +629,7 @@
   font-size: calc(var(--_inkkit-font-size) * 0.867);
   line-height: 1.5;
   background: var(--_inkkit-code-bg);
-  border-radius: 8px;
+  border-radius: var(--inkkit-code-radius, 8px);
   padding: calc(var(--_inkkit-font-size) * 0.8)
     calc(var(--_inkkit-font-size) * 0.933);
   margin: 0 0 calc(var(--_inkkit-font-size) * 0.8);
@@ -679,9 +680,27 @@
 }
 
 .inkkit-root .ProseMirror blockquote {
+  position: relative;
   margin: 0 0 calc(var(--_inkkit-font-size) * 0.8);
-  padding: 2px 0 2px calc(var(--_inkkit-font-size) * 0.8);
-  border-left: 2px solid var(--_inkkit-accent);
+  padding: 2px 0 2px
+    calc(var(--_inkkit-font-size) * 0.8 + var(--inkkit-quote-rule-width, 2px));
+}
+
+.inkkit-root .ProseMirror blockquote::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--inkkit-quote-rule-width, 2px);
+  border-radius: var(--inkkit-quote-rule-radius, 0px);
+  background: var(--inkkit-quote-rule-color, var(--_inkkit-accent));
+  pointer-events: none;
+}
+
+@media (forced-colors: active) {
+  .inkkit-root .ProseMirror blockquote::before {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
 }
 
 .inkkit-root .ProseMirror blockquote > :first-child {
@@ -1211,6 +1230,9 @@
   user-select: none;
 }
 .inkkit-root .inkkit-code-language {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   height: 24px;
   padding: 0 6px;
   border: 0;
@@ -1220,9 +1242,15 @@
   font: inherit;
   cursor: pointer;
 }
-.inkkit-root .inkkit-code-language::after {
-  content: '⌄';
-  margin-left: 5px;
+.inkkit-root .inkkit-code-language svg {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .inkkit-root .inkkit-code-language:hover {
   background: color-mix(in srgb, CanvasText 7%, transparent);
@@ -1240,7 +1268,7 @@
   flex-direction: column;
   width: 220px;
   max-height: min(320px, 50vh);
-  padding: 5px;
+  padding: 6px;
   box-sizing: border-box;
   border: 1px solid color-mix(in srgb, CanvasText 15%, transparent);
   border-radius: 8px;
@@ -1252,10 +1280,10 @@
   box-sizing: border-box;
   min-width: 0;
   width: 100%;
-  padding: 7px;
-  border: 0;
-  border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
-  background: transparent;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, CanvasText 3%, transparent);
   color: inherit;
   font: inherit;
 }
@@ -1263,7 +1291,7 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  padding-top: 4px;
+  padding: 4px 0 0;
 }
 .inkkit-root .inkkit-code-language-list button {
   flex-shrink: 0;
@@ -1277,9 +1305,39 @@
   cursor: pointer;
 }
 .inkkit-root .inkkit-code-language-list button:hover,
-.inkkit-root .inkkit-code-language-list button:focus-visible,
+.inkkit-root
+  .inkkit-code-language-menu[data-inkkit-input-modality='keyboard']
+  .inkkit-code-language-list
+  button:focus,
 .inkkit-root .inkkit-code-language-list button[aria-pressed='true'] {
   background: color-mix(in srgb, CanvasText 8%, transparent);
+}
+.inkkit-root .inkkit-code-language-menu input:focus,
+.inkkit-root .inkkit-code-language-menu button:focus {
+  outline: none;
+}
+.inkkit-root
+  .inkkit-code-language-menu[data-inkkit-input-modality='keyboard']
+  input:focus,
+.inkkit-root
+  .inkkit-code-language-menu[data-inkkit-input-modality='keyboard']
+  button:focus {
+  outline: var(--inkkit-focus-width, 2px) solid
+    var(--inkkit-focus-color, var(--_inkkit-accent));
+  outline-offset: var(--inkkit-focus-offset, -2px);
+}
+@media (forced-colors: active) {
+  .inkkit-root .inkkit-code-language-menu input {
+    border-color: ButtonBorder;
+  }
+  .inkkit-root
+    .inkkit-code-language-menu[data-inkkit-input-modality='keyboard']
+    input:focus,
+  .inkkit-root
+    .inkkit-code-language-menu[data-inkkit-input-modality='keyboard']
+    button:focus {
+    outline-color: Highlight;
+  }
 }
 
 .inkkit-root .milkdown-drop-indicator {

@@ -1,0 +1,39 @@
+:where([data-inkkit-theme='standard']) {
+  --inkkit-font-family:
+    -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --inkkit-font-size: 15px;
+  --inkkit-paragraph-spacing: calc(var(--inkkit-font-size) * 0.667);
+  --inkkit-reading-width: 100%;
+  --inkkit-background-color: light-dark(#ffffff, #1c1c1e);
+  --inkkit-text-color: CanvasText;
+  --inkkit-muted-color: light-dark(#6e6e6e, #99999a);
+  --inkkit-accent-color: light-dark(#0069d1, #409cff);
+  --inkkit-rule-color: color-mix(in srgb, CanvasText 14%, transparent);
+  --inkkit-checkbox-border-color: var(--inkkit-muted-color);
+  --inkkit-code-background: light-dark(
+    #f3f5f8,
+    color-mix(in srgb, CanvasText 8%, transparent)
+  );
+  --inkkit-table-radius: 8px;
+  --inkkit-code-radius: 8px;
+  --inkkit-quote-rule-width: 3px;
+  --inkkit-quote-rule-radius: 2px;
+  --inkkit-quote-rule-color: light-dark(#a6a6a6, #777777);
+  --inkkit-code-comment: light-dark(#6e6e6e, #99999a);
+  --inkkit-code-keyword: light-dark(#a626a4, #c77bde);
+  --inkkit-code-string: light-dark(#3b763a, #98c379);
+  --inkkit-code-number: light-dark(#8d6001, #d19a66);
+  --inkkit-code-title: light-dark(#8d6101, #e5c07b);
+  --inkkit-code-attr: light-dark(#c82c1e, #e37981);
+  --inkkit-diagram-background: light-dark(#ffffff, #1c1c1e);
+  --inkkit-diagram-text-color: light-dark(#1c1c1e, #f2f2f7);
+  --inkkit-diagram-color-strength: 35%;
+  --inkkit-diagram-series-1: light-dark(#0088ff, #0091ff);
+  --inkkit-diagram-series-2: light-dark(#34c759, #30d158);
+  --inkkit-diagram-series-3: light-dark(#6155f5, #6d7cff);
+  --inkkit-diagram-series-4: light-dark(#ff8d28, #ff9230);
+  --inkkit-diagram-series-5: light-dark(#ff383c, #ff4245);
+  --inkkit-diagram-series-6: light-dark(#00c8b3, #00dac3);
+  --inkkit-diagram-series-7: light-dark(#ffcc00, #ffd600);
+  --inkkit-diagram-series-8: light-dark(#00c0e8, #3cd3fe);
+}
