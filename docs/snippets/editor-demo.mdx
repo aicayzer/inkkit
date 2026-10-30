@@ -269,6 +269,7 @@ try {
     const themeButton = $('theme');
     const themeMenu = $('theme-menu');
     const themes = [...themeMenu.querySelectorAll('button')];
+    let themeAnchor;
     const closeTheme = (restore = false) => {
       themeMenu.hidden = true;
       themeButton.setAttribute('aria-expanded', 'false');
@@ -278,6 +279,7 @@ try {
       themeMenu.hidden = false;
       themeButton.setAttribute('aria-expanded', 'true');
       const rect = themeButton.getBoundingClientRect();
+      themeAnchor = rect;
       themeMenu.style.left = Math.max(8, Math.min(innerWidth - themeMenu.offsetWidth - 8, rect.right - themeMenu.offsetWidth)) + 'px';
       themeMenu.style.top = rect.bottom + 6 + 'px';
       if (keyboard) themes.find(button => button.getAttribute('aria-checked') === 'true').focus();
@@ -304,7 +306,12 @@ try {
       if (!themeMenu.contains(event.target) && !themeButton.contains(event.target)) closeTheme();
     });
     addEventListener('resize', () => closeTheme());
-    addEventListener('scroll', () => closeTheme(), true);
+    addEventListener('scroll', () => {
+      if (themeMenu.hidden) return;
+      const rect = themeButton.getBoundingClientRect();
+      // A queued scroll or scrolling inside the editor need not move the menu's anchor.
+      if (rect.left !== themeAnchor.left || rect.top !== themeAnchor.top) closeTheme();
+    }, true);
     const findbar = $('findbar');
     const query = $('query');
     const copy = $('copy');

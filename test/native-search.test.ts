@@ -587,3 +587,142 @@ test('failed batch measurement releases its temporary source layout', () =>
       rects.mockRestore()
     }
   }))
+
+test('search results share formatted match semantics without changing query, selection or source', () =>
+  run(
+    (editor, root) => {
+      const text =
+        '+ **Garden** and garden 😀\r\n\r\n[Garden](https://garden.test) %%garden%%\r\n\r\n![garden](opaque)\r\n'
+      editor.loadDocument({ ...input, text })
+      editor.find('😀')
+      const before = editor.snapshot()
+      const selection = editor.textSnapshot().selection
+      const highlights = [
+        ...root.querySelectorAll(
+          '.ProseMirror-search-match, .ProseMirror-active-search-match',
+        ),
+      ].map((node) => node.textContent)
+      const results = editor.searchMatches('garden', input.generation)
+      expect(results).toHaveLength(3)
+      expect(Object.isFrozen(results)).toBe(true)
+      expect(results.every(Object.isFrozen)).toBe(true)
+      const readable = editor.textSnapshot()
+      expect(
+        results.map((match) => readable.text.slice(match.from, match.to)),
+      ).toEqual(['Garden', 'garden', 'Garden'])
+      expect(editor.textSnapshot().selection).toEqual(selection)
+      expect(editor.snapshot()).toEqual(before)
+      expect(
+        [
+          ...root.querySelectorAll(
+            '.ProseMirror-search-match, .ProseMirror-active-search-match',
+          ),
+        ].map((node) => node.textContent),
+      ).toEqual(highlights)
+      expect(editor.searchMatches('garden.test')).toEqual([])
+      expect(editor.searchMatches('hidden')).toEqual([])
+      expect(editor.searchMatches('')).toEqual([])
+      expect(editor.searchMatches('missing')).toEqual([])
+      expect(editor.replaceAll('garden', 'park')).toBe(results.length)
+      expect(editor.undo()).toBe(true)
+      expect(editor.snapshot().text).toBe(text)
+      editor.reloadDocument({
+        ...input,
+        generation: 10,
+        text: editor.snapshot().text,
+      })
+      expect(editor.snapshot().text).toBe(text)
+    },
+    {
+      images: {
+        presentation: () => undefined,
+        importImage: async () => ({ reference: 'opaque' }),
+        exportImage: async () => ({
+          bytes: new Uint8Array(),
+          mimeType: 'image/png',
+        }),
+      },
+    },
+  ))
+
+test('search results do not join text across hidden comments or block boundaries', () =>
+  run((editor) => {
+    editor.loadDocument({ ...input, text: 'be%%hidden%%fore\n\nafter\n' })
+    expect(editor.searchMatches('before')).toEqual([])
+    expect(editor.searchMatches('fore\nafter')).toEqual([])
+    expect(editor.searchMatches('fore')).toHaveLength(1)
+    expect(editor.find('hidden')).toBe(false)
+    expect(editor.replaceAll('hidden', 'removed')).toBe(0)
+    expect(editor.snapshot().text).toBe('be%%hidden%%fore\n\nafter\n')
+  }))
+
+test.each(['md', 'txt'] as const)(
+  'source search results use displayed UTF-16 offsets and literal Unicode matching (%s)',
+  (format) =>
+    run((editor) => {
+      const text = 'İ 😀 $&\r\ni 😀 $&\r\n'
+      editor.loadDocument({ ...input, format, text })
+      if (format === 'md') editor.setEditingMode('source')
+      const before = editor.snapshot()
+      const readable = editor.textSnapshot()
+      expect(editor.searchMatches('i')).toEqual([
+        { snapshotId: readable.snapshotId, from: 8, to: 9 },
+      ])
+      const emoji = editor.searchMatches('😀')
+      expect(emoji.map(({ from, to }) => [from, to])).toEqual([
+        [2, 4],
+        [10, 12],
+      ])
+      expect(editor.searchMatches('$&')).toHaveLength(2)
+      expect(
+        editor.searchMatches('\r\n').map(({ from, to }) => [from, to]),
+      ).toEqual([
+        [7, 8],
+        [15, 16],
+      ])
+      expect(
+        editor.searchMatches('\n').map(({ from, to }) => [from, to]),
+      ).toEqual([
+        [7, 8],
+        [15, 16],
+      ])
+      expect(editor.snapshot()).toEqual(before)
+      editor.selectTextRange(emoji[1]!)
+      expect(editor.textSnapshot().selection).toEqual(emoji[1])
+      expect(editor.replace('😀', '$1')).toBe(true)
+      expect(editor.snapshot().text).toBe('İ 😀 $&\r\ni $1 $&\r\n')
+      expect(editor.undo()).toBe(true)
+      expect(editor.snapshot().text).toBe(text)
+    }),
+)
+
+test('search results support read-only and reject stale, invalid and composing calls', () =>
+  run((editor, root) => {
+    editor.setEditingMode('source')
+    editor.setEditable(false)
+    const results = editor.searchMatches('Title')
+    expect(results).toHaveLength(1)
+    const before = editor.snapshot()
+    expect(() => editor.searchMatches('Title', 99)).toThrow(
+      expect.objectContaining({ code: 'stale-document' }),
+    )
+    expect(() => editor.searchMatches(null as unknown as string)).toThrow(
+      expect.objectContaining({ code: 'invalid-argument' }),
+    )
+    expect(editor.snapshot()).toEqual(before)
+    editor.setEditable(true)
+    const plain = root.querySelector('textarea')!
+    plain.dispatchEvent(
+      new CompositionEvent('compositionstart', { bubbles: true }),
+    )
+    expect(() => editor.searchMatches('Title')).toThrow(
+      expect.objectContaining({ code: 'composition' }),
+    )
+    plain.dispatchEvent(
+      new CompositionEvent('compositionend', { bubbles: true }),
+    )
+    editor.reloadDocument(input)
+    expect(() => editor.selectTextRange(results[0]!)).toThrow(
+      expect.objectContaining({ code: 'stale-document' }),
+    )
+  }))

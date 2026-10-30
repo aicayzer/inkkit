@@ -2283,6 +2283,18 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     view.dispatch(initialDocumentSelection(view.state))
   }
 
+  /** Returns every non-overlapping match without changing selection, focus or highlights. */
+  searchMatches(
+    text: string,
+    expectedGeneration?: number,
+  ): readonly TextRange[] {
+    this.assertAlive()
+    expectString(text, 'text')
+    this.assertCurrent(expectedGeneration)
+    const scope = this.text.scope()
+    return this.search.matches(text, scope.id, scope.projection)
+  }
+
   /** Selects the next match and returns whether there was one. */
   find(text: string, expectedGeneration?: number): boolean {
     this.assertAlive()
@@ -2798,6 +2810,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       'undo',
       'redo',
       'find',
+      'searchMatches',
       'replace',
       'replaceAll',
       'format',

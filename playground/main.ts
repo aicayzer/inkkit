@@ -553,6 +553,9 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
     const target = args.instance === 'second' ? secondEditor : editor
     if (!target) throw Error('Requested editor instance is not mounted')
     switch (name) {
+      case 'searchMatches':
+        result = target.searchMatches(args.text as string)
+        break
       case 'textSnapshot':
         result = target.textSnapshot()
         break
