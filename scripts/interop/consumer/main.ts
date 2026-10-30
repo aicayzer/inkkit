@@ -377,6 +377,9 @@ window.interop = {
           case 'textSnapshot':
             result = editor.textSnapshot()
             break
+          case 'searchMatches':
+            result = editor.searchMatches(operation.text, operation.generation)
+            break
           case 'selectTextRange': {
             const range = scopedRange(operation, results)
             const target =

@@ -2099,6 +2099,37 @@ const commentSource =
   })
 }
 {
+  scenarios['native-search-matching-ranges'] = {
+    source: 'Garden **garden**.\r\n\r\n%% garden %%\r\n',
+    operations: [
+      { op: 'hostFocus' },
+      { op: 'textSnapshot', name: 'before' },
+      { op: 'searchMatches', text: 'garden', name: 'matches' },
+      assert('length', 2, 'matches'),
+      assert('0.from', 0, 'matches'),
+      assert('0.to', 6, 'matches'),
+      assert('1.from', 7, 'matches'),
+      assert('1.to', 13, 'matches'),
+      { op: 'textSnapshot', name: 'after' },
+      {
+        op: 'assert',
+        name: 'after',
+        path: '',
+        equalsFrom: { name: 'before', path: '' },
+      },
+      { op: 'viewportState', name: 'viewport' },
+      assert('hostFocused', true, 'viewport'),
+      { op: 'searchMatches', text: '', name: 'empty' },
+      assert('length', 0, 'empty'),
+      { op: 'composition', active: true },
+      { op: 'searchMatches', text: 'garden', expectedError: 'composition' },
+      { op: 'composition', active: false },
+      { op: 'editingMode', mode: 'source' },
+      { op: 'searchMatches', text: 'garden', name: 'sourceMatches' },
+      assert('length', 3, 'sourceMatches'),
+      assert('snapshot.text', 'Garden **garden**.\r\n\r\n%% garden %%\r\n'),
+    ],
+  }
   scenarios['native-search-scoped-unicode'] = {
     source:
       'Unicode A😀B é 中文.\n\n**Formatted match**.\n\n> [!NOTE]- Folded\n> Hidden body match.\n\n<!-- hidden author comment -->\n\n![Opaque image](images/native.png)\n',
