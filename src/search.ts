@@ -121,7 +121,7 @@ export function search(): Plugin {
 function escapedPattern(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
-function literalMatches(text: string, search: string): TextMatch[] {
+export function literalMatches(text: string, search: string): TextMatch[] {
   if (!search) return []
   const pattern = new RegExp(escapedPattern(search), 'giu')
   return [...text.matchAll(pattern)].map((match) => ({
@@ -197,6 +197,12 @@ function formattedQuery(text: string): SearchQuery {
       const from = state.doc.resolve(match.from)
       const to = state.doc.resolve(match.to)
       if (from.parent !== to.parent || !from.parent.inlineContent) return false
+      if (
+        ['comment_inline', 'comment_block', 'reference_definition'].includes(
+          from.parent.type.name,
+        )
+      )
+        return false
       const content = state.doc.slice(match.from, match.to).content
       let textOnly = true
       content.forEach((node) => {
@@ -206,6 +212,23 @@ function formattedQuery(text: string): SearchQuery {
     },
   })
 }
+export function formattedMatches(
+  state: EditorState,
+  text: string,
+): TextMatch[] {
+  if (!text) return []
+  const query = formattedQuery(text)
+  const matches: TextMatch[] = []
+  if (!query.valid) return matches
+  for (let position = 0; ;) {
+    const match = query.findNext(state, position)
+    if (!match) break
+    matches.push({ from: match.from, to: match.to })
+    position = match.to
+  }
+  return matches
+}
+
 export function findFormatted(view: EditorView, text: string): boolean {
   const query = formattedQuery(text)
   const previous = getSearchState(view.state)?.query.search

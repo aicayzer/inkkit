@@ -6,6 +6,8 @@ import { rawOffset, normalizedOffset } from './source'
 import { projectionPosition, type TextProjection } from './text-ranges'
 import {
   findLiteral,
+  literalMatches,
+  formattedMatches,
   findFormatted,
   replaceLiteral,
   replaceFormatted,
@@ -58,6 +60,61 @@ export class EditorSearch {
   }
   restore(match: LiteralMatch | undefined): void {
     this.literalMatch = match
+  }
+
+  matches(
+    text: string,
+    snapshotId: string,
+    projection: TextProjection,
+  ): readonly TextRange[] {
+    const raw = this.runtime.literal() ? this.runtime.currentText() : undefined
+    const matches =
+      raw === undefined
+        ? formattedMatches(this.runtime.view().state, text)
+        : literalMatches(raw, text)
+    // Match endpoints are ordered, so each source character or projection span is visited once.
+    let rawPosition = 0,
+      normalizedPosition = 0,
+      spanIndex = 0
+    const offset = (position: number): number => {
+      if (raw !== undefined) {
+        while (rawPosition < position) {
+          if (raw[rawPosition] !== '\n' || raw[rawPosition - 1] !== '\r')
+            normalizedPosition++
+          rawPosition++
+        }
+        return normalizedPosition
+      }
+      while (
+        spanIndex < projection.spans.length &&
+        projection.spans[spanIndex]!.end < position
+      )
+        spanIndex++
+      const span = projection.spans[spanIndex]
+      if (!span) return projection.text.length
+      if (position < span.start) return span.from
+      return span.kind === 'text'
+        ? span.from + Math.max(0, position - span.start)
+        : position === span.start
+          ? span.from
+          : span.to
+    }
+    return Object.freeze(
+      matches.map((match) => {
+        // A match of the LF half of CRLF selects the displayed line break, as find does.
+        const start =
+          raw !== undefined &&
+          raw[match.from] === '\n' &&
+          raw[match.from - 1] === '\r'
+            ? match.from - 1
+            : match.from
+        return Object.freeze({
+          snapshotId,
+          from: offset(start),
+          to: offset(match.to),
+        })
+      }),
+    )
   }
 
   find(text: string): boolean {

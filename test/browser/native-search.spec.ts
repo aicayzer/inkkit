@@ -380,3 +380,36 @@ for (const [name, before, after] of [
     )
     expect((await observe(page)).snapshot!.text).toBe(after)
   })
+
+test('match results navigate backward without taking host-field focus @native-search', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture('native-search')
+  await page.evaluate(() =>
+    window.inkkitPlayground.replaceDocument(
+      'Garden **garden** 😀 garden\r\n',
+      'md',
+    ),
+  )
+  const before = (await observe(page)).snapshot!
+  await page.evaluate(() => {
+    const field = document.createElement('input')
+    field.id = 'host-find-field'
+    document.body.append(field)
+    field.focus()
+  })
+  const results = (await operation(page, 'searchMatches', {
+    text: 'garden',
+  })) as TextRange[]
+  expect(results).toHaveLength(3)
+  for (const range of [...results].reverse()) {
+    await operation(page, 'selectTextRange', {
+      range,
+      options: { reveal: true },
+    })
+    expect((await readText(page)).selection).toEqual(range)
+    await expect(page.locator('#host-find-field')).toBeFocused()
+  }
+  expect((await observe(page)).snapshot).toEqual(before)
+})

@@ -160,20 +160,31 @@ test('formatted matching spans marks but excludes attributes, atoms and structur
     },
   ))
 
-test('comment body replacement stays private while preserving source delimiters and undo', () =>
+test('formatted replacement leaves comments untouched; source replacement retains delimiters and undo', () =>
   run(
     'before %%private body%% after\n\n%%\nsecret block\n%%\n',
     async (editor) => {
       const original = editor.snapshot().text
+      expect(editor.find('private')).toBe(false)
+      expect(editor.replace('private', 'edited')).toBe(false)
+      expect(editor.replaceAll('secret', 'changed')).toBe(0)
+      expect(editor.snapshot().text).toBe(original)
+      editor.setEditingMode('source')
       expect(editor.replace('private', 'edited')).toBe(true)
       expect(editor.replaceAll('secret', 'changed')).toBe(1)
       expect(editor.snapshot().text).toContain('%%edited body%%')
       expect(editor.snapshot().text).toContain('changed block')
+      expect(editor.undo(4)).toBe(true)
+      expect(editor.snapshot().text).toContain('secret block')
+      expect(editor.undo(4)).toBe(true)
+      expect(editor.snapshot().text).toBe(original)
+      expect(editor.redo(4)).toBe(true)
+      expect(editor.redo(4)).toBe(true)
+      editor.setEditingMode('formatted')
       const clip = await editor.clipboardSnapshot()
       expect(clip.text).not.toMatch(/edited|changed|private|secret/)
       expect(clip.html).not.toMatch(/edited|changed|private|secret/)
       expect(clip.markdown).toContain('edited')
-      expect(editor.undo(4)).toBe(true)
       expect(editor.undo(4)).toBe(true)
       expect(editor.snapshot().text).toBe(original)
     },
@@ -227,16 +238,16 @@ test('replacement preserves implicit reference destinations and retained definit
     },
   ))
 
-test('multiline preserved literal and comment body replacement retains literal structure and privacy', () =>
+test('multiline preserved literal replacement leaves comment bodies unchanged', () =>
   run(
     '<custom>needle\nnext</custom>\n\nbefore %%needle%% after\n',
     async (editor, _root, ctx) => {
       const original = editor.snapshot().text
-      expect(editor.replaceAll('needle', 'first\nsecond')).toBe(2)
+      expect(editor.replaceAll('needle', 'first\nsecond')).toBe(1)
       expect(editor.snapshot().text).toContain(
         '<custom>first\nsecond\nnext</custom>',
       )
-      expect(editor.snapshot().text).toContain('%%first\nsecond%%')
+      expect(editor.snapshot().text).toContain('%%needle%%')
       const types: string[] = []
       ctx.get(editorViewCtx).state.doc.descendants((node) => {
         types.push(node.type.name)

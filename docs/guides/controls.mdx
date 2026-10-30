@@ -164,45 +164,22 @@ Here `chooseNoteLink` is your own picker, which returns a Markdown link such as 
 
 ## Build your own find
 
-For a basic find bar, `find(text)` selects the next match, and `replace` and `replaceAll` replace them. To show a match count, a match list or highlights, search the readable text yourself:
+For a basic find bar, `find(text)` selects the next match, and `replace` and `replaceAll` replace them. Use `searchMatches(text)` for a match count and previous/next navigation. It uses the same matching rules as these commands, so embedded labels and block boundaries cannot inflate the count.
 
 ```ts
-import { InkKitError, type TextRange } from '@aicayzer/inkkit'
-
-function findAll(query: string): TextRange[] {
-  if (!query) return []
-  try {
-    const { snapshotId, text } = editor.textSnapshot()
-    const pattern = new RegExp(
-      query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-      'giu',
-    )
-    return [...text.matchAll(pattern)].map((match) => ({
-      snapshotId,
-      from: match.index,
-      to: match.index + match[0].length,
-    }))
-  } catch (error) {
-    if (error instanceof InkKitError && error.code === 'composition') return []
-    throw error
-  }
-}
-
-const matches = findAll('draft')
+const matches = editor.searchMatches('garden')
 const first = matches[0]
-if (first) {
-  editor.selectTextRange(first)
-  editor.revealTextRange(first)
-}
+if (first) editor.selectTextRange(first, { reveal: true })
 ```
 
-- **`textSnapshot()`** returns the text the person reads, with a `snapshotId`. Offsets are UTF-16 code units in that `text`, not Markdown offsets. Search the original string, as the regular expression does, so a case change that alters a string's length can't shift the offsets.
-- **`selectTextRange(range)`** selects without taking focus or scrolling, so typing stays in your search field. Pass `{ focus: true, reveal: true }` when the person goes to a result.
-- **`revealTextRange(range)`** scrolls the range into view and unfolds a folded callout that holds it.
-- **`replaceTextRange(range, text)`** replaces one match with literal text as one undo step. It throws `invalid-range` for a range that crosses a block or an embed.
-- **`textRangesRects(ranges)`** measures a batch of ranges, for highlights you draw. Rectangles are CSS pixels in the page's client area.
+- **`searchMatches(text)`** returns frozen ranges in document order without changing selection, focus or highlights. An empty query returns an empty array. Use `matches.length` for the total and retain an index for previous/next navigation.
+- **`selectTextRange(range, { reveal: true })`** selects and reveals without taking focus from the search field. Add `focus: true` only when focus should move to the document.
+- **`find(text)`** selects the next result and establishes the formatted editor's search highlights. `find('')` clears them.
+- **`replace(search, replacement)`** replaces the selected match or the next one; select a current result before calling it. `replaceAll` replaces every match as one undo step.
+- **`textSnapshot()`** returns readable text and its selection in the same UTF-16 coordinate space. It also includes embedded labels that are not searchable text, so searching its text independently can disagree with `find` and `replaceAll`.
+- **`textRangesRects(ranges)`** measures ranges for highlights the host draws. Rectangles are CSS pixels in the page's client area.
 
-Any edit, reload or mode change makes the snapshot stale, and a stale range throws `stale-document`. Search again after each change, including after `replaceTextRange`. To replace every match, call `replaceAll`. [Readable text and layout](/reference/editor#readable-text-and-layout) has the exact rules.
+Any edit, reload or mode change makes the ranges stale. Refresh the results after each change, including replacement and undo. [Search](/reference/editor#searchmatches) and [readable text and layout](/reference/editor#readable-text-and-layout) describe the exact rules.
 
 ## Keep content clear of overlapping chrome
 
