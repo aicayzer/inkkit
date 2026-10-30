@@ -64,11 +64,9 @@ test('official playground switches real presets without changing the document @p
     .poll(() => page.locator('#status').textContent())
     .not.toBe('Loading editor…')
   const toolbar = page.getByRole('toolbar', { name: 'Editor controls' })
-  await expect(toolbar).toHaveText('')
-  await expect(toolbar.getByRole('button')).toHaveCount(8)
+  await expect(toolbar).toHaveText(/Formatted\s*Source\s*Theme/)
+  await expect(toolbar.getByRole('button')).toHaveCount(9)
   for (const label of [
-    'Formatted',
-    'Source',
     'Find',
     'Undo',
     'Redo',
@@ -82,9 +80,10 @@ test('official playground switches real presets without changing the document @p
   }
   await expect(page.locator('.hint')).toHaveCount(0)
   await expect(page.locator('#status')).not.toHaveClass(/status-error/)
-  await expect(
-    page.getByRole('combobox', { name: 'Theme', exact: true }),
-  ).toHaveValue('standard')
+  await expect(page.locator('#editor')).toHaveAttribute(
+    'data-inkkit-theme',
+    'standard',
+  )
   await page.locator('#editor .inkkit-mermaid-preview').scrollIntoViewIfNeeded()
   await expect(page.locator('#editor .inkkit-mermaid-preview')).toHaveAttribute(
     'data-state',
@@ -95,23 +94,27 @@ test('official playground switches real presets without changing the document @p
   await source.fill(`A theme edit.\n\n${await source.inputValue()}`)
   const before = await snapshot()
   for (const theme of ['standard', 'calm', 'essential']) {
+    await page.getByRole('button', { name: 'Theme', exact: true }).click()
     await page
-      .getByRole('combobox', { name: 'Theme', exact: true })
-      .selectOption(theme)
+      .getByRole('menuitemradio', { name: new RegExp(theme, 'i') })
+      .click()
     for (const scheme of ['light', 'dark']) {
-      await page
-        .getByRole('combobox', { name: 'Appearance', exact: true })
-        .selectOption(scheme)
+      await page.evaluate(
+        (dark) => window.postMessage({ type: 'inkkit-demo-theme', dark }, '*'),
+        scheme === 'dark',
+      )
       expect(await snapshot()).toEqual(before)
       await expect(page.locator('#editor')).toHaveAttribute(
         'data-inkkit-theme',
         theme,
       )
-      expect(
-        await page
-          .locator('#editor')
-          .evaluate((root) => getComputedStyle(root).colorScheme),
-      ).toBe(scheme)
+      await expect
+        .poll(() =>
+          page
+            .locator('#editor')
+            .evaluate((root) => getComputedStyle(root).colorScheme),
+        )
+        .toBe(scheme)
       await page.getByRole('button', { name: 'Formatted', exact: true }).click()
       const expected = theme === 'essential' ? '4px' : '8px'
       expect(
@@ -140,11 +143,13 @@ test('official playground switches real presets without changing the document @p
   await page.evaluate(() =>
     window.postMessage({ type: 'inkkit-demo-theme', dark: false }, '*'),
   )
-  expect(
-    await page
-      .locator('#editor')
-      .evaluate((root) => getComputedStyle(root).colorScheme),
-  ).toBe('dark')
+  await expect
+    .poll(() =>
+      page
+        .locator('#editor')
+        .evaluate((root) => getComputedStyle(root).colorScheme),
+    )
+    .toBe('light')
   await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(source).not.toHaveValue(/A theme edit\./)
   await page.getByRole('button', { name: 'Redo', exact: true }).click()
@@ -154,7 +159,7 @@ test('official playground switches real presets without changing the document @p
     await page.setViewportSize({ width, height: 800 })
     expect((await toolbar.boundingBox())?.x).toBe(width <= 520 ? 16 : 24)
     await expect(
-      page.getByRole('combobox', { name: 'Theme', exact: true }),
+      page.getByRole('button', { name: 'Theme', exact: true }),
     ).toBeVisible()
     expect(
       await page.evaluate(
@@ -162,9 +167,17 @@ test('official playground switches real presets without changing the document @p
       ),
     ).toBe(true)
     for (const scheme of ['light', 'dark']) {
-      await page
-        .getByRole('combobox', { name: 'Appearance', exact: true })
-        .selectOption(scheme)
+      await page.evaluate(
+        (dark) => window.postMessage({ type: 'inkkit-demo-theme', dark }, '*'),
+        scheme === 'dark',
+      )
+      await expect
+        .poll(() =>
+          page
+            .locator('#editor')
+            .evaluate((root) => getComputedStyle(root).colorScheme),
+        )
+        .toBe(scheme)
       await page.screenshot({
         path: testInfo.outputPath(`official-${width}-${scheme}.png`),
       })

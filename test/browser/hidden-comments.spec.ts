@@ -306,14 +306,15 @@ for (const [source, comment] of [
     await expectTypedOutside(page, source, comment)
   })
 
-test('a search match inside a hidden comment stays selected, and arrows leave it', async ({
+test('formatted search skips hidden comments without moving the caret into them', async ({
   page,
   openFixture,
 }) => {
   await openFixture()
   await open(page, inline)
-  await operation(page, 'focus')
+  await select(page, 7)
   await operation(page, 'find', { text: 'secret' })
+  expect((await observe(page)).lastResult).toBe(false)
   await expect
     .poll(async () => (await observe(page)).textSnapshot?.selection)
     .toMatchObject({ from: 7, to: 7 })
