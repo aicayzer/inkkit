@@ -83,7 +83,7 @@ In source and TXT modes, paste inserts text literally; source mode uses `markdow
 
 A paragraph at either end of the pasted content joins the text at the caret, so a pasted phrase stays in its sentence. Other blocks, such as headings, lists and code blocks, are inserted whole. After the paste, the caret is after the pasted content.
 
-Images in pasted HTML go through your adapter's `importImage`. An image that can't be imported becomes the text `[Name: image unavailable]`, and `events.error` receives `image-unavailable`. `paste` captures one operation, so don't read the system clipboard again while it runs. An import that the editor can't save is refused with `preservation`; offer plain text instead:
+Images in pasted HTML go through your adapter's `importImage`. Without an `images` adapter, a paste or drop that holds an image is refused whole and `events.error` receives `image-unsupported` ([details](/reference/adapters#images-without-an-adapter)). An image that can't be imported becomes the text `[Name: image unavailable]`, and `events.error` receives `image-unavailable`. `paste` captures one operation, so don't read the system clipboard again while it runs. An import that the editor can't save is refused with `preservation`; offer plain text instead:
 
 ```ts
 import { InkKitError, type ClipboardInput } from '@aicayzer/inkkit'

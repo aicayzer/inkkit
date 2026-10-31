@@ -164,6 +164,7 @@ export const editorErrorCodes = [
   'invalid-range',
   'preservation',
   'image-unavailable',
+  'image-unsupported',
   'diagram-unavailable',
   'file-unavailable',
   'clipboard-unavailable',
@@ -379,6 +380,54 @@ export interface ReadableTextSnapshot extends DocumentVersion {
   mode: 'source' | 'formatted'
   text: string
   selection: TextRange
+}
+/** What a find session shows: how many matches the query has and which one the selection is on. */
+export interface FindState extends DocumentVersion {
+  /** The query, or an empty string when there is none. */
+  query: string
+  /** The position, from 1, of the match that the selection covers exactly, or 0 when the selection
+   *  is not on a match. */
+  current: number
+  /** The number of matches. */
+  total: number
+}
+/**
+ * A find bar's state and commands: the query, the match count, the match the selection is on, and
+ * navigation that wraps. Open one with `InkKitEditor.findSession`.
+ */
+export interface FindSession {
+  /** The current state. It does not call the change handler. */
+  state(expectedGeneration?: number): FindState
+  /** Sets the query, highlights its matches and selects one. A new query selects the first match
+   *  at or after the selection, or the last one before it with `direction: 'previous'`. With the
+   *  same query, the selection moves to the next or previous match and wraps at the ends; without
+   *  a direction, a selection on a match stays there. Returns whether there is a match. */
+  find(
+    query: string,
+    options?: { direction?: 'next' | 'previous' },
+    expectedGeneration?: number,
+  ): boolean
+  /** Moves to the next match, wrapping at the end. Returns whether there is a match. */
+  next(expectedGeneration?: number): boolean
+  /** Moves to the previous match, wrapping at the start. Returns whether there is a match. */
+  previous(expectedGeneration?: number): boolean
+  /** Replaces the selected match, or the next one, and selects the match after it. Returns whether
+   *  the text changed. A match that already reads as the replacement is skipped without a change. */
+  replace(
+    query: string,
+    replacement: string,
+    expectedGeneration?: number,
+  ): boolean
+  /** Replaces every match and returns how many were replaced. */
+  replaceAll(
+    query: string,
+    replacement: string,
+    expectedGeneration?: number,
+  ): number
+  /** Clears the query and the highlights. */
+  clear(expectedGeneration?: number): void
+  /** Stops the session: it clears the highlights and its handler is not called again. */
+  close(): void
 }
 /** A rectangle in CSS pixels in the web view's client coordinate space. */
 export interface TextRect {

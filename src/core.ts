@@ -63,6 +63,8 @@ export type {
   PrintableDocument,
   PrintableWarning,
   TextRange,
+  FindState,
+  FindSession,
   ReadableTextSnapshot,
   TextRect,
   ViewportInsets,

@@ -70,6 +70,8 @@ interface PasteControllerOptions {
   ctx: () => Ctx
   context: () => DocumentContext
   adapter?: ImageAdapter
+  /** A file adapter owns dropped files, so a drop of image files alone is left to the host. */
+  files?: boolean
   onError?: (error: unknown) => void
   /** Runs the import's edit as one call, which throws if the edit is refused. */
   commit?: <T>(apply: () => T) => T
@@ -138,6 +140,18 @@ export class PasteController {
               drop: (view, event) => {
                 const data = event.dataTransfer
                 if (
+                  !this.options.adapter &&
+                  !this.options.files &&
+                  !data?.getData('text/html') &&
+                  view.editable &&
+                  !view.dragging &&
+                  imageFiles(data?.files ?? []).length
+                ) {
+                  event.preventDefault()
+                  options.onError?.(imagesRefused())
+                  return true
+                }
+                if (
                   !data?.getData('text/html') ||
                   !view.editable ||
                   view.dragging
@@ -156,9 +170,7 @@ export class PasteController {
                     html: data.getData('text/html'),
                     plainText: this.options.literalText?.() ?? false,
                   },
-                  [...data.files].filter((file) =>
-                    file.type.startsWith('image/'),
-                  ),
+                  imageFiles(data.files),
                   target,
                 ).catch((error) => options.onError?.(error))
                 return true
@@ -195,9 +207,7 @@ export class PasteController {
                 )
                 return true
               }
-              const files = [...data.files].filter((file) =>
-                file.type.startsWith('image/'),
-              )
+              const files = imageFiles(data.files)
               void this.run(
                 {
                   text,
@@ -340,6 +350,10 @@ export class PasteController {
     }
     const rich = this.options.richText?.()
     if (rich) {
+      // RTF drops the images of pasted HTML and keeps the rest. Image bytes have nothing else
+      // to give, so without an adapter they are refused.
+      if (!this.options.adapter && (files.length || input.images?.length))
+        throw imagesRefused()
       // Images and files are not part of an RTF document, so nothing is imported or waited for.
       const anchor = operation
       const state = view.state
@@ -386,6 +400,13 @@ export class PasteController {
       this.assertContext(context, operation)
       const schema = view.state.schema
       let slice: Slice
+      // Text standing in for images that could not be imported.
+      const placeholders: string[] = []
+      const placeholder = (name: string): string => {
+        const text = `[${name}: image unavailable]`
+        placeholders.push(text)
+        return text
+      }
       // Markdown parsed into the slice, whose edge spaces the parser drops.
       let source: string | undefined
       const plainText =
@@ -473,18 +494,18 @@ export class PasteController {
               error.code !== 'image-unavailable'
             )
               throw error
-            element.replaceWith(
-              document.createTextNode(`[${alt}: image unavailable]`),
-            )
-            this.options.onError?.(
-              coded(
-                error,
-                'image-unavailable',
-                error instanceof Error
-                  ? error.message
-                  : 'The pasted image is unavailable.',
-              ),
-            )
+            element.replaceWith(document.createTextNode(placeholder(alt)))
+            // With no adapter the paste is refused instead, if the image would have shown.
+            if (this.options.adapter)
+              this.options.onError?.(
+                coded(
+                  error,
+                  'image-unavailable',
+                  error instanceof Error
+                    ? error.message
+                    : 'The pasted image is unavailable.',
+                ),
+              )
           }
         }
         let imageIndex = 0
@@ -506,9 +527,7 @@ export class PasteController {
                 )
               : elements[position]
             if (!element || !container.contains(element)) {
-              const text = schema.text(
-                `[${node.attrs.alt || 'Image'}: image unavailable]`,
-              )
+              const text = schema.text(placeholder(node.attrs.alt || 'Image'))
               return node.isBlock
                 ? schema.nodes.paragraph!.create(null, text)
                 : text
@@ -551,6 +570,7 @@ export class PasteController {
           }
         }
       } else if (images.length) {
+        if (!this.options.adapter) throw imagesRefused()
         const nodes = []
         if (input.text)
           nodes.push(
@@ -584,9 +604,7 @@ export class PasteController {
             nodes.push(
               schema.nodes.paragraph!.create(
                 null,
-                schema.text(
-                  `[${image.filename ?? 'Image'}: image unavailable]`,
-                ),
+                schema.text(placeholder(image.filename ?? 'Image')),
               ),
             )
             this.options.onError?.(
@@ -625,6 +643,18 @@ export class PasteController {
         }
         source = markdown ?? input.text
         slice = joinable(ctx.get(parserCtx)(source).content)
+      }
+      // A placeholder that would reach the document means an image was pasted where none can be
+      // stored. Content that merely carries an image, such as a table kept as source, is unaffected.
+      if (!this.options.adapter && placeholders.length) {
+        const shown = slice.content.textBetween(
+          0,
+          slice.content.size,
+          '\n',
+          '\n',
+        )
+        if (placeholders.some((text) => shown.includes(text)))
+          throw imagesRefused()
       }
       this.assertContext(context, operation)
       if (!view.editable || this.options.editable?.() === false) return
@@ -1104,6 +1134,15 @@ function dropRange(doc: ProseNode, range: Anchor): Anchor {
  * keeps the provider's code-language behaviour; invalid metadata pastes plain
  * text.
  */
+function imageFiles(files: Iterable<File>): File[] {
+  return [...files].filter((file) => file.type.startsWith('image/'))
+}
+function imagesRefused(): InkKitError {
+  return new InkKitError(
+    'image-unsupported',
+    'The images were not inserted because no image adapter is configured.',
+  )
+}
 function claimsPaste(
   view: EditorView,
   event: ClipboardEvent,

@@ -636,6 +636,13 @@ function generate(next: () => number): string {
   ).join('')
 }
 
+// The generated HTML holds images, which need an adapter to be pasted at all.
+const pastedImages = {
+  presentation: () => undefined,
+  importImage: async () => ({ reference: 'images/photo.png' }),
+  exportImage: async () => ({ bytes: new Uint8Array(), mimeType: 'image/png' }),
+}
+
 test('generated HTML with InkKit metadata and untidy text reads back as inserted', async () => {
   await withEditor(
     async (session) => {
@@ -665,7 +672,7 @@ test('generated HTML with InkKit metadata and untidy text reads back as inserted
         }
       }
     },
-    { wikiLinks: { open() {} } },
+    { images: pastedImages, wikiLinks: { open() {} } },
   )
 }, 60000)
 
