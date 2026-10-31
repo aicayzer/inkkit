@@ -76,7 +76,7 @@ Without `options.images`, the editor has nowhere to store an image, so a paste o
 
 - **Refused:** image files and `images` in `paste`, and pasted or dropped HTML whose image would appear in the document. A table that the editor keeps as source because it can't be edited is not refused, nor is a copied diagram, because neither inserts an image.
 - **RTF documents:** only image bytes are refused. Images in pasted HTML are still dropped and the rest of the paste is kept, as for any adapter.
-- **Source and TXT surfaces:** pastes are text only, so nothing is refused.
+- **Source and TXT surfaces:** they insert text only. A paste or drop that holds an image file and no text is refused with `image-unsupported`, and `paste` rejects when it holds only `images`. Text that comes with an image is inserted as usual, and no error is reported.
 - **A file adapter:** a host that sets only `files` receives dropped image files for its own handling, and its pasted images are refused.
 
 With an `images` adapter none of this applies: an import that fails inserts a placeholder as described above.

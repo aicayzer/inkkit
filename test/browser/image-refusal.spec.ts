@@ -86,3 +86,68 @@ for (const kind of route)
       if (withAdapter && kind === 'clipboard')
         expect(result.text).toContain('images/a.png')
     })
+
+for (const kind of route)
+  test(`a ${kind} of an image-only input in source mode is refused without an adapter`, async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await page.waitForFunction(() => Boolean(window.inkkitPlayground))
+    const result = await page.evaluate(
+      async ({ moduleUrl, kind }) => {
+        const { InkKitEditor } = (await import(
+          moduleUrl
+        )) as typeof import('../../src/core')
+        const root = document.createElement('div')
+        document.body.append(root)
+        const errors: string[] = []
+        const editor = await InkKitEditor.mount(
+          root,
+          { changed() {}, error: (error) => errors.push(error.code) },
+          {},
+        )
+        try {
+          editor.loadDocument({
+            documentId: 'source-refusal',
+            generation: 1,
+            format: 'md',
+            text: 'Before\n',
+          })
+          editor.setEditingMode('source')
+          const transfer = new DataTransfer()
+          transfer.items.add(
+            new File([new Uint8Array([1, 2, 3])], 'shot.png', {
+              type: 'image/png',
+            }),
+          )
+          const area = root.querySelector('textarea')!
+          const event =
+            kind === 'drop'
+              ? new DragEvent('drop', {
+                  dataTransfer: transfer,
+                  bubbles: true,
+                  cancelable: true,
+                })
+              : new ClipboardEvent('paste', {
+                  clipboardData: transfer,
+                  bubbles: true,
+                  cancelable: true,
+                })
+          area.dispatchEvent(event)
+          await new Promise((resolve) => setTimeout(resolve, 50))
+          return {
+            errors,
+            prevented: event.defaultPrevented,
+            text: editor.snapshot().text,
+          }
+        } finally {
+          await editor.destroy()
+          root.remove()
+        }
+      },
+      { moduleUrl, kind },
+    )
+    expect(result.errors).toEqual(['image-unsupported'])
+    expect(result.prevented).toBe(true)
+    expect(result.text).toBe('Before\n')
+  })

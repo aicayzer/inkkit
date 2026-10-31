@@ -146,7 +146,7 @@ import type { TextProjection } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
 import { isWrittenEdit, setCommentVisibility } from './comments'
 import { assertHiddenCommentsKept } from './hidden-comments'
-import { PasteController } from './paste'
+import { PasteController, imagesRefused } from './paste'
 import { EditorFindSession } from './find-session'
 import { DocumentSession, type SessionCapture } from './session'
 import {
@@ -1743,7 +1743,11 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     input = this.clipboard.restore(clipboardInput(input))
     this.assertMutation(expectedGeneration)
     if (this.literalSurface) {
-      this.pasteAsPlainText(this.document.handler.literalPaste(input))
+      const text = this.document.handler.literalPaste(input)
+      // Text-only surfaces have nowhere to store an image, so an image alone is refused.
+      if (!text && input.images?.length && !this.options.images)
+        throw imagesRefused()
+      this.pasteAsPlainText(text)
       return
     }
     await this.pasteController.paste(input)
@@ -2053,6 +2057,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         instance.literalKeys(instance.editor.ctx.get(editorViewCtx), event),
       publish: () => instance.publishCommandState(),
       paste: (input) => instance.paste(input),
+      refusesImages: (drop) => !options.images && !(drop && options.files),
       report: (error) => instance.report(error),
       reveal: () => instance.revealLiteralSelection(),
     })

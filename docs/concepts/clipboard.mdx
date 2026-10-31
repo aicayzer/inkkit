@@ -79,7 +79,7 @@ A paste the person makes and a call to `paste` with what your app read from the 
 5. **Images without HTML:** each image goes through your image adapter and becomes its own paragraph.
 6. **Plain text:** read as Markdown. A web address pasted over selected text links that text instead.
 
-In source and TXT modes, paste inserts text literally; source mode uses `markdown` when it's given. `pasteAsPlainText` is the way to insert literal text in formatted mode, for a **Paste as Plain Text** command. When the person pastes code copied from Visual Studio Code, it becomes a code block in its language.
+In source and TXT modes, paste inserts text literally; source mode uses `markdown` when it's given. Without an `images` adapter, a paste or drop that holds only an image reports `image-unsupported` instead of doing nothing. `pasteAsPlainText` is the way to insert literal text in formatted mode, for a **Paste as Plain Text** command. When the person pastes code copied from Visual Studio Code, it becomes a code block in its language.
 
 A paragraph at either end of the pasted content joins the text at the caret, so a pasted phrase stays in its sentence. Other blocks, such as headings, lists and code blocks, are inserted whole. After the paste, the caret is after the pasted content.
 

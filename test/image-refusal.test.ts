@@ -193,3 +193,66 @@ test('a file adapter alone leaves dropped image files to the host but refuses a 
       expect(errors.map((error) => error.code)).toEqual(['image-unsupported'])
     },
   ))
+
+function sourcePaste(editor: InkKitEditor, files: File[], text = '') {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.assign(event, {
+    clipboardData: {
+      getData: (type: string) => (type === 'text/plain' ? text : ''),
+      files,
+    },
+  })
+  sourceArea(editor).dispatchEvent(event)
+  return event
+}
+function sourceDrop(editor: InkKitEditor, files: File[], text = '') {
+  const event = new Event('drop', { bubbles: true, cancelable: true })
+  Object.assign(event, {
+    dataTransfer: {
+      getData: (type: string) => (type === 'text/plain' ? text : ''),
+      files,
+    },
+  })
+  sourceArea(editor).dispatchEvent(event)
+  return event
+}
+const sourceArea = (_editor: InkKitEditor) =>
+  document.querySelector<HTMLTextAreaElement>('textarea.inkkit-plain')!
+
+for (const format of ['md', 'txt'] as const)
+  test(`${format} source: an image-only paste or drop without an adapter reports image-unsupported`, () =>
+    run({}, async (editor, errors) => {
+      editor.loadDocument({
+        documentId: format,
+        generation: 2,
+        format,
+        text: 'Start\n',
+      })
+      if (format === 'md') editor.setEditingMode('source')
+      const before = editor.snapshot()
+      expect(sourcePaste(editor, [file()]).defaultPrevented).toBe(true)
+      expect(sourceDrop(editor, [file()]).defaultPrevented).toBe(true)
+      await settle()
+      expect(errors.map((error) => error.code)).toEqual([
+        'image-unsupported',
+        'image-unsupported',
+      ])
+      expect(editor.snapshot()).toEqual(before)
+      await expect(
+        editor.paste({ text: '', images: [{ bytes, mimeType: 'image/png' }] }),
+      ).rejects.toMatchObject({ code: 'image-unsupported' })
+      // Text that comes with the image is inserted, with no error.
+      errors.length = 0
+      sourcePaste(editor, [file()], 'Words')
+      await settle()
+      expect(errors).toEqual([])
+      expect(editor.snapshot().text).toContain('Words')
+    }))
+
+test('md source: with an image adapter an image-only paste is unchanged', () =>
+  run({ images: adapter }, async (editor, errors) => {
+    editor.setEditingMode('source')
+    sourcePaste(editor, [file()])
+    await settle()
+    expect(errors).toEqual([])
+  }))

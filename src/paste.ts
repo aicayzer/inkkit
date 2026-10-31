@@ -1137,7 +1137,7 @@ function dropRange(doc: ProseNode, range: Anchor): Anchor {
 function imageFiles(files: Iterable<File>): File[] {
   return [...files].filter((file) => file.type.startsWith('image/'))
 }
-function imagesRefused(): InkKitError {
+export function imagesRefused(): InkKitError {
   return new InkKitError(
     'image-unsupported',
     'The images were not inserted because no image adapter is configured.',
