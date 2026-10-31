@@ -310,6 +310,24 @@ describe('paste into RTF keeps what RTF can hold', () => {
       expect(ran.inkkitRan).toBe(false)
     }))
 
+  test('image bytes are refused without an image adapter, and HTML images are still dropped', () =>
+    withRichEditor({}, async ({ editor }) => {
+      editor.loadDocument(rich(doc(para('keep'))))
+      const before = richSnapshot(editor).document
+      await expect(
+        editor.paste({
+          text: 'caption',
+          images: [{ bytes: new Uint8Array([1]), mimeType: 'image/png' }],
+        }),
+      ).rejects.toMatchObject({ code: 'image-unsupported' })
+      expect(richSnapshot(editor).document).toEqual(before)
+      await editor.paste({
+        text: 'x',
+        html: '<p>after<img src="https://example.test/a.png" alt="A"></p>',
+      })
+      expect(JSON.stringify(richSnapshot(editor).document)).toContain('after')
+    }))
+
   test('a host link scheme is kept', () =>
     withRichEditor({ linkSchemes: ['things'] }, async ({ editor }) => {
       editor.loadDocument(rich(doc(para())))

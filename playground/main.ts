@@ -2,6 +2,8 @@ import {
   InkKitEditor,
   type ClipboardScope,
   type CommandState,
+  type FindSession,
+  type FindState,
   type TableCommand,
   type FormatCommand,
   type Heading,
@@ -546,6 +548,9 @@ async function reset(
   syncUrl()
   return observe()
 }
+let findSession: FindSession | undefined
+let findSessionOwner: unknown
+let findStates: FindState[] = []
 async function operation(name: string, args: Record<string, unknown> = {}) {
   const operationEpoch = mountEpoch
   let result: unknown
@@ -556,6 +561,39 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
       case 'searchMatches':
         result = target.searchMatches(args.text as string)
         break
+      case 'findSession': {
+        // A fresh session for each mount; its reported states are kept for the spec to read.
+        if (findSessionOwner !== target) {
+          findSessionOwner = target
+          findStates = []
+          findSession = target.findSession((state) => findStates.push(state))
+        }
+        const command = args.command as string
+        const query = args.query as string
+        const replacement = args.replacement as string
+        let value: unknown
+        if (command === 'find')
+          value = findSession!.find(
+            query,
+            args.direction
+              ? { direction: args.direction as 'next' | 'previous' }
+              : undefined,
+          )
+        else if (command === 'next') value = findSession!.next()
+        else if (command === 'previous') value = findSession!.previous()
+        else if (command === 'replace')
+          value = findSession!.replace(query, replacement)
+        else if (command === 'replaceAll')
+          value = findSession!.replaceAll(query, replacement)
+        else if (command === 'clear') findSession!.clear()
+        else if (command === 'close') findSession!.close()
+        result = {
+          value,
+          state: command === 'close' ? undefined : findSession!.state(),
+          states: findStates,
+        }
+        break
+      }
       case 'textSnapshot':
         result = target.textSnapshot()
         break

@@ -1,6 +1,6 @@
 # Releases
 
-Release `0.0.1` was published manually from the verified tarball. Later releases are published by the release workflow.
+The release workflow publishes every release from the tarball that CI packed and tested.
 
 ## What the release workflow checks
 
@@ -8,12 +8,12 @@ Pushing a `v*` tag starts `.github/workflows/release.yml`. It publishes only whe
 
 1. The tag is `v` followed by the `version` in `package.json`.
 2. The tagged commit is on `main` (its tip or an ancestor), or is exactly the tip of the explicit `release/<version>` maintenance branch matching `package.json`. A tag on an unmerged feature branch, a different version's maintenance branch, or an obsolete maintenance candidate fails.
-3. The whole CI workflow runs on the tagged commit, the same checks as a pull request: formatting, `pnpm check` with the packed-consumer pages in Chromium and WebKit, the built-playground check, and the whole browser suite in Chromium and WebKit.
+3. The whole CI workflow runs on the tagged commit with every lane switched on, whatever the tag changed: formatting, `pnpm check`, the built-playground check, the playground and Swift lanes, and the whole browser suite in Chromium and WebKit. The editor lanes also run in Chromium and WebKit on every pull request. A release additionally opens the packed-consumer pages in both engines, where a pull request uses Chromium only. The [CI policy](development.md#ci-policy) lists the lanes.
 4. The publish job publishes the `package-candidate` archive that the CI `check` job packed and tested, through npm trusted publishing.
 
 These checks live in the tagged commit's own `release.yml`, and two settings outside the workflow add to them:
 
-- The publish job runs in the GitHub environment `npm`, which allows deployments only from `v*` tags.
+- The publish job runs in the GitHub environment `npm`, which allows deployments only from `v*` tags Publication uses npm's OIDC trusted publishing, not a token.
 - A tag ruleset lets only repository administrators create, move or delete `v*` tags.
 
 ## Publication checklist
@@ -36,12 +36,12 @@ Pushing a later matching version tag starts npm publication. Complete the gate *
 6. Download the release workflow's `package-candidate` artefact into a separate directory. Verify publication with the command below. Record the workflow URL, OIDC result and registry evidence before marking the milestone publication checklist complete and closing the milestone. Publish and verify each authorised release before beginning implementation of the next.
 
 ```sh
-node scripts/verify-release.mjs 0.0.7 \
-  _local/release/0.0.7/aicayzer-inkkit-0.0.7.tgz \
-  _local/hosted-release/0.0.7/0.0.7/aicayzer-inkkit-0.0.7.tgz
+node scripts/verify-release.mjs <version> \
+  _local/release/<version>/aicayzer-inkkit-<version>.tgz \
+  _local/hosted-release/<version>/<version>/aicayzer-inkkit-<version>.tgz
 ```
 
-Use the corresponding version and paths for each release. The command verifies registry version and SHA-512 integrity, requires the registry's compressed archive to match the published CI archive exactly, and compares the decompressed tar byte-for-byte with the native-tested candidate. Different compression is acceptable only when decompressed tar bytes are identical; record that difference. A content mismatch blocks release completion.
+Replace `<version>` with the release's version; the hosted path is the downloaded `package-candidate` artifact. The command verifies registry version and SHA-512 integrity, requires the registry's compressed archive to match the published CI archive exactly, and compares the decompressed tar byte-for-byte with the native-tested candidate. Different compression is acceptable only when decompressed tar bytes are identical; record that difference. A content mismatch blocks release completion.
 
 The command also installs the exact registry version in a fresh consumer with an isolated npm cache, verifies declarations and CSS, builds an offline single-file bundle, and opens the main and `core` pages in Chromium and WebKit with the same runtime checks as `pnpm test:package`. It records `registry-evidence.json` and the downloaded archive in `_local/release/<version>/`. These build checks do not replace selected runtime WKWebView checks when the native boundary changes. External-app clipboard checks are exceptional and need an identified changed contract or reproduced bug, as described in [development](development.md). A source-only documentation change does not require a native run. Reuse native evidence only when the tested package inputs and relevant contract are unchanged, and record the comparison.
 
@@ -60,7 +60,7 @@ In the package's npm settings, add a GitHub Actions trusted publisher with:
 - Organization or user: `aicayzer`
 - Repository: `inkkit`
 - Workflow filename: `release.yml`
-- Environment name: leave blank
+- Environment name: `npm` to accept only the publish job's environment, or blank to accept any
 - Publishing permissions: allow direct publishing through `npm publish`
 
 The workflow uses GitHub-hosted runners, Node.js 26 and npm's OIDC authentication. npm requires version 11.5.1 or later for trusted publishing. The publish job runs in the `npm` environment with `contents: read` and `id-token: write`; no npm token is stored. Create the environment under the repository's Settings > Environments, under **Deployment branches and tags** choose **Selected branches and tags**, and add a rule of type **Tag** with the pattern `v*`. The workflow filename must match the actual file in `.github/workflows/`. Check available configuration evidence before pushing each release tag. Successful OIDC releases establish the publishing path when the workflow and package configuration are unchanged. `npm trust list @aicayzer/inkkit --json` is an optional read with npm 11.15 or later and may require account authentication; that request alone does not require local npm login. Investigate actual configuration changes or publication failures. Follow [npm's trusted-publisher documentation](https://docs.npmjs.com/trusted-publishers/).

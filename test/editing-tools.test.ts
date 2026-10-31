@@ -190,6 +190,40 @@ test('formatted replacement leaves comments untouched; source replacement retain
     },
   ))
 
+test.each([
+  [
+    'a replacement',
+    (editor: InkKitEditor) => editor.replace('x', 'x\ny'),
+    'x<br />y',
+  ],
+  [
+    'a replacement of all',
+    (editor: InkKitEditor) => editor.replaceAll('x', 'x\ny'),
+    'x<br />y',
+  ],
+  [
+    'a plain text paste',
+    (editor: InkKitEditor) => {
+      editor.find('x')
+      return editor.pasteAsPlainText('p\nq')
+    },
+    'p<br />q',
+  ],
+])(
+  'a table cell keeps its CRLF source and takes HTML breaks from %s',
+  (_, call, cell) =>
+    run('| a | b |\r\n| - | - |\r\n| x | y |\r\n', (editor) => {
+      const source = editor.snapshot().text
+      expect(call(editor)).toBeTruthy()
+      const saved = source.replace('x', cell)
+      expect(editor.snapshot().text).toBe(saved)
+      expect(editor.undo(4)).toBe(true)
+      expect(editor.snapshot().text).toBe(source)
+      expect(editor.redo(4)).toBe(true)
+      expect(editor.snapshot().text).toBe(saved)
+    }),
+)
+
 test('replacement newline creates a hard break in prose and remains literal in code', () =>
   run('prose needle\n\n```text\ncode needle\n```\n', (editor, _root, ctx) => {
     expect(editor.replaceAll('needle', 'a\r\nb')).toBe(2)

@@ -473,6 +473,48 @@ describe('selections, undo and bindings', () => {
     reopenings = []
   })
 
+  // The bytes of every block, and of its line endings, come back at each step.
+  test.each([
+    ['LF', '\n'],
+    ['CRLF', '\r\n'],
+  ])(
+    'top-level blocks with %s move, undo and redo to exact bytes',
+    async (_, eol) => {
+      const source = ['First', '', 'Second', '', 'Third', ''].join(eol)
+      const swapped = ['Second', '', 'First', '', 'Third', ''].join(eol)
+      await withNote(source, (note) => {
+        note.caret('Second', 0)
+        expect(note.editor.commandState().commands).toMatchObject({
+          moveBlockUp: true,
+          moveBlockDown: true,
+        })
+        expect(note.editor.moveBlock('up')).toBe(true)
+        expect(note.editor.snapshot().text).toBe(swapped)
+        expect(note.changes).toEqual([swapped])
+        expect(note.editor.commandState().commands).toMatchObject({
+          moveBlockUp: false,
+          moveBlockDown: true,
+        })
+        expect(note.editor.moveBlock('down')).toBe(true)
+        expect(note.editor.snapshot().text).toBe(source)
+        expect(note.editor.undo()).toBe(true)
+        expect(note.editor.snapshot().text).toBe(swapped)
+        expect(note.editor.undo()).toBe(true)
+        expect(note.editor.snapshot()).toMatchObject({
+          text: source,
+          dirty: false,
+        })
+        expect(note.editor.redo()).toBe(true)
+        expect(note.editor.snapshot().text).toBe(swapped)
+        expect(note.editor.redo()).toBe(true)
+        expect(note.editor.snapshot().text).toBe(source)
+        expect(note.saved()).toBe(source)
+      })
+      await Promise.all(reopenings)
+      reopenings = []
+    },
+  )
+
   test('a move is one undo step', async () => {
     const source = '- one\r\n- two  \r\n  more\r\n\r\nAfter __this__\r\n'
     await withNote(source, (note) => {

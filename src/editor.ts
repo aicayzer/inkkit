@@ -129,6 +129,8 @@ import {
   type PrintableDocument,
   type TextRange,
   type ReadableTextSnapshot,
+  type FindSession,
+  type FindState,
   type TextRect,
   type ViewportInsets,
   type ViewportOptions,
@@ -145,6 +147,7 @@ import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
 import { isWrittenEdit, setCommentVisibility } from './comments'
 import { assertHiddenCommentsKept } from './hidden-comments'
 import { PasteController } from './paste'
+import { EditorFindSession } from './find-session'
 import { DocumentSession, type SessionCapture } from './session'
 import {
   coded,
@@ -875,6 +878,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private ownsRootClass = false
   private activation!: EditorActivation
   private reportingSuppressed = false
+  /** A reload keeps each find session's query; a load starts without one. */
+  private reloading = false
+  private readonly findSessions = new Set<EditorFindSession>()
   private loading = false
   private call?: FacadeCall
   private writable = true
@@ -1453,6 +1459,17 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     )
       return
     this.events.commandStateChanged?.(this.commandState())
+    this.refreshFindSessions()
+  }
+
+  private refreshFindSessions(): void {
+    for (const session of [...this.findSessions]) {
+      try {
+        session.refresh()
+      } catch (error) {
+        this.report(error)
+      }
+    }
   }
 
   /** What the editor can do now, for enabling host controls. Unlike `snapshot`, it works during
@@ -1554,7 +1571,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     expectOneOf(mode, editingModes, 'mode')
     this.assertCurrent(expectedGeneration)
     if (!this.document.handler.sourceMode || this.mode === mode) return false
-    return this.source.setMode(mode, {
+    const switched = this.source.setMode(mode, {
       ctx: this.editor.ctx,
       wasSource: this.literalSurface,
       container: this.geometry.container,
@@ -1581,6 +1598,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       },
       reveal: () => this.revealCurrentSelection(),
     })
+    // The new surface starts without highlights.
+    if (switched) for (const session of this.findSessions) session.reapply()
+    return switched
   }
 
   private updateSurface(): void {
@@ -1812,6 +1832,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     if (this.destroyed) return
     this.diagnostics.destroy(this.editor.ctx)
     this.destroyed = true
+    this.findSessions.clear()
     this.clipboard.clear()
     this.ready = false
     this.session.close()
@@ -1915,6 +1936,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       ctx: () => instance.editor.ctx,
       context: () => instance.context(),
       adapter: options.images,
+      files: !!options.files,
       onError: (error) => instance.report(error),
       commit: (apply) => instance.facadeCall(apply),
       literalText: () => instance.literalSurface,
@@ -2071,6 +2093,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.mode = 'formatted'
     this.source.reset()
     this.search.reset()
+    if (!this.reloading)
+      for (const session of this.findSessions) session.reset()
     this.document.handler = handler
     // An RTF document has no source text to show.
     this.source.setSourceValue(handler.richText ? '' : input.text)
@@ -2120,6 +2144,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       wasLiteral,
     )
     this.reportingSuppressed = true
+    this.reloading = true
     try {
       this.loadDocument(document)
       if (
@@ -2134,7 +2159,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         () => this.literalSurface,
         saved,
       )
+      for (const session of this.findSessions) session.reapply()
     } finally {
+      this.reloading = false
       this.reportingSuppressed = false
       this.publishCommandState()
     }
@@ -2338,6 +2365,31 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     return count && replacement !== search && this.refusedRichEdit(doc)
       ? 0
       : count
+  }
+
+  /**
+   * Opens a find session, which keeps a query and reports its match count and position to
+   * `onChange` whenever they change. Open one session per editor: the editor has one set of
+   * highlights.
+   */
+  findSession(onChange: (state: FindState) => void): FindSession {
+    this.assertAlive()
+    if (typeof onChange !== 'function')
+      throw invalidArgument('onChange must be a function')
+    const session = new EditorFindSession(
+      this,
+      (state) => {
+        try {
+          onChange(state)
+        } catch (error) {
+          if (typeof globalThis.reportError === 'function')
+            globalThis.reportError(error)
+        }
+      },
+      (closed) => this.findSessions.delete(closed),
+    )
+    this.findSessions.add(session)
+    return session
   }
 
   private outlineContext(): OutlineContext {
@@ -2815,6 +2867,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       'redo',
       'find',
       'searchMatches',
+      'findSession',
       'replace',
       'replaceAll',
       'format',

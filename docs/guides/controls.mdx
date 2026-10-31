@@ -164,7 +164,31 @@ Here `chooseNoteLink` is your own picker, which returns a Markdown link such as 
 
 ## Build your own find
 
-For a basic find bar, `find(text)` selects the next match, and `replace` and `replaceAll` replace them. Use `searchMatches(text)` for a match count and previous/next navigation. It uses the same matching rules as these commands, so embedded labels and block boundaries cannot inflate the count.
+A find session keeps a find bar's state for you: the query, the number of matches, which one is selected, navigation that wraps, and replacement that moves on to the next match.
+
+```ts
+const session = editor.findSession(({ query, current, total }) => {
+  counter.textContent = query ? `${current} of ${total}` : ''
+})
+
+input.addEventListener('input', () => session.find(input.value))
+nextButton.addEventListener('click', () => session.next())
+previousButton.addEventListener('click', () => session.previous())
+replaceButton.addEventListener('click', () =>
+  session.replace(input.value, replacement.value),
+)
+```
+
+- **`find(query)`** highlights the matches and selects the first one at or after the selection. Call it again with the same query and `{ direction: 'next' }` or `{ direction: 'previous' }`, or use `next()` and `previous()`, to step through the matches and wrap at the ends.
+- **The change handler** receives a `FindState` when the query, the count or the selected match changes, including after typing, undo, a mode switch and a reload. It is not called when nothing changed, so it is safe to update the interface directly. `loadDocument` clears the query; `reloadDocument` keeps it.
+- **`replace(query, replacement)`** replaces the selected match, or the next one, and selects the match after it. `replaceAll` replaces every match as one undo step.
+- **`close()`** clears the highlights and stops the handler when the find bar closes.
+
+Matching follows the same rules as `find`, `replace` and `replaceAll`. Selection reveals the match without taking focus from your field. The [editor reference](/reference/editor#findsession) describes the exact rules and errors.
+
+### Lower-level calls
+
+To draw your own highlights, use the primitives the session is built on:
 
 ```ts
 const matches = editor.searchMatches('garden')
@@ -172,14 +196,13 @@ const first = matches[0]
 if (first) editor.selectTextRange(first, { reveal: true })
 ```
 
-- **`searchMatches(text)`** returns frozen ranges in document order without changing selection, focus or highlights. An empty query returns an empty array. Use `matches.length` for the total and retain an index for previous/next navigation.
+- **`searchMatches(text)`** returns frozen ranges in document order without changing selection, focus or highlights. An empty query returns an empty array.
 - **`selectTextRange(range, { reveal: true })`** selects and reveals without taking focus from the search field. Add `focus: true` only when focus should move to the document.
 - **`find(text)`** selects the next result and establishes the formatted editor's search highlights. `find('')` clears them.
-- **`replace(search, replacement)`** replaces the selected match or the next one; select a current result before calling it. `replaceAll` replaces every match as one undo step.
 - **`textSnapshot()`** returns readable text and its selection in the same UTF-16 coordinate space. It also includes embedded labels that are not searchable text, so searching its text independently can disagree with `find` and `replaceAll`.
 - **`textRangesRects(ranges)`** measures ranges for highlights the host draws. Rectangles are CSS pixels in the page's client area.
 
-Any edit, reload or mode change makes the ranges stale. Refresh the results after each change, including replacement and undo. [Search](/reference/editor#searchmatches) and [readable text and layout](/reference/editor#readable-text-and-layout) describe the exact rules.
+Any edit, reload or mode change makes these ranges stale. Refresh them after each change, including replacement and undo. [Search](/reference/editor#searchmatches) and [readable text and layout](/reference/editor#readable-text-and-layout) describe the exact rules.
 
 ## Keep content clear of overlapping chrome
 
