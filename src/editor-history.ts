@@ -1,10 +1,12 @@
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import type { EditorState } from '@milkdown/kit/prose/state'
+import type { EditorState, Plugin } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
 import {
   closeHistory,
   redoDepth,
+  undoDepth,
   undo as undoHistory,
   redo as redoHistory,
 } from '@milkdown/kit/prose/history'
@@ -36,6 +38,50 @@ const sourceGroupDelay = 500
 // Earlier undo steps of typed source that the formatted document has not taken
 // in; the oldest merge into the next beyond this many.
 const sourceStepLimit = 100
+
+interface HistoryBranch {
+  constructor: { empty: unknown }
+}
+interface HistoryPluginState {
+  done: unknown
+  undone: HistoryBranch
+}
+const isHistoryState = (value: unknown): value is HistoryPluginState =>
+  typeof value === 'object' &&
+  value !== null &&
+  'done' in value &&
+  'undone' in value &&
+  typeof (value as HistoryPluginState).undone?.constructor?.empty === 'object'
+
+/**
+ * Empties the formatted document's redo stack and keeps every undo step. ProseMirror's history
+ * clears the stack only when an edit lands, and offers no call for it, so this replaces the
+ * plugin's state through the plugin's own transaction meta. It checks the result against
+ * `undoDepth` and `redoDepth` before it changes anything, so a ProseMirror update that changes
+ * the state's shape fails here, in `test/discard-undone.test.ts`, and not silently.
+ */
+export function discardFormattedRedo(view: EditorView): void {
+  const { state } = view
+  if (redoDepth(state) === 0) return
+  const plugin = state.plugins.find(
+    (candidate: Plugin) =>
+      /^history\$/.test((candidate.spec.key as { key?: string })?.key ?? '') &&
+      isHistoryState(candidate.getState(state)),
+  )
+  const previous = plugin?.getState(state) as HistoryPluginState | undefined
+  if (!plugin || !previous)
+    throw new InkKitError('internal', 'The undo history could not be found')
+  const historyState = Object.assign(
+    Object.create(Object.getPrototypeOf(previous) as object) as object,
+    previous,
+    { undone: previous.undone.constructor.empty },
+  )
+  const tr = state.tr.setMeta(plugin.spec.key!, { redo: false, historyState })
+  const next = state.apply(tr)
+  if (redoDepth(next) !== 0 || undoDepth(next) !== undoDepth(state))
+    throw new InkKitError('internal', 'The redo steps could not be discarded')
+  view.dispatch(tr)
+}
 
 interface TypedSource {
   text: string
@@ -80,6 +126,12 @@ export class SourceHistory {
   }
 
   modeChanged(): void {
+    this.undoneSteps = []
+    this.formattedUndone = 0
+  }
+
+  /** Drops the redo steps of typed source, and the count of formatted ones that wait behind them. */
+  discardUndone(): void {
     this.undoneSteps = []
     this.formattedUndone = 0
   }
