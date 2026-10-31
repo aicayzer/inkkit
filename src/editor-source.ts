@@ -1,6 +1,7 @@
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { TextSelection } from '@milkdown/kit/prose/state'
+import { imagesRefused } from './paste'
 import { modeSelectionMap } from './mode-selection'
 import type { EditingMode } from './editor'
 import type { ClipboardInput } from './types'
@@ -10,6 +11,10 @@ import {
   normalizedOffset,
   type SourceProvenance,
 } from './source'
+
+function hasImageFile(files: FileList): boolean {
+  return [...files].some((file) => file.type.startsWith('image/'))
+}
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
@@ -28,6 +33,8 @@ interface SourceRuntime {
   keyDown(event: KeyboardEvent): boolean
   publish(): void
   paste(input: ClipboardInput): Promise<void>
+  /** Whether image input has nowhere to go; a dropped file may be left to a `files` adapter. */
+  refusesImages(drop: boolean): boolean
   report(error: unknown): void
   reveal(): void
 }
@@ -118,6 +125,17 @@ export class SourceSurface {
       }
       if (!event.clipboardData) return
       event.preventDefault()
+      if (
+        !(
+          event.clipboardData.getData('text/markdown') ||
+          event.clipboardData.getData('text/plain')
+        ) &&
+        hasImageFile(event.clipboardData.files) &&
+        this.runtime.refusesImages(false)
+      ) {
+        this.runtime.report(imagesRefused())
+        return
+      }
       void this.runtime
         .paste({
           text: event.clipboardData.getData('text/plain'),
@@ -125,6 +143,18 @@ export class SourceSurface {
           markdown: event.clipboardData.getData('text/markdown') || undefined,
         })
         .catch((error) => this.runtime.report(error))
+    })
+    this.element.addEventListener('drop', (event) => {
+      const data = event.dataTransfer
+      if (
+        !data ||
+        data.getData('text/plain') ||
+        !hasImageFile(data.files) ||
+        !this.runtime.refusesImages(true)
+      )
+        return
+      event.preventDefault()
+      if (this.runtime.writable()) this.runtime.report(imagesRefused())
     })
     this.element.addEventListener('compositionstart', () => {
       this.composingValue = true
