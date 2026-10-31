@@ -35,7 +35,7 @@ Each member first throws `destroyed` if the editor was destroyed, then `invalid-
 
 | Members                                                                                                                                                                                                           | Expected generation                                    | Then throws                                                                                                                                                                               |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `formats`, `editable`, `editingMode`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`, `setHostActive`, `setDiagnosticsEnabled`, `diagnosticReport`                                                  | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
+| `formats`, `editable`, `editingMode`, `findSession`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`, `setHostActive`, `setDiagnosticsEnabled`, `diagnosticReport`                                   | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
 | `loadDocument`                                                                                                                                                                                                    | None.                                                  | `invalid-argument` when the generation isn't greater than the loaded one, then `preservation` when the Markdown can't be loaded. A format you didn't offer is a bad argument.             |
 | `setEditable`, `setTextInputPreferences`                                                                                                                                                                          | None.                                                  | `composition`.                                                                                                                                                                            |
 | `reloadDocument`                                                                                                                                                                                                  | Optional, the last parameter. Checked only when given. | `not-ready` and `stale-document`, only when the generation is given. Then the same errors as `loadDocument`.                                                                              |
@@ -520,6 +520,53 @@ This call works in read-only mode and changes neither selection, focus, highligh
 
 `replace` replaces the selected match, or the next one, selects the inserted text and returns whether text changed. `replaceAll` replaces every non-overlapping match once and returns how many. Each call is one undo step. The replacement is literal: `$&`, `$1` and backslashes stay as typed. In formatted mode a replacement keeps the surrounding formatting, and a newline becomes a line break; in code, source and TXT it stays literal.
 
+{/* @api InkKitEditor.findSession */}
+
+### findSession
+
+`findSession(onChange: (state: FindState) => void): FindSession`
+
+Opens a find session for a host-owned find bar. The session keeps the query and reports the match count and the position of the selected match to `onChange` whenever they change: after its own commands, after every edit, undo, selection change and mode change, and after a load or reload. `onChange` is not called when the state is the same as the last one it received, and it is not called while a composition or an image import makes the editor unable to answer. An exception it throws goes to `reportError`, as the exceptions of `events` handlers do.
+
+The editor has one set of highlights, so open one session per editor. A new document loaded with `loadDocument` clears the query; `reloadDocument` and a mode change keep it and restore its highlights without moving the selection. Destroying the editor closes its sessions.
+
+Navigation uses the matching rules of `searchMatches`, so counts agree with `find` and `replaceAll`. It selects and reveals each match without taking focus from the host's field. This replaces writing the loop over `searchMatches`, `textSnapshot` and `selectTextRange` described in [controls](/guides/controls#build-your-own-find).
+
+{/* @api FindState */}
+A `FindState` is the state of a find session at one moment, with the fields of `DocumentVersion`.
+
+{/* @api-scope FindState */}
+
+| Field     | Type     | Meaning                                                                                              |
+| --------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `query`   | `string` | The query, or an empty string when there is none.                                                    |
+| `current` | `number` | The position, from 1, of the match that the selection covers exactly, or 0 when it isn't on a match. |
+| `total`   | `number` | The number of matches, which is 0 for an empty query.                                                |
+
+{/* @api FindSession */}
+A `FindSession` is the handle that `findSession` returns. Each command takes `expectedGeneration` as its last parameter, checked as for `find`, and throws like the members it uses: `stale-document`, `composition`, `operation-pending` and, for replacement, `read-only` and `preservation`. A failed command leaves the query, highlights, selection and document as they were. Once `close` has been called, every other member throws `destroyed`.
+
+{/* @api FindSession.state */}
+`state(expectedGeneration?: number): FindState` returns the current state without calling `onChange`.
+
+{/* @api FindSession.find */}
+`find(query: string, options?: { direction?: 'next' | 'previous' }, expectedGeneration?: number): boolean` sets the query, highlights its matches and selects one, and returns whether there is a match. A query that differs from the session's selects the first match at or after the selection, or the last one before it with `direction: 'previous'`, wrapping when there is none. With the same query, `'next'` and `'previous'` move from the selected match and wrap at the ends, and without a direction a selection on a match stays. An empty query clears the highlights.
+
+{/* @api FindSession.next FindSession.previous */}
+`next(expectedGeneration?: number): boolean` and `previous(expectedGeneration?: number): boolean` move to the following or preceding match of the session's query, wrapping at the ends, and return whether there is a match. They return `false` when the query is empty.
+
+{/* @api FindSession.replace */}
+`replace(query: string, replacement: string, expectedGeneration?: number): boolean` selects the match as `find` does, replaces it as `replace` does, then selects the match after it and returns whether the text changed. A match that already reads as the replacement is passed over without an edit or an undo step, so repeated calls reach the end of the document.
+
+{/* @api FindSession.replaceAll */}
+`replaceAll(query: string, replacement: string, expectedGeneration?: number): number` replaces every match as one undo step and returns how many it replaced.
+
+{/* @api FindSession.clear */}
+`clear(expectedGeneration?: number): void` clears the query and the highlights.
+
+{/* @api FindSession.close */}
+`close(): void` stops the session, clears the highlights and stops calling `onChange`. Closing twice does nothing.
+
 {/* @api InkKitEditor.headings */}
 
 ### headings
@@ -717,7 +764,7 @@ A `ClipboardInput` supplies representations from one clipboard read. Inkkit choo
 | `html`     | `string` (optional)          | The HTML representation, imported only when the current mode permits it.              |
 | `images`   | `CapturedImage[]` (optional) | Captured image bytes associated with the HTML image sources or their order.           |
 
-An image item whose `source` equals an image's `src` belongs to that image; items without a `source` fill the rest in order. In Markdown source mode, `paste` inserts `markdown`, or else `text`, literally; in TXT it inserts `text`. In RTF, `markdown` pastes as its text, unparsed; otherwise `html` keeps what RTF holds, and `text` pastes a paragraph for each line. [Rich text](/concepts/rich-text#paste) describes the conversion. The promise resolves once the content is inserted. It rejects with `stale-document` if the document is replaced, or editing is turned off, while images import. An image that can't be imported becomes the text `[Name: image unavailable]` and `events.error` receives `image-unavailable`; the paste still resolves.
+An image item whose `source` equals an image's `src` belongs to that image; items without a `source` fill the rest in order. In Markdown source mode, `paste` inserts `markdown`, or else `text`, literally; in TXT it inserts `text`. In RTF, `markdown` pastes as its text, unparsed; otherwise `html` keeps what RTF holds, and `text` pastes a paragraph for each line. [Rich text](/concepts/rich-text#paste) describes the conversion. The promise resolves once the content is inserted. It rejects with `stale-document` if the document is replaced, or editing is turned off, while images import. An image that the adapter can't import becomes the text `[Name: image unavailable]` and `events.error` receives `image-unavailable`; the paste still resolves. Without `options.images`, a paste that holds an image is refused whole: nothing is inserted and the promise rejects with `image-unsupported`; see [images without an adapter](/reference/adapters#images-without-an-adapter).
 
 {/* @api InkKitEditor.pasteAsPlainText */}
 
