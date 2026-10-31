@@ -352,7 +352,7 @@ test('ordinary HTML and its Markdown metadata cannot leak comment provenance in 
   }
 })
 
-test('shared links retain safe entity and escape provenance from 0.0.2', async () => {
+test('a copied reference link keeps a label with a character reference or an escape', async () => {
   for (const label of ['A&amp;B', 'A\\*B']) {
     const source = `[${label}][]\n\n[${label}]: https://example.com/target\n`
     await withFacade(async (editor) => {

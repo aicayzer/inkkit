@@ -1,12 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { keyToFrame } from './key-timing'
+import { keyToFrame } from '../../test/browser/key-timing'
 import type { InkKitEditor } from '../../src/core'
 
-const output = process.env.INKKIT_MEASURE
+const output = process.env.INKKIT_MEASURE ?? '_local/measure'
 const runs = Number(process.env.INKKIT_MEASURE_RUNS ?? 5)
-test.skip(!output, 'Set INKKIT_MEASURE to record editing input latency')
 test.setTimeout(240_000)
 
 declare global {
@@ -85,7 +84,7 @@ function record(
     }),
   )
   const result = { ...metadata, samples, summaries }
-  mkdirSync(output!, { recursive: true })
+  mkdirSync(output, { recursive: true })
   writeFileSync(
     `${output}/${name}-${browserName}.json`,
     JSON.stringify(result, null, 2) + '\n',

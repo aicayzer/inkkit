@@ -265,18 +265,6 @@ for (const theme of themes)
       await root.evaluate((element) => {
         element.scrollTop = 0
       })
-      await root.screenshot({
-        path: testInfo.outputPath(`${theme}-${scheme}.png`),
-      })
-      await root
-        .locator('.inkkit-mermaid-preview')
-        .screenshot({ path: testInfo.outputPath(`${theme}-${scheme}-pie.png`) })
-      await root
-        .locator('pre')
-        .first()
-        .screenshot({
-          path: testInfo.outputPath(`${theme}-${scheme}-code.png`),
-        })
       await page.setViewportSize({ width: 390, height: 844 })
       await page.addStyleTag({
         content: '#editors { display:block } #editor { width:100%; }',
@@ -288,9 +276,6 @@ for (const theme of themes)
       ).toBeLessThanOrEqual(1)
       await root.evaluate((element) => {
         element.scrollTop = 0
-      })
-      await root.screenshot({
-        path: testInfo.outputPath(`${theme}-${scheme}-narrow.png`),
       })
       expect((await observe(page)).snapshot?.text).toBe(source)
     })

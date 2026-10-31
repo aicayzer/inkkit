@@ -1,11 +1,10 @@
-import { keyToFrame } from './key-timing'
+import { keyToFrame } from '../../test/browser/key-timing'
 import { expect, test } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { cpus, platform, release } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
-const output = process.env.INKKIT_MEASURE
-test.skip(!output, 'Set INKKIT_MEASURE to record long-note measurements')
+const output = process.env.INKKIT_MEASURE ?? '_local/measure'
 test.setTimeout(10 * 60_000)
 
 test('long-note editing costs', async ({ page, browserName, browser }) => {
@@ -125,7 +124,7 @@ test('long-note editing costs', async ({ page, browserName, browser }) => {
       [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)],
     ]),
   )
-  mkdirSync(output!, { recursive: true })
+  mkdirSync(output, { recursive: true })
   writeFileSync(
     `${output}/long-note-${browserName}.json`,
     JSON.stringify(

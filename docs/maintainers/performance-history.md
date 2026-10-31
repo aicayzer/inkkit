@@ -217,8 +217,8 @@ Since a loaded document is shown as the document preservation parsed (#252), eac
 The measurement ran on an M4 Pro MacBook Pro with macOS 27.0.1, Node.js 26.11.0 and Playwright 1.64.0, in headless Chromium 156 and WebKit 27.2, against the development playground with the `rich` configuration. Other work shared the machine, with load averages above 40, so compare the columns rather than the absolute times. The baseline is `main` at `b404419`. The note is `generateParagraphs(5000)` from `playground/generate.ts`; each value is the median of five fresh pages, timed from the key going down to the frame after it. Run it with:
 
 ```sh
-INKKIT_MEASURE=_local/measure pnpm exec playwright test --project=chromium test/browser/measure-structural.spec.ts
-INKKIT_MEASURE=_local/measure pnpm exec playwright test --project=webkit test/browser/measure-structural.spec.ts
+INKKIT_MEASURE=_local/measure pnpm measure:browser --project=chromium scripts/measure-browser/structural.spec.ts
+INKKIT_MEASURE=_local/measure pnpm measure:browser --project=webkit scripts/measure-browser/structural.spec.ts
 ```
 
 | 5,000 paragraphs, Chromium / WebKit (ms)             |      Baseline |     Candidate |

@@ -1,9 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 
-const output = process.env.INKKIT_MEASURE
+const output = process.env.INKKIT_MEASURE ?? '_local/measure'
 const runs = Number(process.env.INKKIT_MEASURE_RUNS ?? 3)
-test.skip(!output, 'Set INKKIT_MEASURE to record source-key latency')
 test.setTimeout(180_000)
 
 test('large source input after replacements', async ({ page, browserName }) => {
@@ -76,7 +75,7 @@ test('large source input after replacements', async ({ page, browserName }) => {
       [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)],
     ]),
   )
-  mkdirSync(output!, { recursive: true })
+  mkdirSync(output, { recursive: true })
   writeFileSync(
     `${output}/source-latency-${browserName}.json`,
     JSON.stringify({ samples, medians }, null, 2),

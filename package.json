@@ -55,6 +55,8 @@
     "test:package": "node scripts/test-package.mjs",
     "check": "pnpm typecheck && pnpm test && pnpm build && pnpm test:docs && pnpm test:package",
     "test:browser": "playwright test --project=chromium",
+    "test:playground": "playwright test --config playwright.playground.config.ts --project=chromium",
+    "measure:browser": "playwright test --config playwright.measure.config.ts",
     "test:built-playground": "playwright test --config playwright.built.config.ts"
   },
   "devDependencies": {

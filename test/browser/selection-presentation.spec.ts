@@ -347,7 +347,7 @@ test('the selection fills only the text, never the margins or the gaps between b
 
 test('source and TXT surfaces take the active and inactive colours from focus', async ({
   page,
-}, testInfo) => {
+}) => {
   await mountPage(page, ['First café 😀', 'Second paragraph'])
   const surface = (editor: number) => page.locator(`#editor-${editor} textarea`)
   const selected = (editor: number) =>
@@ -364,9 +364,6 @@ test('source and TXT surfaces take the active and inactive colours from focus', 
   )
   await expect(page.locator('#editor-0')).toHaveClass(/inkkit-selection-active/)
   expect(await selected(0)).toBe(red)
-  await page.screenshot({
-    path: `_local/selection-source-active-${testInfo.project.name}.png`,
-  })
   await page.locator('#editor-1 .ProseMirror').focus()
   await expect(page.locator('#editor-0')).not.toHaveClass(
     /inkkit-selection-active/,
@@ -378,9 +375,6 @@ test('source and TXT surfaces take the active and inactive colours from focus', 
       node.selectionEnd,
     ]),
   ).toEqual([0, 5])
-  await page.screenshot({
-    path: `_local/selection-source-inactive-${testInfo.project.name}.png`,
-  })
   await page.evaluate(() => {
     const editor = window.selectionEditors[0]!
     editor.loadDocument({
