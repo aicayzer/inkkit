@@ -149,7 +149,7 @@ A change to prose only runs the formatting check in `check`. A draft pull reques
 - **`unit`** runs Vitest in three shards. `test/shard-sequencer.ts` deals test files out in name order, so the slow `preservation-*` suites land in different jobs.
 - **`browser-chromium` and `browser-webkit`** run the whole browser suite in three shards each, against the built fixture, on every pull request that changes the editor. WebKit runs on GitHub-hosted macOS, because the host apps ship on WebKit. A job's shard name is `browser-<engine> (N/3)`, and it uploads its Playwright report and traces for seven days only when it fails.
 
-**The required check.** The `CI result` job depends on every other job. It passes when each one succeeded or was skipped, and fails when one failed, was cancelled or never got a classification, so a skipped lane never leaves a required check pending. Branch protection requires `CI result` alone; add a new job to its `needs` list when you add a lane. The jobs `browser (chromium)` and `browser (webkit)` only aggregate their shards and are not required.
+**The required check.** The `CI result` job depends on every other job. It passes when each one succeeded or was skipped, and fails when one failed, was cancelled or never got a classification, so a skipped lane never leaves a required check pending. The `main` ruleset requires `CI result` alone, with branches up to date; add a new job to its `needs` list when you add a lane.
 
 **Not in the default suites.** These run on demand, and no workflow runs them:
 

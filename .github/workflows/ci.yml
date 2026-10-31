@@ -194,44 +194,6 @@ jobs:
           path: _local/playwright/
           retention-days: 7
 
-  # These two keep the check names that branch protection requires today. A
-  # failed or cancelled shard fails them; skipped shards pass them only when the
-  # scope or a draft pull request skipped the lane.
-  browser-chromium-result:
-    needs: [changes, browser-chromium, browser-playground]
-    name: browser (chromium)
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - run: |
-          echo "changes: $CHANGES, shards: $SHARDS, playground: $PLAYGROUND"
-          test "$CHANGES" = success
-          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$BROWSER" != true; }
-          test "$PLAYGROUND" = success || { test "$PLAYGROUND" = skipped && test "$PLAYGROUND_SCOPE" != true; }
-        env:
-          CHANGES: ${{ needs.changes.result }}
-          SHARDS: ${{ needs.browser-chromium.result }}
-          PLAYGROUND: ${{ needs.browser-playground.result }}
-          BROWSER: ${{ needs.changes.outputs.browser }}
-          PLAYGROUND_SCOPE: ${{ needs.changes.outputs.playground }}
-
-  browser-webkit-result:
-    needs: [changes, browser-webkit]
-    name: browser (webkit)
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - run: |
-          echo "changes: $CHANGES, shards: $SHARDS"
-          test "$CHANGES" = success
-          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$BROWSER" != true; }
-        env:
-          CHANGES: ${{ needs.changes.result }}
-          SHARDS: ${{ needs.browser-webkit.result }}
-          BROWSER: ${{ needs.changes.outputs.browser }}
-
   docs:
     needs: changes
     if: ${{ needs.changes.outputs.site == 'true' }}
