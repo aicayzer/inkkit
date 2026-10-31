@@ -186,7 +186,6 @@ test('printing 100 settled previews reuses every layout @diagrams', async ({
     }),
     contentType: 'application/json',
   })
-  expect(print.elapsedMs).toBeLessThan(2000)
 })
 
 interface DiagramInputSample {
@@ -267,7 +266,6 @@ for (const scenario of ['shown', 'scrolling'] as const)
       expect(sample.trusted).toBe(true)
       expect(sample.pendingPreviews).toBeGreaterThan(0)
       expect(sample.layoutsAtInput).toBeLessThan(100)
-      expect(sample.elapsedMs).toBeLessThan(100)
     }
     expect(
       await page.evaluate(

@@ -20,7 +20,7 @@ for (const scheme of ['light', 'dark'] as const) {
     page,
     openFixture,
     browserName,
-  }, testInfo) => {
+  }) => {
     await openFixture()
     await page.evaluate(
       (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
@@ -43,9 +43,6 @@ for (const scheme of ['light', 'dark'] as const) {
         ]
       }),
     ).toEqual(['0px', '1px', '1px'])
-    await page
-      .locator('#editor')
-      .screenshot({ path: testInfo.outputPath(`table-${scheme}.png`) })
     expect((await observe(page)).snapshot?.text).toBe(source)
     await table.locator('td').last().click()
     await page.mouse.move(0, 0)
@@ -65,9 +62,6 @@ for (const scheme of ['light', 'dark'] as const) {
         .first()
         .evaluate((el) => getComputedStyle(el, '::after').backgroundColor),
     ).not.toBe('rgba(0, 0, 0, 0)')
-    await page
-      .locator('#editor')
-      .screenshot({ path: testInfo.outputPath(`table-controls-${scheme}.png`) })
     await page.keyboard.press('Escape')
     await page.addStyleTag({
       content: '#editor { width: 190px; max-width: 190px; flex: none; }',

@@ -107,9 +107,7 @@ for (const { name, source, reach } of cases) {
     await expect
       .poll(async () => {
         origin = await place()
-        screenshot = await page.screenshot({
-          path: `_local/gap-cursor-${name.replaceAll(' ', '-')}-${testInfo.project.name}.png`,
-        })
+        screenshot = await page.screenshot()
         const after = await place()
         return after.x === origin.x && after.y === origin.y
       })

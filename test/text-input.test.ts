@@ -204,7 +204,7 @@ for (const [name, source, anchor, after, text, saved] of chunks)
       expectSaves(s, source)
     }))
 
-test('the issue example: buffered strong emphasis keeps the words after it', () =>
+test('buffered strong emphasis keeps the words after it', () =>
   session('Plain words here\n', (s) => {
     caret(s.view, 'Plain ')
     s.editor.insertText('**x**', 1)

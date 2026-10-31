@@ -12,7 +12,7 @@ Use the same harness from the candidate in both checkouts, with each checkout's 
 INKKIT_BROWSER_FIXTURE=built INKKIT_PLAYGROUND_PORT=4193 \
   INKKIT_MEASURE=_local/performance/round INKKIT_MEASURE_RUNS=1 \
   node scripts/test-browser.mjs --project=chromium --project=webkit \
-  test/browser/measure-editing-input.spec.ts
+  --config playwright.measure.config.ts scripts/measure-browser/editing-input.spec.ts
 INKKIT_MEASURE_RUNS=5 node scripts/interop/verify-long-source.mjs \
   ARCHIVE BUNDLE OUTPUT HOST
 ```
@@ -88,12 +88,12 @@ The ranges do not overlap within either engine, supporting the built fixture for
 
 These measurements compare `main` at `2837dbf` with the implementation in `ad43fd0`. They ran on an Apple M4 Pro MacBook Pro, Darwin 27.0.0, Node.js 26.12.1 and Playwright 1.64.0, with headless Chromium 156.0.8078.4 and WebKit 27.2. Other work shared the machine. Values are medians, not latency guarantees or evidence about WKWebView.
 
-Run the same harness in each checkout, installing its own frozen dependencies. When measuring an older checkout, copy the named test files and `test/browser/key-timing.ts` from the candidate first. Each command records its samples in the named folder; the long-note report also records the machine, browser and checkout commit.
+Run the same harness in each checkout, installing its own frozen dependencies. When measuring an older checkout, copy the named specs, `playwright.measure.config.ts` and `test/browser/key-timing.ts` from the candidate first. Each command records its samples in the named folder; the long-note report also records the machine, browser and checkout commit.
 
 ```sh
-INKKIT_PLAYGROUND_PORT=4191 INKKIT_MEASURE=_local/performance INKKIT_MEASURE_RUNS=3 INKKIT_MEASURE_SIZE=5000 pnpm exec playwright test --project=chromium --project=webkit test/browser/measure-long-note.spec.ts
-INKKIT_PLAYGROUND_PORT=4191 INKKIT_MEASURE=_local/performance INKKIT_MEASURE_RUNS=5 pnpm exec playwright test --project=chromium --project=webkit test/browser/measure-footnote.spec.ts
-INKKIT_PLAYGROUND_PORT=4191 INKKIT_MEASURE=_local/performance INKKIT_MEASURE_RUNS=3 pnpm exec playwright test --project=chromium --project=webkit test/browser/source-latency.spec.ts
+INKKIT_PLAYGROUND_PORT=4191 INKKIT_MEASURE=_local/performance INKKIT_MEASURE_RUNS=3 INKKIT_MEASURE_SIZE=5000 pnpm measure:browser --project=chromium --project=webkit scripts/measure-browser/long-note.spec.ts
+INKKIT_PLAYGROUND_PORT=4191 INKKIT_MEASURE=_local/performance INKKIT_MEASURE_RUNS=5 pnpm measure:browser --project=chromium --project=webkit scripts/measure-browser/footnote.spec.ts
+INKKIT_PLAYGROUND_PORT=4191 INKKIT_MEASURE=_local/performance INKKIT_MEASURE_RUNS=3 pnpm measure:browser --project=chromium --project=webkit scripts/measure-browser/source-latency.spec.ts
 ```
 
 The long-note fixture contains 5,000 blocks: a heading every 100 blocks and ordinary paragraphs elsewhere, with `alpha` in every paragraph. It uses the development playground's minimal configuration with observation disabled. Facade timings include the playground's control refresh; its outline refresh is cached after the change. Source setup dispatches textarea input before measuring the first outline read, then another edit before leaving source mode, so those measurements include reading the changed text. Enter uses a trusted browser key and runs through the following frame. Paste inserts 500 Markdown paragraphs. Other timings cover the synchronous facade operation and its control refresh.

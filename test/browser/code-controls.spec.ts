@@ -181,7 +181,6 @@ test('choosing the current Auto language restores the code caret for typing', as
     options: { focus: true },
   })
   await page.getByRole('button', { name: 'Code language', exact: true }).click()
-  await page.screenshot({ path: '_local/review/code-language-menu.png' })
   await page.getByRole('button', { name: 'Auto', exact: true }).click()
   await expect(
     page.getByRole('textbox', { name: 'Formatted Markdown editor' }),

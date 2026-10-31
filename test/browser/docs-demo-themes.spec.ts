@@ -44,7 +44,7 @@ async function officialDemo(baseURL: string) {
 test('official playground switches real presets without changing the document @playground-tools', async ({
   page,
   baseURL,
-}, testInfo) => {
+}) => {
   // The fixture registers the candidate renderer before this demo imports the
   // shared core facade, including when the browser fixture is built.
   await page.goto('/')
@@ -133,10 +133,6 @@ test('official playground switches real presets without changing the document @p
       await expect(
         page.locator('#editor .inkkit-mermaid-preview'),
       ).toHaveAttribute('data-state', 'ready')
-      await page.screenshot({
-        path: testInfo.outputPath(`official-${theme}-${scheme}.png`),
-        fullPage: true,
-      })
       await page.getByRole('button', { name: 'Source', exact: true }).click()
     }
   }
@@ -178,9 +174,6 @@ test('official playground switches real presets without changing the document @p
             .evaluate((root) => getComputedStyle(root).colorScheme),
         )
         .toBe(scheme)
-      await page.screenshot({
-        path: testInfo.outputPath(`official-${width}-${scheme}.png`),
-      })
     }
   }
   await page.getByRole('button', { name: 'Find', exact: true }).click()
@@ -194,7 +187,5 @@ test('official playground switches real presets without changing the document @p
   await expect(
     page.getByRole('button', { name: 'Find', exact: true }),
   ).toBeFocused()
-  await page.screenshot({ path: testInfo.outputPath('official-focus.png') })
   await page.getByRole('button', { name: 'Reset', exact: true }).hover()
-  await page.screenshot({ path: testInfo.outputPath('official-hover.png') })
 })

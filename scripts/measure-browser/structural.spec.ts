@@ -1,20 +1,18 @@
-// Measures structural edits in long notes for docs/maintainers/performance.md. It runs
-// only when INKKIT_MEASURE names a folder for the results:
+// Measures structural edits in long notes for docs/maintainers/performance.md.
+// Run on demand; INKKIT_MEASURE names the results folder (default _local/measure):
 //
-//   INKKIT_MEASURE=_local/measure pnpm exec playwright test \
-//     --project=chromium test/browser/measure-structural.spec.ts
+//   pnpm measure:browser --project=chromium scripts/measure-browser/structural.spec.ts
 import { test } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { generateParagraphs } from '../../playground/generate'
 
-const out = process.env.INKKIT_MEASURE
+const out = process.env.INKKIT_MEASURE ?? '_local/measure'
 const runs = Number(process.env.INKKIT_MEASURE_RUNS ?? 5)
 
-test.skip(!out, 'Set INKKIT_MEASURE to measure')
 test.setTimeout(60 * 60_000)
 
 test('structural edits in long notes', async ({ page, browserName }) => {
-  mkdirSync(out!, { recursive: true })
+  mkdirSync(out, { recursive: true })
   const results: Record<string, Array<Record<string, number>>> = {}
   const open = async (text: string) => {
     await page.goto('/?fixture=everyday&configuration=rich&observe=false')

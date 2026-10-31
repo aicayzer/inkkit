@@ -14,6 +14,7 @@
   "include": [
     "src",
     "test",
+    "scripts/measure-browser",
     "playground",
     "vite.config.ts",
     "vite.package.config.ts",

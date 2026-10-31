@@ -1,8 +1,9 @@
 name: CI
 on:
-  push:
-    branches: [main]
+  # Pushes to main are not run: pull requests must be up to date before they
+  # merge, so the merged tree is the tree that passed.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   # The release workflow runs these same checks on the tagged commit.
   workflow_call:
 permissions:
@@ -19,6 +20,10 @@ jobs:
       editor: ${{ steps.scope.outputs.editor }}
       site: ${{ steps.scope.outputs.site }}
       swift: ${{ steps.scope.outputs.swift }}
+      # Browser lanes are slow, so a draft pull request skips them. Marking it
+      # ready starts a new run that includes them.
+      browser: ${{ steps.scope.outputs.editor == 'true' && github.event.pull_request.draft != true }}
+      playground: ${{ steps.scope.outputs.playground == 'true' && github.event.pull_request.draft != true }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,18 +32,18 @@ jobs:
         run: node scripts/ci-scope.mjs
         env:
           EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
 
+  # Formatting, type checking, the package build and its consumer tests.
   check:
-    needs: [changes, docs]
-    # A failed classifier must fail this required check, not silently skip it.
+    needs: changes
+    # A failed classifier must fail this check, not silently skip it.
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - if: ${{ needs.changes.result != 'success' || needs.docs.result == 'failure' || needs.docs.result == 'cancelled' }}
+      - if: ${{ needs.changes.result != 'success' }}
         run: exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -54,13 +59,19 @@ jobs:
         if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: node --test scripts/ci-scope.test.mjs scripts/install-browsers.test.mjs scripts/test-browser.test.mjs scripts/interop/verify-native.test.mjs
         if: ${{ needs.changes.outputs.editor == 'true' }}
-      # The packed-consumer test opens its pages in both engines on main and
-      # releases. Pull requests use Chromium only, like the browser shards, and
-      # skip the system packages whose mirror stalls.
+      # The packed-consumer test opens its pages in both engines on releases.
+      # Pull requests use Chromium here, since the browser shards run WebKit,
+      # and skip the system packages whose mirror stalls.
       - run: node scripts/install-browsers.mjs ${{ github.event_name == 'pull_request' && '--no-deps chromium' || 'chromium webkit' }}
         timeout-minutes: 17
         if: ${{ needs.changes.outputs.editor == 'true' }}
-      - run: pnpm check
+      - run: pnpm typecheck
+        if: ${{ needs.changes.outputs.editor == 'true' }}
+      - run: pnpm build
+        if: ${{ needs.changes.outputs.editor == 'true' }}
+      - run: pnpm test:docs
+        if: ${{ needs.changes.outputs.editor == 'true' }}
+      - run: pnpm test:package
         env:
           INKKIT_PACKAGE_ENGINES: ${{ github.event_name == 'pull_request' && 'chromium' || 'chromium,webkit' }}
         if: ${{ needs.changes.outputs.editor == 'true' }}
@@ -68,24 +79,45 @@ jobs:
         if: ${{ needs.changes.outputs.editor == 'true' }}
       - run: pnpm test:built-playground
         if: ${{ needs.changes.outputs.editor == 'true' }}
+      # The release workflow publishes this package, so only runs that can
+      # release keep it.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ needs.changes.outputs.editor == 'true' }}
+        if: ${{ needs.changes.outputs.editor == 'true' && github.event_name != 'pull_request' }}
         with:
           name: package-candidate
           path: _local/release/
+          retention-days: 7
 
-  # The suite takes 15 to 25 minutes serially, so each engine runs in three
-  # shards. The aggregating jobs keep the check names that branch protection
-  # uses; the engines have separate shard jobs so one cannot fail the other.
-  browser-chromium:
+  # The slowest suites are the preservation ones. The shards deal files out in
+  # name order (test/shard-sequencer.ts) so those suites land in different jobs.
+  unit:
     needs: changes
-    # A skipped shard job reports success through its aggregator below.
     if: ${{ needs.changes.outputs.editor == 'true' }}
-    name: browser shard (chromium ${{ matrix.shard }}/3)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: ['1/3', '2/3', '3/3']
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26'
+      - run: npm install --global pnpm@11.0.9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --shard=${{ matrix.shard }}
+
+  # Both engines run on every pull request that changes the editor: each host
+  # app ships on WebKit. Each engine has three shard jobs so one cannot fail the
+  # other. A skipped matrix job shows under its plain id, without a shard.
+  browser-chromium:
+    needs: changes
+    if: ${{ needs.changes.outputs.browser == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/3', '2/3', '3/3']
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -98,29 +130,23 @@ jobs:
       # The Ubuntu image already has Chromium's libraries; skipping apt avoids a mirror that stalls.
       - run: node scripts/install-browsers.mjs --no-deps chromium
         timeout-minutes: 17
-      - run: node scripts/test-browser.mjs --project=chromium --shard=${{ matrix.shard }}/3
+      - run: node scripts/test-browser.mjs --project=chromium --shard=${{ matrix.shard }}
         env:
           INKKIT_BROWSER_FIXTURE: built
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure() || cancelled()
+        if: failure()
         with:
-          name: browser-chromium-${{ matrix.shard }}
+          name: browser-chromium-${{ strategy.job-index }}
           path: _local/playwright/
+          retention-days: 7
 
-  # Every current host embeds WebKit on Apple platforms. Pull requests run
-  # Chromium only: macOS runners are scarce, so three WebKit shards per pull
-  # request queue behind each other, and WebKit has not failed alone in CI
-  # history. Pushes to main and release tags run it, and changes to selection,
-  # input, clipboard or layout run affected WebKit specs before pushing.
   browser-webkit:
     needs: changes
-    # A skipped shard job reports success through its aggregator below.
-    if: ${{ needs.changes.outputs.editor == 'true' && github.event_name != 'pull_request' }}
-    name: browser shard (webkit ${{ matrix.shard }}/3)
+    if: ${{ needs.changes.outputs.browser == 'true' }}
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: ['1/3', '2/3', '3/3']
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -132,51 +158,79 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: node scripts/install-browsers.mjs webkit
         timeout-minutes: 17
-      - run: node scripts/test-browser.mjs --project=webkit --shard=${{ matrix.shard }}/3
+      - run: node scripts/test-browser.mjs --project=webkit --shard=${{ matrix.shard }}
         env:
           INKKIT_BROWSER_FIXTURE: built
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure() || cancelled()
+        if: failure()
         with:
-          name: browser-webkit-${{ matrix.shard }}
+          name: browser-webkit-${{ strategy.job-index }}
           path: _local/playwright/
+          retention-days: 7
 
+  # The playground and docs demo specs: they run when playground, demo or
+  # preset files change, not with the engine suite.
+  browser-playground:
+    needs: changes
+    if: ${{ needs.changes.outputs.playground == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26'
+      - run: npm install --global pnpm@11.0.9
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/install-browsers.mjs --no-deps chromium
+        timeout-minutes: 17
+      - run: node scripts/test-browser.mjs --config playwright.playground.config.ts --project=chromium
+        env:
+          INKKIT_BROWSER_FIXTURE: built
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: browser-playground
+          path: _local/playwright/
+          retention-days: 7
+
+  # These two keep the check names that branch protection requires today. A
+  # failed or cancelled shard fails them; skipped shards pass them only when the
+  # scope or a draft pull request skipped the lane.
   browser-chromium-result:
-    needs: [changes, browser-chromium]
+    needs: [changes, browser-chromium, browser-playground]
     name: browser (chromium)
-    # A failed or cancelled shard must fail this check, and a documentation-only
-    # change, which skips the shards, must pass it.
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - run: |
-          echo "changes: $CHANGES, shards: $SHARDS, editor: $EDITOR"
+          echo "changes: $CHANGES, shards: $SHARDS, playground: $PLAYGROUND"
           test "$CHANGES" = success
-          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$EDITOR" != true; }
+          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$BROWSER" != true; }
+          test "$PLAYGROUND" = success || { test "$PLAYGROUND" = skipped && test "$PLAYGROUND_SCOPE" != true; }
         env:
           CHANGES: ${{ needs.changes.result }}
           SHARDS: ${{ needs.browser-chromium.result }}
-          EDITOR: ${{ needs.changes.outputs.editor }}
+          PLAYGROUND: ${{ needs.browser-playground.result }}
+          BROWSER: ${{ needs.changes.outputs.browser }}
+          PLAYGROUND_SCOPE: ${{ needs.changes.outputs.playground }}
 
   browser-webkit-result:
     needs: [changes, browser-webkit]
     name: browser (webkit)
-    # A failed or cancelled shard must fail this check, and a documentation-only
-    # change, which skips the shards, must pass it.
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - run: |
-          echo "changes: $CHANGES, shards: $SHARDS, editor: $EDITOR"
+          echo "changes: $CHANGES, shards: $SHARDS"
           test "$CHANGES" = success
-          test "$SHARDS" = success || { test "$SHARDS" = skipped && { test "$EDITOR" != true || test "$EVENT" = pull_request; }; }
+          test "$SHARDS" = success || { test "$SHARDS" = skipped && test "$BROWSER" != true; }
         env:
           CHANGES: ${{ needs.changes.result }}
           SHARDS: ${{ needs.browser-webkit.result }}
-          EDITOR: ${{ needs.changes.outputs.editor }}
-          EVENT: ${{ github.event_name }}
+          BROWSER: ${{ needs.changes.outputs.browser }}
 
   docs:
     needs: changes
@@ -192,9 +246,8 @@ jobs:
         working-directory: docs
 
   # Tests the InkKitRTF Swift package. A change that does not touch the package,
-  # its fixtures or this workflow skips the job, which a skipped job reports as
-  # success. Tags run it, and the release workflow calls this workflow, so a
-  # failure here also blocks publication.
+  # its fixtures or this workflow skips the job. Tags run it, and the release
+  # workflow calls this workflow, so a failure here also blocks publication.
   swift:
     needs: changes
     if: ${{ needs.changes.outputs.swift == 'true' }}
@@ -210,3 +263,29 @@ jobs:
           test "$(sw_vers -productVersion | cut -d. -f1)" = 27
           swift --version
       - run: swift test --parallel
+
+  # The one result to require. A lane that the scope or a draft skipped counts
+  # as a pass; a failed, cancelled or unclassified run does not.
+  ci-result:
+    name: CI result
+    needs:
+      [
+        changes,
+        check,
+        unit,
+        browser-chromium,
+        browser-webkit,
+        browser-playground,
+        docs,
+        swift,
+      ]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          test "$(echo "$NEEDS" | jq -r '.changes.result')" = success
+          test -z "$(echo "$NEEDS" | jq -r '.[] | select(.result != "success" and .result != "skipped") | .result')"
+        env:
+          NEEDS: ${{ toJSON(needs) }}

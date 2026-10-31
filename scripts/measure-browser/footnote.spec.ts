@@ -1,7 +1,6 @@
 import { test } from '@playwright/test'
 import { mkdirSync, writeFileSync } from 'node:fs'
-const output = process.env.INKKIT_MEASURE
-test.skip(!output, 'Set INKKIT_MEASURE to record footnote-key costs')
+const output = process.env.INKKIT_MEASURE ?? '_local/measure'
 test.setTimeout(180_000)
 test('typing beside footnotes', async ({ page, browserName }) => {
   const samples: number[] = []
@@ -33,7 +32,7 @@ test('typing beside footnotes', async ({ page, browserName }) => {
   const median = [...samples].sort((a, b) => a - b)[
     Math.floor(samples.length / 2)
   ]
-  mkdirSync(output!, { recursive: true })
+  mkdirSync(output, { recursive: true })
   writeFileSync(
     `${output}/footnote-${browserName}.json`,
     JSON.stringify({ samples, median }, null, 2),

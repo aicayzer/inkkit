@@ -13,7 +13,13 @@ if (!Number.isInteger(port) || port < 1 || port > 65535)
 
 export default defineConfig({
   testDir: './test/browser',
-  testIgnore: /built-playground/,
+  // The built page and the playground and demo specs have their own configs
+  // and CI jobs.
+  testIgnore: [
+    /built-playground/,
+    /playground-(tools|themes)\.spec/,
+    /docs-demo-themes/,
+  ],
   forbidOnly: Boolean(process.env.CI),
   workers: 1,
   retries: 0,
