@@ -10,7 +10,13 @@ import {
 import type { Literal, Nodes, Root } from 'mdast'
 import type { Extension as FromExtension } from 'mdast-util-from-markdown'
 import { defaultHandlers, type Handle } from 'mdast-util-to-markdown'
-import type { Code, Extension, Tokenizer, State } from 'micromark-util-types'
+import type {
+  Code,
+  Construct,
+  Extension,
+  Tokenizer,
+  State,
+} from 'micromark-util-types'
 import type { Processor } from 'unified'
 import {
   InkKitError,
@@ -96,7 +102,8 @@ export function parseLinkedSyntax(
     hasAlias = false
   for (let index = 0; index < content.length; index++) {
     const character = content[index]!
-    if (character === '\\') {
+    // Only a file embed escapes with a backslash. In a wiki link it is a character like any other.
+    if (character === '\\' && embed) {
       const escaped = content[++index]
       if (!escaped || !'[]|#\\'.includes(escaped)) return undefined
       parts[section] += escaped
@@ -181,7 +188,7 @@ function linkedTokenizer(embed: boolean): Tokenizer {
       )
         return nok(code)
       consume(code)
-      if (code === 92) return escaped
+      if (code === 92 && embed) return escaped
       return code === 93 ? closing : body
     }
     function escaped(code: Code): State | undefined {
@@ -198,6 +205,40 @@ function linkedTokenizer(embed: boolean): Tokenizer {
       return ok
     }
   }
+}
+
+/**
+ * Looks ahead from a backslash for a wiki link that starts right after it. CommonMark reads `\[`
+ * as an escaped bracket, which would hide the link, but a backslash before a wiki link is only
+ * text, as it is inside one.
+ */
+const backslashBeforeWikiLink: Construct = {
+  name: 'inkkitWikiBackslash',
+  tokenize(effects, ok, nok) {
+    return function start(code: Code): State | undefined {
+      if (code !== 92) return nok(code)
+      return effects.check(wikiLinkAhead, literal, nok)(code)
+    }
+    function literal(code: Code): State | undefined {
+      effects.enter('data')
+      effects.consume(code)
+      effects.exit('data')
+      return ok
+    }
+  },
+}
+const wikiLinkAhead: Construct = {
+  partial: true,
+  tokenize(effects, ok, nok) {
+    const link = linkedTokenizer(false).call(this, effects, ok, nok)
+    return function start(code: Code): State | undefined {
+      if (code !== 92) return nok(code)
+      effects.enter('data')
+      effects.consume(code)
+      effects.exit('data')
+      return link
+    }
+  },
 }
 
 function tableForm(
@@ -569,7 +610,7 @@ export const referenceTableContext = $prose(
 export const wikiLinkInputRule = $inputRule(
   () =>
     new InputRule(
-      /\[\[(?:\\.|[^[\]\\\ufffc])*\]\]$/,
+      /\[\[[^[\]\ufffc]*\]\]$/,
       (state, match, start, end) => {
         const { schema, doc } = state
         const type = schema.nodes.inkkit_wiki_link
@@ -589,8 +630,8 @@ export const wikiLinkInputRule = $inputRule(
           !type ||
           !parent.inlineContent ||
           !parent.canReplaceWith($start.index(), $start.index(), type) ||
-          // Escaped, embedded or nested brackets are not the start of a link.
-          /[!\\[]/.test(
+          // Embedded or nested brackets are not the start of a link.
+          /[![]/.test(
             doc.textBetween(Math.max($start.start(), start - 1), start),
           )
         )
@@ -655,6 +696,7 @@ export function linkedSyntax(wikiLinks: boolean, files: boolean) {
       tokenize: linkedTokenizer(false),
       previous: (code) => code !== 33 && code !== 91,
     }
+  if (wikiLinks) syntax.text![92] = backslashBeforeWikiLink
   if (files)
     syntax.text![33] = {
       name: 'inkkitNamedFile',

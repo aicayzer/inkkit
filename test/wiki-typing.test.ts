@@ -44,7 +44,8 @@ for (const [typed, label] of [
   ['[[Note#Heading|alias]]', 'alias'],
   ['[[#Heading]]', '#Heading'],
   ['[[Café 日本語]]', 'Café 日本語'],
-  ['[[A\\|B]]', 'A|B'],
+  ['[[A\\B]]', 'A\\B'],
+  ['[[A\\|B]]', 'B'],
 ] as const)
   for (const [where, source, expected] of [
     ['an empty note', '', (t: string) => `${t}\n`],
@@ -74,6 +75,23 @@ for (const [typed, label] of [
       expect(links(reader.root)).toEqual([label])
       expect(errors).toEqual([])
     })
+
+test('a typed backslash before a wiki link stays text and the link still forms', async () => {
+  const { editor, root, errors } = await mount('')
+  type(editor, '\\[[Note]]')
+  await settle()
+  expect(links(root)).toEqual(['Note'])
+  // The backslash is typed text, so it is written escaped; both forms read back the same.
+  const saved = editor.snapshot().text
+  expect(saved).toBe('\\\\[[Note]]\n')
+  const reader = await mount(saved)
+  expect(links(reader.root)).toEqual(['Note'])
+  expect(reader.root.querySelector('p')?.textContent).toBe('\\Note')
+  const plain = await mount('\\[[Note]]\n')
+  expect(links(plain.root)).toEqual(['Note'])
+  expect(plain.editor.snapshot().text).toBe('\\[[Note]]\n')
+  expect(errors).toEqual([])
+})
 
 test('typing a wiki link in a table cell saves the cell form of its pipe', async () => {
   const source = '| TARGET | B |\n| - | - |\n| x | y |\n'
@@ -141,7 +159,6 @@ test('typing the brackets after the host-chosen link and Undo behave as typing',
 for (const [typed, saved] of [
   ['![[Note]]', '!\\[\\[Note]]'],
   ['[[[Note]]', '\\[\\[\\[Note]]'],
-  ['\\[[Note]]', '\\\\\\[\\[Note]]'],
   ['[[ ]]', '\\[\\[ ]]'],
   ['[[#^block]]', '\\[\\[#^block]]'],
   ['[[a[b]]', '\\[\\[a\\[b]]'],

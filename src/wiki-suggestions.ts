@@ -18,7 +18,7 @@ interface WikiHost {
   error(error: InkKitError): void
 }
 function rawName(name: string): string {
-  return `[[${name.replace(/[\\[\]|#]/g, '\\$&')}]]`
+  return `[[${name}]]`
 }
 function validName(value: unknown): value is string {
   if (typeof value !== 'string') return false

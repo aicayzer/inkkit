@@ -71,14 +71,8 @@ test.each([
   ],
   ['[[Note#Heading|Readable alias]]', 'Note', 'Heading', 'Readable alias'],
   ['[[#Local heading]]', '', 'Local heading', '#Local heading'],
-  [
-    String.raw`[[A\[one\]\|two\#three\\four#Frag\#literal|Alias\|text]]`,
-    'A[one]|two#three\\four',
-    'Frag#literal',
-    'Alias|text',
-  ],
 ])(
-  'bounded wiki parser preserves escaped spelling %s',
+  'bounded wiki parser preserves spelling %s',
   (raw, target, fragment, label) => {
     expect(parseLinkedSyntax(raw!)).toMatchObject({
       raw,
@@ -90,6 +84,36 @@ test.each([
   },
 )
 
+// A backslash is an ordinary character in a wiki link, as it is in Marfa. Only a file embed
+// escapes with it.
+test.each([
+  ['[[x\\]]', 'x\\', null, 'x\\'],
+  ['[[bad\\q]]', 'bad\\q', null, 'bad\\q'],
+  ['[[a\\b#c\\d|e\\f]]', 'a\\b', 'c\\d', 'e\\f'],
+  ['[[a\\|b]]', 'a\\', null, 'b'],
+  ['[[a\\#b]]', 'a\\', 'b', 'a\\#b'],
+  ['[[\\\\two]]', '\\\\two', null, '\\\\two'],
+])(
+  'a backslash in a wiki link is plain text: %s',
+  (raw, target, fragment, label) => {
+    expect(parseLinkedSyntax(raw)).toMatchObject({
+      raw,
+      target,
+      fragment,
+      label,
+    })
+  },
+)
+
+test.each([
+  String.raw`[[a\[b]]`,
+  String.raw`[[a\]b]]`,
+  String.raw`[[a|b\|c]]`,
+  String.raw`[[a#b\#c]]`,
+])('a backslash does not escape a wiki link delimiter: %s', (raw) => {
+  expect(parseLinkedSyntax(raw)).toBeUndefined()
+})
+
 test.each([
   '[[ ]]',
   '[[Note|]]',
@@ -100,7 +124,7 @@ test.each([
   '[[Note#one#two]]',
   '[[nested [[link]]]]',
   '[[a\nb]]',
-  String.raw`[[bad\q]]`,
+  String.raw`![[bad\q]]`,
   '![[Note#^block]]',
   '![[file|alias]]',
   '![[file|0]]',
@@ -278,16 +302,32 @@ test.each([false, true])(
     ),
 )
 
-test('escaped openers and code never become wiki atoms; unsupported block references remain literal', () =>
-  run(
-    String.raw`\[[Escaped]]` + '\n\n`[[Code]]`\n\n[[Note#^block]]\n',
-    (editor, preservation) => {
-      expect(nodes(editor, 'inkkit_wiki_link')).toHaveLength(0)
-      expect(
-        preservation.serialize(editor.ctx.get(editorViewCtx).state.doc),
-      ).toBe(String.raw`\[[Escaped]]` + '\n\n`[[Code]]`\n\n[[Note#^block]]\n')
-    },
-  ))
+test('code never becomes a wiki atom; unsupported block references remain literal', () =>
+  run('`[[Code]]`\n\n[[Note#^block]]\n', (editor, preservation) => {
+    expect(nodes(editor, 'inkkit_wiki_link')).toHaveLength(0)
+    expect(
+      preservation.serialize(editor.ctx.get(editorViewCtx).state.doc),
+    ).toBe('`[[Code]]`\n\n[[Note#^block]]\n')
+  }))
+
+test('a backslash before a wiki link is text, and a backslash can end a name', () => {
+  const source = '\\[[Escaped]] and [[x\\]] and \\\\[[Two]] and \\[x]\n'
+  return run(source, (editor, preservation) => {
+    const links = nodes(editor, 'inkkit_wiki_link').map(({ node }) =>
+      wikiReference(node),
+    )
+    expect(links).toEqual([
+      { raw: '[[Escaped]]', target: 'Escaped', label: 'Escaped' },
+      { raw: '[[x\\]]', target: 'x\\', label: 'x\\' },
+      { raw: '[[Two]]', target: 'Two', label: 'Two' },
+    ])
+    const doc = editor.ctx.get(editorViewCtx).state.doc
+    // The backslash stays as text before the link; `\\\\` is still CommonMark's escaped backslash.
+    expect(doc.firstChild!.firstChild!.text).toBe('\\')
+    expect(doc.firstChild!.child(2).text).toBe(' and ')
+    expect(preservation.serialize(doc)).toBe(source)
+  })
+})
 
 test('named and path embeds share opaque image nodes while retaining their distinct reference forms', () =>
   run(
@@ -411,18 +451,18 @@ test('table literal pipes use a separate escaping layer from alias and sizing se
   const source =
     String.raw`| Wiki | File |` +
     '\n| --- | --- |\n' +
-    String.raw`| [[A\\\|B\|Alias]] | ![[A\\\|B.png\|400]] |` +
+    String.raw`| [[A\\\|Alias]] | ![[A\\\|B.png\|400]] |` +
     '\n'
   return run(source, (editor, preservation) => {
     const wiki = nodes(editor, 'inkkit_wiki_link')[0]!.node
     const image = nodes(editor, 'image')[0]!.node
     expect(wikiReference(wiki)).toEqual({
-      raw: String.raw`[[A\\\|B\|Alias]]`,
-      target: 'A|B',
+      raw: String.raw`[[A\\\|Alias]]`,
+      target: 'A\\',
       label: 'Alias',
     })
-    expect(wikiMarkdown(wiki)).toBe(String.raw`[[A\|B|Alias]]`)
-    expect(wikiMarkdown(wiki, true)).toBe(String.raw`[[A\\\|B\|Alias]]`)
+    expect(wikiMarkdown(wiki)).toBe(String.raw`[[A\|Alias]]`)
+    expect(wikiMarkdown(wiki, true)).toBe(String.raw`[[A\\\|Alias]]`)
     expect(fileReference(image)).toMatchObject({
       reference: 'A|B.png',
       width: 400,

@@ -79,11 +79,32 @@ export function caretState(state: EditorState): CaretState {
         active.add(mark)
     }
   }
+  const href = active.has('link') ? linkAddress(state, marks) : undefined
   return {
     marks: [...active],
     block: blockAt($from.parent, $from),
     quoted: quoted($from, $to),
+    ...(href != null ? { href } : {}),
   }
+}
+
+/** The address of the first link at the caret, or in the selection, in document order. */
+function linkAddress(
+  state: EditorState,
+  caretMarks: readonly ProseMark[],
+): string | undefined {
+  const type = state.schema.marks.link
+  if (!type) return undefined
+  const { empty } = state.selection
+  if (empty) return type.isInSet(caretMarks)?.attrs.href as string | undefined
+  const { $from, $to } = textBounds(state)
+  let href: string | undefined
+  state.doc.nodesBetween($from.pos, $to.pos, (node) => {
+    if (href != null) return false
+    href = type.isInSet(node.marks)?.attrs.href as string | undefined
+    return true
+  })
+  return href
 }
 
 // Prefer the last writing position without selecting a terminal atom that typing could replace.

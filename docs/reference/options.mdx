@@ -296,6 +296,12 @@ One block quote holds the whole selection; `block` is what sits inside it. Callo
 
 </ResponseField>
 
+<ResponseField name="href" type="string">
+
+The address of the link at the caret, or of the first link in a range, as the document holds it. It is present exactly when `marks` includes `'link'`, so a Link sheet can start from it and offer to change or remove the link. For a reference link it is the address its definition gives. Pass what the person types back through [`normalizeLinkAddress`](/reference/editor#link-addresses) before `format('link')`. Source and TXT modes never set it.
+
+</ResponseField>
+
 <ResponseField name="align" type="'left' | 'center' | 'right' | 'justify'">
 
 Present only in an RTF document: the alignment of the paragraph that holds the start of the selection, for a toolbar's alignment buttons. A table cell is always `'left'`.

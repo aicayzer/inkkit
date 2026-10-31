@@ -208,6 +208,10 @@ export interface CaretState {
   block: Block
   /** One quote holds the whole selection; the block is what sits inside it. */
   quoted: boolean
+  /** The address of the link at the caret or, for a range, of the first link in it, as the
+   *  document holds it. Present exactly when `marks` includes `'link'`. For a reference link, it
+   *  is the address its definition gives. A host's Link sheet starts from it. */
+  href?: string
   /** In an RTF document, the alignment of the paragraph that holds the start of the selection. */
   align?: 'left' | 'center' | 'right' | 'justify'
 }
