@@ -46,7 +46,7 @@ import { EditorViewport } from './editor-viewport'
 import { EditorSearch } from './editor-search'
 import { SourceSurface } from './editor-source'
 import { EditorDocument } from './editor-document'
-import { SourceHistory } from './editor-history'
+import { SourceHistory, discardFormattedRedo } from './editor-history'
 import { $prose } from '@milkdown/kit/utils'
 import {
   applyFormat,
@@ -1616,6 +1616,20 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     return this.history.redo()
   }
 
+  /** Drops the steps that `undo` took off the history, so `redo` has nothing to bring back. For a
+   *  host that adds content after an undo and must not let a redo resurrect what was undone.
+   *  Returns whether a redo was available. The document, selection, revision and undo steps stay
+   *  as they are, and no `changed` event is sent. */
+  discardUndone(expectedGeneration?: number): boolean {
+    this.assertMutation(expectedGeneration)
+    const view = this.editor.ctx.get(editorViewCtx)
+    const available = this.history.canRedo(view.state)
+    this.history.discardUndone()
+    discardFormattedRedo(view)
+    if (available) this.publishCommandState()
+    return available
+  }
+
   /** The complete current document, which is what a host saves. It throws rather than return a
    *  partial document. */
   snapshot(expectedGeneration?: number): DocumentSnapshot<F> {
@@ -2809,6 +2823,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       'replaceSource',
       'undo',
       'redo',
+      'discardUndone',
       'find',
       'searchMatches',
       'replace',
