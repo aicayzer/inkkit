@@ -547,6 +547,34 @@ A `Heading` is an immutable outline entry with the fields of `DocumentVersion`. 
 
 Moves the caret to the heading, focuses it, scrolls to it and unfolds callouts that hold it. It returns `true`, or throws `stale-document` for an entry from another generation, revision or mode, and `invalid-argument` for a value that isn't a heading entry. It doesn't change the revision.
 
+## Link addresses
+
+{/* @api normalizeLinkAddress */}
+
+### normalizeLinkAddress
+
+`normalizeLinkAddress(input: string): string | undefined`
+
+Turns what the person typed into a Link field into the address to pass to `format('link', { destination })`, or returns `undefined` when it isn't a web, mail or phone address. It is a plain function exported from both entries; it needs no editor.
+
+- **A bare host gets `https://`.** `example.com/a` becomes `https://example.com/a`, and `localhost` becomes `https://localhost`.
+- **A host and port are not a scheme.** A colon ends a scheme only before `//` or after `mailto` or `tel`, so `example.com:8080` and `localhost:3000/a` become `https://example.com:8080` and `https://localhost:3000/a`.
+- **A bare email address gets `mailto:`**, when it holds an `@` and no `/`.
+- **Schemes are compared and written in lower case.** `HTTPS://Example.com` gives `https://Example.com`, and `MAILTO:a@b.co` gives `mailto:a@b.co`. Only the scheme changes case.
+- **Only `http`, `https`, `mailto` and `tel` are accepted.** `javascript:`, `data:`, `file:`, `vbscript:`, any other `scheme://` address and a path that starts with `/` give `undefined`, as do an empty or whitespace-only input, an address with white space or a control character inside it, an `http` or `https` address with no host, and `mailto:` or `tel:` with nothing after the colon. Leading and trailing white space is trimmed.
+
+The result is always an address that `format('link')` accepts and `canOpenLink` allows. Hosts that add schemes through `linkSchemes` handle those addresses themselves.
+
+{/* @api canOpenLink */}
+
+### canOpenLink
+
+`canOpenLink(address: string): boolean`
+
+Whether a host may open `address` for the person, for example from `events.openLink`. Only `http`, `https`, `mailto` and `tel` addresses qualify, in any letter case, with spaces at the ends ignored. An address with no scheme, with another scheme such as `javascript:`, `data:` or `file:`, or with a control character does not, and neither does `example.com:8080`, whose text before the colon is not an allowed scheme. It reads the address as a browser does, so it never accepts an address that a browser would treat as another scheme.
+
+Inkkit's own `openLink` event also passes relative links and the schemes in `linkSchemes`. `canOpenLink` is the stricter test for hosts that open only web, mail and phone addresses.
+
 ## Footnotes, references and comments
 
 {/* @api InkKitEditor.insertFootnote */}

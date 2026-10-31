@@ -16,6 +16,7 @@ export type {
   Keymap,
 } from './editor'
 export { InkKitError } from './types'
+export { normalizeLinkAddress, canOpenLink } from './link-address'
 export type {
   DocumentFormat,
   TextDocumentFormat,

@@ -165,13 +165,8 @@ test('closed, replaced, and destroyed sessions ignore late results', async () =>
   }
 })
 
-test('reserved characters in a note name cannot inject an alias, fragment or closing delimiter', async () => {
-  for (const name of [
-    'Résumé 日本語',
-    'A#B|C[D]\\E',
-    ' A name ',
-    'A]] **injection**',
-  ]) {
+test('a backslash in a note name is text, and reserved characters are refused', async () => {
+  for (const name of ['Résumé 日本語', 'A\\E', 'Trailing\\', ' A name ']) {
     const { editor, root, errors } = await mount(
       'Before\n\nTARGET\n\nAfter\n',
       async () => [name],
@@ -181,7 +176,7 @@ test('reserved characters in a note name cannot inject an alias, fragment or clo
     await settle()
     expect(root.querySelector('[role=option]')?.textContent).toBe(name)
     editor.keyDown({ key: 'Tab' }, 1)
-    const expected = `Before\n\n[[${name.replace(/[\\[\]|#]/g, '\\$&')}]]\n\nAfter\n`
+    const expected = `Before\n\n[[${name}]]\n\nAfter\n`
     expect(editor.snapshot().text).toBe(expected)
     const reader = await mount(expected)
     expect(reader.editor.snapshot().text).toBe(expected)
@@ -191,7 +186,18 @@ test('reserved characters in a note name cannot inject an alias, fragment or clo
 })
 
 test('invalid names fail without inserting or changing history', async () => {
-  for (const name of ['', '  ', '^block', 'line\nfeed', '\u0000']) {
+  for (const name of [
+    '',
+    '  ',
+    '^block',
+    'line\nfeed',
+    '\u0000',
+    // The delimiters cannot be escaped, so a name holding one cannot be written.
+    'A#B',
+    'A|B',
+    'A[B]',
+    'A]] **injection**',
+  ]) {
     const { editor, root, errors } = await mount('', async () => [name])
     editor.insertText('[[', 1)
     const before = editor.snapshot()
@@ -252,7 +258,7 @@ test('closing brackets belong to wiki queries, not slash command filters', async
   expect(errors).toEqual([])
 })
 
-for (const name of ['A|B', ' A\\|B 日本語 😀 ', 'A\\\\|B', ' A\tCafé ']) {
+for (const name of [' A\\B 日本語 😀 ', 'A\\\\B', 'A\\', ' A\tCafé ']) {
   test(`table suggestion keeps callback spelling across save and reopen: ${JSON.stringify(name)}`, async () => {
     const references: {
       resolve: WikiLinkReference[]
@@ -281,13 +287,7 @@ for (const name of ['A|B', ' A\\|B 日本語 😀 ', 'A\\\\|B', ' A\tCafé ']) {
     const typed = editor.snapshot().text
     editor.keyDown({ key: 'Enter' }, 1)
     await settle()
-    const escaped = name
-      .replace(/[\\[\]|#]/g, '\\$&')
-      .replace(
-        /(\\*)\|/g,
-        (_match, escapes: string) => `${'\\'.repeat(escapes.length * 2 + 1)}|`,
-      )
-    const expected = { raw: `[[${escaped}]]`, target: name, label: name }
+    const expected = { raw: `[[${name}]]`, target: name, label: name }
     expect(references.resolve.at(-1)).toEqual(expected)
     root
       .querySelector<HTMLElement>('[role=link]')!
@@ -297,7 +297,7 @@ for (const name of ['A|B', ' A\\|B 日本語 😀 ', 'A\\\\|B', ' A\tCafé ']) {
     await settle()
     expect(references.open.at(-1)).toEqual(expected)
     const saved = editor.snapshot().text
-    expect(saved).toBe(source.replace('TARGET', `[[${escaped}]]`))
+    expect(saved).toBe(source.replace('TARGET', `[[${name}]]`))
     expect(editor.undo()).toBe(true)
     expect(editor.snapshot().text).toBe(typed)
     expect(editor.redo()).toBe(true)

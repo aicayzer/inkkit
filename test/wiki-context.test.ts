@@ -41,7 +41,7 @@ async function mount(text: string) {
   return { editor, root, resolved, opened, errors }
 }
 for (const ending of ['\n', '\r\n'])
-  for (const raw of ['Plan|Plan', ' Café\\|日本語# section | alias\\\\name ']) {
+  for (const raw of ['Plan|Plan', ' Café\\日本語 # section | alias\\\\name ']) {
     test(`pasted wiki raw follows table context ${JSON.stringify({ ending, raw })}`, async () => {
       const source =
         'Before  \n\n| TARGET | B |\n| --- | --- |\n| c | d |\n\nAfter _kept_.\n'.replaceAll(

@@ -326,9 +326,9 @@ A `WikiLinkReference` describes a wiki link as authored.
 
 <ResponseField name="raw" type="string" required>
 
-The link's Markdown as the document holds it, from `[[` to `]]`, with its escapes, alias and spacing as written. Use it to tell links apart that `target` and `label` don't: `[[Plan]]` and `[[Plan|Plan]]` have the same `target` and `label`, but different `raw`. It always appears in the next [`snapshot()`](/reference/editor#snapshot) as it is.
+The link's Markdown as the document holds it, from `[[` to `]]`, with its alias and spacing as written. Use it to tell links apart that `target` and `label` don't: `[[Plan]]` and `[[Plan|Plan]]` have the same `target` and `label`, but different `raw`. It always appears in the next [`snapshot()`](/reference/editor#snapshot) as it is.
 
-In a table cell, the pipes are escaped as the table needs them: `[[Plan|Plan]]` is `[[Plan\|Plan]]` there. A link pasted or moved between a table and a paragraph takes the spelling of where it lands. A link inserted from `suggest` has `[[name]]`, with `\`, `[`, `]`, `|` and `#` escaped.
+In a table cell, the pipes are escaped as the table needs them: `[[Plan|Plan]]` is `[[Plan\|Plan]]` there. A link pasted or moved between a table and a paragraph takes the spelling of where it lands. A link inserted from `suggest` has `[[name]]`. A backslash in a wiki link is plain text, so `raw` and `target` keep it.
 
 A host's test double for `WikiLinkReference` must supply it.
 
@@ -336,7 +336,7 @@ A host's test double for `WikiLinkReference` must supply it.
 
 <ResponseField name="target" type="string">
 
-The note name, with escapes removed. Empty for a link to a heading in the same note, such as `[[#Heading]]`.
+The note name as written, including any backslash. Empty for a link to a heading in the same note, such as `[[#Heading]]`.
 
 </ResponseField>
 
