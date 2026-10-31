@@ -413,3 +413,71 @@ test('match results navigate backward without taking host-field focus @native-se
   }
   expect((await observe(page)).snapshot).toEqual(before)
 })
+
+for (const mode of ['formatted', 'source'] as const) {
+  test(`a find session counts, wraps and reveals matches while the host field keeps focus (${mode}) @native-search`, async ({
+    page,
+    openFixture,
+  }) => {
+    await openFixture('native-search')
+    const paragraphs = Array.from(
+      { length: 60 },
+      (_, index) =>
+        `Paragraph ${index} has a needle${index % 20 === 0 ? ' needle' : ''}.`,
+    )
+    await page.evaluate(
+      (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+      paragraphs.join('\n\n'),
+    )
+    if (mode === 'source') await operation(page, 'editingMode', { mode })
+    await page.evaluate(() => {
+      const field = document.createElement('input')
+      field.id = 'host-find-field'
+      document.body.append(field)
+      field.focus()
+    })
+    type Reply = {
+      value: unknown
+      state: { current: number; total: number; query: string }
+      states: { current: number; total: number }[]
+    }
+    const command = async (args: Record<string, unknown>) =>
+      (await operation(page, 'findSession', args)) as Reply
+    const opened = await command({ command: 'find', query: 'needle' })
+    expect(opened.state).toMatchObject({ current: 1, total: 63 })
+    const scroller = page.locator('#editor')
+    const scrolled = () =>
+      scroller.evaluate(
+        (root) =>
+          root.scrollTop + (root.querySelector('textarea')?.scrollTop ?? 0),
+      )
+    const top = await scrolled()
+    const last = await command({ command: 'previous' })
+    expect(last.state).toMatchObject({ current: 63 })
+    expect(await scrolled()).toBeGreaterThan(top)
+    expect((await command({ command: 'next' })).state.current).toBe(1)
+    await expect(page.locator('#host-find-field')).toBeFocused()
+    const replaced = await command({
+      command: 'replace',
+      query: 'needle',
+      replacement: 'pin',
+    })
+    expect(replaced.value).toBe(true)
+    expect(replaced.state).toMatchObject({ current: 1, total: 62 })
+    expect((await observe(page)).snapshot!.text).toContain(
+      'Paragraph 0 has a pin needle.',
+    )
+    await operation(page, 'undo')
+    expect((await command({ command: 'next' })).state.total).toBe(63)
+    const all = await command({
+      command: 'replaceAll',
+      query: 'needle',
+      replacement: 'pin',
+    })
+    expect(all.value).toBe(63)
+    expect(all.state.total).toBe(0)
+    await operation(page, 'undo')
+    expect((await command({ command: 'next' })).state.total).toBe(63)
+    await command({ command: 'close' })
+  })
+}

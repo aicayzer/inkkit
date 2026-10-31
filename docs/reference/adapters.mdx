@@ -70,6 +70,17 @@ Inkkit doesn't call it in source or TXT mode. When `files` is set, every image i
 
 </ResponseField>
 
+### Images without an adapter
+
+Without `options.images`, the editor has nowhere to store an image, so a paste or drop that would insert one is refused whole. Nothing is inserted, not even placeholder text or the text that came with the image; the clipboard and the document are untouched; and `events.error` receives `image-unsupported` so the host can tell the person. `paste` rejects with the same code instead of reporting it.
+
+- **Refused:** image files and `images` in `paste`, and pasted or dropped HTML whose image would appear in the document. A table that the editor keeps as source because it can't be edited is not refused, nor is a copied diagram, because neither inserts an image.
+- **RTF documents:** only image bytes are refused. Images in pasted HTML are still dropped and the rest of the paste is kept, as for any adapter.
+- **Source and TXT surfaces:** pastes are text only, so nothing is refused.
+- **A file adapter:** a host that sets only `files` receives dropped image files for its own handling, and its pasted images are refused.
+
+With an `images` adapter none of this applies: an import that fails inserts a placeholder as described above.
+
 ## FileAdapter
 
 Resolves path images (`![alt](destination)`) and named embeds (`![[name]]`) into images, audio, video, PDFs and file cards. You decide what kind each file is; Inkkit never guesses from the extension. Resolution never changes the Markdown or the revision.
