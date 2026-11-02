@@ -509,11 +509,39 @@
   cursor: text;
 }
 
+/* The drawn caret and selection sit in the surface's wrapper. It isolates its own stacking
+   context, so the selection layer can sit behind the text and still above the page. */
+.inkkit-root .inkkit-overlay-host {
+  position: relative;
+  isolation: isolate;
+}
+.inkkit-root .inkkit-selection-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.inkkit-root .inkkit-selection-layer > div {
+  position: absolute;
+  background: var(
+    --inkkit-inactive-selection-background,
+    light-dark(#d4d4d4, #555)
+  );
+}
+.inkkit-root.inkkit-selection-active .inkkit-selection-layer > div {
+  background: var(
+    --inkkit-selection-background,
+    color-mix(in srgb, var(--_inkkit-accent) 30%, transparent)
+  );
+}
+@media (forced-colors: active) {
+  .inkkit-root .inkkit-selection-layer > div {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+}
 /* The drawn caret. The native caret stays, transparent, so accessibility and input methods
    still read its position. */
-.inkkit-root .inkkit-caret-host {
-  position: relative;
-}
 .inkkit-root .ProseMirror.inkkit-drawn-caret {
   caret-color: transparent;
 }

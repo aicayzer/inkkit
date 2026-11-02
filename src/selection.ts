@@ -7,6 +7,7 @@ import {
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { SelectionLayer } from './drawn-selection'
 
 /** The stylesheet paints the selection under this name. */
 const name = 'inkkit-selection'
@@ -111,7 +112,7 @@ function blockRange(view: EditorView, span: Span, content: Element): Range {
 // Adjacent plain blocks have no controls or decorations between their text. One
 // range paints the same text without making WebKit process thousands of ranges.
 function addBlockRanges(
-  highlight: Highlight,
+  highlight: { add(range: Range): unknown },
   view: EditorView,
   spans: Span[],
   contents: Element[],
@@ -222,6 +223,7 @@ class Painter {
   private windowFocused: boolean
   private readonly hostActivation = new WeakMap<EditorView, boolean>()
   private painted?: { owner: EditorView; doc: ProseNode; selection: Selection }
+  private readonly layers = new Map<EditorView, SelectionLayer>()
 
   hostActive(view: EditorView, active: boolean | null): void {
     if (active === null) this.hostActivation.delete(view)
@@ -240,15 +242,18 @@ class Painter {
     this.windowFocused = doc.hasFocus()
   }
 
-  add(view: EditorView): void {
+  add(view: EditorView, drawn: boolean): void {
     if (!this.views.size) this.listen('add')
     this.views.set(view, rootOf(view))
+    if (drawn) this.layers.set(view, new SelectionLayer(view))
     this.sync()
   }
 
   remove(view: EditorView): void {
     this.views.get(view)?.classList.remove(activeClass)
     this.views.delete(view)
+    this.layers.get(view)?.destroy()
+    this.layers.delete(view)
     if (this.owner === view) this.owner = null
     this.sync()
     if (!this.views.size) {
@@ -315,7 +320,7 @@ class Painter {
         activeClass,
         (this.hostActivation.get(view) ?? this.windowFocused) && focused(view),
       )
-    if (!this.custom) return
+    if (!this.custom && !this.layers.size) return
     const { owner } = this
     if (
       owner &&
@@ -324,13 +329,16 @@ class Painter {
       this.painted.selection.eq(owner.state.selection)
     )
       return
+    for (const [view, layer] of this.layers) if (view !== owner) layer.clear()
     const spans = owner ? covered(owner.state) : []
     if (!owner || !spans.length) {
-      CSS.highlights.delete(name)
+      if (this.custom) CSS.highlights.delete(name)
+      if (owner) this.layers.get(owner)?.clear()
       this.painted = undefined
       return
     }
-    const highlight = new Highlight()
+    const ranges: Range[] = []
+    const highlight = { add: (range: Range) => ranges.push(range) }
     const contents = blockContents(owner)
     let blocks = 0
     let mapped = true
@@ -344,7 +352,16 @@ class Painter {
     if (mapped && contents.length === blocks)
       addBlockRanges(highlight, owner, spans, contents)
     else for (const span of spans) highlight.add(domRange(owner, span))
-    CSS.highlights.set(name, highlight)
+    // A drawn layer paints what it can; the rest, and every range without one, is a highlight.
+    const layer = this.layers.get(owner)
+    const painted = layer ? layer.draw(ranges) : ranges
+    if (this.custom) {
+      if (painted.length) {
+        const highlight = new Highlight()
+        for (const range of painted) highlight.add(range)
+        CSS.highlights.set(name, highlight)
+      } else CSS.highlights.delete(name)
+    }
     this.painted = {
       owner,
       doc: owner.state.doc,
@@ -353,30 +370,36 @@ class Painter {
   }
 }
 
-export const selectionPlugin = $prose(() => {
-  // Counts the transactions that set a selection, which separates a view that was given
-  // one from a view whose document changed.
-  const key = new PluginKey<number>('selection')
-  return new Plugin<number>({
-    key,
-    state: {
-      init: () => 0,
-      apply: (tr, count) => (tr.selectionSet ? count + 1 : count),
-    },
-    props: paintable()
-      ? { attributes: { class: 'inkkit-painted-selection' } }
-      : {},
-    view(view) {
-      const painter = Painter.of(view.dom.ownerDocument)
-      painter.add(view)
-      return {
-        update(view, previous) {
-          if (key.getState(view.state) !== key.getState(previous))
-            painter.take(view)
-          else painter.changed(view)
-        },
-        destroy: () => painter.remove(view),
-      }
-    },
+/**
+ * Paints the selection. With `drawn`, a layer draws it centred on each line of text, and only
+ * text it can't draw behind falls back to a custom highlight.
+ */
+export const selectionPlugin = (drawn: boolean) =>
+  $prose(() => {
+    // Counts the transactions that set a selection, which separates a view that was given
+    // one from a view whose document changed.
+    const key = new PluginKey<number>('selection')
+    return new Plugin<number>({
+      key,
+      state: {
+        init: () => 0,
+        apply: (tr, count) => (tr.selectionSet ? count + 1 : count),
+      },
+      props:
+        drawn || paintable()
+          ? { attributes: { class: 'inkkit-painted-selection' } }
+          : {},
+      view(view) {
+        const painter = Painter.of(view.dom.ownerDocument)
+        painter.add(view, drawn)
+        return {
+          update(view, previous) {
+            if (key.getState(view.state) !== key.getState(previous))
+              painter.take(view)
+            else painter.changed(view)
+          },
+          destroy: () => painter.remove(view),
+        }
+      },
+    })
   })
-})

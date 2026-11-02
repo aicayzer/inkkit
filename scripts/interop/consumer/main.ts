@@ -329,6 +329,52 @@ function caretGeometry(engineLine: boolean) {
   }
 }
 
+// The drawn selection's bars against the lines of selected text: each bar should be as tall as
+// its line and centred on that line's text, and consecutive bars should meet.
+function selectionBars() {
+  const layer = view().parentElement?.querySelector(
+    ':scope > .inkkit-selection-layer',
+  )
+  const bars = [...(layer?.children ?? [])].map((bar) =>
+    bar.getBoundingClientRect(),
+  )
+  const block = getSelection()!.anchorNode?.parentElement?.closest('p')
+  if (!block) throw Error('The selection is not in a paragraph')
+  const lineHeight = Number.parseFloat(getComputedStyle(block).lineHeight)
+  const text = block.firstChild as Text
+  const range = document.createRange()
+  const lines: { top: number; bottom: number }[] = []
+  for (let i = 0; i < text.length; i++) {
+    range.setStart(text, i)
+    range.setEnd(text, i + 1)
+    const rect = [...range.getClientRects()].find((r) => r.width > 0)
+    if (rect && !lines.some((line) => Math.abs(line.top - rect.top) < 2))
+      lines.push({ top: rect.top, bottom: rect.bottom })
+  }
+  const centred = bars.every((bar) => {
+    const line = lines.find(
+      (candidate) =>
+        candidate.top >= bar.top - 1 && candidate.bottom <= bar.bottom + 1,
+    )
+    return (
+      !!line &&
+      Math.abs(bar.height - lineHeight) <= 1 &&
+      Math.abs((bar.top + bar.bottom) / 2 - (line.top + line.bottom) / 2) <= 1
+    )
+  })
+  const meet = bars.every(
+    (bar, index) =>
+      index === 0 || Math.abs(bar.top - bars[index - 1]!.bottom) < 1,
+  )
+  return {
+    bars: bars.length,
+    lines: bars.length > 1,
+    centred,
+    meet,
+    highlighted: CSS.highlights?.get('inkkit-selection')?.size ?? 0,
+  }
+}
+
 const viewportState = () => ({
   viewport: editor.viewport(),
   hostFocused:
@@ -534,6 +580,10 @@ window.interop = {
             result = caretGeometry(operation.engineLine === true)
             break
           }
+          case 'selectionBars':
+            await settle()
+            result = selectionBars()
+            break
           case 'mountSecond': {
             const root = document.querySelector('#second-editor')
             root.hidden = false

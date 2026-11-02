@@ -147,9 +147,9 @@ Mermaid previews below `mermaid` fences. `false` also removes the `diagram` slas
 
 </ResponseField>
 
-<ResponseField name="drawnCaret" type="boolean" default="true">
+<ResponseField name="drawnSelection" type="boolean" default="true">
 
-Inkkit draws the caret at text height in formatted mode, where a fine pointer is the primary input. `false` keeps the web view's own caret, which WebKit draws a full line tall on wrapped lines under a loose line height. [The caret](/guides/appearance#the-caret) describes when the web view's caret applies either way.
+Inkkit draws the caret and the selection highlight in formatted mode, where a fine pointer is the primary input: the caret at text height, and the highlight centred on each line of text. `false` keeps the web view's own caret and highlight geometry, which WebKit draws above the text on wrapped lines under a loose line height. See [the caret](/guides/appearance#the-caret) and [style the selection](/guides/appearance#style-the-selection).
 
 </ResponseField>
 

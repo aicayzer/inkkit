@@ -16,7 +16,7 @@ import { $prose } from '@milkdown/kit/utils'
 /** Set on the editable surface while the drawn bar replaces the native caret. */
 const drawnClass = 'inkkit-drawn-caret'
 const barClass = 'inkkit-caret'
-const hostClass = 'inkkit-caret-host'
+const hostClass = 'inkkit-overlay-host'
 
 type Side = -1 | 1
 
@@ -315,6 +315,6 @@ export function drawnCaretBar(surface: HTMLElement): HTMLElement | null {
 }
 
 /** Whether the primary pointer is fine, so the page, not the system, draws the caret. */
-export function drawsCaret(win: Window | null | undefined): boolean {
+export function drawsOverlays(win: Window | null | undefined): boolean {
   return !!win?.matchMedia?.('(pointer: fine)').matches
 }

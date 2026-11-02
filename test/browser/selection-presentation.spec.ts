@@ -11,12 +11,15 @@ declare global {
   }
 }
 
-/** Two editors with a paragraph and a field around them, as a host page might have. */
-async function mountPage(page: Page, texts: string[]) {
+/**
+ * Two editors with a paragraph and a field around them, as a host page might have. These cases
+ * read the custom highlight, so the editors keep it unless `drawn` asks for the drawn layer.
+ */
+async function mountPage(page: Page, texts: string[], drawn = false) {
   await page.goto('/')
   await page.waitForFunction(() => Boolean(window.inkkitPlayground))
   await page.evaluate(
-    async ({ moduleUrl, texts }) => {
+    async ({ moduleUrl, texts, drawn }) => {
       const { InkKitEditor } = await import(moduleUrl)
       document.body.replaceChildren()
       document.body.style.cssText = 'margin:0;padding:10px;width:560px'
@@ -33,7 +36,11 @@ async function mountPage(page: Page, texts: string[]) {
         root.style.cssText =
           '--inkkit-selection-background:rgb(255, 0, 0);--inkkit-inactive-selection-background:rgb(0, 0, 255);padding:20px;--inkkit-reading-width:400px'
         document.body.append(root)
-        const editor = await InkKitEditor.mount(root, { changed() {} })
+        const editor = await InkKitEditor.mount(
+          root,
+          { changed() {} },
+          { rendering: { drawnSelection: drawn } },
+        )
         editor.loadDocument({
           documentId: `selection-${index}`,
           generation: 1,
@@ -44,7 +51,7 @@ async function mountPage(page: Page, texts: string[]) {
       }
       window.selectionEditors = editors
     },
-    { moduleUrl, texts },
+    { moduleUrl, texts, drawn },
   )
 }
 
@@ -413,4 +420,47 @@ test('selecting in a read-only editor paints in the active colour and clears whe
   await expectPainted(page, ['Another'])
   await page.locator('#outside').click({ clickCount: 3 })
   await expectPainted(page, [])
+})
+
+/** The bars each editor's drawn layer shows, and their colour. */
+const bars = (page: Page) =>
+  page.evaluate(() =>
+    [0, 1].map((index) => {
+      const layer = document.querySelector(
+        `#editor-${index} .inkkit-selection-layer`,
+      )
+      const children = [...(layer?.children ?? [])]
+      return {
+        count: children.length,
+        colour: children[0] && getComputedStyle(children[0]).backgroundColor,
+      }
+    }),
+  )
+
+test('with drawn selection, only the latest editor draws, in the active or inactive colour', async ({
+  page,
+}) => {
+  await mountPage(page, [sentence, sentence], true)
+  await word(page, 0)
+  await expect
+    .poll(() => bars(page))
+    .toEqual([
+      { count: 1, colour: red },
+      { count: 0, colour: undefined },
+    ])
+  expect(await painted(page)).toEqual([])
+  await word(page, 1, 1)
+  await expect
+    .poll(() => bars(page))
+    .toEqual([
+      { count: 0, colour: undefined },
+      { count: 1, colour: red },
+    ])
+  await page.locator('#field').focus()
+  await expect
+    .poll(() => bars(page))
+    .toEqual([
+      { count: 0, colour: undefined },
+      { count: 1, colour: blue },
+    ])
 })

@@ -452,7 +452,7 @@ export interface EditorOptions<F extends DocumentFormat = TextDocumentFormat> {
     diagramPreview?: boolean
     /** Draws the caret at text height in formatted mode, where a fine pointer is the primary
      *  input. Defaults to true. */
-    drawnCaret?: boolean
+    drawnSelection?: boolean
   }
 }
 
@@ -503,14 +503,14 @@ function editorOptions(value: unknown): EditorOptions {
   const rendering = optionalRecord(options.rendering, 'options.rendering', [
     'codeHighlighting',
     'diagramPreview',
-    'drawnCaret',
+    'drawnSelection',
   ])
   optionalBoolean(
     rendering?.codeHighlighting,
     'options.rendering.codeHighlighting',
   )
   optionalBoolean(rendering?.diagramPreview, 'options.rendering.diagramPreview')
-  optionalBoolean(rendering?.drawnCaret, 'options.rendering.drawnCaret')
+  optionalBoolean(rendering?.drawnSelection, 'options.rendering.drawnSelection')
   const labels = optionalRecord(
     options.labels,
     'options.labels',
