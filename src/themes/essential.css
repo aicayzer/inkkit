@@ -11,8 +11,8 @@
   --inkkit-rule-color: light-dark(#dddddd, #444444);
   --inkkit-checkbox-border-color: var(--inkkit-muted-color);
   --inkkit-code-background: light-dark(#f7f7f7, #2a2a2a);
-  --inkkit-table-radius: 4px;
-  --inkkit-code-radius: 4px;
+  --inkkit-table-radius: 10px;
+  --inkkit-code-radius: 10px;
   --inkkit-quote-rule-width: 3px;
   --inkkit-quote-rule-radius: 2px;
   --inkkit-quote-rule-color: light-dark(#a6a6a6, #777777);

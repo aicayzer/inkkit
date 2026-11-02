@@ -180,7 +180,7 @@ async function runConsumer(file, engineName, entry) {
       if (
         JSON.stringify(themed.before) !== JSON.stringify(themed.after) ||
         themed.size !== '15px' ||
-        themed.radius !== (theme === 'essential' ? '4px' : '8px') ||
+        themed.radius !== '10px' ||
         themed.background === 'rgba(0, 0, 0, 0)'
       )
         fail(

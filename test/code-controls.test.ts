@@ -145,3 +145,36 @@ test('copy contains code only, excluding the language controls', async () => {
     root.remove()
   }
 })
+
+test('a stale wrap toggle cannot affect a replacement document', () =>
+  note((editor, root, errors) => {
+    load(editor, '```js\nfirst\n```\n')
+    root.querySelector<HTMLButtonElement>('.inkkit-code-language')!.click()
+    const stale = root.querySelector<HTMLButtonElement>('.inkkit-code-wrap')!
+    load(editor, '```js\nsecond\n```\n', 2)
+    const before = editor.snapshot()
+    stale.click()
+    expect(root.querySelector('.inkkit-code-wrapped')).toBeNull()
+    expect(editor.snapshot()).toEqual(before)
+    expect(errors).toEqual([])
+  }))
+
+test('composition prevents a wrap change without changing source or history', () =>
+  note(async (editor, root, errors) => {
+    load(editor, '```js\nconst café = 1\n```\n')
+    const before = editor.snapshot()
+    root.querySelector<HTMLButtonElement>('.inkkit-code-language')!.click()
+    await withInputTimers(() => {
+      const surface = root.querySelector('.ProseMirror')!
+      surface.dispatchEvent(
+        new CompositionEvent('compositionstart', { bubbles: true }),
+      )
+      root.querySelector<HTMLButtonElement>('.inkkit-code-wrap')!.click()
+      expect(root.querySelector('.inkkit-code-wrapped')).toBeNull()
+      surface.dispatchEvent(
+        new CompositionEvent('compositionend', { bubbles: true }),
+      )
+    })
+    expect(editor.snapshot()).toEqual(before)
+    expect(errors).toEqual([])
+  }))

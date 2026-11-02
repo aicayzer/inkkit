@@ -32,7 +32,7 @@ for (const scheme of ['light', 'dark'] as const) {
     const table = page.locator('#editor table')
     const radius = () =>
       table.evaluate((el) => getComputedStyle(el).borderTopLeftRadius)
-    expect(await radius()).toBe('4px')
+    expect(await radius()).toBe('10px')
     expect(
       await table.locator('tr:nth-child(2) td:nth-child(2)').evaluate((el) => {
         const style = getComputedStyle(el)

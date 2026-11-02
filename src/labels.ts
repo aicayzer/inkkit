@@ -33,6 +33,7 @@ export const defaultLabels: Readonly<EditorLabels> = {
   copyCode: 'Copy',
   codeLanguage: 'Code language',
   codeLanguageSearch: 'Search languages',
+  codeWrap: 'Wrap code',
   codeAuto: 'Auto',
   codePlainText: 'Plain text',
   expandCallout: 'Expand',

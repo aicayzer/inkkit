@@ -29,6 +29,7 @@ test('labels are per editor, safely inserted and do not change authored source',
   const malicious = '<img src=x onerror="alert(1)">'
   const one = await mount({
     copyCode: malicious,
+    codeWrap: malicious,
     expandCallout: malicious,
     footnote: malicious,
     tableAddRow: malicious,
@@ -46,6 +47,11 @@ test('labels are per editor, safely inserted and do not change authored source',
     expect(
       two.root.querySelector('.inkkit-copy')?.getAttribute('aria-label'),
     ).toBe('Copy')
+    one.root.querySelector<HTMLButtonElement>('.inkkit-code-language')!.click()
+    const wrap = one.root.querySelector<HTMLButtonElement>('.inkkit-code-wrap')!
+    expect(wrap.getAttribute('aria-label')).toBe(malicious)
+    expect(wrap.title).toBe(malicious)
+    expect(wrap.querySelector('img')).toBeNull()
     const toggle = one.root.querySelector<HTMLButtonElement>(
       '[data-inkkit-callout-toggle]',
     )!
