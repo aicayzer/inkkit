@@ -80,7 +80,7 @@ Use `pnpm exec playwright test --config playwright.diagnostics.config.ts --proje
 
 App integrations and app releases follow package publication as a separate delivery phase. Temporary `file:` dependencies must not enter merged app lockfiles.
 
-Documentation-only changes to Markdown guides, the README or agent instructions run a formatting check and skip editor tests. Mintlify pages, assets and configuration run `mint validate`. Unknown file types, mixed changes and release runs retain the full checks. The workflow still starts for every pull request so required checks resolve; it skips expensive steps rather than filtering out the workflow.
+Documentation-only changes to Markdown guides, the README or agent instructions run a formatting check and skip editor tests. Mintlify pages, assets and configuration run `mint validate`. Docs demo build and layout changes run their dedicated build and browser checks. CI routing changes run the classifier tests in the Docs editor workflow. Unknown file types, changes mixed with editor code and release runs retain the full editor checks. The workflow still starts for every pull request so required checks resolve; it skips expensive steps rather than filtering out the workflow.
 
 ## Swift package
 

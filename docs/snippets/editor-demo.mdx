@@ -17,6 +17,7 @@ export const EditorDemo = ({
       .querySelector('#navbar .nav-logo')
       ?.closest('a')
       ?.getBoundingClientRect()
+    const navbarLine = document.querySelector('#navbar-transition')
     let element = frame.current?.parentElement
     let background
     while (element) {
@@ -35,6 +36,9 @@ export const EditorDemo = ({
       type: 'inkkit-demo-theme',
       dark: document.documentElement.classList.contains('dark'),
       background,
+      divider: navbarLine
+        ? getComputedStyle(navbarLine).borderBottomColor
+        : undefined,
       navbarInset: navbarLogo?.width ? navbarLogo.left : undefined,
     })
   }
@@ -44,9 +48,12 @@ export const EditorDemo = ({
       attributes: true,
       attributeFilter: ['class'],
     })
+    const navbarLine = document.querySelector('#navbar-transition')
+    navbarLine?.addEventListener('transitionend', sendTheme)
     window.addEventListener('resize', sendTheme)
     return () => {
       observer.disconnect()
+      navbarLine?.removeEventListener('transitionend', sendTheme)
       window.removeEventListener('resize', sendTheme)
     }
   }, [])

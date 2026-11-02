@@ -63,7 +63,7 @@ for (const kind of ['compact', 'full']) {
         'data-state',
         'ready',
       )
-      await expect(page.locator('.top')).toHaveCSS('border-top-width', '1px')
+      await expect(page.locator('.top')).toHaveCSS('border-bottom-width', '1px')
       const switchBox = await page
         .getByRole('group', { name: 'View' })
         .boundingBox()
@@ -77,11 +77,17 @@ for (const kind of ['compact', 'full']) {
             dark: true,
             background: '#0b0b0b',
             navbarInset: 80,
+            divider: 'rgba(115, 115, 115, 0.05)',
           },
           '*',
         ),
       )
       await expect(page.locator('.top-in')).toHaveCSS('padding-left', '80px')
+      await expect(page.locator('.top')).toHaveCSS('border-top-width', '0px')
+      await expect(page.locator('.top')).toHaveCSS(
+        'border-bottom-color',
+        'rgba(115, 115, 115, 0.05)',
+      )
       await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark')
       const tools = await page.locator('.tools').boundingBox()
       const appearance = await page.locator('.appearance').boundingBox()

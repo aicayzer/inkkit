@@ -69,7 +69,7 @@ button { font: inherit; color: inherit; border: 0; background: transparent; bord
 button:hover,button[aria-pressed=true] { background: var(--hover); }
 button:disabled { opacity: .4; cursor: default; }
 button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
-.top { border-top: 1px solid var(--line); }
+.top { border-bottom: 1px solid var(--toolbar-line, var(--line)); }
 .top-in { padding-inline: var(--navbar-inset, 48px); }
 .bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px 16px; padding-block: 8px; }
 .switch,.tools,.appearance { display: flex; align-items: center; gap: 2px; }
@@ -168,6 +168,7 @@ addEventListener('message', (event) => {
   if (data?.type === 'inkkit-demo-theme') {
     siteScheme = data.dark ? 'dark' : 'light';
     if (typeof data.background === 'string' && CSS.supports('color', data.background)) document.documentElement.style.setProperty('--page', data.background);
+    if (typeof data.divider === 'string' && CSS.supports('color', data.divider)) document.documentElement.style.setProperty('--toolbar-line', data.divider);
     if (Number.isFinite(data.navbarInset) && data.navbarInset >= 0) document.documentElement.style.setProperty('--navbar-inset', data.navbarInset + 'px');
     applyAppearance();
   } else if (data?.type === 'inkkit-demo-state') {
