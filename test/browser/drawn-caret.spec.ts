@@ -108,6 +108,7 @@ async function expectNative(page: Page) {
 
 const lineEnd = process.platform === 'darwin' ? 'Meta+ArrowRight' : 'End'
 const lineStart = process.platform === 'darwin' ? 'Meta+ArrowLeft' : 'Home'
+const documentEnd = process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End'
 
 /**
  * Which line the engine's own caret is on at a soft wrap: extending to the line start moves
@@ -230,7 +231,7 @@ test('the engine caret returns where the drawn caret cannot stand in', async ({
   await expectOn(page, first!)
 
   // An empty block: the engine's caret already matches its line.
-  await page.keyboard.press('ControlOrMeta+ArrowDown')
+  await page.keyboard.press(documentEnd)
   await page.keyboard.press('Enter')
   await expectNative(page)
 
