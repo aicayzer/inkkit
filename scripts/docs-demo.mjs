@@ -1,0 +1,333 @@
+export const editorDemoHtml = ({ fullPage = false } = {}) => {
+  const icon = (paths) =>
+    `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`
+  const icons = {
+    find: icon('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
+    undo: icon(
+      '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    ),
+    redo: icon(
+      '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
+    ),
+    copy: icon(
+      '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+    ),
+    done: icon('<path d="M20 6 9 17l-5-5"/>'),
+    reset: icon('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
+    focus: icon(
+      '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+    ),
+    unfocus: icon(
+      '<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>',
+    ),
+  }
+  const tool = (id, name, label) =>
+    `<button type="button" id="${id}" class="tool" aria-label="${label}" title="${label}" disabled>${icons[name]}</button>`
+  const viewSwitch = `<div class="switch" role="group" aria-label="View"><button type="button" id="formatted" aria-pressed="true" disabled>Formatted</button><button type="button" id="source" aria-pressed="false" disabled>Source</button></div>`
+  const compactHeader = `<header>${viewSwitch}<a class="open-playground" href="https://inkkit.cyzr.me/editor" target="_blank" rel="noopener noreferrer">Open playground<span aria-hidden="true"> ↗</span></a></header>`
+  const bar = `<div class="top"><div class="top-in">
+<div class="bar" role="toolbar" aria-label="Editor controls">
+<div class="tools">
+${tool('undo', 'undo', 'Undo')}${tool('redo', 'redo', 'Redo')}
+<button type="button" id="find" class="tool" aria-label="Find" title="Find" aria-expanded="false" aria-controls="findbar" disabled>${icons.find}</button>
+<button type="button" id="copy" class="tool" aria-label="Copy Markdown" title="Copy Markdown" disabled><span class="glyph">${icons.copy}</span><span class="glyph glyph-done">${icons.done}</span></button>
+${tool('reset', 'reset', 'Reset')}
+</div>
+${viewSwitch}
+<div class="appearance">
+<button type="button" id="theme" aria-haspopup="menu" aria-expanded="false" aria-controls="theme-menu">Theme<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
+${tool('focus', 'focus', 'Focus')}
+</div>
+</div>
+<div id="theme-menu" class="choice-menu" role="menu" aria-label="Theme" hidden>
+<button type="button" role="menuitemradio" aria-checked="true" data-theme="standard" tabindex="-1">Standard<span aria-hidden="true">✓</span></button>
+<button type="button" role="menuitemradio" aria-checked="false" data-theme="calm" tabindex="-1">Calm<span aria-hidden="true">✓</span></button>
+<button type="button" role="menuitemradio" aria-checked="false" data-theme="essential" tabindex="-1">Essential<span aria-hidden="true">✓</span></button>
+</div>
+<div id="findbar" class="findbar" role="search" aria-label="Find in note" hidden>
+<input id="query" type="search" aria-label="Find" placeholder="Find in note" autocomplete="off" spellcheck="false">
+<button type="button" id="next" class="tool" title="Find next (F3)"><span class="label-always">Find next</span></button>
+<button type="button" id="closefind" class="tool" aria-label="Close find" title="Close find"><span class="label-always">Close</span></button>
+</div>
+</div>
+<p id="status" class="demo-status" role="status">Loading editor…</p></div>`
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="./inkkit-package/style.css">
+<link rel="stylesheet" href="./inkkit-package/themes/standard.css">
+<link rel="stylesheet" href="./inkkit-package/themes/calm.css">
+<link rel="stylesheet" href="./inkkit-package/themes/essential.css">
+<style>
+:root { color-scheme: light dark; --line: light-dark(#e5e5e5,#292929); --hover: light-dark(#f0f0f0,#252525); --muted: light-dark(#6b6b6b,#a3a3a3); --ring: light-dark(#2563eb,#60a5fa); }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; font: 13px/1.5 system-ui,sans-serif; color: CanvasText; background: var(--page, light-dark(#fff,#0b0b0b)); }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+.open-playground { color: var(--muted); text-decoration: none; border-radius: 6px; padding: 6px 8px; white-space: nowrap; }
+.open-playground:hover { color: CanvasText; background: var(--hover); }
+button { font: inherit; color: inherit; border: 0; background: transparent; border-radius: 8px; padding: 4px 8px; cursor: pointer; }
+button:hover,button[aria-pressed=true] { background: var(--hover); }
+button:disabled { opacity: .4; cursor: default; }
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.top { border-top: 1px solid var(--line); }
+.top-in { padding-inline: var(--navbar-inset, 48px); }
+.bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px 16px; padding-block: 8px; }
+.switch,.tools,.appearance { display: flex; align-items: center; gap: 2px; }
+.switch { gap: 2px; }
+.switch button { padding: 6px 12px; font-size: 13px; line-height: 20px; }
+.switch button[aria-pressed=true] { background: var(--hover); }
+.appearance { justify-content: flex-end; gap: 8px; }
+#theme { display: inline-flex; align-items: center; gap: 8px; padding: 6px 9px; font-size: 13px; line-height: 20px; }
+#theme[aria-expanded=true] { background: var(--hover); }
+.choice-menu { position: fixed; z-index: 100; min-width: 170px; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--page, Canvas); color: CanvasText; box-shadow: 0 6px 20px #0002; }
+.choice-menu button { display: flex; align-items: center; justify-content: space-between; gap: 24px; width: 100%; text-align: left; padding: 7px 10px; }
+.choice-menu button span { visibility: hidden; }
+.choice-menu button[aria-checked=true] span { visibility: visible; }
+.choice-menu button:focus-visible { background: var(--hover); }
+.tool { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 8px; color: var(--muted); }
+.tool:hover { color: CanvasText; }
+#next,#closefind { width: auto; }
+.tool svg { display: block; flex: none; }
+.sr-only,.demo-status:not(.status-error) { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.glyph-done,.done .glyph:not(.glyph-done) { display: none; }
+.done .glyph-done { display: inline-flex; }
+.findbar { display: flex; align-items: center; gap: 4px; padding-bottom: 8px; }
+.findbar input { flex: 1; min-width: 0; font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
+.demo-status.status-error { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+#editor { ${fullPage ? '--inkkit-column-inset: max(var(--inkkit-padding-inline), calc((100% - 650px) / 2)); --inkkit-background-color: transparent; --inkkit-diagram-background: var(--page, Canvas); --inkkit-paragraph-spacing: 16px;' : '--inkkit-reading-width: 100%;'} --inkkit-padding-inline: 24px; --inkkit-surface-focus-width: 0; min-height: 410px; padding-block: 18px; }
+.compact-status:empty { display: none; }
+.compact-status { font-size: 12px; opacity: .65; padding: 0 24px 12px; margin: 0; }
+@media(max-width:520px) { .bar { gap: 8px; } .tool { padding: 7px; } .top-in { padding-inline: var(--navbar-inset, 16px); } }
+@media(max-width:600px) { .bar { grid-template-columns: 1fr auto; } .switch { grid-column: 1 / 3; grid-row: 1; justify-self: center; } .tools { grid-column: 1; grid-row: 2; } .appearance { grid-column: 2; grid-row: 2; } }
+@media(max-width:440px) { header { padding-inline: 12px; } .open-playground { font-size: 12px; padding-inline: 4px; } .switch button { padding-inline: 8px; } #editor { --inkkit-padding-inline: 16px; } }
+</style></head><body>
+${fullPage ? bar : compactHeader}
+<div id="editor" data-inkkit-theme="standard"></div>${fullPage ? '' : '<p id="status" class="compact-status" role="status">Loading editor…</p>'}
+<script type="module">
+const full = ${fullPage};
+const $ = (id) => document.getElementById(id);
+const status = $('status');
+const root = $('editor');
+const initial = "# A little room to think\\n\\nA good week starts with a little space. Before the messages and meetings arrive, take a moment to decide what deserves your attention.\\n\\nKeep the plan small: **one thing to finish**, a few things to explore, and enough room for the unexpected.\\n\\n## Start with what matters\\n\\n- Make time for work that needs a clear head.\\n- Keep useful ideas somewhere easy to find.\\n- Leave the rest until it becomes important.\\n\\nA note does not need to capture everything. It just needs to help you find your way back.\\n\\n> Leave room for the thought you have not had yet. A little space can make the next step easier to see.\\n\\n## Turn an idea into a plan\\n\\nSmall steps are easier to begin. Give each one a clear outcome, then put the list aside and get started.\\n\\n- [x] Choose one idea worth exploring\\n- [ ] Make a first version\\n- [ ] Share it with someone whose judgement you trust\\n\\n| When | Make room for |\\n| --- | --- |\\n| Morning | Focused work, before the day gets busy |\\n| Afternoon | Conversations, feedback and small tasks |\\n| Before you finish | A few notes for tomorrow |\\n\\n## Keep it simple\\n\\nThe same approach works in code. A short list and a clear intention are often enough to begin.\\n\\n\`\`\`ts\\nconst today = {\\n  focus: \\"Make a first version\\",\\n  next: [\\"Try it\\", \\"Ask for feedback\\"],\\n}\\n\`\`\`\\n\\nYou can change the typography and colours without changing the words. The [appearance guide](https://inkkit.cyzr.me/guides/appearance) explains how.\\n" + (full ? "\\n## Make space for the whole week\\n\\nA plan is a starting point, not a promise. This one leaves most of the week for making things, with time to talk, reflect and catch up.\\n\\n\`\`\`mermaid\\npie title Room for what matters\\n  \\"Making\\" : 50\\n  \\"Conversations\\" : 25\\n  \\"Thinking\\" : 15\\n  \\"The unexpected\\" : 10\\n\`\`\`\\n" : '');
+const idle = '';
+const say = (text, error = false) => { status.textContent = text; status.classList.toggle('status-error', error); };
+const icons = ${JSON.stringify({ focus: icons.focus, unfocus: icons.unfocus })};
+let editor;
+let generation = 0;
+let mode = 'formatted';
+let focused = false;
+let siteScheme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+const applyAppearance = () => {
+  const scheme = siteScheme;
+  document.documentElement.style.colorScheme = scheme;
+  root.style.setProperty('--inkkit-color-scheme', scheme);
+};
+applyAppearance();
+const renderFocus = () => {
+  const button = $('focus');
+  if (!button) return;
+  const label = focused ? 'Exit focus' : 'Focus';
+  button.innerHTML = icons[focused ? 'unfocus' : 'focus'];
+  button.setAttribute('aria-label', label);
+  button.title = focused ? 'Exit focus (Esc)' : 'Focus';
+};
+const sourceMeasure = document.createElement('div');
+sourceMeasure.style.cssText = 'position:absolute;left:-100000px;top:0;visibility:hidden;white-space:pre-wrap;overflow-wrap:break-word;font:15px/1.5 ui-monospace,"SF Mono",Menlo,monospace';
+sourceMeasure.setAttribute('aria-hidden','true');
+document.body.append(sourceMeasure);
+const sizeSource = () => {
+  if (!editor || mode !== 'source') { root.style.removeProperty('--inkkit-min-height'); return; }
+  try {
+    const text = editor.snapshot(generation).text;
+    sourceMeasure.style.width = Math.max(1, Math.min(full ? 650 : Infinity, root.clientWidth - (innerWidth <= 440 ? 32 : 48))) + 'px';
+    sourceMeasure.textContent = text + String.fromCharCode(10);
+    root.style.setProperty('--inkkit-min-height', Math.max(410, sourceMeasure.getBoundingClientRect().height + 60) + 'px');
+  } catch { /* Keep the last height when a snapshot is temporarily unavailable. */ }
+};
+addEventListener('resize', sizeSource);
+if (full) {
+  let lastHeight = 0;
+  new ResizeObserver(() => {
+    const height = Math.ceil(document.body.getBoundingClientRect().height);
+    if (height !== lastHeight) { lastHeight = height; parent.postMessage({type:'inkkit-demo-height',height}, '*'); }
+  }).observe(document.body);
+}
+const renderState = (state) => {
+  mode = state.mode;
+  sizeSource();
+  $('formatted').setAttribute('aria-pressed', String(mode === 'formatted'));
+  $('source').setAttribute('aria-pressed', String(mode === 'source'));
+  if (full) {
+    $('undo').disabled = !state.commands.undo;
+    $('redo').disabled = !state.commands.redo;
+  }
+};
+addEventListener('message', (event) => {
+  if (event.source !== parent) return;
+  const data = event.data;
+  if (data?.type === 'inkkit-demo-theme') {
+    siteScheme = data.dark ? 'dark' : 'light';
+    if (typeof data.background === 'string' && CSS.supports('color', data.background)) document.documentElement.style.setProperty('--page', data.background);
+    if (Number.isFinite(data.navbarInset) && data.navbarInset >= 0) document.documentElement.style.setProperty('--navbar-inset', data.navbarInset + 'px');
+    applyAppearance();
+  } else if (data?.type === 'inkkit-demo-state') {
+    focused = data.focused === true;
+    renderFocus();
+  }
+});
+    const copyText = async (text) => {
+      try { await navigator.clipboard.writeText(text); return true; } catch {}
+      const previous = document.activeElement;
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.cssText = 'position:fixed;top:0;opacity:0';
+      document.body.append(area);
+      area.select();
+      try { return document.execCommand('copy'); } catch { return false; } finally { area.remove(); previous?.focus(); }
+    };
+try {
+  const { InkKitEditor } = await import('./inkkit-package/${fullPage ? 'index' : 'core'}.js');
+  editor = await InkKitEditor.mount(root, {
+    openLink() {},
+    copy(text) { void copyText(text).then(ok => { if (!ok) say('Your browser blocked copying.', true); }); },
+    changed() { say(idle); sizeSource(); },
+    commandStateChanged: renderState,
+    error(error) { say('That edit could not be applied (' + error.code + '). You can keep editing.', true); }
+  }, { keymap: { bold: ['Mod-b'], italic: ['Mod-i'] }, ...(full ? { slashMenu: { enabled: true } } : {}) });
+  const load = () => {
+    const next = generation + 1;
+    editor.loadDocument({ documentId: 'demo', generation: next, format: 'md', text: initial });
+    generation = next;
+    say(idle);
+  };
+  const attempt = (action, failure) => {
+    say('');
+    try { return action(); } catch { say(failure, true); }
+  };
+  const setMode = (next) => attempt(() => editor.setEditingMode(next, generation), 'Could not switch views. Your text is still here.');
+  const reset = () => attempt(load, 'Could not reset yet. Finish the current edit and try again.');
+  load();
+  renderState(editor.commandState(generation));
+  if (!full) {
+    $('formatted').disabled = $('source').disabled = false;
+    $('formatted').onclick = () => setMode('formatted');
+    $('source').onclick = () => setMode('source');
+  } else {
+    const bar = document.querySelector('[role=toolbar]');
+    const themeButton = $('theme');
+    const themeMenu = $('theme-menu');
+    const themes = [...themeMenu.querySelectorAll('button')];
+    let themeAnchor;
+    const closeTheme = (restore = false) => {
+      themeMenu.hidden = true;
+      themeButton.setAttribute('aria-expanded', 'false');
+      if (restore) themeButton.focus();
+    };
+    const openTheme = (keyboard = false) => {
+      themeMenu.hidden = false;
+      themeButton.setAttribute('aria-expanded', 'true');
+      const rect = themeButton.getBoundingClientRect();
+      themeAnchor = rect;
+      themeMenu.style.left = Math.max(8, Math.min(innerWidth - themeMenu.offsetWidth - 8, rect.right - themeMenu.offsetWidth)) + 'px';
+      themeMenu.style.top = rect.bottom + 6 + 'px';
+      if (keyboard) themes.find(button => button.getAttribute('aria-checked') === 'true').focus();
+    };
+    themeButton.onclick = () => themeMenu.hidden ? openTheme() : closeTheme();
+    themeButton.addEventListener('keydown', event => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openTheme(true); }
+      if (event.key === 'Escape' && !themeMenu.hidden) { event.preventDefault(); closeTheme(true); }
+    });
+    themes.forEach(button => { button.onclick = () => {
+      root.dataset.inkkitTheme = button.dataset.theme;
+      themes.forEach(item => item.setAttribute('aria-checked', String(item === button)));
+      closeTheme(true);
+      sizeSource();
+    }; });
+    themeMenu.addEventListener('keydown', event => {
+      const at = themes.indexOf(document.activeElement);
+      const next = event.key === 'ArrowDown' ? (at + 1) % themes.length : event.key === 'ArrowUp' ? (at + themes.length - 1) % themes.length : event.key === 'Home' ? 0 : event.key === 'End' ? themes.length - 1 : null;
+      if (next !== null) { event.preventDefault(); event.stopPropagation(); themes[next].focus(); }
+      else if (event.key === 'Escape') { event.preventDefault(); closeTheme(true); }
+      else if (event.key === 'Tab') closeTheme(true);
+    });
+    document.addEventListener('pointerdown', event => {
+      if (!themeMenu.contains(event.target) && !themeButton.contains(event.target)) closeTheme();
+    });
+    addEventListener('resize', () => closeTheme());
+    addEventListener('scroll', () => {
+      if (themeMenu.hidden) return;
+      const rect = themeButton.getBoundingClientRect();
+      // A queued scroll or scrolling inside the editor need not move the menu's anchor.
+      if (rect.left !== themeAnchor.left || rect.top !== themeAnchor.top) closeTheme();
+    }, true);
+    const findbar = $('findbar');
+    const query = $('query');
+    const copy = $('copy');
+    for (const button of bar.querySelectorAll('button')) if (button.id !== 'undo' && button.id !== 'redo') button.disabled = false;
+    renderFocus();
+    $('formatted').onclick = () => setMode('formatted');
+    $('source').onclick = () => setMode('source');
+    $('undo').onclick = () => attempt(() => editor.undo(generation), 'Could not undo yet. Finish the current edit and try again.');
+    $('redo').onclick = () => attempt(() => editor.redo(generation), 'Could not redo yet. Finish the current edit and try again.');
+    $('reset').onclick = reset;
+    const openFind = (open) => {
+      findbar.hidden = !open;
+      $('find').setAttribute('aria-expanded', String(open));
+      if (open) { query.focus(); query.select(); } else $('find').focus();
+    };
+    const findNext = () => {
+      const text = query.value;
+      if (!text) return openFind(true);
+      // A selection is only painted in a focused editor, so a match moves focus there.
+      const found = attempt(() => editor.find(text, generation), 'Could not search yet. Finish the current edit and try again.');
+      if (found === true) editor.focus(generation);
+      else if (found === false) say('No matches for "' + text + '".', true);
+    };
+    $('find').onclick = () => openFind(findbar.hidden);
+    $('closefind').onclick = () => openFind(false);
+    $('next').onclick = findNext;
+    query.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); openFind(false); }
+      else if (event.key === 'Enter') { event.preventDefault(); findNext(); }
+    });
+    let copied;
+    copy.onclick = async () => {
+      say('');
+      let text;
+      try { text = editor.snapshot(generation).text; } catch { say('Could not copy yet. Finish the current edit and try again.', true); return; }
+      if (!(await copyText(text))) { say('Your browser blocked copying. Switch to Source, select the text and copy it.', true); return; }
+      copy.classList.add('done');
+      say('Copied the Markdown to the clipboard.');
+      clearTimeout(copied);
+      copied = setTimeout(() => copy.classList.remove('done'), 2000);
+    };
+    $('focus').onclick = () => parent.postMessage({ type: 'inkkit-demo-focus', focused: !focused }, '*');
+    // ProseMirror always cancels Esc inside the text, so a cancelled Esc only counts as handled
+    // outside it (table and code controls). The slash menu is the one in-text case, read from its
+    // open state before it closes.
+    let slashOpen = false;
+    document.addEventListener('keydown', () => { slashOpen = root.querySelector('[role=combobox][aria-expanded=true]') !== null; }, true);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        const handled = !themeMenu.hidden || slashOpen || (event.defaultPrevented && !event.target.isContentEditable);
+        if (focused && !handled && !event.isComposing) parent.postMessage({ type: 'inkkit-demo-focus', focused: false }, '*');
+      } else if ((event.key === 'F3' || (event.key === 'g' && (event.metaKey || event.ctrlKey))) && query.value) { event.preventDefault(); findNext(); }
+    });
+    bar.addEventListener('keydown', (event) => {
+      const keys = { ArrowLeft: -1, ArrowRight: 1, Home: 'first', End: 'last' };
+      if (!(event.key in keys) || event.target.tagName !== 'BUTTON') return;
+      const items = [...bar.querySelectorAll('button:not(:disabled)')];
+      const at = items.indexOf(event.target);
+      const step = keys[event.key];
+      const next = step === 'first' ? 0 : step === 'last' ? items.length - 1 : (at + step + items.length) % items.length;
+      event.preventDefault();
+      items[next].focus();
+    });
+  }
+} catch (error) {
+  console.error(error);
+  say('The demo could not load. Refresh the page to try again.', true);
+}
+</script></body></html>`
+}

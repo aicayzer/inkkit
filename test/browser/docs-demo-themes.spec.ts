@@ -1,22 +1,15 @@
 import { readFile } from 'node:fs/promises'
 import { test, expect } from './fixtures'
 
-// Exercise the same srcDoc used by Mintlify, replacing only its CDN URLs so
-// the unpublished candidate can be checked through the public editor facade.
-async function officialDemo(baseURL: string) {
-  const snippet = await readFile('docs/snippets/editor-demo.mdx', 'utf8')
-  const component = snippet
-    .slice(0, snippet.indexOf('  return (\n    <iframe'))
-    .replace('export const', 'const')
-  const render = new Function(
-    'useRef',
-    'useEffect',
-    `${component}\nreturn html\n}\nreturn EditorDemo`,
+// Exercise the deployed demo source with the candidate editor facade.
+async function officialDemo(baseURL: string, fullPage = true) {
+  const generator = (await readFile('scripts/docs-demo.mjs', 'utf8')).replace(
+    'export const',
+    'const',
   )
-  const html: string = render(
-    () => ({ current: null }),
-    () => {},
-  )({ fullPage: true })
+  const html: string = new Function(`${generator}\nreturn editorDemoHtml`)()({
+    fullPage,
+  })
   const sheets = await Promise.all(
     [
       'style.css',
@@ -26,13 +19,10 @@ async function officialDemo(baseURL: string) {
     ].map((file) => readFile(`src/${file}`, 'utf8')),
   )
   return html
-    .replaceAll(
-      /<link rel="stylesheet" href="https:\/\/cdn\.jsdelivr\.net[^"]+">/g,
-      '',
-    )
+    .replaceAll(/<link rel="stylesheet" href="\.\/inkkit-package\/[^"]+">/g, '')
     .replace('</head>', `<style>${sheets.join('\n')}</style></head>`)
     .replaceAll(
-      /https:\/\/cdn\.jsdelivr\.net\/npm\/@aicayzer\/inkkit@[^/]+\/dist\/(index|core)\.js/g,
+      /\.\/inkkit-package\/(index|core)\.js/g,
       `${baseURL}/@fs${process.cwd()}/src/core.ts`,
     )
     .replace(
@@ -153,7 +143,7 @@ test('official playground switches real presets without changing the document @p
   await page.getByRole('button', { name: 'Formatted', exact: true }).click()
   for (const width of [320, 390, 1280]) {
     await page.setViewportSize({ width, height: 800 })
-    expect((await toolbar.boundingBox())?.x).toBe(width <= 520 ? 16 : 24)
+    expect((await toolbar.boundingBox())?.x).toBe(width <= 520 ? 16 : 48)
     await expect(
       page.getByRole('button', { name: 'Theme', exact: true }),
     ).toBeVisible()
