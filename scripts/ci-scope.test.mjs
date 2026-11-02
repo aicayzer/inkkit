@@ -38,7 +38,6 @@ test('mixed, unknown and workflow changes retain editor checks', () => {
     'pnpm-lock.yaml',
     '.github/workflows/ci.yml',
     'docs/example.ts',
-    'scripts/ci-scope.mjs',
   ]) {
     assert.deepEqual(scope(['docs/index.mdx', path]), {
       editor: true,
@@ -50,6 +49,34 @@ test('mixed, unknown and workflow changes retain editor checks', () => {
         'scripts/ci-scope.mjs',
       ].includes(path),
     })
+  }
+})
+test('docs demos and CI routing use their bounded checks', () => {
+  const paths = [
+    'docs/custom.css',
+    'docs/snippets/editor-demo.mdx',
+    'scripts/docs-demo.mjs',
+    'scripts/build-docs-demo.mjs',
+    'scripts/ci-scope.mjs',
+    'scripts/ci-scope.test.mjs',
+    'playwright.docs-demo.config.ts',
+    '.github/workflows/docs-editor.yml',
+    'test/docs-demo/deployment.spec.ts',
+  ]
+  assert.deepEqual(scope(paths), {
+    editor: false,
+    site: true,
+    swift: false,
+    playground: true,
+  })
+  for (const path of [
+    'src/core.ts',
+    'src/style.css',
+    'package.json',
+    'pnpm-lock.yaml',
+    '.github/workflows/ci.yml',
+  ]) {
+    assert.equal(scope([...paths, path]).editor, true, path)
   }
 })
 test('the Swift package, its fixtures and its job run the swift job', () => {

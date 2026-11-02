@@ -9,6 +9,15 @@ export function scope(paths) {
     path.startsWith('docs/') &&
     (/\.(mdx|css|svg|png|jpe?g|gif|webp|ico|woff2?|ttf|otf)$/.test(path) ||
       /^docs\/(docs\.json|\.mintignore)$/.test(path))
+  const demoOrRouting = (path) =>
+    [
+      'scripts/docs-demo.mjs',
+      'scripts/build-docs-demo.mjs',
+      'scripts/ci-scope.mjs',
+      'scripts/ci-scope.test.mjs',
+      'playwright.docs-demo.config.ts',
+      '.github/workflows/docs-editor.yml',
+    ].includes(path) || path.startsWith('test/docs-demo/')
   // The Swift package reads the shared RTF fixtures; the workflow edits that
   // define its job must also run it.
   const swift = (path) =>
@@ -35,7 +44,8 @@ export function scope(paths) {
     path === '.github/workflows/ci.yml'
   return {
     editor:
-      paths.length === 0 || paths.some((path) => !prose(path) && !site(path)),
+      paths.length === 0 ||
+      paths.some((path) => !prose(path) && !site(path) && !demoOrRouting(path)),
     site: paths.some(site),
     swift: paths.length === 0 || paths.some(swift),
     playground: paths.length === 0 || paths.some(playground),
