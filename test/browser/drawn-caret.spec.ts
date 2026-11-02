@@ -108,7 +108,8 @@ async function expectNative(page: Page) {
 
 const lineEnd = process.platform === 'darwin' ? 'Meta+ArrowRight' : 'End'
 const lineStart = process.platform === 'darwin' ? 'Meta+ArrowLeft' : 'Home'
-const documentEnd = process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End'
+const documentEnd =
+  process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End'
 
 /**
  * Which line the engine's own caret is on at a soft wrap: extending to the line start moves
