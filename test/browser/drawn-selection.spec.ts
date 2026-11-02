@@ -91,13 +91,12 @@ const middle = (line: Line) => ({
   y: (line.top + line.bottom) / 2,
 })
 
-async function selectAcross(page: Page, from: Line, to: Line) {
+/** Selects from the middle of `from` down by `lines` lines, with one click and the keyboard. */
+async function selectAcross(page: Page, from: Line, lines: number) {
   const start = middle(from)
-  const end = middle(to)
   await page.mouse.click(start.x, start.y)
-  await page.keyboard.down('Shift')
-  await page.mouse.click(end.x, end.y)
-  await page.keyboard.up('Shift')
+  for (let index = 0; index < lines; index++)
+    await page.keyboard.press('Shift+ArrowDown')
 }
 
 test('a selection over wrapped lines is one bar per line, centred on its text', async ({
@@ -108,7 +107,7 @@ test('a selection over wrapped lines is one bar per line, centred on its text', 
   const wrapped = await lines(page)
   expect(wrapped.length).toBeGreaterThanOrEqual(3)
   const height = await lineHeight(page)
-  await selectAcross(page, wrapped[0]!, wrapped[2]!)
+  await selectAcross(page, wrapped[0]!, 2)
   await expect.poll(async () => (await drawn(page)).bars.length).toBe(3)
   const result = await drawn(page)
   expect(result.highlighted).toBe(0)
@@ -179,7 +178,7 @@ test('rendering.drawnSelection false keeps the engine highlight', async ({
 }) => {
   await open(page, openFixture, '&drawnSelection=false')
   const wrapped = await lines(page)
-  await selectAcross(page, wrapped[0]!, wrapped[2]!)
+  await selectAcross(page, wrapped[0]!, 2)
   await expect.poll(async () => (await drawn(page)).highlighted).toBe(1)
   expect((await drawn(page)).layer).toBe(false)
 })
