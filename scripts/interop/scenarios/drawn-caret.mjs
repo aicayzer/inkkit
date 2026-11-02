@@ -62,4 +62,32 @@ export const scenarios = {
       ],
     },
   },
+  'native-drawn-caret-selection-bars': {
+    fixture: {
+      source: `${paragraph}\n\nAfter.\n`,
+      operations: [
+        {
+          op: 'selectTextRange',
+          text: 'attention',
+          offset: 0,
+          length: 0,
+          options: { focus: true },
+        },
+        { op: 'caretGeometry', style: loose, name: 'setup' },
+        {
+          op: 'selectTextRange',
+          text: 'attention',
+          offset: 0,
+          length: 140,
+          options: { focus: true },
+        },
+        { op: 'selectionBars', name: 'bars' },
+        assert('bars', 'lines', true),
+        assert('bars', 'centred', true),
+        assert('bars', 'meet', true),
+        assert('bars', 'highlighted', 0),
+        { op: 'assert', path: 'error', equals: null },
+      ],
+    },
+  },
 }

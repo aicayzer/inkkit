@@ -260,11 +260,11 @@ test('the engine caret returns where the drawn caret cannot stand in', async ({
   await expect.poll(async () => (await bar(page)).shown).toBe(false)
 })
 
-test('rendering.drawnCaret false keeps the engine caret', async ({
+test('rendering.drawnSelection false keeps the engine caret', async ({
   page,
   openFixture,
 }) => {
-  await open(page, openFixture, '&drawnCaret=false')
+  await open(page, openFixture, '&drawnSelection=false')
   const [first] = await lines(page)
   await page.mouse.click(
     (first!.left + first!.right) / 2,

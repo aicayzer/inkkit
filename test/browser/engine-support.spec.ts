@@ -52,18 +52,20 @@ for (const available of [true, false])
     await select(page, 'Plain')
     const unselected = await pixels(page, 'words')
     await select(page, 'words')
-    // Painted by the highlight with the API, and by the engine without it.
-    // Either paints on a later frame, so the check waits for it.
+    // Inkkit draws the selection on a later frame, so the check waits for it.
     await expect
       .poll(async () => (await pixels(page, 'words')).equals(unselected))
       .toBe(false)
-    // Where the engine can paint it, the highlight draws the selection, not
-    // the engine, which would also fill the margins beside the text.
+    // The drawn layer paints it with or without the API, not the engine, which would also
+    // fill the margins beside the text.
     expect(
-      await page.evaluate(
-        () => 'highlights' in CSS && CSS.highlights.has('inkkit-selection'),
-      ),
-    ).toBe(available)
+      await page.evaluate(() => ({
+        bars: document.querySelector('#editor .inkkit-selection-layer')
+          ?.children.length,
+        highlighted:
+          'highlights' in CSS && CSS.highlights.has('inkkit-selection'),
+      })),
+    ).toEqual({ bars: 1, highlighted: false })
     await page.keyboard.type('text')
     expect((await observe(page)).snapshot!.text).toBe('Plain text here\n')
     expect(errors).toEqual([])

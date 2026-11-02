@@ -311,7 +311,7 @@ test('async methods reject bad arguments instead of throwing', () =>
         InkKitEditor.mount(
           root,
           events,
-          bad({ rendering: { drawnCaret: 'yes' } }),
+          bad({ rendering: { drawnSelection: 'yes' } }),
         ),
       () =>
         InkKitEditor.mount(root, events, bad({ rendering: { caret: false } })),

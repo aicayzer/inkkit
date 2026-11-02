@@ -121,11 +121,13 @@ In formatted mode, Inkkit draws the caret itself, as tall as the text at the car
 - **Source and TXT modes** keep the web view's caret. A `<textarea>` doesn't expose where its text lies.
 - **Touch devices** keep the system caret, because the system also draws the selection handles. Inkkit draws the caret only where a fine pointer is the primary input.
 
-To keep the web view's caret everywhere, set [`rendering.drawnCaret`](/reference/options) to `false` at mount.
+To keep the web view's caret everywhere, set [`rendering.drawnSelection`](/reference/options) to `false` at mount. That also keeps the web view's highlight geometry, described in the next section.
 
 ## Style the selection
 
 Inkkit paints the selected text itself, so the selection covers the text and not the margins or the gaps between blocks. Two tokens set its color: `--inkkit-selection-background` while the editor has focus in an active window, and `--inkkit-inactive-selection-background` otherwise.
+
+In formatted mode, Inkkit draws the highlight behind the text as one bar per line, as tall as the line and centred on its text, so a selection over wrapped lines forms an even block. WebKit's own geometry puts the extra line spacing above the text on every wrapped line, for the reason given under [the caret](#the-caret). Text inside an element with an opaque background, such as a code block with an opaque `--inkkit-code-background`, keeps the web view's highlight, because a bar behind it wouldn't show. With `rendering.drawnSelection` set to `false`, or where Inkkit doesn't draw the caret, the web view paints the highlight.
 
 A page has one selection, so only one editor paints it. The editor that last took the selection keeps it painted in the inactive color when focus moves to a host field, when you call [`blur`](/reference/editor#focus-and-blur), and when the window resigns. Selecting text anywhere else on the page, or in another editor, clears it. Source and TXT modes use the browser's own selection, with the same two colors. The painted selection never changes the document, the revision or the saved bytes.
 
