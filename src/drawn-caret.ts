@@ -283,6 +283,16 @@ export const drawnCaretPlugin = $prose(() => {
           caret?.pointerDown(event)
           return false
         },
+        // Moving to the other side of a soft wrap keeps the same position, so the engine may not
+        // report a selection change; redraw once the click or key has done its work.
+        mouseup() {
+          caret?.schedule()
+          return false
+        },
+        keyup() {
+          caret?.schedule()
+          return false
+        },
         focus() {
           caret?.schedule()
           return false
