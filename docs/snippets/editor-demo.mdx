@@ -15,6 +15,7 @@ export const EditorDemo = ({
   const sendTheme = () => {
     const navbarLogo = document
       .querySelector('#navbar .nav-logo')
+      ?.closest('a')
       ?.getBoundingClientRect()
     let element = frame.current?.parentElement
     let background
