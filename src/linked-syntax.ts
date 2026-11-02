@@ -96,14 +96,15 @@ export function parseLinkedSyntax(
   const prefix = embed ? '![[' : '[['
   if (!source.startsWith(prefix) || !source.endsWith(']]')) return undefined
   const content = source.slice(prefix.length, -2)
+  if (!embed) return wikiLinkParts(raw, content, inTable)
   const parts = { target: '', fragment: '', alias: '' }
   let section: keyof typeof parts = 'target',
     hasFragment = false,
     hasAlias = false
   for (let index = 0; index < content.length; index++) {
     const character = content[index]!
-    // Only a file embed escapes with a backslash. In a wiki link it is a character like any other.
-    if (character === '\\' && embed) {
+    // A file embed escapes with a backslash.
+    if (character === '\\') {
       const escaped = content[++index]
       if (!escaped || !'[]|#\\'.includes(escaped)) return undefined
       parts[section] += escaped
@@ -163,9 +164,101 @@ export function parseLinkedSyntax(
   }
 }
 
+/**
+ * A wiki link's parts, read as Marfa reads them (`device/link-parts-split`): the name is the text
+ * before the first `|` or `#`; a `#` before any `|` starts the heading, which runs to the next
+ * `|`; the alias is everything after that `|`, so it can hold `|`, `#` and brackets. An empty
+ * heading or alias counts as none. A backslash is text (`device/link-backslash`).
+ */
+function wikiLinkParts(
+  raw: string,
+  content: string,
+  inTable: boolean,
+): LinkedSyntax | undefined {
+  // A link holds no opening and its first closing pair ends it (`device/link-bounds`), so a
+  // name ending in `]` would close one bracket early.
+  if (content.includes('[[') || content.includes(']]') || content.endsWith(']'))
+    return undefined
+  for (const character of content)
+    if (
+      (character.charCodeAt(0) < 32 && character !== '\t') ||
+      character === '\u007f'
+    )
+      return undefined
+  let target = content
+  let fragment: string | null = null
+  let alias: string | null = null
+  const at = content.search(/[|#]/)
+  if (at >= 0) {
+    target = content.slice(0, at)
+    if (content[at] === '|') alias = content.slice(at + 1)
+    else {
+      const rest = content.slice(at + 1)
+      const bar = rest.indexOf('|')
+      fragment = bar >= 0 ? rest.slice(0, bar) : rest
+      if (bar >= 0) alias = rest.slice(bar + 1)
+    }
+  }
+  if (fragment != null && !fragment.trim()) fragment = null
+  if (alias != null && !alias.trim()) alias = null
+  // A link names an item or a heading of this text. Block references (`^`) aren't supported.
+  if (
+    (!target.trim() && fragment == null) ||
+    target.trimStart().startsWith('^') ||
+    fragment?.trimStart().startsWith('^')
+  )
+    return undefined
+  return {
+    raw,
+    target,
+    fragment,
+    label: alias ?? target + (fragment != null ? `#${fragment}` : ''),
+    width: null,
+    embed: false,
+    inTable,
+  }
+}
+
+/**
+ * The `[[`…`]]` spans of a line-separated text, bounded as Marfa bounds them: `[` characters pair
+ * from the start of each run, the last opening pair before a `]]` on the same line opens the
+ * span, and a `[[` with no `]]` after it on its line opens nothing (`device/link-bounds`,
+ * `device/link-bounds-pairs`). A span preceded by `!` is an embed. Code and comments should be
+ * blanked by the caller, so a `]]` inside them closes nothing.
+ */
+export function linkedSpans(
+  text: string,
+): { from: number; to: number; embed: boolean }[] {
+  const found: { from: number; to: number; embed: boolean }[] = []
+  let open: number | null = null
+  for (let at = 0; at < text.length;) {
+    const character = text[at]
+    if (character === '[' && text[at + 1] === '[') {
+      open = at
+      at += 2
+    } else if (character === ']' && text[at + 1] === ']' && open != null) {
+      const embed = open > 0 && text[open - 1] === '!'
+      found.push({ from: embed ? open - 1 : open, to: at + 2, embed })
+      open = null
+      at += 2
+    } else {
+      if (character === '\n' || character === '\r') open = null
+      at++
+    }
+  }
+  return found
+}
+
+/**
+ * The run of `[` each parse is in: where it began and the last offset tried, so openings pair
+ * from the start of the run.
+ */
+const bracketRuns = new WeakMap<object, { start: number; last: number }>()
+
 function linkedTokenizer(embed: boolean): Tokenizer {
   return function (effects, ok, nok) {
     const prefix = embed ? '![[' : '[['
+    const context = this
     let index = 0,
       raw = ''
     return opening
@@ -175,6 +268,20 @@ function linkedTokenizer(embed: boolean): Tokenizer {
     }
     function opening(code: Code): State | undefined {
       if (code !== prefix.charCodeAt(index)) return nok(code)
+      if (!index && !embed) {
+        // `[` characters pair from the start of their run, so `[[[[b]]` opens at its second pair.
+        const offset = context.now().offset
+        const run = bracketRuns.get(context.parser)
+        if (context.previous === 91 && run?.last === offset - 1) {
+          run.last = offset
+          if ((offset - run.start) % 2) return nok(code)
+        } else {
+          // A new run, including one after an escaped `[`, which isn't a bracket here.
+          bracketRuns.set(context.parser, { start: offset, last: offset })
+          // After `!` the brackets are an embed's.
+          if (context.previous === 33) return nok(code)
+        }
+      }
       if (!index) effects.enter('inkkitLinkedSyntax')
       consume(code)
       index++
@@ -184,12 +291,18 @@ function linkedTokenizer(embed: boolean): Tokenizer {
       if (
         code === null ||
         (code < 32 && code !== -2 && code !== -1 && code !== 9) ||
-        code === 91
+        (code === 91 && embed)
       )
         return nok(code)
       consume(code)
       if (code === 92 && embed) return escaped
+      if (code === 91) return bracket
       return code === 93 ? closing : body
+    }
+    // In a wiki link a lone `[` is part of the name; a second one opens a later link instead.
+    function bracket(code: Code): State | undefined {
+      if (code === 91) return nok(code)
+      return body(code)
     }
     function escaped(code: Code): State | undefined {
       if (code === null || code < 32) return nok(code)
@@ -197,7 +310,8 @@ function linkedTokenizer(embed: boolean): Tokenizer {
       return body
     }
     function closing(code: Code): State | undefined {
-      if (code !== 93) return nok(code)
+      // In a wiki link a lone `]` closes nothing.
+      if (code !== 93) return embed ? nok(code) : body(code)
       consume(code)
       if (!parseLinkedSyntax(raw) && !parseLinkedSyntax(raw, true))
         return nok(code)
@@ -694,7 +808,7 @@ export function linkedSyntax(wikiLinks: boolean, files: boolean) {
     syntax.text![91] = {
       name: 'inkkitWikiLink',
       tokenize: linkedTokenizer(false),
-      previous: (code) => code !== 33 && code !== 91,
+      // The tokenizer itself checks what precedes the brackets.
     }
   if (wikiLinks) syntax.text![92] = backslashBeforeWikiLink
   if (files)

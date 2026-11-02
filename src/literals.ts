@@ -2,6 +2,7 @@ import { withoutLeadingBOM } from './bom'
 import { $node, $remark } from '@milkdown/kit/utils'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { editorLabels } from './labels'
+import { linkedSpans } from './linked-syntax'
 import type { Root, RootContent, Literal, Nodes } from 'mdast'
 import {
   commentSource,
@@ -112,6 +113,8 @@ function containsUnsupportedLinked(node: Nodes, source: string): boolean {
     end = node.position?.end.offset
   if (start == null || end == null || node.type === 'definition') return false
   const supported: { from: number; to: number }[] = []
+  // Code and comments are blanked before brackets are found, so a `]]` in them closes nothing.
+  const text = source.slice(start, end).split('')
   const visit = (child: Nodes) => {
     if (
       [
@@ -126,22 +129,30 @@ function containsUnsupportedLinked(node: Nodes, source: string): boolean {
     ) {
       const from = child.position?.start.offset,
         to = child.position?.end.offset
-      if (from != null && to != null) supported.push({ from, to })
+      if (from != null && to != null) {
+        supported.push({ from, to })
+        if (!['inkkitWikiLink', 'image', 'link'].includes(child.type))
+          for (let at = Math.max(from, start); at < Math.min(to, end); at++)
+            if (text[at - start] !== '\n' && text[at - start] !== '\r')
+              text[at - start] = ' '
+      }
       return
     }
     if ('children' in child) child.children.forEach(visit)
   }
   visit(node)
-  for (const match of source
-    .slice(start, end)
-    .matchAll(/!?\[\[[^\r\n]*?\]\]/g)) {
-    const from = start + match.index,
-      to = from + match[0].length
+  // Only brackets that bound a link or an embed count; an unclosed `[[` opens nothing.
+  for (const span of linkedSpans(text.join(''))) {
+    const from = start + span.from,
+      to = start + span.to
     let escapes = 0
     while (from - escapes > 0 && source[from - escapes - 1] === '\\') escapes++
     if (escapes % 2) continue
-    if (!supported.some((span) => span.from <= from && span.to >= to))
+    if (!supported.some((covered) => covered.from <= from && covered.to >= to))
       return true
+    // Saving escapes a `[` written just before a link, and `\[[` then reads as a backslash
+    // before a link, so text touching the link's brackets can't be written back exactly.
+    if (!span.embed && source[from - 1] === '[') return true
   }
   return false
 }

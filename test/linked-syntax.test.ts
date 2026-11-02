@@ -105,23 +105,25 @@ test.each([
   },
 )
 
+// device/link-backslash: a backslash in a wiki link is text, so it escapes no delimiter.
 test.each([
-  String.raw`[[a\[b]]`,
-  String.raw`[[a\]b]]`,
-  String.raw`[[a|b\|c]]`,
-  String.raw`[[a#b\#c]]`,
-])('a backslash does not escape a wiki link delimiter: %s', (raw) => {
-  expect(parseLinkedSyntax(raw)).toBeUndefined()
+  [String.raw`[[a\[b]]`, String.raw`a\[b`, null, String.raw`a\[b`],
+  [String.raw`[[a\]b]]`, String.raw`a\]b`, null, String.raw`a\]b`],
+  [String.raw`[[a|b\|c]]`, 'a', null, String.raw`b\|c`],
+  [String.raw`[[a#b\#c]]`, 'a', String.raw`b\#c`, String.raw`a#b\#c`],
+])('a backslash in a wiki link is text: %s', (raw, target, fragment, label) => {
+  expect(parseLinkedSyntax(raw!)).toMatchObject({
+    raw,
+    target,
+    fragment,
+    label,
+  })
 })
 
 test.each([
   '[[ ]]',
-  '[[Note|]]',
-  '[[Note#]]',
   '[[Note#^block]]',
   '[[ ^block]]',
-  '[[Note|alias|extra]]',
-  '[[Note#one#two]]',
   '[[nested [[link]]]]',
   '[[a\nb]]',
   String.raw`![[bad\q]]`,
@@ -564,3 +566,88 @@ test('public source replacement, mode round trips, history and reload retain opt
     root.remove()
   }
 })
+
+// Marfa's link grammar: conformance/spec/device.md, device/link-bounds, device/link-bounds-pairs
+// and device/link-parts-split.
+test.each([
+  ['[[a]b]]', 'a]b', null, 'a]b'],
+  ['[[a[b]]', 'a[b', null, 'a[b'],
+  ['[[[b]]', '[b', null, '[b'],
+  ['[[a|b|c]]', 'a', null, 'b|c'],
+  ['[[a|b]c]]', 'a', null, 'b]c'],
+  ['[[a#b#c]]', 'a', 'b#c', 'a#b#c'],
+  ['[[a#b|c#d|e]]', 'a', 'b', 'c#d|e'],
+  ['[[a#]]', 'a', null, 'a'],
+  ['[[a|]]', 'a', null, 'a'],
+  ['[[a# |  ]]', 'a', null, 'a'],
+  ['[[Café 😀#Über|naïve]]', 'Café 😀', 'Über', 'naïve'],
+])('a wiki link reads %s as Marfa does', (raw, target, fragment, label) => {
+  expect(parseLinkedSyntax(raw!)).toMatchObject({
+    raw,
+    target,
+    fragment,
+    label,
+    embed: false,
+  })
+})
+
+test.each(['[[ ]]', '[[|bare]]', '[[#]]', '[[^block]]', '[[a#^b]]'])(
+  '%s is not a wiki link',
+  (raw) => expect(parseLinkedSyntax(raw)).toBeUndefined(),
+)
+
+const wikiTexts = (editor: Editor) =>
+  nodes(editor, 'inkkit_wiki_link').map(({ node }) => wikiReference(node).raw)
+
+test.each([
+  ['see [[good]] and [[a|b|c]]', ['[[good]]', '[[a|b|c]]']],
+  ['[[a [[b]] [[c]]', ['[[b]]', '[[c]]']],
+  ['[[unclosed and [[a]] then [[b]]', ['[[a]]', '[[b]]']],
+  ['[[outer [[inner]] after', ['[[inner]]']],
+  ['x [[a]b]] y [[a[b]] z', ['[[a]b]]', '[[a[b]]']],
+  ['[[a]] [[b', ['[[a]]']],
+  ['emoji 😀 [[a#]] [[b|]] [[c]]', ['[[a#]]', '[[b|]]', '[[c]]']],
+])(
+  'a paragraph holding %j draws its links and keeps its bytes',
+  (line, links) =>
+    run(`Before.\r\n\r\n${line}\r\n`, (editor, preservation) => {
+      const view = editor.ctx.get(editorViewCtx)
+      expect(nodes(editor, 'literal_markdown')).toHaveLength(0)
+      expect(wikiTexts(editor)).toEqual(links)
+      const source = `Before.\r\n\r\n${line}\r\n`
+      expect(preservation.serialize(view.state.doc)).toBe(source)
+      // An edit in the same paragraph keeps every bracket as written.
+      view.dispatch(
+        view.state.tr.insertText('!', view.state.doc.content.size - 1),
+      )
+      expect(preservation.serialize(view.state.doc)).toBe(
+        `Before.\r\n\r\n${line}!\r\n`,
+      )
+      const reopened = JSON.stringify(
+        editor.ctx.get(remarkCtx).parse(`${line}!\n`),
+      )
+      for (const link of links)
+        expect(reopened).toContain(JSON.stringify(link).slice(1, -1))
+    }),
+)
+
+test('a code span or comment still holds its brackets, and an embed takes no link', () =>
+  run(
+    '`[[a]]` <!-- [[b]] --> %% [[c]] %% ![[a [[d]] [[e]]\n',
+    (editor, preservation) => {
+      expect(wikiTexts(editor)).toEqual(['[[d]]', '[[e]]'])
+      expect(
+        preservation.serialize(editor.ctx.get(editorViewCtx).state.doc),
+      ).toBe('`[[a]]` <!-- [[b]] --> %% [[c]] %% ![[a [[d]] [[e]]\n')
+    },
+  ))
+
+test('a bracket touching a link keeps its paragraph as exact source', () =>
+  run('[[[b]] [[[[c]]\r\n', (editor, preservation) => {
+    // Marfa reads `[b` and `c`. Saving would escape the `[[` before `[[c]]`, and `\\[[` reads
+    // as a backslash before a link, so the paragraph stays literal and exact instead.
+    expect(nodes(editor, 'literal_markdown')).toHaveLength(1)
+    expect(
+      preservation.serialize(editor.ctx.get(editorViewCtx).state.doc),
+    ).toBe('[[[b]] [[[[c]]\r\n')
+  }))

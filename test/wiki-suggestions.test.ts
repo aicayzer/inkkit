@@ -192,7 +192,8 @@ test('invalid names fail without inserting or changing history', async () => {
     '^block',
     'line\nfeed',
     '\u0000',
-    // The delimiters cannot be escaped, so a name holding one cannot be written.
+    // The delimiters cannot be escaped, so a name holding one cannot be written; a final `]`
+    // would close the link one bracket early.
     'A#B',
     'A|B',
     'A[B]',
