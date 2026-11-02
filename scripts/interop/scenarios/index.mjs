@@ -6,6 +6,7 @@ import { scenarios as structuralDeletion } from './structural-deletion.mjs'
 import { scenarios as longList } from './long-list.mjs'
 import { scenarios as imageDrag } from './image-drag.mjs'
 import { scenarios as richText } from './rich-text.mjs'
+import { scenarios as drawnCaret } from './drawn-caret.mjs'
 
 const families = {
   'native-literal-paste': literalPaste,
@@ -16,6 +17,7 @@ const families = {
   'native-image-drag': imageDrag,
   'native-long-list': longList,
   'native-rich-text': richText,
+  'native-drawn-caret': drawnCaret,
 }
 export const probeScenarios = Object.assign({}, ...Object.values(families))
 export const probeGroups = Object.fromEntries(
@@ -47,6 +49,8 @@ const contracts = {
     'WKWebView drag data observed by an AppKit destination; drop refused.',
   'native-rich-text':
     'An RTF document loaded through the facade, trusted AppKit typing and a host underline key.',
+  'native-drawn-caret':
+    "Facade caret placement and trusted AppKit line and arrow keys under a loose line height; WebKit's line choice at a soft wrap read through Selection.modify.",
 }
 for (const [family, scenarios] of Object.entries(families))
   for (const scenario of Object.values(scenarios))

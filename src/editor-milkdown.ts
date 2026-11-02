@@ -55,6 +55,7 @@ import { literalEnter, literalReread } from './literal-edits'
 import { codeCopyPlugin, placeholderPlugin } from './decorations'
 import { diagramsAvailable, mermaidPreview, type DiagramStore } from './mermaid'
 import { selectionPlugin } from './selection'
+import { drawnCaretPlugin, drawsCaret } from './drawn-caret'
 import { search } from './search'
 import { wikiLinkView } from './wiki-view'
 import { imageView } from './images'
@@ -218,6 +219,12 @@ export async function createMilkdownEditor(
         : mermaidPreview(runtime.diagrams, (error) => runtime.report(error)),
     )
     .use(selectionPlugin)
+    .use(
+      options.rendering?.drawnCaret === false ||
+        !drawsCaret(root.ownerDocument.defaultView)
+        ? []
+        : drawnCaretPlugin,
+    )
     .use($prose(() => search()))
     .use(runtime.plugins.policy)
     .use(

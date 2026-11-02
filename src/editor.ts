@@ -65,6 +65,7 @@ import {
   createDocumentState,
   initialDocumentSelection,
 } from './editor-milkdown'
+import { drawnCaretBar } from './drawn-caret'
 import { caretState } from './editor-selection'
 import type { SlashMenuOptions, SlashCommandName, SlashCommand } from './types'
 import type { Suggestions, SuggestionSession } from './suggestions'
@@ -449,6 +450,9 @@ export interface EditorOptions<F extends DocumentFormat = TextDocumentFormat> {
     codeHighlighting?: boolean
     /** Defaults to true. */
     diagramPreview?: boolean
+    /** Draws the caret at text height in formatted mode, where a fine pointer is the primary
+     *  input. Defaults to true. */
+    drawnCaret?: boolean
   }
 }
 
@@ -499,12 +503,14 @@ function editorOptions(value: unknown): EditorOptions {
   const rendering = optionalRecord(options.rendering, 'options.rendering', [
     'codeHighlighting',
     'diagramPreview',
+    'drawnCaret',
   ])
   optionalBoolean(
     rendering?.codeHighlighting,
     'options.rendering.codeHighlighting',
   )
   optionalBoolean(rendering?.diagramPreview, 'options.rendering.diagramPreview')
+  optionalBoolean(rendering?.drawnCaret, 'options.rendering.drawnCaret')
   const labels = optionalRecord(
     options.labels,
     'options.labels',
@@ -1279,6 +1285,11 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
             : (dom.parentElement ?? view.dom)
         const window = this.root.ownerDocument.defaultView!
         const style = window.getComputedStyle(element)
+        // The drawn caret leaves the native one transparent; report the colour people see.
+        const bar = literal ? null : drawnCaretBar(view.dom)
+        const caretColor = bar
+          ? window.getComputedStyle(bar).backgroundColor
+          : style.caretColor
         const fontFamily = style.fontFamily
           .slice(0, 160)
           .replace(/[^\p{L}\p{N} ,"'_-]/gu, '')
@@ -1344,9 +1355,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
           marks,
           caretColor:
             /^(?:rgba?\([\d.,% ]+\)|#[\da-f]{3,8}|auto|transparent|currentcolor)$/i.test(
-              style.caretColor,
+              caretColor,
             )
-              ? style.caretColor.slice(0, 80)
+              ? caretColor.slice(0, 80)
               : 'other',
           ...(bounds
             ? {

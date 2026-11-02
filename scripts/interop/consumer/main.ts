@@ -279,6 +279,56 @@ const scopedRange = (operation, results) => {
     to: operation.to ?? from + (operation.length ?? operation.text.length),
   }
 }
+// Where the drawn caret stands against the text line holding the caret, and, at a soft wrap,
+// which line WebKit's own caret chose. Reading WebKit's choice resets it, so it ends a step.
+function caretGeometry(engineLine: boolean) {
+  const surface = view()
+  const bar = surface.parentElement?.querySelector(':scope > .inkkit-caret')
+  const selection = getSelection()!
+  const node = selection.focusNode
+  const offset = selection.focusOffset
+  if (!node || node.nodeType !== Node.TEXT_NODE)
+    throw Error('The caret is not in text')
+  const text = node as Text
+  const range = document.createRange()
+  const charLine = (index: number) => {
+    if (index < 0 || index >= text.length) return null
+    range.setStart(text, index)
+    range.setEnd(text, index + 1)
+    const rect = [...range.getClientRects()].find((r) => r.width > 0)
+    return rect ? { top: rect.top, bottom: rect.bottom } : null
+  }
+  const before = charLine(offset - 1)
+  const after = charLine(offset)
+  const wrap = !!before && !!after && Math.abs(before.top - after.top) > 2
+  const shown = !!bar && getComputedStyle(bar).display !== 'none'
+  const rect = bar?.getBoundingClientRect()
+  const on = (line: { top: number; bottom: number } | null) =>
+    !!line &&
+    !!rect &&
+    Math.abs(rect.top - line.top) <= 1 &&
+    Math.abs(rect.bottom - line.bottom) <= 1
+  let engineOnUpperLine: boolean | null = null
+  if (engineLine) {
+    selection.modify('extend', 'backward', 'lineboundary')
+    engineOnUpperLine =
+      selection.focusNode !== node || selection.focusOffset !== offset
+    selection.collapse(node, offset)
+  }
+  const first = text.length ? charLine(0) : null
+  return {
+    drawn: surface.classList.contains('inkkit-drawn-caret'),
+    caretColor: getComputedStyle(surface).caretColor,
+    shown,
+    wrap,
+    wrappedLine:
+      !!first && !!(before ?? after) && (before ?? after)!.top > first.top + 2,
+    onText: shown && (on(before) || on(after)),
+    onUpperLine: shown && on(before) && (!wrap || !on(after)),
+    engineOnUpperLine,
+  }
+}
+
 const viewportState = () => ({
   viewport: editor.viewport(),
   hostFocused:
@@ -474,6 +524,14 @@ window.interop = {
             }
             await settle()
             result = viewportState()
+            break
+          }
+          case 'caretGeometry': {
+            const root = document.querySelector<HTMLElement>('#editor')!
+            for (const [name, value] of Object.entries(operation.style ?? {}))
+              root.style.setProperty(name, String(value))
+            await settle()
+            result = caretGeometry(operation.engineLine === true)
             break
           }
           case 'mountSecond': {

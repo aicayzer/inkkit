@@ -81,6 +81,7 @@ const settings = {
   editable: params.get('editable') !== 'false',
   editors: params.get('editors') === '2',
   files: params.get('files') === 'true',
+  drawnCaret: params.get('drawnCaret') !== 'false',
 }
 let observing = params.get('observe') === 'true'
 let urlReady = false
@@ -97,6 +98,7 @@ function syncUrl() {
   write('appearance', appearance, 'system')
   write('adapter', adapterMode, 'normal')
   write('editable', String(settings.editable), 'true')
+  write('drawnCaret', String(settings.drawnCaret), 'true')
   write('editors', settings.editors ? '2' : '1', '1')
   write('files', String(settings.files), 'false')
   write('observe', String(observing), 'false')
@@ -485,10 +487,12 @@ async function reset(
     {
       formats: ['md', 'txt', 'rtf'],
       images: configuration === 'rich' ? images.adapter : undefined,
-      rendering:
-        configuration === 'minimal'
+      rendering: {
+        ...(configuration === 'minimal'
           ? { codeHighlighting: false, diagramPreview: false }
-          : undefined,
+          : {}),
+        drawnCaret: settings.drawnCaret,
+      },
       files:
         configuration === 'rich' &&
         (fixtureId === 'linked-files' || settings.files)

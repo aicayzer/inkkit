@@ -307,6 +307,14 @@ test('async methods reject bad arguments instead of throwing', () =>
       () => InkKitEditor.mount(root, events, bad({ theme: 'dark' })),
       () => InkKitEditor.mount(root, events, bad({ keymap: { overline: [] } })),
       () => InkKitEditor.mount(root, events, bad({ labels: { copyCode: 1 } })),
+      () =>
+        InkKitEditor.mount(
+          root,
+          events,
+          bad({ rendering: { drawnCaret: 'yes' } }),
+        ),
+      () =>
+        InkKitEditor.mount(root, events, bad({ rendering: { caret: false } })),
     ])
       await expect(mount()).rejects.toEqual(code('invalid-argument'))
     expect(root.classList.contains('inkkit-root')).toBe(false)
