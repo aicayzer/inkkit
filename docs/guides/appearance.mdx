@@ -111,6 +111,18 @@ Footnote references and wiki links draw their ring outside the text, in the curr
 
 Links and wiki links take `--inkkit-accent-color` and gain an underline on hover. A wiki link that `WikiLinkAdapter.resolve` reports as missing keeps a dashed underline, so people who can't tell its color apart still see it, and it also shows in forced-colors mode. Assistive technology receives the `wikiMissing` label as the link's description. The underline has no token of its own.
 
+## The caret
+
+In formatted mode, Inkkit draws the caret itself, as tall as the text at the caret, on every line. WebKit draws its own caret from the bottom of the previous line's text, so under a loose line height its caret on a wrapped line is a full line tall and starts above the text. This is [WebKit bug 287429](https://bugs.webkit.org/show_bug.cgi?id=287429). The drawn caret takes `--inkkit-accent-color`.
+
+- **The web view's caret stays in place,** transparent, so accessibility tools and input methods still read its position.
+- **At a soft line wrap,** the end of one line and the start of the next are the same position. The drawn caret follows the line you chose: the end of the line after a click past it or a line-end key such as Command-Right Arrow, and the start of the next line otherwise.
+- **The web view's caret returns** while an input method composes text, while text, an image or a block is selected, beside an image or a line break with no text on either side, in an empty block, where the caret's position can't be measured, and in a read-only or unfocused editor.
+- **Source and TXT modes** keep the web view's caret. A `<textarea>` doesn't expose where its text lies.
+- **Touch devices** keep the system caret, because the system also draws the selection handles. Inkkit draws the caret only where a fine pointer is the primary input.
+
+To keep the web view's caret everywhere, set [`rendering.drawnCaret`](/reference/options) to `false` at mount.
+
 ## Style the selection
 
 Inkkit paints the selected text itself, so the selection covers the text and not the margins or the gaps between blocks. Two tokens set its color: `--inkkit-selection-background` while the editor has focus in an active window, and `--inkkit-inactive-selection-background` otherwise.

@@ -129,7 +129,7 @@ See [links that Inkkit keeps](/concepts/clipboard#links-that-inkkit-keeps). Inkk
 
 </ResponseField>
 
-<ResponseField name="rendering" type="object" default="Both true">
+<ResponseField name="rendering" type="object" default="All true">
 
 Turns presentation plugins off. Code and diagram source stay editable and keep their authored spelling either way.
 
@@ -144,6 +144,12 @@ Syntax highlighting in code blocks. Highlighting leaves a block longer than 5,00
 <ResponseField name="diagramPreview" type="boolean" default="true">
 
 Mermaid previews below `mermaid` fences. `false` also removes the `diagram` slash command. Clipboard and print output still render diagrams on demand. With the `@aicayzer/inkkit/core` entry there is no renderer, so no preview is shown whatever this says.
+
+</ResponseField>
+
+<ResponseField name="drawnCaret" type="boolean" default="true">
+
+Inkkit draws the caret at text height in formatted mode, where a fine pointer is the primary input. `false` keeps the web view's own caret, which WebKit draws a full line tall on wrapped lines under a loose line height. [The caret](/guides/appearance#the-caret) describes when the web view's caret applies either way.
 
 </ResponseField>
 

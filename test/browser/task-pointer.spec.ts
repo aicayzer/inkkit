@@ -95,7 +95,7 @@ test('a checked item keeps a selected range and clicking its text does not toggl
   )
 })
 
-test('a gap beside a table hides the native text caret and typing restores it', async ({
+test('a gap beside a table hides the text caret and typing restores it', async ({
   page,
   openFixture,
 }) => {
@@ -118,7 +118,9 @@ test('a gap beside a table hides the native text caret and typing restores it', 
   await expect(editor).toHaveCSS('caret-color', 'rgba(0, 0, 0, 0)')
   await page.keyboard.type('After')
   await expect(editor).not.toHaveClass(/ProseMirror-hideselection/)
-  await expect(editor).not.toHaveCSS('caret-color', 'rgba(0, 0, 0, 0)')
+  // Inkkit draws the text caret by default; the native one stays transparent beneath it.
+  await expect(editor).toHaveClass(/inkkit-drawn-caret/)
+  await expect(page.locator('#editor .inkkit-caret')).toBeVisible()
   expect((await observe(page)).snapshot!.text).toContain('\n\nAfter')
 })
 
