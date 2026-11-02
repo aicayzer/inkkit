@@ -28,6 +28,12 @@ async function open(
     (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
     `${paragraph}\n\nAfter.\n`,
   )
+  // Room for the whole editor, so the page never scrolls and the measured lines stay put.
+  await page.setViewportSize({ width: 1280, height: 1400 })
+  await page
+    .locator('.inkkit-root .ProseMirror p')
+    .first()
+    .evaluate((p) => p.scrollIntoView({ block: 'center', behavior: 'instant' }))
 }
 
 /** The visual lines of the first paragraph, from its characters' rectangles. */
