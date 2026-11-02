@@ -83,13 +83,14 @@ test('an escaped backslash and an escaped bracket are still CommonMark escapes',
   expect(editor.snapshot().text).toBe(source)
 })
 
-test('backslashes are plain in the alias and fragment, and a bracket still cannot be escaped', async () => {
+test('backslashes are plain in the alias and fragment, and before a bracket', async () => {
   const { editor, links } = await open('[[a\\b#c\\d|e\\f]] and [[g\\|h]]\n')
   expect(links()).toEqual(['e\\f', 'h'])
+  // A lone `]` closes nothing, so the backslash and the bracket are both part of the name.
   const source = '[[i\\]j]]\n'
-  const unsupported = await open(source)
-  expect(unsupported.links()).toEqual([])
-  expect(unsupported.editor.snapshot().text).toBe(source)
+  const bracket = await open(source)
+  expect(bracket.links()).toEqual(['i\\]j'])
+  expect(bracket.editor.snapshot().text).toBe(source)
   expect(editor.snapshot().text).toBe('[[a\\b#c\\d|e\\f]] and [[g\\|h]]\n')
 })
 
@@ -106,4 +107,16 @@ test('without a wiki link adapter a backslash before brackets keeps its CommonMa
   })
   expect(root.querySelectorAll('.inkkit-wiki-link')).toHaveLength(0)
   expect(editor.snapshot().text).toBe('\\[[escaped]] [[x\\]]\n')
+})
+
+test('an unclosed or unusual wiki link no longer hides the other links in its paragraph', async () => {
+  for (const [source, labels] of [
+    ['see [[good]] and [[a|b|c]]\n', ['good', 'b|c']],
+    ['[[a [[b]] [[c]]\r\n', ['b', 'c']],
+    ['x [[a]b]] y [[a[b]] z [[a#]]\n', ['a]b', 'a[b', 'a']],
+  ] as const) {
+    const { editor, links } = await open(source)
+    expect(links()).toEqual(labels)
+    expect(editor.snapshot().text).toBe(source)
+  }
 })
