@@ -141,12 +141,16 @@ test('the caret is the height of the text on the first and on wrapped lines', as
   await open(page, openFixture)
   const wrapped = await lines(page)
   expect(wrapped.length).toBeGreaterThanOrEqual(3)
-  // The engine's own caret on a wrapped line would start at the previous line's text.
-  for (const line of wrapped.slice(0, 3)) {
-    await page.mouse.click(
-      (line.left + line.right) / 2,
-      (line.top + line.bottom) / 2,
-    )
+  // The engine's own caret on a wrapped line would start at the previous line's text. One
+  // click, then arrow keys: quick clicks on neighbouring lines sometimes don't move the selection
+  // on Linux Chromium.
+  await page.mouse.click(
+    (wrapped[0]!.left + wrapped[0]!.right) / 2,
+    (wrapped[0]!.top + wrapped[0]!.bottom) / 2,
+  )
+  await expectOn(page, wrapped[0]!)
+  for (const line of wrapped.slice(1, 3)) {
+    await page.keyboard.press('ArrowDown')
     await expectOn(page, line)
   }
   expect(await surface(page)).toEqual({
@@ -155,7 +159,6 @@ test('the caret is the height of the text on the first and on wrapped lines', as
   })
   const drawn = await bar(page)
   expect(drawn.colour).toBe('rgb(0, 105, 209)')
-  // Moving by keyboard keeps it on the text.
   await page.keyboard.press('ArrowUp')
   await expectOn(page, wrapped[1]!)
 })
