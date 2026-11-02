@@ -10,6 +10,8 @@ import { editorLabels } from './labels'
 import { codeLanguages } from './code-languages'
 import { languageFence } from './code-fences'
 
+const codeControlKey = new PluginKey<DecorationSet>('codeControls')
+
 export const codeControlCtx = $ctx<
   (operation: () => boolean) => boolean,
   'inkkitCodeControl'
@@ -26,12 +28,77 @@ export function codeControlsPlugin(
   return $prose(
     (ctx) =>
       new Plugin({
-        key: new PluginKey('codeControls'),
+        key: codeControlKey,
+        state: {
+          init: () => DecorationSet.empty,
+          apply(transaction, wrapped) {
+            // Map an interior position: setNodeMarkup replaces the boundary
+            // tokens when the language changes, but retains the code content.
+            let next = transaction.docChanged
+              ? DecorationSet.create(
+                  transaction.doc,
+                  wrapped.find().flatMap((decoration) => {
+                    const mapped = transaction.mapping.mapResult(
+                      decoration.from + 1,
+                      -1,
+                    )
+                    if (mapped.deletedAcross) return []
+                    const inside = mapped.pos
+                    const node =
+                      inside > 0 ? transaction.doc.nodeAt(inside - 1) : null
+                    return node?.type.name === 'code_block'
+                      ? [
+                          Decoration.node(
+                            inside - 1,
+                            inside - 1 + node.nodeSize,
+                            { class: 'inkkit-code-wrapped' },
+                          ),
+                        ]
+                      : []
+                  }),
+                )
+              : wrapped
+            const toggle = transaction.getMeta(codeControlKey) as
+              { position: number; wrapped: boolean } | undefined
+            if (toggle) {
+              const node = transaction.doc.nodeAt(toggle.position)
+              if (node?.type.name === 'code_block') {
+                next = next.remove(
+                  next
+                    .find(toggle.position, toggle.position + node.nodeSize)
+                    .filter(
+                      (decoration) => decoration.from === toggle.position,
+                    ),
+                )
+                if (toggle.wrapped)
+                  next = next.add(transaction.doc, [
+                    Decoration.node(
+                      toggle.position,
+                      toggle.position + node.nodeSize,
+                      { class: 'inkkit-code-wrapped' },
+                    ),
+                  ])
+              }
+            }
+            return next
+          },
+        },
         props: {
           decorations(state) {
-            const widgets: Decoration[] = []
+            const widgets: Decoration[] = [
+              ...(codeControlKey.getState(state)?.find() ?? []),
+            ]
             state.doc.descendants((node, pos) => {
               if (node.type.name !== 'code_block') return true
+              if (
+                state.selection.$head.pos > pos &&
+                state.selection.$head.pos < pos + node.nodeSize
+              )
+                widgets.push(
+                  Decoration.node(pos, pos + node.nodeSize, {
+                    'data-inkkit-code-active': '',
+                  }),
+                )
               const language = String(node.attrs.language ?? '')
               widgets.push(
                 Decoration.widget(
@@ -106,7 +173,46 @@ export function codeControlsPlugin(
                       )
                       const list = document.createElement('span')
                       list.className = 'inkkit-code-language-list'
-                      popup.append(search, list)
+                      const searchRow = document.createElement('span')
+                      searchRow.className = 'inkkit-code-language-search'
+                      const wrap = document.createElement('button')
+                      wrap.type = 'button'
+                      wrap.tabIndex = 0
+                      wrap.className = 'inkkit-code-wrap'
+                      wrap.setAttribute('aria-label', labels.codeWrap)
+                      wrap.title = labels.codeWrap
+                      wrap.innerHTML =
+                        '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M3 12h15a3 3 0 0 1 0 6h-4m2-2-2 2 2 2M3 18h4"/></svg>'
+                      const isWrapped = () => {
+                        const at = getPos()
+                        return (
+                          at != null &&
+                          Boolean(
+                            codeControlKey
+                              .getState(view.state)
+                              ?.find(at - 1, at)
+                              .some((decoration) => decoration.from === at - 1),
+                          )
+                        )
+                      }
+                      wrap.setAttribute('aria-pressed', String(isWrapped()))
+                      wrap.addEventListener('click', () => {
+                        if (view.composing || view.state.doc !== captured)
+                          return
+                        const at = getPos()
+                        if (at == null) return
+                        view.dispatch(
+                          view.state.tr
+                            .setMeta(codeControlKey, {
+                              position: at - 1,
+                              wrapped: !isWrapped(),
+                            })
+                            .setMeta('addToHistory', false),
+                        )
+                        wrap.setAttribute('aria-pressed', String(isWrapped()))
+                      })
+                      searchRow.append(search, wrap)
+                      popup.append(searchRow, list)
                       const choices: [string, string][] = [
                         ['', labels.codeAuto],
                         ['text', labels.codePlainText],
@@ -123,7 +229,7 @@ export function codeControlsPlugin(
                           if (
                             !`${value} ${name}`
                               .toLowerCase()
-                              .includes(search.value.toLowerCase())
+                              .includes(search.value.trim().toLowerCase())
                           )
                             continue
                           const option = document.createElement('button')
@@ -233,10 +339,10 @@ export function codeControlsPlugin(
                       )
                       const below = Math.max(0, bottom - bounds.bottom - 4)
                       const above = Math.max(0, bounds.top - top - 4)
-                      const height = Math.min(320, Math.max(below, above))
-                      popup.style.width = `${Math.max(0, Math.min(220, right - left))}px`
+                      const height = Math.min(264, Math.max(below, above))
+                      popup.style.width = `${Math.max(0, Math.min(200, right - left))}px`
                       popup.style.maxHeight = `${height}px`
-                      popup.style.left = `${Math.max(left, Math.min(bounds.right - 220, right - 220))}px`
+                      popup.style.left = `${Math.max(left, Math.min(bounds.right - 200, right - 200))}px`
                       const menuHeight = Math.min(
                         height,
                         popup.getBoundingClientRect().height,

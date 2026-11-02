@@ -116,7 +116,7 @@ test('official playground switches real presets without changing the document @p
         )
         .toBe(scheme)
       await page.getByRole('button', { name: 'Formatted', exact: true }).click()
-      const expected = theme === 'essential' ? '4px' : '8px'
+      const expected = '10px'
       expect(
         await page
           .locator('#editor table')

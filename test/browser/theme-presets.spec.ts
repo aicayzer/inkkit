@@ -184,11 +184,11 @@ for (const theme of themes)
       await expect(root).toHaveCSS('font-size', '15px')
       await expect(root.locator('pre').first()).toHaveCSS(
         'border-radius',
-        theme === 'essential' ? '4px' : '8px',
+        '10px',
       )
       await expect(root.locator('table')).toHaveCSS(
         'border-top-left-radius',
-        theme === 'essential' ? '4px' : '8px',
+        '10px',
       )
       await expect(root.locator('p code').first()).toHaveCSS(
         'border-radius',
@@ -302,7 +302,7 @@ test('loading presets is opt in and host tokens can override geometry @themes', 
   await page.addStyleTag({ content: presets })
   expect(await probe()).toEqual(original)
   expect(original).toMatchObject({
-    code: '8px',
+    code: '10px',
     quote: ['2px', '0px', expect.any(String)],
     padding: '14px',
   })

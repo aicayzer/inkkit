@@ -491,6 +491,7 @@ export interface EditorLabels {
   copyCode: string
   codeLanguage: string
   codeLanguageSearch: string
+  codeWrap: string
   codeAuto: string
   codePlainText: string
   expandCallout: string
