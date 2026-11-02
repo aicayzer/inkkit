@@ -79,9 +79,9 @@
 
 /* A writing surface. The controls, including Focus, live inside the editor frame. */
 .editor-page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 32px 24px 0;
+  width: 100%;
+  margin: 0;
+  padding: 24px 0 0;
 }
 .inkkit-demo-full {
   height: 560px;
@@ -105,13 +105,6 @@ html.editor-focus .editor-page {
 html.editor-focus .inkkit-demo-full {
   min-height: 100dvh;
 }
-.demo-open-link {
-  font-size: 14px;
-  display: block;
-  text-align: right;
-  margin-top: -12px;
-  border-bottom: 0;
-}
 
 /* The theme control sits outside Main; place Main last as a group. */
 @media (min-width: 1024px) {
@@ -124,10 +117,6 @@ html.editor-focus .inkkit-demo-full {
   #navbar nav[aria-label='Main']:has(#topbar-cta-button) {
     order: 1;
   }
-  .chat-assistant-floating-input {
-    max-width: 30rem;
-    margin-inline: auto;
-  }
 }
 /* Omit Mintlify's decorative arrow. */
 #topbar-cta-button svg {
@@ -136,22 +125,7 @@ html.editor-focus .inkkit-demo-full {
 #topbar-cta-button a {
   padding-inline: 14px;
 }
-/* Make the floating question field distinct on dark backgrounds. */
-.dark
-  .chat-assistant-floating-input
-  div:has(> div > textarea.chat-assistant-input) {
-  border-color: #454545;
-  background-color: #141414;
-}
-.dark
-  .chat-assistant-floating-input
-  div:has(> div > textarea.chat-assistant-input):focus-within {
-  border-color: #888;
-}
-
-/* Mobile keeps assistant access in the header without covering the page. */
-@media (max-width: 1023px) {
-  [data-assistant-bar] {
-    display: none;
-  }
+/* Keep assistant access in the navbar without covering the documentation. */
+[data-assistant-bar] {
+  display: none !important;
 }

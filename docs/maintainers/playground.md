@@ -2,7 +2,7 @@
 
 The development playground is an internal fixture and inspection tool. It uses the public facade and reusable controlled image adapters. It is not a separate showcase or a client app, and its automation helpers are not package exports.
 
-The public documentation playground at `/editor` is a separate embedded demo, defined in `docs/snippets/editor-demo.mdx`. It defaults to Standard and offers the three published CSS presets with light and dark preview controls.
+The public documentation playground at `/editor` is a separate embedded demo. It defaults to Standard and offers the three published CSS presets, following the documentation site’s light or dark appearance. See [Docs editor deployment](#docs-editor-deployment) for its source and update process.
 
 ```sh
 pnpm dev
@@ -15,7 +15,7 @@ Vite prints the local URL; it does not open a browser. The build produces the si
 
 **Theme** selects **Default styles**, **Standard**, **Calm** or **Essential**. Default styles keeps the base stylesheet appearance for existing regression checks; it is not a fourth preset. **Appearance** selects System, Light or Dark. The controls change only CSS attributes and public tokens, preserving the mounted editors, document bytes, revision and undo history. Both editors receive the same preview when the second editor is enabled.
 
-The official documentation playground uses the same package CSS, with Standard selected initially. It keeps its own small set of host controls. Its Appearance control follows the documentation site until a person selects Light or Dark. Changing the site scheme then preserves that explicit preview choice. Its CDN version must match the published candidate; browser regression tests substitute the worktree CSS and entry for those URLs before publication.
+The official documentation playground uses the same package CSS, with Standard selected initially. It keeps its own small set of host controls: editing actions, Formatted and Source views, Theme, and Focus. Its colour scheme follows the documentation site. The homepage preview has Formatted and Source views and an Open playground link.
 
 ## Reproducible fixtures
 
@@ -87,3 +87,13 @@ pnpm exec playwright test --config playwright.diagnostics.config.ts --project=ch
 ```
 
 Record its expected non-zero result separately from passing smoke/regression evidence, and retain that run's artefacts before another run overwrites the configured output. See [development](development.md#bounded-verification) for check triggers and confidence limits, and the [native runner](../../scripts/interop/README.md) for selected WKWebView checks.
+
+## Docs editor deployment
+
+The docs homepage preview and `/editor` playground load self-contained pages from this repository's GitHub Pages deployment. The shared HTML source is `scripts/docs-demo.mjs`; the React wrapper in `docs/snippets/editor-demo.mdx` forwards appearance, navbar alignment and focus state to the frame.
+
+The **Docs editor** workflow builds the current package and both pages on every pull request and every push to `main`. Chromium and WebKit check the actual offline pages before deployment. Only `main` deploys. A failed build leaves the previous deployment in place. GitHub Pages must use **GitHub Actions** as its build source; the workflow uses the `github-pages` environment and requires no separate deployment credential.
+
+Each visit loads the latest deployment, independently of npm publication. An already-open note is never reloaded when a new deployment arrives. The embedded `inkkit-revision` meta tag and the deployment's `revision.json` identify the exact source commit. JavaScript, styles and diagrams are bundled into each page, so there are no separately cached package versions to mix.
+
+Run `pnpm build:docs-demo` and `pnpm test:docs-demo` to check the deployment locally. The generated pages live in `_local/docs-demo/`. The ordinary playground tests also exercise the shared HTML with the editor facade. To redeploy the current `main`, run the **Docs editor** workflow manually on that branch. This updates the demos, not the npm package or any host app.

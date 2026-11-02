@@ -57,7 +57,9 @@
     "test:browser": "playwright test --project=chromium",
     "test:playground": "playwright test --config playwright.playground.config.ts --project=chromium",
     "measure:browser": "playwright test --config playwright.measure.config.ts",
-    "test:built-playground": "playwright test --config playwright.built.config.ts"
+    "test:built-playground": "playwright test --config playwright.built.config.ts",
+    "build:docs-demo": "pnpm build && node scripts/build-docs-demo.mjs",
+    "test:docs-demo": "playwright test --config playwright.docs-demo.config.ts"
   },
   "devDependencies": {
     "@milkdown/kit": "7.22.3",

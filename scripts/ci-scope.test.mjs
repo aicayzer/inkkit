@@ -91,6 +91,7 @@ test('playground, demo and preset changes run the playground lane', () => {
     'src/themes/calm.css',
     'test/browser/playground-tools.spec.ts',
     'test/browser/docs-demo-themes.spec.ts',
+    'scripts/docs-demo.mjs',
     'test/browser/fixtures.ts',
     'playwright.config.ts',
     'pnpm-lock.yaml',

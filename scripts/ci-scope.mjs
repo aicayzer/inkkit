@@ -21,6 +21,7 @@ export function scope(paths) {
   const playground = (path) =>
     path.startsWith('playground/') ||
     path.startsWith('docs/snippets/') ||
+    path === 'scripts/docs-demo.mjs' ||
     path === 'src/style.css' ||
     path.startsWith('src/themes/') ||
     path.startsWith('scripts/interop/consumer/') ||
