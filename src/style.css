@@ -764,34 +764,6 @@
   overflow-wrap: anywhere;
 }
 
-.inkkit-root .ProseMirror pre .inkkit-code-controls,
-.inkkit-root .ProseMirror pre .inkkit-copy {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms;
-}
-
-.inkkit-root .ProseMirror pre:hover .inkkit-code-controls,
-.inkkit-root .ProseMirror pre:hover .inkkit-copy,
-.inkkit-root .ProseMirror pre:focus-within .inkkit-code-controls,
-.inkkit-root .ProseMirror pre:focus-within .inkkit-copy,
-.inkkit-root
-  .ProseMirror
-  pre:has(.inkkit-code-language[aria-expanded='true'])
-  .inkkit-code-controls,
-.inkkit-root
-  .ProseMirror
-  pre:has(.inkkit-code-language[aria-expanded='true'])
-  .inkkit-copy,
-.inkkit-root
-  .ProseMirror-focused
-  pre[data-inkkit-code-active]
-  .inkkit-code-controls,
-.inkkit-root .ProseMirror-focused pre[data-inkkit-code-active] .inkkit-copy {
-  opacity: 1;
-  pointer-events: auto;
-}
-
 .inkkit-root .ProseMirror blockquote {
   position: relative;
   margin: 0 0 calc(var(--_inkkit-font-size) * 0.8);
