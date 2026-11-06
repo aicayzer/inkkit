@@ -307,19 +307,20 @@ class ImageView implements NodeView {
     const text = document.createElement('span')
     text.className = 'inkkit-file-label'
     text.textContent = label
-    text.title = label
-    name.append(text)
-    if (activation && this.runtime?.adapter.open) this.activateCard(label)
-    else if (this.runtime?.adapter.open) {
+    if (this.runtime?.adapter.open && !activation) {
+      // The name and the arrow are one control: hovering either marks both, and a click on
+      // either opens.
       const open = this.button('', this.activate)
       open.classList.add('inkkit-file-open')
-      open.setAttribute(
-        'aria-label',
-        `${this.runtime.labels.fileOpen} ${label}`,
-      )
-      open.title = this.runtime.labels.fileOpen
-      open.append(openArrow())
+      const opening = `${this.runtime.labels.fileOpen} ${label}`
+      open.setAttribute('aria-label', opening)
+      open.title = opening
+      open.append(text, openArrow())
       name.append(open)
+    } else {
+      text.title = label
+      name.append(text)
+      if (activation && this.runtime?.adapter.open) this.activateCard(label)
     }
     footer.append(name)
     if (status) {
@@ -364,6 +365,7 @@ class ImageView implements NodeView {
     this.element.removeEventListener('click', this.cardClick)
     this.element.removeEventListener('keydown', this.cardKey)
     this.element.removeAttribute('tabindex')
+    this.element.removeAttribute('title')
     this.element.removeAttribute('data-inkkit-file-activation')
     this.element.removeAttribute('data-inkkit-file-layout')
     this.cardKeys = false
@@ -412,8 +414,10 @@ class ImageView implements NodeView {
           true,
         )
       } else if (presentation.kind === 'image') {
+        // A picture that loads is drawn bare. Its name is the hover help and the group's
+        // accessible name; Open stays on `FileAdapter.contextMenu`.
+        this.element.title = label
         this.renderImage(presentation.url, label, width)
-        this.card(label)
       } else if (
         presentation.kind === 'audio' ||
         presentation.kind === 'video'

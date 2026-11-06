@@ -4,7 +4,7 @@ import type { Locator } from '@playwright/test'
 const source =
   '# Focus\n\nA [[Notes/Trip|Trip]] and a note.[^1]\n\n' +
   '> [!note]- Folded\n> Body\n\n```js\nconst a = 1\n```\n\n' +
-  '![[Photo|140]]\n\n![[Voice#t=0,0.5]]\n\n![[Movie#t=0,0.5]]\n\n![[Document#page=1]]\n\n' +
+  '![[Archive]]\n\n![[Voice#t=0,0.5]]\n\n![[Movie#t=0,0.5]]\n\n![[Document#page=1]]\n\n' +
   '[^1]: The note.\n'
 
 const ring = (locator: Locator) =>
@@ -36,7 +36,7 @@ test('focus tokens set the ring on every control InkKit draws @linked-files', as
   await expect(page.locator('audio')).toHaveCount(1)
   await expect(page.locator('video')).toHaveCount(1)
   const controls: [string, Locator][] = [
-    ['Open', page.getByRole('button', { name: /^Open Photo/ })],
+    ['Open', page.getByRole('button', { name: /^Open Archive/ })],
     ['wiki link', page.getByRole('link', { name: 'Trip', exact: true })],
     ['footnote reference', page.locator('.inkkit-footnote-reference')],
     ['audio', page.locator('audio')],
@@ -79,7 +79,7 @@ test('the text surfaces take their own ring tokens and leave the controls alone 
   await surface.focus()
   await expect(surface).toBeFocused()
   expect((await ring(surface)).width).toBe('0px')
-  const open = page.getByRole('button', { name: /^Open Photo/ })
+  const open = page.getByRole('button', { name: /^Open Archive/ })
   await page.keyboard.press('Shift')
   await open.focus()
   expect(await ring(open)).toMatchObject({ width: '2px', color: red })

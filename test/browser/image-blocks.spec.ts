@@ -325,8 +325,8 @@ test('a card that shares a paragraph with text sits on its own line @linked-file
   expect(await text(page)).toBe(mixed)
 })
 
-for (const colorScheme of ['light', 'dark'] as const)
-  test(`card shows a compact open arrow after the name and a centred grip in ${colorScheme} @linked-files`, async ({
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`a picture that loads is drawn bare with a centred grip in ${colorScheme} @linked-files`, async ({
     page,
   }, testInfo) => {
     await page.emulateMedia({ colorScheme })
@@ -334,31 +334,100 @@ for (const colorScheme of ['light', 'dark'] as const)
     const card = page.locator('.inkkit-file')
     await card.hover()
     const layout = await card.evaluate((element) => {
-      const box = (selector: string) =>
-        element.querySelector(selector)!.getBoundingClientRect().toJSON()
+      const style = getComputedStyle(element)
+      const image = element.querySelector('img')!
       return {
         card: element.getBoundingClientRect().toJSON(),
-        image: box('img'),
-        footer: box('.inkkit-file-footer'),
-        label: box('.inkkit-file-label'),
-        open: box('.inkkit-file-open'),
-        grip: box('.inkkit-image-handle'),
-        openText: element.querySelector('.inkkit-file-open')!.textContent,
+        image: image.getBoundingClientRect().toJSON(),
+        grip: element
+          .querySelector('.inkkit-image-handle')!
+          .getBoundingClientRect()
+          .toJSON(),
+        border: style.borderTopWidth,
+        padding: style.paddingTop + style.paddingLeft,
+        radius: getComputedStyle(image).borderTopLeftRadius,
+        title: element.getAttribute('title'),
+        text: element.textContent,
+        controls: element.querySelectorAll('button').length,
       }
     })
+    // The card is exactly the picture: no border, padding or caption row.
+    expect(layout.border).toBe('0px')
+    expect(layout.padding).toBe('0px0px')
+    expect(layout.radius).not.toBe('0px')
+    expect(Math.abs(layout.card.height - layout.image.height)).toBeLessThan(1)
+    expect(Math.abs(layout.card.width - layout.image.width)).toBeLessThan(1)
+    expect(layout.title).toBe('Photo')
+    expect(layout.text).toBe('')
+    expect(layout.controls).toBe(0)
     const centre = (rect: { top: number; height: number }) =>
       rect.top + rect.height / 2
     expect(Math.abs(centre(layout.grip) - centre(layout.card))).toBeLessThan(2)
-    expect(layout.footer.top - layout.image.bottom).toBeLessThanOrEqual(6)
-    expect(layout.open.left - layout.label.right).toBeLessThanOrEqual(6)
-    expect(layout.open.left).toBeGreaterThanOrEqual(layout.label.right - 1)
-    expect(layout.open.height).toBeLessThanOrEqual(24)
-    expect(layout.openText).toBe('')
-    await testInfo.attach(`${colorScheme}-card`, {
+    expect(layout.grip.right).toBeLessThanOrEqual(layout.card.right + 1)
+    await testInfo.attach(`${colorScheme}-picture`, {
       body: await card.screenshot(),
       contentType: 'image/png',
     })
   })
+
+  test(`a file card's name and arrow are one link in ${colorScheme} @linked-files`, async ({
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ colorScheme })
+    await open(page, '![[Archive]]\n\n![[Photo|60]]\n', 'linked-files')
+    const card = page.locator('.inkkit-file[data-inkkit-file-kind="file"]')
+    const link = card.getByRole('button', { name: 'Open Archive' })
+    const label = link.locator('.inkkit-file-label')
+    const arrow = link.locator('svg')
+    const look = () =>
+      link.evaluate((element) => {
+        const label = element.querySelector('.inkkit-file-label')!
+        const svg = element.querySelector('svg')!
+        return {
+          underline: getComputedStyle(label).textDecorationLine,
+          labelColor: getComputedStyle(label).color,
+          arrowColor: getComputedStyle(svg).color,
+          arrowBackground: getComputedStyle(svg).backgroundColor,
+          gap:
+            svg.getBoundingClientRect().left -
+            label.getBoundingClientRect().right,
+        }
+      })
+    // The name is inside the control, and the arrow follows it closely.
+    expect((await look()).gap).toBeLessThanOrEqual(8)
+    const rest = await look()
+    expect(rest.underline).toBe('none')
+    await testInfo.attach(`${colorScheme}-file-rest`, {
+      body: await card.screenshot(),
+      contentType: 'image/png',
+    })
+    // Hovering the name marks the arrow, and hovering the arrow marks the name.
+    await label.hover()
+    const overName = await look()
+    expect(overName.underline).toBe('underline')
+    expect(overName.arrowColor).not.toBe(rest.arrowColor)
+    expect(overName.arrowBackground).not.toBe(rest.arrowBackground)
+    await testInfo.attach(`${colorScheme}-file-hover`, {
+      body: await card.screenshot(),
+      contentType: 'image/png',
+    })
+    await page.mouse.move(0, 0)
+    await arrow.hover()
+    const overArrow = await look()
+    expect(overArrow.underline).toBe('underline')
+    expect(overArrow.labelColor).toBe(overName.labelColor)
+    // A click on the name opens, as does one on the arrow.
+    await label.click()
+    await arrow.click()
+    const events = (await operation(page, 'fileEvents')) as {
+      operation: string
+      reference?: string
+    }[]
+    expect(
+      events.filter((e) => e.operation === 'open' && e.reference === 'Archive'),
+    ).toHaveLength(2)
+  })
+}
 
 test('the readable range of a standalone image covers its card, not the whole row', async ({
   page,

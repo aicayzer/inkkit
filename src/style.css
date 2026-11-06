@@ -379,6 +379,14 @@
   padding: 6px;
   white-space: normal;
 }
+/* A picture that loads is drawn bare: no border, padding or caption. Any grey inside it is the
+   picture's own. A picture that is loading or has failed keeps its card. */
+.inkkit-root
+  .ProseMirror
+  .inkkit-file[data-inkkit-file-state='resolved'][data-inkkit-file-kind='image'] {
+  border: 0;
+  padding: 0;
+}
 
 /* A file presentation with `layout: 'fill'` takes the column's width instead of its label's. */
 .inkkit-root
@@ -407,17 +415,6 @@
 }
 .inkkit-root .ProseMirror .inkkit-file-footer:not(:first-child) {
   margin-block-start: 0.25em;
-}
-/* Below a picture, the name takes the picture's width rather than widening the card, so the grip
-   stays at the picture's edge; a short picture still leaves room for a few characters. */
-.inkkit-root .ProseMirror .inkkit-image-preview ~ .inkkit-file-footer {
-  width: 0;
-  min-width: 100%;
-}
-.inkkit-root
-  .ProseMirror
-  .inkkit-image.inkkit-file:has(> .inkkit-image-preview) {
-  min-width: min(100%, 8em);
 }
 /* The name truncates; the open arrow stays visible right after it. */
 .inkkit-root .ProseMirror .inkkit-file-name {
@@ -470,28 +467,41 @@
   cursor: pointer;
 }
 .inkkit-root .ProseMirror .inkkit-file-open {
+  /* The name and the arrow are one link: a plain control that the footer's muted text colours. */
   display: inline-flex;
+  flex: 0 1 auto;
   align-items: center;
-  justify-content: center;
-  min-width: 1.5em;
-  min-height: 1.5em;
+  gap: 0.25em;
+  min-width: 0;
+  max-width: 100%;
   padding: 0;
   color: var(--_inkkit-muted);
   background: transparent;
-  border-color: transparent;
+  border: 0;
+  border-radius: 3px;
+  text-align: start;
 }
 .inkkit-root .ProseMirror .inkkit-file-open:hover {
   color: var(--_inkkit-text);
-  background: var(--_inkkit-code-bg);
+}
+.inkkit-root .ProseMirror .inkkit-file-open:hover .inkkit-file-label {
+  text-decoration: underline;
 }
 .inkkit-root .ProseMirror .inkkit-file-open svg {
+  flex: none;
+  box-sizing: content-box;
   width: 0.85em;
   height: 0.85em;
+  padding: 0.2em;
+  border-radius: 3px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.inkkit-root .ProseMirror .inkkit-file-open:hover svg {
+  background: var(--_inkkit-code-bg);
 }
 
 .inkkit-root .ProseMirror {

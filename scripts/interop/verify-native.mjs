@@ -2508,7 +2508,7 @@ const commentSource =
     },
     'media-keyboard-pdf': {
       files: true,
-      source: '![[Photo]]\n\n![[Document]]\n\n![[Archive]]\n',
+      source: '![First](Archive)\n\n![[Document]]\n\n![[Archive]]\n',
       operations: [
         { op: 'fileState', ready: true, name: 'pdf' },
         assert('pdfSandbox', '', 'pdf'),
@@ -2516,7 +2516,7 @@ const commentSource =
         { op: 'editable', editable: false },
         {
           op: 'nativeInput',
-          selector: '[aria-label="Open Photo"]',
+          selector: '[aria-label="Open First"]',
           keyCode: 48,
           characters: '\t',
         },
@@ -2533,7 +2533,7 @@ const commentSource =
         assert('focused', false, 'plainBackTab'),
         {
           op: 'nativeInput',
-          selector: '[aria-label="Open Photo"]',
+          selector: '[aria-label="Open First"]',
           keyCode: 48,
           characters: '\t',
           altKey: true,
@@ -2589,13 +2589,13 @@ const commentSource =
         },
         {
           op: 'controlState',
-          selector: '[aria-label="Open Photo"]',
+          selector: '[aria-label="Open First"]',
           name: 'beforePDF',
         },
         assert('focused', true, 'beforePDF'),
         assert(
           'snapshot.text',
-          '![[Photo]]\n\n![[Document]]\n\n![[Archive]]\n',
+          '![First](Archive)\n\n![[Document]]\n\n![[Archive]]\n',
         ),
       ],
     },

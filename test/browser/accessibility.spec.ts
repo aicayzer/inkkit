@@ -7,7 +7,7 @@ const axePath = createRequire(import.meta.url).resolve('axe-core')
 const source =
   '# Roles\n\nText with a note.[^1] <!--inline comment-->\n\n' +
   '<!--block comment-->\n\n<section>raw block</section>\n\n' +
-  '![[Photo|140]]\n\n![[Missing]]\n\n![[Voice#t=0,0.5]]\n\n[^1]: The note.\n'
+  '![[Photo|140]]\n\n![[Archive]]\n\n![[Missing]]\n\n![[Voice#t=0,0.5]]\n\n[^1]: The note.\n'
 
 async function open(
   page: Page,
@@ -45,7 +45,8 @@ test('cards, notes and preserved blocks have accessible roles and no axe finding
         - group "Preserved Markdown"
         - group "Photo":
           - img "Photo"
-          - button "Open Photo"
+        - group "Archive":
+          - button "Open Archive"
         - group "Missing":
           - button "Open Missing"
           - status: File unavailable

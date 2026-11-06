@@ -28,7 +28,6 @@ test('file raw follows saved table spelling before and after reopen', async ({
           const card = root.querySelector<HTMLElement>('.inkkit-file')
           if (
             card?.dataset.inkkitFileState !== 'resolved' ||
-            !card.querySelector('button[aria-label^=Open]') ||
             !card.querySelector('img')
           )
             throw new Error('The resolved image card is not ready')
@@ -88,9 +87,6 @@ test('file raw follows saved table spelling before and after reopen', async ({
         const saved = editor.snapshot()
         const actions = () => {
           root
-            .querySelector<HTMLButtonElement>('button[aria-label^=Open]')
-            ?.click()
-          root
             .querySelector('.inkkit-file')
             ?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
         }
@@ -138,7 +134,6 @@ test('file raw follows saved table spelling before and after reopen', async ({
     for (const calls of [r.before, r.after]) {
       expect(calls.map((c) => c[0])).toEqual([
         'resolve',
-        'open',
         'context',
         'resolve',
         'export',
@@ -179,7 +174,6 @@ for (const wrapper of ['strong', 'link'])
           const card = root.querySelector<HTMLElement>('.inkkit-file')
           if (
             card?.dataset.inkkitFileState !== 'resolved' ||
-            !card.querySelector('button[aria-label^=Open]') ||
             !card.querySelector('img')
           )
             throw new Error('The resolved image card is not ready')
@@ -243,9 +237,6 @@ for (const wrapper of ['strong', 'link'])
         const saved = editor.snapshot().text
         const actions = async () => {
           root
-            .querySelector<HTMLButtonElement>('button[aria-label^=Open]')!
-            .click()
-          root
             .querySelector('.inkkit-file')!
             .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
           await editor.clipboardSnapshot('document')
@@ -293,7 +284,6 @@ for (const wrapper of ['strong', 'link'])
     for (const calls of [result.before, result.after]) {
       expect(calls.map((c) => c[0])).toEqual([
         'resolve',
-        'open',
         'context',
         'resolve',
         'export',
@@ -329,7 +319,6 @@ for (const [kind, tableRaw, paragraphRaw] of [
           const card = root.querySelector<HTMLElement>('.inkkit-file')
           if (
             card?.dataset.inkkitFileState !== 'resolved' ||
-            !card.querySelector('button[aria-label^=Open]') ||
             !card.querySelector('img')
           )
             throw new Error('The resolved image card is not ready')
@@ -386,18 +375,17 @@ for (const [kind, tableRaw, paragraphRaw] of [
     )
     const image = page.locator('#file-transfer img')
     await expect(image).toBeVisible()
-    await image.click()
+    // The resize grip covers the picture's right edge, so work from its left side.
+    await image.click({ position: { x: 6, y: 20 } })
     const start = (await image.boundingBox())!
     const end = (await page
       .locator('#file-transfer p', { hasText: 'Destination paragraph.' })
       .boundingBox())!
-    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+    await page.mouse.move(start.x + 6, start.y + start.height / 2)
     await page.mouse.down()
-    await page.mouse.move(
-      start.x + start.width / 2 + 15,
-      start.y + start.height / 2 + 15,
-      { steps: 10 },
-    )
+    await page.mouse.move(start.x + 6 + 15, start.y + start.height / 2 + 15, {
+      steps: 10,
+    })
     await page.mouse.move(end.x + 60, end.y + end.height / 2, { steps: 20 })
     await page.mouse.up()
     const result = await page.evaluate(async () => {
@@ -406,9 +394,6 @@ for (const [kind, tableRaw, paragraphRaw] of [
       const saved = editor.snapshot().text
       const transfer = calls.splice(0)
       const actions = async () => {
-        root
-          .querySelector<HTMLButtonElement>('button[aria-label^=Open]')!
-          .click()
         root
           .querySelector('.inkkit-file')!
           .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
@@ -462,14 +447,12 @@ for (const [kind, tableRaw, paragraphRaw] of [
     expect(result.redone).toBe(true)
     expect(result.redoText).toBe(result.saved)
     expect(result.before.map((call: string[]) => call[0])).toEqual([
-      'open',
       'context',
       'resolve',
       'export',
     ])
     expect(result.after.map((call: string[]) => call[0])).toEqual([
       'resolve',
-      'open',
       'context',
       'resolve',
       'export',

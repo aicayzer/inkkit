@@ -4,7 +4,7 @@ const longName =
   'An unusually long attachment filename with spaces and an_unbroken_segment_abcdefghijklmnopqrstuvwxyz.png'
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`attachment footer stays readable at narrow widths in ${colorScheme} @linked-files`, async ({
+  test(`file card name and arrow stay readable at narrow widths in ${colorScheme} @linked-files`, async ({
     page,
     openFixture,
   }, testInfo) => {
@@ -15,51 +15,40 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await openFixture('linked-files')
     await page.evaluate(
       (name) =>
-        window.inkkitPlayground.replaceDocument(`![[${name}|180]]\n`, 'md'),
+        window.inkkitPlayground.replaceDocument(`![${name}](Archive)\n`, 'md'),
       longName,
     )
-    // Host typography must not collapse the attachment's own controls.
+    // Host typography must not collapse the card's own control.
     await page.addStyleTag({
-      content:
-        '#editor { max-width: 240px; --inkkit-font-size: 19px; } .ProseMirror .inkkit-image { line-height: 0; }',
+      content: '#editor { max-width: 240px; --inkkit-font-size: 19px; }',
     })
     const card = page.locator('.inkkit-file')
-    await expect(card.locator('img')).toBeVisible()
     const open = card.getByRole('button', { name: `Open ${longName}` })
     await expect(open).toBeVisible()
     await expect(card.locator('.inkkit-file-label')).toHaveText(longName)
-    await expect(card.locator('.inkkit-file-label')).toHaveAttribute(
-      'title',
-      longName,
-    )
+    await expect(open).toHaveAttribute('title', `Open ${longName}`)
     const layout = await card.evaluate((element) => {
       const bounds = element.getBoundingClientRect()
       const label = element.querySelector('.inkkit-file-label')!
       const control = element.querySelector('button')!
-      const grip = element.querySelector('.inkkit-image-handle')!
-      const image = element.querySelector('img')!
+      const arrow = control.querySelector('svg')!
       return {
         card: bounds.toJSON(),
         label: label.getBoundingClientRect().toJSON(),
         control: control.getBoundingClientRect().toJSON(),
-        image: image.getBoundingClientRect().toJSON(),
-        grip: grip.getBoundingClientRect().toJSON(),
-        lineHeight: parseFloat(getComputedStyle(control).lineHeight),
+        arrow: arrow.getBoundingClientRect().toJSON(),
         labelLineHeight: parseFloat(getComputedStyle(label).lineHeight),
         labelOverflow: getComputedStyle(label).textOverflow,
-        visibleGripHeight: parseFloat(getComputedStyle(grip, '::after').height),
         overflow: element.scrollWidth > element.clientWidth,
       }
     })
-    expect(layout.lineHeight).toBeGreaterThan(12)
-    expect(layout.control.height).toBeGreaterThan(24)
     expect(layout.label.height).toBeLessThanOrEqual(layout.labelLineHeight + 1)
     expect(layout.labelOverflow).toBe('ellipsis')
     expect(layout.overflow).toBe(false)
     expect(layout.control.right).toBeLessThanOrEqual(layout.card.right)
-    expect(layout.control.top).toBeGreaterThanOrEqual(layout.image.bottom)
-    expect(layout.grip.bottom).toBeLessThanOrEqual(layout.image.bottom)
-    expect(layout.visibleGripHeight).toBeLessThanOrEqual(24)
+    // The arrow stays visible after a truncated name.
+    expect(layout.arrow.right).toBeLessThanOrEqual(layout.control.right + 1)
+    expect(layout.arrow.left).toBeGreaterThanOrEqual(layout.label.right - 1)
     await open.focus()
     await page.keyboard.press('Enter')
     await page.keyboard.press('Space')
@@ -73,19 +62,58 @@ for (const colorScheme of ['light', 'dark'] as const) {
       operation: string
     }[]
     expect(events.filter((event) => event.operation === 'open')).toHaveLength(2)
-    await card.hover()
     await testInfo.attach(`${colorScheme}-attachment`, {
       body: await card.screenshot(),
       contentType: 'image/png',
     })
     const before = (await observe(page)).snapshot!.text
     await operation(page, 'editable', { editable: false })
-    await expect(card.locator('.inkkit-image-handle')).toBeHidden()
     await open.click()
     expect((await observe(page)).snapshot!.text).toBe(before)
+    expect(errors).toEqual([])
+  })
+
+  test(`a bare picture stays within a narrow column and keeps its grip in ${colorScheme} @linked-files`, async ({
+    page,
+    openFixture,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    await page.emulateMedia({ colorScheme })
+    await openFixture('linked-files')
+    await page.evaluate(
+      (name) =>
+        window.inkkitPlayground.replaceDocument(`![[${name}|180]]\n`, 'md'),
+      longName,
+    )
+    await page.addStyleTag({
+      content: '#editor { max-width: 240px; --inkkit-font-size: 19px; }',
+    })
+    const card = page.locator('.inkkit-file')
+    await expect(card.locator('img')).toBeVisible()
+    await expect(card).toHaveAttribute('title', longName)
+    await expect(card.getByRole('button')).toHaveCount(0)
+    const layout = await card.evaluate((element) => {
+      const image = element.querySelector('img')!
+      const grip = element.querySelector('.inkkit-image-handle')!
+      return {
+        card: element.getBoundingClientRect().toJSON(),
+        image: image.getBoundingClientRect().toJSON(),
+        grip: grip.getBoundingClientRect().toJSON(),
+        column: element
+          .closest('.ProseMirror')!
+          .getBoundingClientRect()
+          .toJSON(),
+      }
+    })
+    expect(layout.card.right).toBeLessThanOrEqual(layout.column.right)
+    expect(layout.grip.right).toBeLessThanOrEqual(layout.image.right + 1)
+    expect(layout.grip.bottom).toBeLessThanOrEqual(layout.image.bottom)
+    const before = (await observe(page)).snapshot!.text
+    await operation(page, 'editable', { editable: false })
+    await expect(card.locator('.inkkit-image-handle')).toBeHidden()
     await operation(page, 'editable', { editable: true })
     await expect(card.locator('.inkkit-image-handle')).toBeVisible()
-    expect(errors).toEqual([])
+    expect((await observe(page)).snapshot!.text).toBe(before)
   })
 }
 

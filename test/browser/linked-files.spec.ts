@@ -29,7 +29,9 @@ test('optional wiki/files preserve source, resolve offline kinds and route host 
     .locator('.inkkit-file')
     .filter({ has: page.locator('img[alt="Photo"]') })
     .last()
-  await photo.getByRole('button', { name: 'Open Photo', exact: true }).click()
+  // A picture that loads is bare: Open is on its context menu, not a button.
+  await expect(photo.getByRole('button')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Open Archive', exact: true }).click()
   await photo.dispatchEvent('contextmenu', { clientX: 12, clientY: 20 })
   const events = (await operation(page, 'fileEvents')) as {
     operation: string
@@ -45,7 +47,7 @@ test('optional wiki/files preserve source, resolve offline kinds and route host 
     }),
   )
   expect(events).toContainEqual(
-    expect.objectContaining({ operation: 'open', reference: 'Photo' }),
+    expect.objectContaining({ operation: 'open', reference: 'Archive' }),
   )
   expect(events).toContainEqual(
     expect.objectContaining({ operation: 'contextMenu', reference: 'Photo' }),
