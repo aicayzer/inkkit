@@ -27,7 +27,7 @@ interface DrawnIcon {
 }
 
 /** The icon a link may draw. It is decoration drawn as a CSS mask, so a URL that fetches from the
- *  network or runs script is refused, as in a file presentation. */
+ *  network or runs script is refused. */
 function drawnIcon(presentation: WikiLinkPresentation): DrawnIcon | undefined {
   const { icon, iconColor } = presentation
   if (icon === undefined) return undefined
