@@ -41,6 +41,7 @@ const look = (page: Page, name: string) =>
         line: style.textDecorationLine,
         lineStyle: style.textDecorationStyle,
         thickness: style.textDecorationThickness,
+        lineColor: style.textDecorationColor,
         offset: style.textUnderlineOffset,
         font: Number.parseFloat(style.fontSize),
         icon: lead
@@ -119,6 +120,7 @@ test('a host sets the look through variables, and can hide the icon @linked-file
       --inkkit-wiki-link-color: rgb(10, 120, 60);
       --inkkit-wiki-link-underline: underline;
       --inkkit-wiki-link-underline-thickness: 3px;
+      --inkkit-wiki-link-underline-color: rgb(1, 2, 3);
       --inkkit-wiki-link-underline-offset: 5px;
       --inkkit-wiki-link-hover-color: rgb(120, 10, 60);
       --inkkit-wiki-link-hover-underline: none;
@@ -132,6 +134,7 @@ test('a host sets the look through variables, and can hide the icon @linked-file
     line: 'underline',
     lineStyle: 'solid',
     thickness: '3px',
+    lineColor: 'rgb(1, 2, 3)',
     offset: '5px',
   })
   expect(pictured.icon!.width).toBeCloseTo(20, 0)
@@ -141,6 +144,7 @@ test('a host sets the look through variables, and can hide the icon @linked-file
     line: 'underline',
     lineStyle: 'dashed',
     thickness: '3px',
+    lineColor: 'rgb(1, 2, 3)',
   })
   const link = page
     .locator('.ProseMirror > p .inkkit-wiki-link')
@@ -499,9 +503,10 @@ test('a pill that wraps keeps its padding and corners on each line @linked-files
       lines: new Set([...range.getClientRects()].map((r) => Math.round(r.top)))
         .size,
       boxes: boxes.length,
-      breakStyle: getComputedStyle(link).getPropertyValue(
-        'box-decoration-break',
-      ),
+      // WebKit serves only the prefixed property.
+      breakStyle:
+        getComputedStyle(link).getPropertyValue('box-decoration-break') ||
+        getComputedStyle(link).getPropertyValue('-webkit-box-decoration-break'),
       // The box of the first line starts a padding before its first character.
       lead: range.getClientRects()[0]!.left - boxes[0]!.left,
       // The box of the last line ends a padding after its last character.

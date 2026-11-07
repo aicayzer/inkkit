@@ -695,6 +695,7 @@
   text-decoration-line: var(--inkkit-wiki-link-underline, none);
   text-decoration-style: solid;
   text-decoration-thickness: var(--inkkit-wiki-link-underline-thickness, auto);
+  text-decoration-color: var(--inkkit-wiki-link-underline-color, currentcolor);
   text-underline-offset: var(--inkkit-wiki-link-underline-offset, 2px);
   padding: var(--inkkit-wiki-link-padding-block, 0)
     var(--inkkit-wiki-link-padding-inline, 0);
