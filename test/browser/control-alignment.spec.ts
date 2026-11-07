@@ -60,7 +60,7 @@ test('table grabbers and menu buttons hold their icon in the middle', async ({
   }
 })
 
-test('the code block Copy button and the file Open button hold their icon in the middle @linked-files', async ({
+test('the code block Copy button holds its icon in the middle and the file Open arrow sits level with the name @linked-files', async ({
   page,
   openFixture,
 }) => {
@@ -71,7 +71,17 @@ test('the code block Copy button and the file Open button hold their icon in the
   await expectCentered(copy, 'copy button')
   const open = page.getByRole('button', { name: /^Open Document/ })
   await expect(open).toHaveCount(1)
-  await expectCentered(open, 'file Open button')
+  // The name and the arrow are one control; the arrow is level with the name's line.
+  const level = await open.evaluate((element) => {
+    const label = element.querySelector('.inkkit-file-label')!
+    const svg = element.querySelector('svg')!.getBoundingClientRect()
+    const text = label.getBoundingClientRect()
+    return svg.top + svg.height / 2 - (text.top + text.height / 2)
+  })
+  expect(
+    Math.abs(level),
+    'file Open arrow vertical offset',
+  ).toBeLessThanOrEqual(1)
 })
 
 // Where the first line of a task item's text sits, and where its checkbox is,

@@ -21,9 +21,9 @@ An adapter is an object of functions that you pass to [`mount`](/reference/edito
 | `ImageAdapter.exportImage`  | Asynchronous | When clipboard or print output needs an image's bytes.                              |
 | `FileAdapter.resolve`       | Asynchronous | When a path image or `![[name]]` embed renders, and again for clipboard and print.  |
 | `FileAdapter.exportImage`   | Asynchronous | When clipboard or print output needs the bytes of a file that resolved as an image. |
-| `FileAdapter.open`          | Synchronous  | When the person activates a file card's Open button.                                |
+| `FileAdapter.open`          | Synchronous  | When the person activates a file card's Open link.                                  |
 | `ImageAdapter.contextMenu`  | Synchronous  | When the person opens the context menu on an image, and `files` isn't set.          |
-| `FileAdapter.contextMenu`   | Synchronous  | When the person opens the context menu on a file card.                              |
+| `FileAdapter.contextMenu`   | Synchronous  | When the person opens the context menu on a picture or a file card.                 |
 | `WikiLinkAdapter.suggest`   | Asynchronous | When the text after a typed `[[` changes.                                           |
 | `WikiLinkAdapter.resolve`   | Synchronous  | When a wiki link renders in formatted mode.                                         |
 | `WikiLinkAdapter.open`      | Synchronous  | When the person Mod-clicks a wiki link, or presses Enter or Space on a focused one. |
@@ -95,7 +95,7 @@ Resolved presentations are retained for the current document across source-mode 
 
 Image resize handles accept keyboard focus and show the current width in pixels. Arrow keys change the width by 10 pixels, or 1 pixel with Shift; Home sets the minimum width and End fits the editor width. Resizing uses the same source-preserving operation and undo history as dragging, and is unavailable while read-only or composing. The handle remains visible while its image has keyboard focus. This also applies to images presented through `ImageAdapter`.
 
-PDF frames retain an empty sandbox and stay out of the tab sequence, because WebKit's sandboxed PDF viewer can trap keyboard focus. The visible Open button remains the keyboard path to the document when the adapter provides `open`.
+PDF frames retain an empty sandbox and stay out of the tab sequence, because WebKit's sandboxed PDF viewer can trap keyboard focus. The Open link remains the keyboard path to the document when the adapter provides `open`.
 
 The result must be a valid [`FilePresentation`](#filepresentation). An unknown `kind`, a missing `url` or `message`, a `javascript:` or `vbscript:` URL, a `mimeType` that doesn't match the kind, or a `data:` URL of another type makes it invalid.
 
@@ -112,13 +112,13 @@ Returns portable bytes for a file that resolved as `image`, for clipboard and pr
 
 <ResponseField name="open" type="(reference: FileReference, context: DocumentContext) => void">
 
-Setting it adds an Open button, named by the `fileOpen` label, to every file card, except one whose presentation has [`activation: 'card'`](#file-card-options), which opens from the card itself. Inkkit calls it when the person activates the button, also in a read-only editor. A thrown exception reports `file-unavailable`. Inkkit doesn't await a returned value, so handle the failure of asynchronous native work yourself.
+Setting it makes the name on a file card an Open link: the name and the arrow after it are one control, named by the `fileOpen` label. Hovering it underlines the name and highlights the arrow. A card whose presentation has [`activation: 'card'`](#file-card-options) opens from the card itself instead. A picture that loads has no Open link, because it is drawn without a caption: offer Open from [`contextMenu`](#fileadapter). Inkkit calls `open` when the person activates the link, also in a read-only editor. A thrown exception reports `file-unavailable`. Inkkit doesn't await a returned value, so handle the failure of asynchronous native work yourself.
 
 </ResponseField>
 
 <ResponseField name="contextMenu" type="(reference: FileReference, point: ClientPoint, context: DocumentContext) => void">
 
-Called when the person opens the context menu on a file card. `point` is where, in CSS pixels of the web view's client area. When it is set, Inkkit suppresses the browser's own context menu on file cards, so show yours. A thrown exception reports `file-unavailable`.
+Called when the person opens the context menu on a picture or a file card. `point` is where, in CSS pixels of the web view's client area. When it is set, Inkkit suppresses the browser's own context menu on file cards, so show yours. A thrown exception reports `file-unavailable`.
 
 </ResponseField>
 
@@ -313,19 +313,19 @@ In a path, the fragment starts at the first `#`, so write a `#` that belongs to 
 
 A `FilePresentation` is what `FileAdapter.resolve` returns: one of these shapes, chosen by `kind`. Every shape takes an optional `label`, the name the card shows.
 
-| `kind`                           | Other fields                             | The card shows                                                                                                   |
-| -------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `image`, `audio`, `video`, `pdf` | `url: string`, `mimeType?: string`       | The resource at `url`. Audio and video use native controls and never autoplay. A PDF shows in a sandboxed frame. |
-| `file`                           | `layout?: 'fill'`, `activation?: 'card'` | A card with no preview. See [file card options](#file-card-options).                                             |
-| `missing`                        | None                                     | A card with the `fileMissing` label.                                                                             |
-| `error`                          | `message: string`                        | A card whose status is `message`, a short reason for the person. An empty `message` shows the `fileError` label. |
+| `kind`                           | Other fields                             | The card shows                                                                                                                                                                                                                                    |
+| -------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image`, `audio`, `video`, `pdf` | `url: string`, `mimeType?: string`       | The resource at `url`. An image is drawn bare, with rounded corners and no border, padding or caption; its label is its hover text and accessible name. Audio and video use native controls and never autoplay. A PDF shows in a sandboxed frame. |
+| `file`                           | `layout?: 'fill'`, `activation?: 'card'` | A card with no preview. See [file card options](#file-card-options).                                                                                                                                                                              |
+| `missing`                        | None                                     | A card with the `fileMissing` label.                                                                                                                                                                                                              |
+| `error`                          | `message: string`                        | A card whose status is `message`, a short reason for the person. An empty `message` shows the `fileError` label.                                                                                                                                  |
 
 #### File card options
 
-A `file` presentation takes two optional fields. Without them the card is as wide as its label, and `FileAdapter.open` runs only from the card's Open button. Any other value makes the result invalid.
+A `file` presentation takes two optional fields. Without them the card is as wide as its label, and `FileAdapter.open` runs only from the card's Open link. Any other value makes the result invalid.
 
 - **`layout: 'fill'`** stretches the card to the full width of the column.
-- **`activation: 'card'`** makes the whole card the one control: it has the `button` role, takes focus, and is named by the `fileOpen` label followed by the card's name. A click, or Return or Space with the card focused, calls [`FileAdapter.open`](#fileadapter), also in a read-only editor. The card has no Open button, so there is one control rather than two. Without `FileAdapter.open`, the field has no effect.
+- **`activation: 'card'`** makes the whole card the one control: it has the `button` role, takes focus, and is named by the `fileOpen` label followed by the card's name. A click, or Return or Space with the card focused, calls [`FileAdapter.open`](#fileadapter), also in a read-only editor. The card has no separate Open link, so there is one control rather than two. Without `FileAdapter.open`, the field has no effect.
 
 A host that shows a not-yet-loaded picture as a file card can set both, so every placeholder has the same width and one target. Don't style Inkkit's internal classes for this.
 

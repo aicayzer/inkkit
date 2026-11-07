@@ -231,38 +231,98 @@ async function mounted(
   }
 }
 
-test('image preview and footer keep resize and host controls separate', async () => {
+test('a picture that loads is drawn bare, named by hover help, with Open on the context menu', async () => {
+  const open = vi.fn()
+  const contextMenu = vi.fn()
   await mounted(
-    { resolve: async () => image, open: vi.fn() },
+    { resolve: async () => image, open, contextMenu },
     async (_, root) => {
       await vi.waitFor(() =>
         expect(root.querySelector('.inkkit-image img')).not.toBeNull(),
       )
-      const preview = root.querySelector('.inkkit-image-preview')!
-      const footer = root.querySelector('.inkkit-file-footer')!
-      expect(preview).not.toBeNull()
-      expect(footer).not.toBeNull()
-      expect(preview.querySelector('img')).not.toBeNull()
-      expect(preview.querySelector('button')).toBeNull()
-      // The grip belongs to the whole card, so it centres on the picture and its name together.
-      expect(
-        preview.parentElement!.querySelector(':scope > .inkkit-image-handle'),
-      ).not.toBeNull()
-      expect(footer.querySelector('.inkkit-file-label')?.textContent).toBe(
-        'Authored',
-      )
-      const card = root.querySelector('.inkkit-image.inkkit-file')!
+      const card = root.querySelector<HTMLElement>('.inkkit-image.inkkit-file')!
+      // No caption row, no name text, no Open button: only the picture and its grip.
+      expect(card.querySelector('.inkkit-file-footer')).toBeNull()
+      expect(card.querySelector('.inkkit-file-label')).toBeNull()
+      expect(card.querySelector('button')).toBeNull()
+      expect(card.textContent).toBe('')
+      expect(card.querySelector('.inkkit-image-preview img')).not.toBeNull()
+      expect(card.querySelector(':scope > .inkkit-image-handle')).not.toBeNull()
+      // The name is the hover help and the group's accessible name.
+      expect(card.getAttribute('title')).toBe('Authored')
       expect(card.getAttribute('role')).toBe('group')
       expect(card.getAttribute('aria-label')).toBe('Authored')
-      const open = footer.querySelector('.inkkit-file-name button')!
-      expect(open.getAttribute('aria-label')).toBe('Open Authored')
-      expect(open.textContent).toBe('')
-      expect(open.querySelector('svg')?.getAttribute('aria-hidden')).toBe(
+      expect(card.dataset.inkkitFileState).toBe('resolved')
+      expect(open).not.toHaveBeenCalled()
+      card.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 3,
+          clientY: 5,
+        }),
+      )
+      expect(contextMenu).toHaveBeenCalledWith(
+        expect.objectContaining(reference),
+        { clientX: 3, clientY: 5 },
+        expect.anything(),
+      )
+    },
+  )
+})
+
+test('a picture that fails to load falls back to a card with its name and Open', async () => {
+  const open = vi.fn()
+  await mounted({ resolve: async () => image, open }, async (_, root) => {
+    await vi.waitFor(() =>
+      expect(root.querySelector('.inkkit-image img')).not.toBeNull(),
+    )
+    root.querySelector('.inkkit-image img')!.dispatchEvent(new Event('error'))
+    await vi.waitFor(() =>
+      expect(
+        root
+          .querySelector('.inkkit-file')
+          ?.getAttribute('data-inkkit-file-state'),
+      ).toBe('error'),
+    )
+    const card = root.querySelector<HTMLElement>('.inkkit-file')!
+    expect(card.hasAttribute('title')).toBe(false)
+    expect(card.querySelector('img')).toBeNull()
+    expect(card.querySelector('.inkkit-file-label')?.textContent).toBe(
+      'Authored',
+    )
+    card.querySelector<HTMLButtonElement>('.inkkit-file-open')!.click()
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+})
+
+test('the name and the arrow on a file card are one Open control', async () => {
+  const open = vi.fn()
+  await mounted(
+    { resolve: async () => ({ kind: 'file', label: 'Report.zip' }), open },
+    async (_, root) => {
+      await vi.waitFor(() =>
+        expect(
+          root.querySelector('[data-inkkit-file-state="resolved"]'),
+        ).not.toBeNull(),
+      )
+      const buttons = root.querySelectorAll('.inkkit-file button')
+      expect(buttons).toHaveLength(1)
+      const link = buttons[0] as HTMLButtonElement
+      expect(link.getAttribute('aria-label')).toBe('Open Report.zip')
+      expect(link.title).toBe('Open Report.zip')
+      const label = link.querySelector('.inkkit-file-label')!
+      expect(label.textContent).toBe('Report.zip')
+      expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe(
         'true',
       )
-      expect(open.previousElementSibling).toBe(
-        footer.querySelector('.inkkit-file-label'),
-      )
+      // The name is inside the control, not beside it, so a click on it opens.
+      label.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      expect(open).toHaveBeenCalledTimes(1)
+      link
+        .querySelector('svg')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      expect(open).toHaveBeenCalledTimes(2)
     },
   )
 })
@@ -314,7 +374,9 @@ test.each(['image', 'audio', 'video', 'pdf', 'file'] as const)(
             )
             const fallback = root.querySelector('.inkkit-file-label')!
             expect(fallback.textContent).toBe('Useful name')
-            expect(fallback.getAttribute('title')).toBe('Useful name')
+            expect(fallback.closest('button')?.getAttribute('title')).toBe(
+              'Open Useful name',
+            )
             expect(root.querySelector('[role="status"]')?.textContent).toBe(
               'Open to view this PDF',
             )
@@ -324,12 +386,16 @@ test.each(['image', 'audio', 'video', 'pdf', 'file'] as const)(
           const openButton = [...root.querySelectorAll('button')].find(
             (button) =>
               button.getAttribute('aria-label')?.startsWith('Open ') ?? false,
-          )!
-          openButton.click()
-          expect(open).toHaveBeenCalledWith(
-            expect.objectContaining(reference),
-            expect.objectContaining({ documentId: 'files', generation: 1 }),
           )
+          // A picture has no Open button; the host opens it from its context menu.
+          if (kind === 'image') expect(openButton).toBeUndefined()
+          else {
+            openButton!.click()
+            expect(open).toHaveBeenCalledWith(
+              expect.objectContaining(reference),
+              expect.objectContaining({ documentId: 'files', generation: 1 }),
+            )
+          }
           root.querySelector('.inkkit-file')!.dispatchEvent(
             new MouseEvent('contextmenu', {
               bubbles: true,
