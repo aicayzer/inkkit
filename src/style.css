@@ -679,26 +679,89 @@
   font-weight: 700;
 }
 
-.inkkit-root .ProseMirror a,
-.inkkit-root .inkkit-wiki-link {
+.inkkit-root .ProseMirror a {
   color: var(--_inkkit-accent);
   text-decoration: none;
   text-underline-offset: 2px;
 }
 
-.inkkit-root .ProseMirror a:hover,
-.inkkit-root .inkkit-wiki-link:hover {
+.inkkit-root .ProseMirror a:hover {
   text-decoration: underline;
+}
+
+/* A wiki link reads each part of its look from a variable whose default is the plain look. */
+.inkkit-root .inkkit-wiki-link {
+  color: var(--inkkit-wiki-link-color, var(--_inkkit-accent));
+  text-decoration-line: var(--inkkit-wiki-link-underline, none);
+  text-decoration-style: solid;
+  text-decoration-thickness: var(--inkkit-wiki-link-underline-thickness, auto);
+  text-decoration-color: var(--inkkit-wiki-link-underline-color, currentcolor);
+  text-underline-offset: var(--inkkit-wiki-link-underline-offset, 2px);
+  padding: var(--inkkit-wiki-link-padding-block, 0)
+    var(--inkkit-wiki-link-padding-inline, 0);
+  border-radius: var(--inkkit-wiki-link-radius, 0);
+  /* The link's tint, when it has one, mixes into the host's background by the strength the host
+     gives it. The host cannot read the tint itself: a variable it sets on the root is read there,
+     where the link's own custom property does not exist. */
+  background-color: color-mix(
+    in srgb,
+    var(
+        --_inkkit-wiki-link-tint,
+        var(--inkkit-wiki-link-background, transparent)
+      )
+      var(--inkkit-wiki-link-tint-strength, 0%),
+    var(--inkkit-wiki-link-background, transparent)
+  );
+  /* A link that wraps keeps its padding and corners on every line. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.inkkit-root .inkkit-wiki-link:hover {
+  color: var(
+    --inkkit-wiki-link-hover-color,
+    var(--inkkit-wiki-link-color, var(--_inkkit-accent))
+  );
+  text-decoration-line: var(--inkkit-wiki-link-hover-underline, underline);
 }
 
 /* A missing target differs by its line, not only its color, which forced colors replace. */
 .inkkit-root .inkkit-wiki-link[data-missing] {
-  text-decoration: underline dashed;
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+}
+
+/* The icon is generated content before the link's first character, so it adds no text, no caret
+   position and nothing to copy. It is an inline-block with a size of its own because WebKit
+   paints the whole box of an inline element in the mask's color. A line may break either side of
+   such a box, so the character it sits before is held with it by no-wrap. */
+.inkkit-root .inkkit-wiki-link-lead {
+  white-space: nowrap;
+}
+
+.inkkit-root .inkkit-wiki-link-lead::before {
+  content: '';
+  display: var(--inkkit-wiki-link-icon-display, inline-block);
+  width: var(--inkkit-wiki-link-icon-size, 0.9em);
+  height: var(--inkkit-wiki-link-icon-size, 0.9em);
+  margin-inline-end: var(--inkkit-wiki-link-icon-gap, 0.3em);
+  /* Centers the square on the text's height. */
+  vertical-align: calc(0.35em - var(--inkkit-wiki-link-icon-size, 0.9em) / 2);
+  background-color: var(--_inkkit-wiki-icon-color, currentColor);
+  mask-image: var(--_inkkit-wiki-icon);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: 100% 100%;
 }
 
 @media (forced-colors: active) {
   .inkkit-root .inkkit-wiki-link {
     color: LinkText;
+  }
+
+  .inkkit-root .inkkit-wiki-link-lead::before {
+    forced-color-adjust: none;
+    background-color: LinkText;
   }
 }
 
@@ -1136,6 +1199,7 @@
   }
 
   .inkkit-root .inkkit-comment,
+  .inkkit-root .inkkit-wiki-link-lead::before,
   .inkkit-root [data-inkkit-callout-toggle],
   .inkkit-root .ProseMirror pre .inkkit-copy,
   .inkkit-root .inkkit-table-controls,

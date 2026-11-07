@@ -136,9 +136,9 @@ Suggestions don't open in a read-only editor, source or TXT mode, code, front ma
 
 </ResponseField>
 
-<ResponseField name="resolve" type="(reference: WikiLinkReference, context: DocumentContext) => { missing?: boolean } | undefined">
+<ResponseField name="resolve" type="(reference: WikiLinkReference, context: DocumentContext) => ({ missing?: boolean } & WikiLinkPresentation) | undefined">
 
-Tells Inkkit whether a link's target is missing, for presentation only. Inkkit calls it each time the link renders, and when [`refreshReferences`](/reference/editor#refreshreferences) names the link or names no target. `{ missing: true }` draws the link with a dashed underline and gives it the `wikiMissing` label as its tooltip and accessible description; the link stays focusable and `open` still runs; `undefined` or `{}` shows it as present. It supplies no URL. A thrown exception reports `file-unavailable`.
+Tells Inkkit whether a link's target is missing, and how to draw a link that is not, for presentation only. Inkkit calls it each time the link renders, and when [`refreshReferences`](/reference/editor#refreshreferences) names the link or names no target. `{ missing: true }` draws the link with a dashed underline and gives it the `wikiMissing` label as its tooltip and accessible description; the link stays focusable and `open` still runs; `undefined` or `{}` shows it as present, with the look the [wiki link tokens](/reference/appearance#wiki-link-tokens) give it. A present link may also carry a [`WikiLinkPresentation`](#wikilinkpresentation), which adds an icon before its text and a tint for a host's look to fill the link with. A missing link draws neither. It supplies no URL to open. A thrown exception reports `file-unavailable`.
 
 </ResponseField>
 
@@ -360,6 +360,30 @@ The part after `#`, when there is one.
 <ResponseField name="label" type="string">
 
 The text shown: the alias, or the target and fragment.
+
+</ResponseField>
+
+### WikiLinkPresentation
+
+A `WikiLinkPresentation` is the optional part of a [`resolve`](#wikilinkadapter) answer that draws an icon before a present link's text, and gives it a tint. Without it a link has neither, and nothing about it changes.
+
+<ResponseField name="icon" type="string">
+
+The URL of an image, such as a `data:` URL of an SVG. Inkkit draws it as a mask, so one shape takes any color, and the SVG's own colors are ignored. The icon is decoration only. It is not part of the link's text or accessible name, it is not selectable, and it never reaches the Markdown source, the clipboard, print output or the saved bytes. It stays with the link's first character when the link wraps. It is not drawn in source mode, where there are no links, or in print.
+
+The URL must serve an image offline in your page. A `data:` URL of another type, an `http:` or `https:` address, and a `javascript:` or `vbscript:` address are refused: the link is drawn without an icon and the call reports `file-unavailable`. To hide every icon while keeping the answers, set [`--inkkit-wiki-link-icon-display`](/reference/appearance#wiki-link-tokens) to `none`.
+
+</ResponseField>
+
+<ResponseField name="iconColor" type="string">
+
+The icon's CSS color. Without it the icon takes the link text's color. It accepts what the browser reads as a `color` value: a named color, a hex value, a color function such as `rgb()` or `hsl()`, a system color, `currentColor`, and a `var()` reference such as `var(--note-icon)`. A `var()` is read where the icon is drawn, so it takes a custom property from the link's ancestors. An undefined variable, `inherit` and `initial` give the link text's color. A variable that holds something other than a color draws an icon that cannot be seen. Any other value, and one that holds a second declaration, is refused like an unusable `icon`. In forced-colors mode the icon takes the system link color.
+
+</ResponseField>
+
+<ResponseField name="tint" type="string">
+
+A CSS color for the link's background, such as the tint of its kind of item. It takes the same values as `iconColor`, including a `var()` reference read where the link is drawn. A tint paints nothing by itself: it mixes into the link's background only when the host's [wiki link tokens](/reference/appearance#wiki-link-tokens) give `--inkkit-wiki-link-tint-strength` a value above `0%`. It needs no `icon`. A link without a tint, and a missing link, keep the host's plain `--inkkit-wiki-link-background`. A tint that is not one color is refused like an unusable `icon`, together with that icon.
 
 </ResponseField>
 

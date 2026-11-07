@@ -47,6 +47,7 @@ export type {
   EditorErrorCode,
   ImageAdapter,
   ImageImportContext,
+  WikiLinkPresentation,
   WikiLinkReference,
   WikiLinkAdapter,
   FileReference,
