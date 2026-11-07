@@ -239,9 +239,10 @@ export interface WikiLinkReference {
 /** How a resolved wiki link is drawn, beyond its text. */
 export interface WikiLinkPresentation {
   /** An image drawn as a mask before the link text, such as a data URL of an SVG. It stays with the
-   *  first word of the link and is decoration only. A `missing` link ignores it. */
+   *  first character of the link and is decoration only. A `missing` link ignores it. */
   icon?: string
-  /** The icon's CSS color. Without it the icon takes the link text's color. */
+  /** The icon's CSS color: a color value or a `var()` reference. Without it, or with an undefined
+   *  variable, the icon takes the link text's color. */
   iconColor?: string
 }
 /** Resolves and opens wiki links. The host owns lookup, permissions and navigation. */

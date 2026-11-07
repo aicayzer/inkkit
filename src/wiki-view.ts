@@ -33,23 +33,31 @@ function drawnIcon(presentation: WikiLinkPresentation): DrawnIcon | undefined {
   if (icon === undefined) return undefined
   if (typeof icon !== 'string' || !icon.trim())
     throw new TypeError('Wiki link icon needs a URL')
+  // The address that is checked is the address that is fetched: a relative one would otherwise
+  // resolve against the stylesheet that reads the variable, not against the page.
   const url = new URL(icon, document.baseURI)
   if (['http:', 'https:', 'javascript:', 'vbscript:'].includes(url.protocol))
     throw new TypeError('Wiki link icons must load offline')
   if (url.protocol === 'data:' && !/^image\//i.test(url.pathname))
     throw new TypeError('Wiki link icon data URL must be an image')
-  if (iconColor === undefined) return { url: icon }
+  if (iconColor === undefined) return { url: url.href }
   // The style engine decides, so a value that is not one color cannot carry a second declaration.
   const probe = document.createElement('span')
   if (typeof iconColor === 'string') probe.style.color = iconColor
   const supported = probe.style.color !== ''
   if (!supported) throw new TypeError('Wiki link icon color must be a color')
-  return { url: icon, color: iconColor }
+  return { url: url.href, color: iconColor }
 }
 
 /** A quoted CSS url() whose text cannot end the string or the declaration early. */
 const cssUrl = (url: string) =>
   `url("${url.replace(/[\\"\n\r\f]/g, (character) => `\\${character.charCodeAt(0).toString(16)} `)}")`
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+/** The first character a reader sees, so a combining mark stays with its base. */
+const firstGrapheme = (label: string) =>
+  graphemes.segment(label)[Symbol.iterator]().next().value?.segment ?? ''
 
 export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
   return $view(wikiLinkSchema, () => (node, view: EditorView) => {
@@ -58,32 +66,42 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
     dom.className = 'inkkit-wiki-link'
     dom.setAttribute('role', 'link')
     dom.tabIndex = 0
+    // The rest of the label. With an icon, its first character is in `lead`, which draws the icon
+    // before it as generated content: no node of its own, so no text, no caret step and nothing in
+    // the clipboard. The icon and that character cannot be split across lines, and the character
+    // is the only text held that way, so a long first word still wraps.
     const text = document.createTextNode('')
     dom.append(text)
-    let icon: HTMLElement | undefined
-    const showIcon = (drawn: DrawnIcon | undefined) => {
+    let lead: { box: HTMLElement; text: Text } | undefined
+    const showLabel = (label: string, drawn: DrawnIcon | undefined) => {
       if (!drawn) {
-        icon?.remove()
-        icon = undefined
+        lead?.box.remove()
+        lead = undefined
+        if (text.data !== label) text.data = label
         return
       }
-      if (!icon) {
-        icon = document.createElement('span')
-        icon.className = 'inkkit-wiki-link-icon'
-        icon.setAttribute('aria-hidden', 'true')
-        dom.insertBefore(icon, text)
+      if (!lead) {
+        const box = document.createElement('span')
+        box.className = 'inkkit-wiki-link-lead'
+        const leadText = document.createTextNode('')
+        box.append(leadText)
+        dom.insertBefore(box, text)
+        lead = { box, text: leadText }
       }
-      icon.style.setProperty('--_inkkit-wiki-icon', cssUrl(drawn.url))
+      const first = firstGrapheme(label)
+      if (lead.text.data !== first) lead.text.data = first
+      const rest = label.slice(first.length)
+      if (text.data !== rest) text.data = rest
+      lead.box.style.setProperty('--_inkkit-wiki-icon', cssUrl(drawn.url))
       if (drawn.color)
-        icon.style.setProperty('--_inkkit-wiki-icon-color', drawn.color)
-      else icon.style.removeProperty('--_inkkit-wiki-icon-color')
+        lead.box.style.setProperty('--_inkkit-wiki-icon-color', drawn.color)
+      else lead.box.style.removeProperty('--_inkkit-wiki-icon-color')
     }
     const reference = (): WikiLinkReference => wikiReference(current)
     const report = (error: unknown) =>
       runtime.error?.(coded(error, 'file-unavailable'))
     const render = () => {
       const { label } = reference()
-      if (text.data !== label) text.data = label
       let missing = false
       let drawn: DrawnIcon | undefined
       if (runtime.active()) {
@@ -98,7 +116,7 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
           report(error)
         }
       }
-      showIcon(drawn)
+      showLabel(label, drawn)
       // The link is still activatable, so it is described rather than disabled.
       if (missing) {
         dom.dataset.missing = 'true'

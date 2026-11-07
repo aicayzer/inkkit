@@ -681,9 +681,10 @@ type FixtureContext = {
   documentId: string
   generation: number
 }
-/** A solid square, for a wiki link that the fixture draws with an icon. */
+/** A solid square at the middle of a 4 by 4 box, half its width and height, for a wiki link that
+ *  the fixture draws with an icon. A test can tell the shape from the box it is drawn in. */
 const wikiIcon =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Cpath d='M0 0h1v1H0z'/%3E%3C/svg%3E"
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 4'%3E%3Cpath d='M1 1h2v2H1z'/%3E%3C/svg%3E"
 
 export class ControlledFiles {
   readonly events: {

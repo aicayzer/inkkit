@@ -31,8 +31,11 @@ const look = (page: Page, name: string) =>
     .first()
     .evaluate((link) => {
       const style = getComputedStyle(link)
-      const icon = link.querySelector('.inkkit-wiki-link-icon')
-      const drawn = icon && getComputedStyle(icon)
+      // The icon is generated content before the first character of the lead element.
+      const lead = link.querySelector('.inkkit-wiki-link-lead')
+      const drawn = lead && getComputedStyle(lead, '::before')
+      const first = lead && document.createRange()
+      first?.selectNodeContents(lead!.firstChild!)
       return {
         color: style.color,
         line: style.textDecorationLine,
@@ -40,15 +43,18 @@ const look = (page: Page, name: string) =>
         thickness: style.textDecorationThickness,
         offset: style.textUnderlineOffset,
         font: Number.parseFloat(style.fontSize),
-        icon: icon
+        icon: lead
           ? {
-              hidden: icon.getAttribute('aria-hidden'),
-              text: icon.textContent,
-              width: icon.getBoundingClientRect().width,
+              text: lead.textContent,
+              width: Number.parseFloat(drawn!.width),
+              height: Number.parseFloat(drawn!.height),
+              // From the link's edge to its first character: the icon and the gap.
+              advance:
+                first!.getClientRects()[0]!.left -
+                lead.getBoundingClientRect().left,
               colour: drawn!.backgroundColor,
               mask: drawn!.maskImage || drawn!.webkitMaskImage,
               display: drawn!.display,
-              select: drawn!.userSelect,
             }
           : null,
       }
@@ -73,15 +79,16 @@ test('the default look is unchanged, and an icon is a masked square before the t
   expect(pictured.line).toBe('none')
   expect(missing).toMatchObject({ line: 'underline', lineStyle: 'dashed' })
   expect(pictured.icon).toMatchObject({
-    hidden: 'true',
-    text: '',
+    // The first character sits in the element that draws the icon.
+    text: 'P',
     colour: 'rgb(200, 30, 30)',
-    display: 'inline',
-    select: 'none',
+    display: 'inline-block',
   })
   expect(pictured.icon!.mask).toContain('data:image/svg+xml')
-  // 0.9em for the picture and 0.3em before the text.
-  expect(pictured.icon!.width).toBeCloseTo(pictured.font * 1.2, 0)
+  // The picture is 0.9em square, with 0.3em before the text.
+  expect(pictured.icon!.width).toBeCloseTo(pictured.font * 0.9, 0)
+  expect(pictured.icon!.height).toBeCloseTo(pictured.font * 0.9, 0)
+  expect(pictured.icon!.advance).toBeCloseTo(pictured.font * 1.2, 0)
   // The icon is not part of the link's name or text.
   await expect(
     page.getByRole('link', { name: 'Pictured', exact: true }),
@@ -127,7 +134,8 @@ test('a host sets the look through variables, and can hide the icon @linked-file
     thickness: '3px',
     offset: '5px',
   })
-  expect(pictured.icon!.width).toBeCloseTo(24, 0)
+  expect(pictured.icon!.width).toBeCloseTo(20, 0)
+  expect(pictured.icon!.advance).toBeCloseTo(24, 0)
   // A missing link keeps its dashed line, and takes the thickness too.
   expect(await look(page, 'Missing note')).toMatchObject({
     line: 'underline',
@@ -145,7 +153,8 @@ test('a host sets the look through variables, and can hide the icon @linked-file
     content: '.inkkit-root { --inkkit-wiki-link-icon-display: none }',
   })
   const hidden = await look(page, 'Pictured')
-  expect(hidden.icon).toMatchObject({ display: 'none', width: 0 })
+  expect(hidden.icon).toMatchObject({ display: 'none' })
+  expect(hidden.icon!.advance).toBeCloseTo(0, 0)
   expect(hidden.line).toBe('underline')
 })
 
@@ -159,35 +168,105 @@ test('the icon stays on the first line of its first word, however the text wraps
     const words = Array.from({ length: filler }, () => 'word').join(' ')
     await open(page, openFixture, `${words} [[${alias}]] end\n`, css)
     const placed = await page.locator('.inkkit-wiki-link').evaluate((link) => {
-      const icon = link
-        .querySelector('.inkkit-wiki-link-icon')!
-        .getBoundingClientRect()
-      const text = link.lastChild as Text
-      const first = document.createRange()
-      first.setStart(text, 0)
-      first.setEnd(text, 3)
-      const word = first.getBoundingClientRect()
+      const lead = link.querySelector('.inkkit-wiki-link-lead')!
+      const rest = lead.nextSibling as Text
+      const range = (node: Node, from: number, to: number) => {
+        const r = document.createRange()
+        r.setStart(node, from)
+        r.setEnd(node, to)
+        return r.getBoundingClientRect()
+      }
+      const first = range(lead.firstChild!, 0, 1)
+      const second = range(rest, 0, 1)
       const all = document.createRange()
-      all.selectNodeContents(text)
+      all.selectNodeContents(link)
       return {
-        iconTop: icon.top,
-        iconRight: icon.right,
-        wordTop: word.top,
-        wordLeft: word.left,
+        // One box means the icon and the first character are on one line.
+        leadBoxes: lead.getClientRects().length,
+        iconToCharacter: first.left - lead.getBoundingClientRect().left,
+        firstTop: first.top,
+        secondTop: second.top,
+        wordText: lead.textContent! + rest.data.split(' ')[0],
         lines: new Set([...all.getClientRects()].map((r) => Math.round(r.top)))
           .size,
       }
     })
+    const font = await page
+      .locator('.inkkit-wiki-link')
+      .evaluate((link) => Number.parseFloat(getComputedStyle(link).fontSize))
+    expect(placed.wordText, `filler ${filler}`).toBe('Weekend')
     expect(placed.lines, `filler ${filler}`).toBeGreaterThan(1)
+    expect(placed.leadBoxes, `filler ${filler}`).toBe(1)
+    expect(placed.iconToCharacter, `filler ${filler}`).toBeCloseTo(
+      font * 1.2,
+      0,
+    )
+    // The word is not split after its first character.
     expect(
-      Math.abs(placed.iconTop - placed.wordTop),
+      Math.abs(placed.firstTop - placed.secondTop),
       `filler ${filler}`,
-    ).toBeLessThan(8)
-    expect(
-      Math.abs(placed.iconRight - placed.wordLeft),
-      `filler ${filler}`,
-    ).toBeLessThan(1)
+    ).toBeLessThan(2)
   }
+})
+
+test('the icon paints its shape, not the box it is drawn in @linked-files', async ({
+  page,
+  openFixture,
+}) => {
+  // The fixture's icon is a square at the middle of its box, half its width and height. An engine
+  // that ignores the mask paints the whole box, and WebKit does that for an inline element.
+  await open(
+    page,
+    openFixture,
+    'Go [[Pictured]] on.\n',
+    `.inkkit-root {
+      --inkkit-wiki-link-icon-size: 40px;
+      --inkkit-wiki-link-icon-gap: 20px;
+    }`,
+  )
+  const lead = page.locator('.inkkit-wiki-link-lead')
+  await lead.scrollIntoViewIfNeeded()
+  const box = (await lead.boundingBox())!
+  const clip = {
+    x: Math.floor(box.x) - 4,
+    y: Math.floor(box.y) - 20,
+    width: 100,
+    height: Math.ceil(box.height) + 40,
+  }
+  const shot = await page.screenshot({ clip, scale: 'css' })
+  const painted = await page.evaluate(
+    async ([base64, width, height]) => {
+      const bitmap = await createImageBitmap(
+        await (await fetch(`data:image/png;base64,${base64}`)).blob(),
+      )
+      const canvas = document.createElement('canvas')
+      canvas.width = width as number
+      canvas.height = height as number
+      const context = canvas.getContext('2d')!
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+      const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
+      let [left, top, right, bottom] = [Infinity, Infinity, -1, -1]
+      for (let y = 0; y < canvas.height; y++)
+        for (let x = 0; x < canvas.width; x++) {
+          const at = (y * canvas.width + x) * 4
+          if (data[at]! > 150 && data[at + 1]! < 90 && data[at + 2]! < 90) {
+            left = Math.min(left, x)
+            top = Math.min(top, y)
+            right = Math.max(right, x + 1)
+            bottom = Math.max(bottom, y + 1)
+          }
+        }
+      return { left, top, right, bottom }
+    },
+    [shot.toString('base64'), clip.width, clip.height] as const,
+  )
+  // The square is 20px, 10px inside the 40px box, and nothing is painted in the gap after it.
+  expect(painted.right - painted.left).toBeGreaterThanOrEqual(19)
+  expect(painted.right - painted.left).toBeLessThanOrEqual(21)
+  expect(painted.bottom - painted.top).toBeGreaterThanOrEqual(19)
+  expect(painted.bottom - painted.top).toBeLessThanOrEqual(21)
+  expect(painted.left - (box.x - clip.x)).toBeGreaterThanOrEqual(9)
+  expect(painted.left - (box.x - clip.x)).toBeLessThanOrEqual(11)
 })
 
 test('the icon takes no caret step and leaves the drawn selection as it was @linked-files', async ({
@@ -252,10 +331,9 @@ test('print and the pointer cue leave the icon alone @linked-files', async ({
 }) => {
   await open(page, openFixture)
   await page.emulateMedia({ media: 'print' })
-  expect((await look(page, 'Pictured')).icon).toMatchObject({
-    display: 'none',
-    width: 0,
-  })
+  const printed = (await look(page, 'Pictured')).icon
+  expect(printed).toMatchObject({ display: 'none' })
+  expect(printed!.advance).toBeCloseTo(0, 0)
   await page.emulateMedia({ media: 'screen' })
   // Held Mod makes links open on click, and the icon shows the same pointer.
   await page.evaluate(() =>
@@ -268,7 +346,10 @@ test('print and the pointer cue leave the icon alone @linked-files', async ({
     .filter({ hasText: 'Pictured' })
     .evaluate((link) => [
       getComputedStyle(link).cursor,
-      getComputedStyle(link.querySelector('.inkkit-wiki-link-icon')!).cursor,
+      getComputedStyle(
+        link.querySelector('.inkkit-wiki-link-lead')!,
+        '::before',
+      ).cursor,
     ])
   expect(cursors).toEqual(['pointer', 'pointer'])
   // The focus ring surrounds the icon with the text.

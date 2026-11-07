@@ -712,25 +712,27 @@
   text-decoration-style: dashed;
 }
 
-/* The icon is an empty inline box whose left padding holds the picture, so it adds no text, no
-   break opportunity and no caret position, and it stays with the first word of the link. */
-.inkkit-root .inkkit-wiki-link-icon {
-  display: var(--inkkit-wiki-link-icon-display, inline);
-  padding-inline-start: calc(
-    var(--inkkit-wiki-link-icon-size, 0.9em) +
-      var(--inkkit-wiki-link-icon-gap, 0.3em)
-  );
+/* The icon is generated content before the link's first character, so it adds no text, no caret
+   position and nothing to copy. It is an inline-block with a size of its own because WebKit
+   paints the whole box of an inline element in the mask's color. A line may break either side of
+   such a box, so the character it sits before is held with it by no-wrap. */
+.inkkit-root .inkkit-wiki-link-lead {
+  white-space: nowrap;
+}
+
+.inkkit-root .inkkit-wiki-link-lead::before {
+  content: '';
+  display: var(--inkkit-wiki-link-icon-display, inline-block);
+  width: var(--inkkit-wiki-link-icon-size, 0.9em);
+  height: var(--inkkit-wiki-link-icon-size, 0.9em);
+  margin-inline-end: var(--inkkit-wiki-link-icon-gap, 0.3em);
+  /* Centers the square on the text's height. */
+  vertical-align: calc(0.35em - var(--inkkit-wiki-link-icon-size, 0.9em) / 2);
   background-color: var(--_inkkit-wiki-icon-color, currentColor);
   mask-image: var(--_inkkit-wiki-icon);
   mask-repeat: no-repeat;
-  mask-position: left center;
-  mask-size: var(--inkkit-wiki-link-icon-size, 0.9em)
-    var(--inkkit-wiki-link-icon-size, 0.9em);
-  user-select: none;
-}
-
-.inkkit-root .inkkit-wiki-link-icon:dir(rtl) {
-  mask-position: right center;
+  mask-position: center;
+  mask-size: 100% 100%;
 }
 
 @media (forced-colors: active) {
@@ -738,7 +740,7 @@
     color: LinkText;
   }
 
-  .inkkit-root .inkkit-wiki-link-icon {
+  .inkkit-root .inkkit-wiki-link-lead::before {
     forced-color-adjust: none;
     background-color: LinkText;
   }
@@ -1178,7 +1180,7 @@
   }
 
   .inkkit-root .inkkit-comment,
-  .inkkit-root .inkkit-wiki-link-icon,
+  .inkkit-root .inkkit-wiki-link-lead::before,
   .inkkit-root [data-inkkit-callout-toggle],
   .inkkit-root .ProseMirror pre .inkkit-copy,
   .inkkit-root .inkkit-table-controls,

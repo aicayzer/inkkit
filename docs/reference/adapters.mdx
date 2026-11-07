@@ -369,7 +369,7 @@ A `WikiLinkPresentation` is the optional part of a [`resolve`](#wikilinkadapter)
 
 <ResponseField name="icon" type="string">
 
-The URL of an image, such as a `data:` URL of an SVG. Inkkit draws it as a mask, so one shape takes any color, and the SVG's own colors are ignored. The icon is decoration only. It is not part of the link's text or accessible name, it is not selectable, and it never reaches the Markdown source, the clipboard, print output or the saved bytes. It stays with the link's first word when the link wraps. It is not drawn in source mode, where there are no links, or in print.
+The URL of an image, such as a `data:` URL of an SVG. Inkkit draws it as a mask, so one shape takes any color, and the SVG's own colors are ignored. The icon is decoration only. It is not part of the link's text or accessible name, it is not selectable, and it never reaches the Markdown source, the clipboard, print output or the saved bytes. It stays with the link's first character when the link wraps. It is not drawn in source mode, where there are no links, or in print.
 
 The URL must serve an image offline in your page. A `data:` URL of another type, an `http:` or `https:` address, and a `javascript:` or `vbscript:` address are refused: the link is drawn without an icon and the call reports `file-unavailable`. To hide every icon while keeping the answers, set [`--inkkit-wiki-link-icon-display`](/reference/appearance#wiki-link-tokens) to `none`.
 
@@ -377,7 +377,7 @@ The URL must serve an image offline in your page. A `data:` URL of another type,
 
 <ResponseField name="iconColor" type="string">
 
-The icon's CSS color. Without it the icon takes the link text's color. A value that is not one CSS color is refused like an unusable `icon`. In forced-colors mode the icon takes the system link color.
+The icon's CSS color. Without it the icon takes the link text's color. It accepts what the browser reads as a `color` value: a named color, a hex value, a color function such as `rgb()` or `hsl()`, a system color, `currentColor`, and a `var()` reference such as `var(--note-icon)`. A `var()` is read where the icon is drawn, so it takes a custom property from the link's ancestors. An undefined variable, `inherit` and `initial` give the link text's color. A variable that holds something other than a color draws an icon that cannot be seen. Any other value, and one that holds a second declaration, is refused like an unusable `icon`. In forced-colors mode the icon takes the system link color.
 
 </ResponseField>
 
