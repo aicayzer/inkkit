@@ -681,6 +681,10 @@ type FixtureContext = {
   documentId: string
   generation: number
 }
+/** A solid square, for a wiki link that the fixture draws with an icon. */
+const wikiIcon =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3Cpath d='M0 0h1v1H0z'/%3E%3C/svg%3E"
+
 export class ControlledFiles {
   readonly events: {
     operation: string
@@ -895,6 +899,8 @@ export class ControlledFiles {
         reference: reference.target,
         raw: reference.raw,
       })
+      if (reference.target === 'Pictured')
+        return { icon: wikiIcon, iconColor: 'rgb(200, 30, 30)' }
       return { missing: reference.target === 'Missing note' }
     },
     open: (

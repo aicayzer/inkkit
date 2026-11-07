@@ -679,26 +679,68 @@
   font-weight: 700;
 }
 
-.inkkit-root .ProseMirror a,
-.inkkit-root .inkkit-wiki-link {
+.inkkit-root .ProseMirror a {
   color: var(--_inkkit-accent);
   text-decoration: none;
   text-underline-offset: 2px;
 }
 
-.inkkit-root .ProseMirror a:hover,
-.inkkit-root .inkkit-wiki-link:hover {
+.inkkit-root .ProseMirror a:hover {
   text-decoration: underline;
+}
+
+/* A wiki link reads each part of its look from a variable whose default is the plain look. */
+.inkkit-root .inkkit-wiki-link {
+  color: var(--inkkit-wiki-link-color, var(--_inkkit-accent));
+  text-decoration-line: var(--inkkit-wiki-link-underline, none);
+  text-decoration-style: solid;
+  text-decoration-thickness: var(--inkkit-wiki-link-underline-thickness, auto);
+  text-underline-offset: var(--inkkit-wiki-link-underline-offset, 2px);
+}
+
+.inkkit-root .inkkit-wiki-link:hover {
+  color: var(
+    --inkkit-wiki-link-hover-color,
+    var(--inkkit-wiki-link-color, var(--_inkkit-accent))
+  );
+  text-decoration-line: var(--inkkit-wiki-link-hover-underline, underline);
 }
 
 /* A missing target differs by its line, not only its color, which forced colors replace. */
 .inkkit-root .inkkit-wiki-link[data-missing] {
-  text-decoration: underline dashed;
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+}
+
+/* The icon is an empty inline box whose left padding holds the picture, so it adds no text, no
+   break opportunity and no caret position, and it stays with the first word of the link. */
+.inkkit-root .inkkit-wiki-link-icon {
+  display: var(--inkkit-wiki-link-icon-display, inline);
+  padding-inline-start: calc(
+    var(--inkkit-wiki-link-icon-size, 0.9em) +
+      var(--inkkit-wiki-link-icon-gap, 0.3em)
+  );
+  background-color: var(--_inkkit-wiki-icon-color, currentColor);
+  mask-image: var(--_inkkit-wiki-icon);
+  mask-repeat: no-repeat;
+  mask-position: left center;
+  mask-size: var(--inkkit-wiki-link-icon-size, 0.9em)
+    var(--inkkit-wiki-link-icon-size, 0.9em);
+  user-select: none;
+}
+
+.inkkit-root .inkkit-wiki-link-icon:dir(rtl) {
+  mask-position: right center;
 }
 
 @media (forced-colors: active) {
   .inkkit-root .inkkit-wiki-link {
     color: LinkText;
+  }
+
+  .inkkit-root .inkkit-wiki-link-icon {
+    forced-color-adjust: none;
+    background-color: LinkText;
   }
 }
 
@@ -1136,6 +1178,7 @@
   }
 
   .inkkit-root .inkkit-comment,
+  .inkkit-root .inkkit-wiki-link-icon,
   .inkkit-root [data-inkkit-callout-toggle],
   .inkkit-root .ProseMirror pre .inkkit-copy,
   .inkkit-root .inkkit-table-controls,

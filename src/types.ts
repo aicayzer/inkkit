@@ -236,15 +236,23 @@ export interface WikiLinkReference {
   /** The text shown: the alias, or the target and fragment. */
   label: string
 }
+/** How a resolved wiki link is drawn, beyond its text. */
+export interface WikiLinkPresentation {
+  /** An image drawn as a mask before the link text, such as a data URL of an SVG. It stays with the
+   *  first word of the link and is decoration only. A `missing` link ignores it. */
+  icon?: string
+  /** The icon's CSS color. Without it the icon takes the link text's color. */
+  iconColor?: string
+}
 /** Resolves and opens wiki links. The host owns lookup, permissions and navigation. */
 export interface WikiLinkAdapter {
   /** Matches note names for a typed `[[` query. Late answers are ignored. */
   suggest?(query: string, context: FileContext): Promise<readonly string[]>
-  /** Whether the target is missing, for presentation only. */
+  /** Whether the target is missing, and how to draw it if it is not, for presentation only. */
   resolve?(
     reference: WikiLinkReference,
     context: DocumentContext,
-  ): { missing?: boolean } | undefined
+  ): ({ missing?: boolean } & WikiLinkPresentation) | undefined
   /** Called by Mod-click, and by Enter or Space on the focused link. */
   open(reference: WikiLinkReference, context: DocumentContext): void
 }
