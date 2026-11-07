@@ -79,7 +79,7 @@ The defaults below apply to the base stylesheet. Optional presets override token
 
 ### Wiki link tokens
 
-A wiki link reads its whole look from these tokens. The defaults are the plain look, so setting none of them changes nothing. [Style wiki links](/guides/appearance#style-wiki-links) shows an example. The icon itself, and its color, come from [`WikiLinkAdapter.resolve`](/reference/adapters#wikilinkpresentation).
+A wiki link reads its whole look from these tokens. The defaults are the plain look, so setting none of them changes nothing. [Style wiki links](/guides/appearance#style-wiki-links) shows an example. The icon, its color and a link's tint come from [`WikiLinkAdapter.resolve`](/reference/adapters#wikilinkpresentation).
 
 | Token                                    | Default                    | What it styles                                                                                                          |
 | ---------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -92,6 +92,11 @@ A wiki link reads its whole look from these tokens. The defaults are the plain l
 | `--inkkit-wiki-link-icon-display`        | `inline-block`             | Set `none` to hide every icon and keep the rest of the look. An icon takes no space when hidden.                        |
 | `--inkkit-wiki-link-icon-size`           | `0.9em`                    | Width and height of an icon.                                                                                            |
 | `--inkkit-wiki-link-icon-gap`            | `0.3em`                    | Space between an icon and the link text.                                                                                |
+| `--inkkit-wiki-link-background`          | `transparent`              | Background of a wiki link, and of a link whose answer has no tint.                                                      |
+| `--inkkit-wiki-link-tint-strength`       | `0%`                       | How much of a link's `tint` replaces that background, from `0%` (none) to `100%` (all of it). A missing link has none.  |
+| `--inkkit-wiki-link-padding-inline`      | `0`                        | Space between a link's text and its background at the start and the end. A link that wraps keeps it on every line.      |
+| `--inkkit-wiki-link-padding-block`       | `0`                        | Space between a link's text and its background above and below. It moves no line.                                       |
+| `--inkkit-wiki-link-radius`              | `0`                        | Corner radius of a link's background.                                                                                   |
 
 Diagram previews use neutral surfaces and connectors. Category colors use the **Pale** palette by default: 35% color mixed with 65% background. For the stronger **Softer** option, set:
 

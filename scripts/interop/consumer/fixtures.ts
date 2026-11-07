@@ -901,7 +901,13 @@ export class ControlledFiles {
         raw: reference.raw,
       })
       if (reference.target === 'Pictured')
-        return { icon: wikiIcon, iconColor: 'rgb(200, 30, 30)' }
+        return {
+          icon: wikiIcon,
+          iconColor: 'rgb(200, 30, 30)',
+          tint: 'rgb(30, 60, 200)',
+        }
+      if (reference.target === 'Tinted') return { tint: 'rgb(30, 60, 200)' }
+      if (reference.target === 'Seen') return { tint: 'var(--link-seen)' }
       return { missing: reference.target === 'Missing note' }
     },
     open: (

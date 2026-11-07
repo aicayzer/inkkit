@@ -125,7 +125,20 @@ Your app decides how a wiki link looks. Inkkit keeps no look of its own for one,
 
 To offer a look without the icon, set `--inkkit-wiki-link-icon-display: none` and keep the underline. Switch between looks by changing the tokens on your root, with no remount.
 
-An icon comes from the adapter, not from CSS, because it depends on what the link points to. Return `icon` and `iconColor` from [`WikiLinkAdapter.resolve`](/reference/adapters#wikilinkpresentation), for example one for each type of note. The icon is decoration only: it is not read aloud, selected, copied, printed or saved. A missing link has none. [Wiki link tokens](/reference/appearance#wiki-link-tokens) lists every setting and its default.
+A link can also be a chip. Give it a background, padding and corners; a link then keeps them on every line it wraps to. To tint each chip in the color of its kind of item, return a `tint` from `resolve` and set a strength. The tint cannot be read from your root, so Inkkit mixes it in for you:
+
+```css
+.document-editor {
+  --inkkit-wiki-link-background: rgb(0 0 0 / 6%);
+  --inkkit-wiki-link-tint-strength: 100%;
+  --inkkit-wiki-link-padding-inline: 0.4em;
+  --inkkit-wiki-link-radius: 0.4em;
+}
+```
+
+A link with no tint keeps the plain background. A strength under `100%` mixes the tint into that background.
+
+An icon comes from the adapter, not from CSS, because it depends on what the link points to. Return `icon`, `iconColor` and `tint` from [`WikiLinkAdapter.resolve`](/reference/adapters#wikilinkpresentation), for example one for each type of note. The icon is decoration only: it is not read aloud, selected, copied, printed or saved. A missing link has none. [Wiki link tokens](/reference/appearance#wiki-link-tokens) lists every setting and its default.
 
 ## The caret
 

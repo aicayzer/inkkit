@@ -369,3 +369,150 @@ test('print and the pointer cue leave the icon alone @linked-files', async ({
   })
   expect(ring).toMatchObject({ focused: true, style: 'solid', width: '2px' })
 })
+
+// The background as the pixel it paints, since engines write a mixed color in different forms.
+const fill = (page: Page, name: string) =>
+  page
+    .getByRole('link', { name, exact: true })
+    .first()
+    .evaluate((link) => {
+      const style = getComputedStyle(link)
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 1
+      const context = canvas.getContext('2d')!
+      context.fillStyle = style.backgroundColor
+      context.fillRect(0, 0, 1, 1)
+      return {
+        pixel: [...context.getImageData(0, 0, 1, 1).data],
+        radius: style.borderTopLeftRadius,
+        paddingInline: style.paddingLeft,
+        paddingBlock: style.paddingTop,
+      }
+    })
+
+const pills = `.inkkit-root {
+  --inkkit-wiki-link-background: rgb(200, 200, 200);
+  --inkkit-wiki-link-padding-inline: 6px;
+  --inkkit-wiki-link-padding-block: 2px;
+  --inkkit-wiki-link-radius: 5px;
+}`
+const names = ['Pictured', 'Tinted', 'Plain', 'Missing note']
+const text = names.map((name) => `[[${name}]]`).join(' ') + '\n'
+
+test('the default look has no fill, padding or corners, so a tint changes nothing @linked-files', async ({
+  page,
+  openFixture,
+}) => {
+  await open(page, openFixture, text)
+  for (const name of names)
+    expect(await fill(page, name), name).toEqual({
+      pixel: [0, 0, 0, 0],
+      radius: '0px',
+      paddingInline: '0px',
+      paddingBlock: '0px',
+    })
+})
+
+test('a host fills links with a background, and a tint mixes in by its strength @linked-files', async ({
+  page,
+  openFixture,
+}) => {
+  await open(page, openFixture, text, pills)
+  // Without a strength, every link has the plain background and the tint is not used.
+  for (const name of names)
+    expect(await fill(page, name), name).toEqual({
+      pixel: [200, 200, 200, 255],
+      radius: '5px',
+      paddingInline: '6px',
+      paddingBlock: '2px',
+    })
+  await page.addStyleTag({
+    content: '.inkkit-root { --inkkit-wiki-link-tint-strength: 100% }',
+  })
+  // A tinted link takes its tint; a link without one, and a missing link, keep the background.
+  expect((await fill(page, 'Pictured')).pixel).toEqual([30, 60, 200, 255])
+  expect((await fill(page, 'Tinted')).pixel).toEqual([30, 60, 200, 255])
+  expect((await fill(page, 'Plain')).pixel).toEqual([200, 200, 200, 255])
+  expect((await fill(page, 'Missing note')).pixel).toEqual([200, 200, 200, 255])
+  await page.addStyleTag({
+    content: '.inkkit-root { --inkkit-wiki-link-tint-strength: 50% }',
+  })
+  expect((await fill(page, 'Tinted')).pixel).toEqual([115, 130, 200, 255])
+  // A missing link keeps its dashed look under a fill.
+  expect(await look(page, 'Missing note')).toMatchObject({
+    line: 'underline',
+    lineStyle: 'dashed',
+  })
+  // A tint with no background of the host's own mixes over nothing.
+  await page.addStyleTag({
+    content: `.inkkit-root {
+      --inkkit-wiki-link-background: transparent;
+      --inkkit-wiki-link-tint-strength: 50%;
+    }`,
+  })
+  // A half-transparent pixel loses a little in the canvas, so each channel may be one off.
+  const half = (await fill(page, 'Tinted')).pixel
+  ;[30, 60, 200, 128].forEach((want, index) =>
+    expect(Math.abs(half[index]! - want)).toBeLessThanOrEqual(1),
+  )
+  expect((await fill(page, 'Plain')).pixel).toEqual([0, 0, 0, 0])
+  expect((await observe(page)).snapshot!.text).toBe(text)
+})
+
+test('a tint may name a variable, which is read where the link is drawn @linked-files', async ({
+  page,
+  openFixture,
+}) => {
+  await open(
+    page,
+    openFixture,
+    '[[Seen]]\n',
+    `${pills}
+    .inkkit-root {
+      --link-seen: rgb(1, 2, 3);
+      --inkkit-wiki-link-tint-strength: 100%;
+    }`,
+  )
+  expect((await fill(page, 'Seen')).pixel).toEqual([1, 2, 3, 255])
+  // A variable the page does not define leaves the link its plain background.
+  await page.addStyleTag({ content: '.inkkit-root { --link-seen: initial }' })
+  expect((await fill(page, 'Seen')).pixel).toEqual([200, 200, 200, 255])
+})
+
+test('a pill that wraps keeps its padding and corners on each line @linked-files', async ({
+  page,
+  openFixture,
+}) => {
+  const alias = 'Tinted|Weekend itinerary notes for the long trip home again'
+  await open(
+    page,
+    openFixture,
+    `A [[${alias}]] end\n`,
+    `${pills}
+    .inkkit-root { --inkkit-reading-width: 200px }`,
+  )
+  const lines = await page.locator('.inkkit-wiki-link').evaluate((link) => {
+    const range = document.createRange()
+    range.selectNodeContents(link)
+    const boxes = [...link.getClientRects()]
+    return {
+      lines: new Set([...range.getClientRects()].map((r) => Math.round(r.top)))
+        .size,
+      boxes: boxes.length,
+      breakStyle: getComputedStyle(link).getPropertyValue(
+        'box-decoration-break',
+      ),
+      // The box of the first line starts a padding before its first character.
+      lead: range.getClientRects()[0]!.left - boxes[0]!.left,
+      // The box of the last line ends a padding after its last character.
+      trail:
+        boxes.at(-1)!.right -
+        range.getClientRects().item(range.getClientRects().length - 1)!.right,
+    }
+  })
+  expect(lines.lines).toBeGreaterThan(1)
+  expect(lines.boxes).toBe(lines.lines)
+  expect(lines.breakStyle).toBe('clone')
+  expect(lines.lead).toBeCloseTo(6, 0)
+  expect(lines.trail).toBeCloseTo(6, 0)
+})

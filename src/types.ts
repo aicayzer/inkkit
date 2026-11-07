@@ -244,6 +244,10 @@ export interface WikiLinkPresentation {
   /** The icon's CSS color: a color value or a `var()` reference. Without it, or with an undefined
    *  variable, the icon takes the link text's color. */
   iconColor?: string
+  /** A CSS color for a host's look to fill the link with, such as the tint of its kind of item. It
+   *  is a color value or a `var()` reference, and a link without one fills with the host's plain
+   *  background. A `missing` link ignores it. */
+  tint?: string
 }
 /** Resolves and opens wiki links. The host owns lookup, permissions and navigation. */
 export interface WikiLinkAdapter {

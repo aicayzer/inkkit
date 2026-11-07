@@ -165,3 +165,57 @@ test('source mode draws no links and so no icons', async () => {
   expect(root.querySelectorAll('.inkkit-wiki-link-lead')).toHaveLength(0)
   expect(editor.snapshot().text).toBe(source)
 })
+
+const tintOf = (link: Element) =>
+  (link as HTMLElement).style.getPropertyValue('--_inkkit-wiki-link-tint')
+
+test('a link carries its tint with or without an icon, and a refresh follows the host answer', async () => {
+  let answer: (reference: WikiLinkReference) => unknown = (reference) =>
+    reference.target === 'Gone'
+      ? { missing: true, tint: 'rgba(0, 0, 255, 0.2)' }
+      : { tint: 'rgba(0, 0, 255, 0.2)' }
+  const { editor, icons, root, errors } = await mount((reference) =>
+    answer(reference),
+  )
+  const links = () => [
+    ...root.querySelectorAll<HTMLElement>('.inkkit-wiki-link'),
+  ]
+  const present = links().filter((link) => link.textContent === 'Plan')
+  expect(present).toHaveLength(3)
+  for (const link of present) {
+    expect(tintOf(link)).toBe('rgba(0, 0, 255, 0.2)')
+    // A tint is a colour only: the link keeps its one text node and gains no icon.
+    expect(link.childNodes).toHaveLength(1)
+  }
+  expect(icons()).toHaveLength(0)
+  // A missing target is drawn as missing and takes no tint.
+  const gone = links().find((link) => link.textContent === 'Gone')!
+  expect(gone.getAttribute('data-missing')).toBe('true')
+  expect(tintOf(gone)).toBe('')
+  expect(errors).toEqual([])
+
+  answer = () => ({ icon: glyph, tint: 'var(--chip)' })
+  editor.refreshReferences()
+  expect(icons()).toHaveLength(4)
+  for (const link of links().filter((link) => link.textContent !== 'Gone'))
+    expect(tintOf(link)).toBe('var(--chip)')
+
+  answer = () => ({})
+  editor.refreshReferences()
+  expect(icons()).toHaveLength(0)
+  for (const link of links()) expect(tintOf(link)).toBe('')
+  expect(editor.snapshot().text).toBe(source)
+})
+
+test.each([
+  ['a second declaration', 'red; background: url(x)'],
+  ['text that is not a color', 'wide'],
+  ['an empty string', ''],
+])('a tint of %s is refused with its icon, and reported', async (_, tint) => {
+  const { icons, root, errors } = await mount(() => ({ icon: glyph, tint }))
+  expect(icons()).toHaveLength(0)
+  for (const link of root.querySelectorAll('.inkkit-wiki-link'))
+    expect(tintOf(link)).toBe('')
+  expect(root.querySelectorAll('.inkkit-wiki-link')).toHaveLength(4)
+  expect(errors).toContain('file-unavailable')
+})
