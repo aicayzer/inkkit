@@ -21,7 +21,7 @@ const evidence = {
   fixtureSha256: hash('scripts/interop/consumer/fixtures.ts'),
   installedModulesSha256: hash('node_modules/.modules.yaml'),
   installedProseMirror: readdirSync('node_modules/.pnpm').filter((name) =>
-    name.startsWith('prosemirror-view@1.42.6_patch_hash=808819'),
+    name.startsWith('prosemirror-view@1.42.6_patch_hash=d09458'),
   ),
   cases: [],
 }
