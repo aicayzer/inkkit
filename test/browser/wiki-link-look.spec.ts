@@ -162,6 +162,43 @@ test('a host sets the look through variables, and can hide the icon @linked-file
   expect(hidden.line).toBe('underline')
 })
 
+test('a host sets the line style, cursor and missing line through variables @linked-files', async ({
+  page,
+  openFixture,
+}) => {
+  await open(
+    page,
+    openFixture,
+    source,
+    `.inkkit-root {
+      --inkkit-wiki-link-underline: underline;
+      --inkkit-wiki-link-underline-style: dotted;
+      --inkkit-wiki-link-cursor: pointer;
+      --inkkit-wiki-link-missing-underline-style: dotted;
+      --inkkit-wiki-link-missing-underline-color: rgb(9, 8, 7);
+    }`,
+  )
+  const cursor = (name: string) =>
+    page
+      .getByRole('link', { name, exact: true })
+      .first()
+      .evaluate((link) => getComputedStyle(link).cursor)
+  expect(await look(page, 'Plain')).toMatchObject({
+    lineStyle: 'dotted',
+  })
+  expect(await cursor('Plain')).toBe('pointer')
+  expect(await look(page, 'Missing note')).toMatchObject({
+    line: 'underline',
+    lineStyle: 'dotted',
+    lineColor: 'rgb(9, 8, 7)',
+  })
+  expect((await look(page, 'Plain')).lineColor).not.toBe('rgb(9, 8, 7)')
+  // Forced colors keep a missing link's line unlike a found one's, whatever the host sets.
+  await page.emulateMedia({ forcedColors: 'active' })
+  expect((await look(page, 'Plain')).lineStyle).toBe('solid')
+  expect((await look(page, 'Missing note')).lineStyle).toBe('dashed')
+})
+
 test('the icon stays on the first line of its first word, however the text wraps @linked-files', async ({
   page,
   openFixture,

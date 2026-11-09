@@ -76,7 +76,7 @@
    NOTICE. */
 .inkkit-root .inkkit-table-block {
   position: relative;
-  margin: 0 0
+  margin: var(--inkkit-table-spacing-before, 0) 0
     var(--inkkit-paragraph-spacing, calc(var(--_inkkit-font-size) * 0.667));
 }
 .inkkit-root .inkkit-table-scroll {
@@ -133,8 +133,9 @@
   );
 }
 .inkkit-root .ProseMirror th {
-  background: var(--_inkkit-code-bg);
-  font-weight: 600;
+  color: var(--inkkit-table-header-color, inherit);
+  background: var(--inkkit-table-header-background, var(--_inkkit-code-bg));
+  font-weight: var(--inkkit-table-header-font-weight, 600);
 }
 .inkkit-root .ProseMirror td p,
 .inkkit-root .ProseMirror th p {
@@ -197,6 +198,10 @@
 }
 .inkkit-root .inkkit-table-controls .inkkit-table-grip:not(:disabled) {
   cursor: grab;
+}
+/* Before the expanded rule below, which wins at equal weight. */
+.inkkit-root .inkkit-table-controls .inkkit-table-grip {
+  color: var(--inkkit-table-grip-color, var(--_inkkit-muted));
 }
 .inkkit-root .inkkit-table-grip[data-inkkit-axis='column'] {
   width: 24px;
@@ -693,10 +698,11 @@
 .inkkit-root .inkkit-wiki-link {
   color: var(--inkkit-wiki-link-color, var(--_inkkit-accent));
   text-decoration-line: var(--inkkit-wiki-link-underline, none);
-  text-decoration-style: solid;
+  text-decoration-style: var(--inkkit-wiki-link-underline-style, solid);
   text-decoration-thickness: var(--inkkit-wiki-link-underline-thickness, auto);
   text-decoration-color: var(--inkkit-wiki-link-underline-color, currentcolor);
   text-underline-offset: var(--inkkit-wiki-link-underline-offset, 2px);
+  cursor: var(--inkkit-wiki-link-cursor, inherit);
   padding: var(--inkkit-wiki-link-padding-block, 0)
     var(--inkkit-wiki-link-padding-inline, 0);
   border-radius: var(--inkkit-wiki-link-radius, 0);
@@ -728,7 +734,14 @@
 /* A missing target differs by its line, not only its color, which forced colors replace. */
 .inkkit-root .inkkit-wiki-link[data-missing] {
   text-decoration-line: underline;
-  text-decoration-style: dashed;
+  text-decoration-style: var(
+    --inkkit-wiki-link-missing-underline-style,
+    dashed
+  );
+  text-decoration-color: var(
+    --inkkit-wiki-link-missing-underline-color,
+    var(--inkkit-wiki-link-underline-color, currentcolor)
+  );
 }
 
 /* The icon is generated content before the link's first character, so it adds no text, no caret
@@ -757,6 +770,12 @@
 @media (forced-colors: active) {
   .inkkit-root .inkkit-wiki-link {
     color: LinkText;
+    text-decoration-style: solid;
+  }
+
+  /* Whatever a host sets, a missing link keeps a line of another kind than a found one. */
+  .inkkit-root .inkkit-wiki-link[data-missing] {
+    text-decoration-style: dashed;
   }
 
   .inkkit-root .inkkit-wiki-link-lead::before {
