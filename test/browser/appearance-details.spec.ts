@@ -91,6 +91,48 @@ for (const scheme of ['light', 'dark'] as const) {
   })
 }
 
+test('host tokens set table spacing, header look and grip dots', async ({
+  page,
+  openFixture,
+}) => {
+  await openFixture()
+  await page.evaluate(
+    (text) => window.inkkitPlayground.replaceDocument(text, 'md'),
+    source,
+  )
+  const block = page.locator('#editor .inkkit-table-block')
+  const header = page.locator('#editor th').first()
+  const marginTop = () => block.evaluate((el) => getComputedStyle(el).marginTop)
+  const weight = () => header.evaluate((el) => getComputedStyle(el).fontWeight)
+  expect(await marginTop()).toBe('0px')
+  expect(await weight()).toBe('600')
+  await page.addStyleTag({
+    content: `#editor {
+      --inkkit-table-spacing-before: 12px;
+      --inkkit-table-header-background: rgb(240, 241, 242);
+      --inkkit-table-header-font-weight: 500;
+      --inkkit-table-header-color: rgb(50, 60, 70);
+      --inkkit-table-grip-color: rgb(200, 201, 202);
+    }`,
+  })
+  expect(await marginTop()).toBe('12px')
+  expect(await weight()).toBe('500')
+  expect(
+    await header.evaluate((el) => {
+      const style = getComputedStyle(el)
+      return [style.backgroundColor, style.color]
+    }),
+  ).toEqual(['rgb(240, 241, 242)', 'rgb(50, 60, 70)'])
+  await page.locator('#editor td').last().click()
+  const grip = page
+    .locator('.inkkit-table-controls')
+    .getByRole('button', { name: 'Move column', exact: true })
+  await expect(grip).toBeVisible()
+  expect(await grip.evaluate((el) => getComputedStyle(el).color)).toBe(
+    'rgb(200, 201, 202)',
+  )
+})
+
 test('reference font and task checkbox border respect host tokens', async ({
   page,
   openFixture,
