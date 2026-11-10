@@ -103,12 +103,12 @@ const closingCases = [
   ['wrapped-quote', '> first\n> last\n', '> first\n'],
   ['middle-line', 'one\nlast\nmore\n', 'one\nmore\n'],
   ['crlf-wrapped', '> first 🌍\r\n> last\r\n', '> first 🌍\r\n'],
+  ['spaces-opening', 'last  \nmore\n', 'more\n'],
+  ['backslash-opening', 'last\\\nmore\n', 'more\n'],
+  ['spaces-middle', 'one  \nlast  \nmore\n', 'one  \nmore\n'],
 ] as const
 for (const [name, source, result] of closingCases) {
-  test(`emptying a closing or middle line: ${name}`, async ({
-    page,
-    openFixture,
-  }) => {
+  test(`emptying a line: ${name}`, async ({ page, openFixture }) => {
     await openFixture()
     const ending = source.includes('\r\n') ? '\r\n' : '\n'
     const tail = ending + 'Keep' + ending

@@ -617,8 +617,14 @@ const breaksWithoutMarks = $prose(
         const end = oldState.doc.content.findDiffEnd(newState.doc.content)!.b
         const type = hardbreakSchema.type(ctx)
         const tr = newState.tr
+        const isBreak = (node: ProseNode | null | undefined) =>
+          node?.type === type
         const soft = (node: ProseNode | null | undefined) =>
-          node?.type === type && node.attrs.isInline && !node.attrs.isHTML
+          isBreak(node) && node!.attrs.isInline && !node!.attrs.isHTML
+        // A break that ends its line in the source. An HTML break can share
+        // its line with the text after it.
+        const endsLine = (node: ProseNode | null | undefined) =>
+          isBreak(node) && !node!.attrs.isHTML
         // Where the break at `at` in the new document stood before the edit.
         const origin = (at: number) => {
           for (let index = transactions.length - 1; index >= 0; index--)
@@ -632,25 +638,34 @@ const breaksWithoutMarks = $prose(
           at >= 0 && at < oldState.doc.content.size
             ? oldState.doc.nodeAt(at)
             : undefined
-        // A soft line ending exposed by deleting the text of its line cannot
-        // start a Markdown paragraph, end one or follow another line ending.
-        // Remove it in the same history event. Newly inserted breaks belong
-        // to the edit, and a break that already stood there was not exposed.
+        // A line ending exposed by deleting the text of its line goes with
+        // that text, in the same history event. No line ending can start a
+        // Markdown paragraph as written: trailing spaces and a <br> on its own
+        // line read differently there. A soft ending also cannot end a
+        // paragraph, and two endings with nothing between them read
+        // differently unless both are backslashes; a hard ending at the end is
+        // a pending break and stays. Newly inserted breaks belong to the edit,
+        // and a break that already stood there was not exposed.
         newState.doc.nodesBetween(start, Math.max(start, end), (node, pos) => {
           if (!node.isTextblock || !node.firstChild) return
           const removed: [number, number][] = []
           let leading = 0
+          let scanned = 0
           let first = 0
-          for (; first < node.childCount; first++) {
-            const child = node.child(first)
-            if (!soft(child)) break
-            const previous = origin(pos + 1 + leading)
+          for (let index = 0; index < node.childCount; index++) {
+            const child = node.child(index)
+            if (!isBreak(child)) break
+            const previous = origin(pos + 1 + scanned)
             if (
-              !soft(oldNode(previous)) ||
+              !isBreak(oldNode(previous)) ||
               oldState.doc.resolve(previous).parentOffset === 0
             )
               break
-            leading += child.nodeSize
+            scanned += child.nodeSize
+            if (endsLine(child)) {
+              leading = scanned
+              first = index + 1
+            }
           }
           if (leading) removed.push([pos + 1, pos + 1 + leading])
           // From the end, a break with no text after it before the paragraph
@@ -676,6 +691,29 @@ const breaksWithoutMarks = $prose(
                 pos + 1 + offset + child.nodeSize,
               ])
             else open = true
+          }
+          // Two line endings left side by side, at least one of them hard,
+          // after the text between them was deleted: the second ended the
+          // emptied line. Two soft endings are handled above.
+          let at = 0
+          for (let index = 0; index < node.childCount; index++) {
+            const child = node.child(index)
+            const previous = index > first ? node.child(index - 1) : null
+            if (
+              endsLine(previous) &&
+              endsLine(child) &&
+              !(soft(previous) && soft(child)) &&
+              !removed.some(([from]) => from === pos + 1 + at)
+            ) {
+              const was = origin(pos + 1 + at - previous!.nodeSize)
+              const before = oldNode(was)
+              const next = isBreak(before)
+                ? oldState.doc.resolve(was + before!.nodeSize).nodeAfter
+                : null
+              if (next && !isBreak(next))
+                removed.push([pos + 1 + at, pos + 1 + at + child.nodeSize])
+            }
+            at += child.nodeSize
           }
           for (const [from, to] of removed)
             tr.delete(tr.mapping.map(from), tr.mapping.map(to))

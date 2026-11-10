@@ -189,9 +189,23 @@ const closingCases = [
     'middle',
     'one 🌍\r\nlast\r\n',
   ],
+  ['backslash-closing', 'first\\\nlast\n', 'last', 'first\n'],
+  ['backslash-opening', 'first\\\nlast\n', 'first', 'last\n'],
+  ['backslash-middle', 'one\\\nmiddle\\\nlast\n', 'middle', 'one\\\nlast\n'],
+  ['spaces-opening', 'first  \nlast\n', 'first', 'last\n'],
+  ['html-opening', 'first<br>\nlast\n', 'first', 'last\n'],
+  ['spaces-middle', 'one  \nmiddle  \nlast\n', 'middle', 'one  \nlast\n'],
+  ['hard-then-soft-middle', 'one\\\nmiddle\nlast\n', 'middle', 'one\\\nlast\n'],
+  ['soft-then-hard-middle', 'one\nmiddle\\\nlast\n', 'middle', 'one\nlast\n'],
+  [
+    'crlf-quote-spaces-opening',
+    '> first  \r\n> last 🌍\r\n',
+    'first',
+    '> last 🌍\r\n',
+  ],
 ] as const
 for (const [name, source, line, expected] of closingCases) {
-  test(`deleting a closing or middle line through the facade: ${name}`, async () => {
+  test(`deleting the text of a line through the facade: ${name}`, async () => {
     const root = document.createElement('div')
     document.body.append(root)
     const errors: Error[] = []
