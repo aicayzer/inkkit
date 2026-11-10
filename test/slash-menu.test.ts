@@ -177,6 +177,41 @@ test('off by default; enabling and command names are validated', async () => {
   }
 })
 
+test('the menu turns on and off after mount and keeps the commands chosen at mount', async () => {
+  const { editor, root } = await mount('First\n\nTARGET 🌍\r\n', {
+    slashMenu: { enabled: false, commands: ['heading1'] },
+  })
+  const menu = () => root.querySelector('[role=listbox]')
+  editor.find('TARGET 🌍')
+  editor.insertText('', 1)
+  editor.insertText('/', 1)
+  expect(menu()).toBeNull()
+  editor.insertText('', 1)
+  editor.setSlashMenuEnabled(true)
+  editor.insertText('/', 1)
+  expect(menu()).not.toBeNull()
+  expect(
+    [...menu()!.querySelectorAll('[role=option]')].map(
+      (row) => row.textContent,
+    ),
+  ).toEqual(['Heading 1'])
+  const before = editor.snapshot()
+  editor.setSlashMenuEnabled(false)
+  expect(menu()).toBeNull()
+  expect(editor.snapshot()).toEqual(before)
+  editor.setSlashMenuEnabled(false)
+  expect(() =>
+    editor.setSlashMenuEnabled('true' as unknown as boolean),
+  ).toThrow(expect.objectContaining({ code: 'invalid-argument' }))
+  const mountedOff = await mount('', {})
+  mountedOff.editor.setSlashMenuEnabled(true)
+  mountedOff.editor.insertText('/', 1)
+  expect(mountedOff.root.querySelector('[role=listbox]')).not.toBeNull()
+  await editor.destroy()
+  expect(() => editor.setSlashMenuEnabled(true)).toThrow(
+    expect.objectContaining({ code: 'destroyed' }),
+  )
+})
 test('an unrelated host edit closes the menu and cannot be rolled back', async () => {
   const { editor, root } = await mount('Before\n\nTARGET\n')
   editor.find('TARGET')
