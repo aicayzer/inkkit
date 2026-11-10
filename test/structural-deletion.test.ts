@@ -162,3 +162,121 @@ test.each(['\n', '\r\n'])(
     }
   },
 )
+
+const closingCases = [
+  ['wrapped-paragraph', 'first\nlast\n', 'last', 'first\n'],
+  [
+    'followed-paragraph',
+    'first\nlast\n\nAfter.\n',
+    'last',
+    'first\n\nAfter.\n',
+  ],
+  ['no-final-ending', 'first\nlast', 'last', 'first'],
+  ['single-character', 'first\nZ\n', 'Z', 'first\n'],
+  ['wrapped-list', '- first\n  last\n', 'last', '- first\n'],
+  ['wrapped-quote', '> first\n> last\n', 'last', '> first\n'],
+  [
+    'wrapped-callout',
+    '> [!NOTE]\n> first\n> last\n',
+    'last',
+    '> [!NOTE]\n> first\n',
+  ],
+  ['middle-line', 'one\nmiddle\nlast\n', 'middle', 'one\nlast\n'],
+  ['crlf-wrapped', '> first 🌍\r\n> last\r\n', 'last', '> first 🌍\r\n'],
+  [
+    'crlf-middle',
+    'one 🌍\r\nmiddle\r\nlast\r\n',
+    'middle',
+    'one 🌍\r\nlast\r\n',
+  ],
+  ['backslash-closing', 'first\\\nlast\n', 'last', 'first\n'],
+  ['backslash-opening', 'first\\\nlast\n', 'first', 'last\n'],
+  ['backslash-middle', 'one\\\nmiddle\\\nlast\n', 'middle', 'one\\\nlast\n'],
+  ['spaces-opening', 'first  \nlast\n', 'first', 'last\n'],
+  ['html-opening', 'first<br>\nlast\n', 'first', 'last\n'],
+  ['spaces-middle', 'one  \nmiddle  \nlast\n', 'middle', 'one  \nlast\n'],
+  ['hard-then-soft-middle', 'one\\\nmiddle\nlast\n', 'middle', 'one\\\nlast\n'],
+  ['soft-then-hard-middle', 'one\nmiddle\\\nlast\n', 'middle', 'one\nlast\n'],
+  [
+    'crlf-quote-spaces-opening',
+    '> first  \r\n> last 🌍\r\n',
+    'first',
+    '> last 🌍\r\n',
+  ],
+] as const
+for (const [name, source, line, expected] of closingCases) {
+  test(`deleting the text of a line through the facade: ${name}`, async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const errors: Error[] = []
+    const editor = await InkKitEditor.mount(root, {
+      changed() {},
+      copy() {},
+      openLink() {},
+      error(error) {
+        errors.push(error)
+      },
+    })
+    try {
+      const tail = '\nUnchanged [r][ref].\n\n[ref]: /keep\n'
+      const ending = source.includes('\r\n') ? '\r\n' : '\n'
+      const withTail = (text: string) =>
+        text.endsWith(ending) ? text + tail.replaceAll('\n', ending) : text
+      editor.loadDocument({
+        documentId: 'closing',
+        generation: 1,
+        format: 'md',
+        text: withTail(source),
+      })
+      const before = editor.snapshot()
+      expect(editor.replace(line, '', 1)).toBe(true)
+      expect(editor.snapshot().text).toBe(withTail(expected))
+      expect(editor.snapshot().revision).toBe(before.revision + 1)
+      expect(errors).toEqual([])
+      expect(editor.undo(1)).toBe(true)
+      expect(editor.snapshot().text).toBe(withTail(source))
+      expect(editor.redo(1)).toBe(true)
+      expect(editor.snapshot().text).toBe(withTail(expected))
+      editor.loadDocument({
+        documentId: 'reopen',
+        generation: 2,
+        format: 'md',
+        text: withTail(expected),
+      })
+      expect(editor.snapshot().text).toBe(withTail(expected))
+    } finally {
+      await editor.destroy()
+      root.remove()
+    }
+  })
+}
+
+test('emptying the closing lines one after another keeps the first', async () => {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const errors: Error[] = []
+  const editor = await InkKitEditor.mount(root, {
+    changed() {},
+    copy() {},
+    openLink() {},
+    error(error) {
+      errors.push(error)
+    },
+  })
+  try {
+    editor.loadDocument({
+      documentId: 'closing',
+      generation: 1,
+      format: 'md',
+      text: 'one\ntwo\nlast\n',
+    })
+    expect(editor.replace('two', '', 1)).toBe(true)
+    expect(editor.snapshot().text).toBe('one\nlast\n')
+    expect(editor.replace('last', '', 1)).toBe(true)
+    expect(editor.snapshot().text).toBe('one\n')
+    expect(errors).toEqual([])
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+})

@@ -96,3 +96,34 @@ test('first-line deletion honours read-only and composition guards', async ({
   ).toBe(true)
   expect((await observe(page)).snapshot!.text).toBe('more\n')
 })
+
+const closingCases = [
+  ['wrapped-paragraph', 'first\nlast\n', 'first\n'],
+  ['wrapped-list', '- first\n  last\n', '- first\n'],
+  ['wrapped-quote', '> first\n> last\n', '> first\n'],
+  ['middle-line', 'one\nlast\nmore\n', 'one\nmore\n'],
+  ['crlf-wrapped', '> first 🌍\r\n> last\r\n', '> first 🌍\r\n'],
+  ['spaces-opening', 'last  \nmore\n', 'more\n'],
+  ['backslash-opening', 'last\\\nmore\n', 'more\n'],
+  ['spaces-middle', 'one  \nlast  \nmore\n', 'one  \nmore\n'],
+] as const
+for (const [name, source, result] of closingCases) {
+  test(`emptying a line: ${name}`, async ({ page, openFixture }) => {
+    await openFixture()
+    const ending = source.includes('\r\n') ? '\r\n' : '\n'
+    const tail = ending + 'Keep' + ending
+    const original = source + tail
+    const expected = result + tail
+    await operation(page, 'reload', { text: original })
+    await caretAfterMatch(page, 'last')
+    for (let index = 0; index < 4; index++)
+      await page.keyboard.press('Backspace')
+    const final = await observe(page)
+    expect(final.snapshot!.revision).toBe(4)
+    expect(final.snapshot!.text).toBe(expected)
+    await operation(page, 'undo')
+    expect((await observe(page)).snapshot!.text).toBe(original)
+    await operation(page, 'reload', { text: expected })
+    expect((await observe(page)).snapshot!.text).toBe(expected)
+  })
+}
