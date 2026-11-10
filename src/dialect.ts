@@ -617,42 +617,61 @@ const breaksWithoutMarks = $prose(
         const end = oldState.doc.content.findDiffEnd(newState.doc.content)!.b
         const type = hardbreakSchema.type(ctx)
         const tr = newState.tr
-        // A soft line ending exposed by deleting the preceding text cannot
-        // start a Markdown paragraph. Remove it in the same history event.
+        const soft = (node: ProseNode | null | undefined) =>
+          node?.type === type && node.attrs.isInline && !node.attrs.isHTML
+        // Where the break at `at` in the new document stood before the edit.
+        const origin = (at: number) => {
+          for (let index = transactions.length - 1; index >= 0; index--)
+            at = transactions[index]!.mapping.invert().map(at, 1)
+          return at
+        }
+        // A soft line ending exposed by deleting the text of its line cannot
+        // start a Markdown paragraph, end one or follow another line ending.
+        // Remove it in the same history event. Newly inserted breaks belong
+        // to the edit, and a break that already stood there was not exposed.
         newState.doc.nodesBetween(start, Math.max(start, end), (node, pos) => {
           if (!node.isTextblock || !node.firstChild) return
-          let count = 0
-          for (let index = 0; index < node.childCount; index++) {
-            const child = node.child(index)
+          const removed: [number, number][] = []
+          let leading = 0
+          let first = 0
+          for (; first < node.childCount; first++) {
+            const child = node.child(first)
+            if (!soft(child)) break
+            const previous = origin(pos + 1 + leading)
             if (
-              child.type !== type ||
-              !child.attrs.isInline ||
-              child.attrs.isHTML
-            )
-              break
-            // Newly inserted breaks belong to the edit, not the removed line.
-            let previous = pos + 1 + count
-            for (
-              let transaction = transactions.length - 1;
-              transaction >= 0;
-              transaction--
-            )
-              previous = transactions[transaction]!.mapping.invert().map(
-                previous,
-                1,
-              )
-            const before = oldState.doc.nodeAt(previous)
-            if (
-              before?.type !== type ||
-              !before.attrs.isInline ||
-              before.attrs.isHTML ||
+              !soft(oldState.doc.nodeAt(previous)) ||
               oldState.doc.resolve(previous).parentOffset === 0
             )
               break
-            count += child.nodeSize
+            leading += child.nodeSize
           }
-          if (count)
-            tr.delete(tr.mapping.map(pos + 1), tr.mapping.map(pos + 1 + count))
+          if (leading) removed.push([pos + 1, pos + 1 + leading])
+          // From the end, a break with no text after it before the paragraph
+          // ends or the next kept break. Its line's text was deleted when that
+          // text still follows it in the document before the edit.
+          let offset = node.content.size
+          let open = true
+          for (let index = node.childCount - 1; index >= first; index--) {
+            const child = node.child(index)
+            offset -= child.nodeSize
+            if (!soft(child)) {
+              open = false
+              continue
+            }
+            const previous = origin(pos + 1 + offset)
+            const before = oldState.doc.nodeAt(previous)
+            const next = before
+              ? oldState.doc.resolve(previous + before.nodeSize).nodeAfter
+              : null
+            if (open && soft(before) && next && !soft(next))
+              removed.push([
+                pos + 1 + offset,
+                pos + 1 + offset + child.nodeSize,
+              ])
+            else open = true
+          }
+          for (const [from, to] of removed)
+            tr.delete(tr.mapping.map(from), tr.mapping.map(to))
           return false
         })
         newState.doc.nodesBetween(start, Math.max(start, end), (node, pos) => {
