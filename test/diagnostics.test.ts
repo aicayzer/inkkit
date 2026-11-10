@@ -43,7 +43,7 @@ test('diagnostics stay off until enabled and disabling clears all tracing and li
   })
   expect(editor.diagnosticReport().presentation).toBeUndefined()
   editor.setDiagnosticsEnabled(true)
-  expect(listen).toHaveBeenCalledTimes(6)
+  expect(listen).toHaveBeenCalledTimes(7)
   surface.dispatchEvent(
     new InputEvent('beforeinput', {
       bubbles: true,
@@ -55,7 +55,7 @@ test('diagnostics stay off until enabled and disabling clears all tracing and li
     editor.diagnosticReport().events.some((event) => event.input === 'text'),
   ).toBe(true)
   editor.setDiagnosticsEnabled(false)
-  expect(remove).toHaveBeenCalledTimes(6)
+  expect(remove).toHaveBeenCalledTimes(7)
   surface.dispatchEvent(
     new InputEvent('input', {
       bubbles: true,
@@ -301,4 +301,42 @@ test('diagnostic failures cannot interrupt edits, error delivery or report colle
   failure.mockRestore()
   expect(editor.snapshot().text).toBe(original.text)
   record.mockRestore()
+})
+
+test('keys the editor handles itself are recorded as input without the key', async () => {
+  await mount()
+  editor.setDiagnosticsEnabled(true)
+  const handled = () =>
+    editor
+      .diagnosticReport()
+      .events.filter(
+        (event) => event.kind === 'input' && event.phase === 'handled',
+      )
+  const press = (init: KeyboardEventInit, prevent: boolean) => {
+    const event = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    })
+    if (prevent) event.preventDefault()
+    // Dispatched at the root, so only the test decides what is prevented.
+    root.dispatchEvent(event)
+  }
+  press({ key: 'Backspace' }, false)
+  press({ key: 'P' }, false)
+  expect(handled()).toEqual([])
+  press({ key: 'Backspace' }, true)
+  press({ key: 'Delete' }, true)
+  press({ key: 'z', metaKey: true }, true)
+  press({ key: 'P', ctrlKey: true }, true)
+  press({ key: 'Backspace', isComposing: true }, true)
+  expect(handled().map((event) => event.input)).toEqual([
+    'delete',
+    'delete',
+    'history',
+    'other',
+  ])
+  expect(JSON.stringify(editor.diagnosticReport())).not.toMatch(
+    /"P"|Backspace|PRIVATE_SENTINEL/,
+  )
 })

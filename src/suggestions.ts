@@ -57,6 +57,9 @@ export class Suggestions {
     this.status.setAttribute('aria-live', 'polite')
     this.status.setAttribute('aria-atomic', 'true')
   }
+  closeSession(prefix: string): void {
+    if (this.session?.prefix === prefix) this.close()
+  }
   close = (): void => {
     this.request++
     clearTimeout(this.emptyTimer)

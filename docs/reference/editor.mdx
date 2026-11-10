@@ -35,7 +35,7 @@ Each member first throws `destroyed` if the editor was destroyed, then `invalid-
 
 | Members                                                                                                                                                                                                                            | Expected generation                                    | Then throws                                                                                                                                                                               |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `formats`, `editable`, `editingMode`, `findSession`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`, `setHostActive`, `setDiagnosticsEnabled`, `diagnosticReport`                                                    | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
+| `formats`, `editable`, `editingMode`, `findSession`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`, `setHostActive`, `setSlashMenuEnabled`, `setDiagnosticsEnabled`, `diagnosticReport`                             | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
 | `loadDocument`                                                                                                                                                                                                                     | None.                                                  | `invalid-argument` when the generation isn't greater than the loaded one, then `preservation` when the Markdown can't be loaded. A format you didn't offer is a bad argument.             |
 | `setEditable`, `setTextInputPreferences`                                                                                                                                                                                           | None.                                                  | `composition`.                                                                                                                                                                            |
 | `reloadDocument`                                                                                                                                                                                                                   | Optional, the last parameter. Checked only when given. | `not-ready` and `stale-document`, only when the generation is given. Then the same errors as `loadDocument`.                                                                              |
@@ -101,7 +101,7 @@ While enabled, `presentation` is measured only when requesting a report. If layo
 
 ### DiagnosticEvent
 
-Each event has a monotonically increasing `sequence`, integer `elapsedMs` since enabling, a `kind` and safe editor `state`. Kinds are `input`, `composition`, `focus`, `selection`, `operation`, `preservation`, `error` and `enabled`. Optional `phase` describes transitions or operation begin, success and refusal. `input` groups browser input into text, composition, delete, paste, drop, history, format or other. Raw browser input strings are never retained.
+Each event has a monotonically increasing `sequence`, integer `elapsedMs` since enabling, a `kind` and safe editor `state`. Kinds are `input`, `composition`, `focus`, `selection`, `operation`, `preservation`, `error` and `enabled`. Optional `phase` describes transitions or operation begin, success and refusal. `input` groups browser input into text, composition, delete, paste, drop, history, format or other. An `input` event with phase `handled` is a key the editor handled itself, such as Backspace over a selection, for which the browser reports no input; it's grouped as delete, history or other, and the key isn't recorded. Raw browser input strings are never retained.
 
 Optional `operation` groups calls into snapshot, edit, history, load, configuration, output, selection, lifecycle or other. `code` is an existing `EditorErrorCode`. Preservation `path` is unchanged, local, regions or whole. A safe `reason` is matching-budget, source-location, reopen-mismatch, parse-refusal or unexpected. Diagnostic tracing does not enable the internal preservation cross-check, retain source comparisons or change edit validation.
 
@@ -402,6 +402,14 @@ The method changes only the active or inactive selection color. It does not focu
 `setTextInputPreferences(preferences: TextInputPreferences): void`
 
 Replaces the input preferences on both surfaces. A field you leave out goes back to its default. It throws `composition` during text composition and is a presentation change, not an edit. See [`TextInputPreferences`](/reference/options#editor-options).
+
+{/* @api InkKitEditor.setSlashMenuEnabled */}
+
+### setSlashMenuEnabled
+
+`setSlashMenuEnabled(enabled: boolean): void`
+
+Turns the [slash menu](/reference/options#slash-menu) on or off, for example from an app setting, without mounting the editor again. The `commands` and `customCommands` given at mount are kept; an editor mounted without `slashMenu` offers every built-in command when you turn it on. Turning it off closes an open slash menu and leaves the typed slash as text. It isn't an edit: the document, revision and history don't change. It works before loading and during composition. A value that isn't a boolean throws `invalid-argument`.
 
 {/* @api InkKitEditor.setKeymap */}
 

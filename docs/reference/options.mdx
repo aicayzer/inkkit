@@ -21,14 +21,15 @@ const editor = await InkKitEditor.mount(root, events, options)
 
 ## Editor options
 
-Three options can change after mount, through a method. The rest are fixed at mount; to change one, destroy the editor and mount a new one.
+Four options can change after mount, through a method. The rest are fixed at mount; to change one, destroy the editor and mount a new one.
 
-| Option                                                                                       | After mount                                                                                                  |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `editable`                                                                                   | [`setEditable`](/reference/editor#editable-and-seteditable)                                                  |
-| `textInput`                                                                                  | [`setTextInputPreferences`](/reference/editor#settextinputpreferences)                                       |
-| `keymap`                                                                                     | [`setKeymap`](/reference/editor#setkeymap)                                                                   |
-| `formats`, `images`, `files`, `wikiLinks`, `labels`, `linkSchemes`, `rendering`, `slashMenu` | Fixed. Whether `events.copy` is set is fixed too, because it decides whether code blocks draw a Copy button. |
+| Option                                                                                                | After mount                                                                                                  |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `editable`                                                                                            | [`setEditable`](/reference/editor#editable-and-seteditable)                                                  |
+| `textInput`                                                                                           | [`setTextInputPreferences`](/reference/editor#settextinputpreferences)                                       |
+| `keymap`                                                                                              | [`setKeymap`](/reference/editor#setkeymap)                                                                   |
+| `slashMenu.enabled`                                                                                   | [`setSlashMenuEnabled`](/reference/editor#setslashmenuenabled)                                               |
+| `formats`, `images`, `files`, `wikiLinks`, `labels`, `linkSchemes`, `rendering`, `slashMenu` commands | Fixed. Whether `events.copy` is set is fixed too, because it decides whether code blocks draw a Copy button. |
 
 <ResponseField name="formats" type="readonly DocumentFormat[]" default="['md', 'txt']">
 

@@ -429,7 +429,7 @@ export interface EditorOptions<F extends DocumentFormat = TextDocumentFormat> {
   formats?: readonly F[]
   /** Shows, imports and exports images. Without it and `files`, image Markdown stays literal. */
   images?: ImageAdapter
-  /** Opt-in block suggestions on an empty line. Fixed at mount. */
+  /** Opt-in block suggestions on an empty line. `setSlashMenuEnabled` turns it on or off later. */
   slashMenu?: SlashMenuOptions
   /** Resolves path images and `![[name]]` embeds into images, audio, video, PDFs and file cards. */
   files?: FileAdapter
@@ -898,6 +898,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private readOnlyKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
   private suggestions?: Suggestions
+  private slashMenu?: SlashMenuOptions
   private suggestionBase?: EditorState
   private changePlugin = createChangePlugin((view, previous) =>
     this.documentChanged(view, previous),
@@ -1426,6 +1427,16 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.assertAlive()
     if (active !== null) expectBoolean(active, 'active')
     setSelectionHostActive(this.editor.ctx.get(editorViewCtx), active)
+  }
+
+  /** Turns the slash menu on or off. Commands chosen at mount are kept; enabling a menu mounted
+   *  without `slashMenu` offers every built-in command. Disabling closes an open slash menu. */
+  setSlashMenuEnabled(enabled: boolean): void {
+    this.assertAlive()
+    expectBoolean(enabled, 'enabled')
+    if (!!this.slashMenu?.enabled === enabled) return
+    this.slashMenu = { ...this.slashMenu, enabled }
+    if (!enabled) this.suggestions?.closeSession('/')
   }
 
   /** Replaces the input preferences. A field left out takes its default. Throws `composition`
@@ -1958,6 +1969,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     const instance = new InkKitEditor<F>(events, options)
     events = instance.events
     instance.root = root
+    instance.slashMenu = options.slashMenu
     instance.ownsRootClass = !root.classList.contains('inkkit-root')
     root.classList.add('inkkit-root')
     instance.pasteController = new PasteController({
@@ -1977,7 +1989,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     instance.suggestions = createEditorSuggestions({
       root,
       labels: () => ({ ...defaultLabels, ...options.labels }),
-      slashMenu: () => options.slashMenu,
+      slashMenu: () => instance.slashMenu,
       wikiLinks: () => options.wikiLinks,
       diagrams: () =>
         options.rendering?.diagramPreview !== false && diagramsAvailable(),
@@ -2891,6 +2903,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       'setEditable',
       'setHostActive',
       'setTextInputPreferences',
+      'setSlashMenuEnabled',
       'setEditingMode',
       'replaceSource',
       'undo',
