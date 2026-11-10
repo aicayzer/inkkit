@@ -625,6 +625,13 @@ const breaksWithoutMarks = $prose(
             at = transactions[index]!.mapping.invert().map(at, 1)
           return at
         }
+        // The old node at a mapped position, or undefined when the edit
+        // replaced the content around it and the position no longer lies in
+        // the old document.
+        const oldNode = (at: number) =>
+          at >= 0 && at < oldState.doc.content.size
+            ? oldState.doc.nodeAt(at)
+            : undefined
         // A soft line ending exposed by deleting the text of its line cannot
         // start a Markdown paragraph, end one or follow another line ending.
         // Remove it in the same history event. Newly inserted breaks belong
@@ -639,7 +646,7 @@ const breaksWithoutMarks = $prose(
             if (!soft(child)) break
             const previous = origin(pos + 1 + leading)
             if (
-              !soft(oldState.doc.nodeAt(previous)) ||
+              !soft(oldNode(previous)) ||
               oldState.doc.resolve(previous).parentOffset === 0
             )
               break
@@ -659,9 +666,9 @@ const breaksWithoutMarks = $prose(
               continue
             }
             const previous = origin(pos + 1 + offset)
-            const before = oldState.doc.nodeAt(previous)
-            const next = before
-              ? oldState.doc.resolve(previous + before.nodeSize).nodeAfter
+            const before = oldNode(previous)
+            const next = soft(before)
+              ? oldState.doc.resolve(previous + before!.nodeSize).nodeAfter
               : null
             if (open && soft(before) && next && !soft(next))
               removed.push([

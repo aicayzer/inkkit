@@ -172,7 +172,7 @@ const closingCases = [
     'first\n\nAfter.\n',
   ],
   ['no-final-ending', 'first\nlast', 'last', 'first'],
-  ['single-character', 'first\nS\n', 'S', 'first\n'],
+  ['single-character', 'first\nZ\n', 'Z', 'first\n'],
   ['wrapped-list', '- first\n  last\n', 'last', '- first\n'],
   ['wrapped-quote', '> first\n> last\n', 'last', '> first\n'],
   [
