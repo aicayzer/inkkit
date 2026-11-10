@@ -101,7 +101,7 @@ While enabled, `presentation` is measured only when requesting a report. If layo
 
 ### DiagnosticEvent
 
-Each event has a monotonically increasing `sequence`, integer `elapsedMs` since enabling, a `kind` and safe editor `state`. Kinds are `input`, `composition`, `focus`, `selection`, `operation`, `preservation`, `error` and `enabled`. Optional `phase` describes transitions or operation begin, success and refusal. `input` groups browser input into text, composition, delete, paste, drop, history, format or other. Raw browser input strings are never retained.
+Each event has a monotonically increasing `sequence`, integer `elapsedMs` since enabling, a `kind` and safe editor `state`. Kinds are `input`, `composition`, `focus`, `selection`, `operation`, `preservation`, `error` and `enabled`. Optional `phase` describes transitions or operation begin, success and refusal. `input` groups browser input into text, composition, delete, paste, drop, history, format or other. An `input` event with phase `handled` is a key the editor handled itself, such as Backspace over a selection, for which the browser reports no input; it's grouped as delete, history or other, and the key isn't recorded. Raw browser input strings are never retained.
 
 Optional `operation` groups calls into snapshot, edit, history, load, configuration, output, selection, lifecycle or other. `code` is an existing `EditorErrorCode`. Preservation `path` is unchanged, local, regions or whole. A safe `reason` is matching-budget, source-location, reopen-mismatch, parse-refusal or unexpected. Diagnostic tracing does not enable the internal preservation cross-check, retain source comparisons or change edit validation.
 
