@@ -178,14 +178,15 @@ test('off by default; enabling and command names are validated', async () => {
 })
 
 test('the menu turns on and off after mount and keeps the commands chosen at mount', async () => {
-  const { editor, root } = await mount('First\n\nTARGET 🌍\r\n', {
+  const { editor, root } = await mount('TARGET\r\n\r\nSECOND 🌍\r\n', {
     slashMenu: { enabled: false, commands: ['heading1'] },
   })
   const menu = () => root.querySelector('[role=listbox]')
-  editor.find('TARGET 🌍')
+  editor.find('TARGET')
   editor.insertText('', 1)
   editor.insertText('/', 1)
   expect(menu()).toBeNull()
+  editor.find('SECOND 🌍')
   editor.insertText('', 1)
   editor.setSlashMenuEnabled(true)
   editor.insertText('/', 1)
