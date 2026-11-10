@@ -9,6 +9,10 @@ const cases = [
     '+ * nested 🌍\r\n  * more\r\n',
   ],
   ['crlf-unicode-quote', '> two\r\n> more 🌍\r\n', '> more 🌍\r\n'],
+  ['closing-line', 'more\ntwo\n', 'more\n'],
+  ['middle-line', 'more\ntwo\nlast\n', 'more\nlast\n'],
+  ['spaces-hard-break', 'two  \nmore\n', 'more\n'],
+  ['crlf-unicode-closing', '> more 🌍\r\n> two\r\n', '> more 🌍\r\n'],
 ]
 export const scenarios = {}
 for (const [name, source, expectedSource] of cases) {

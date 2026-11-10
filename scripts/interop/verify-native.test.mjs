@@ -89,13 +89,13 @@ test('lists all migrated cases with distinct tool requirements', () => {
   ])
   assert.equal(result.status, 0, result.stderr)
   const list = JSON.parse(result.stdout)
-  assert.equal(list.selected.length, 32)
+  assert.equal(list.selected.length, 36)
   for (const [family, count] of Object.entries({
     'literal-paste': 4,
     'paste-caret': 6,
     'soft-break-spaces': 8,
     'source-redo': 2,
-    'structural-deletion': 6,
+    'structural-deletion': 10,
     'image-drag': 2,
     'long-list': 2,
     'drawn-caret': 2,
