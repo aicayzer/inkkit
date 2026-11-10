@@ -42,6 +42,7 @@ export type DiagnosticEvent = {
     | 'begin'
     | 'success'
     | 'refused'
+    | 'handled'
   input?:
     | 'text'
     | 'composition'
@@ -176,9 +177,10 @@ export class Diagnostics {
       target: EventTarget,
       name: string,
       run: (event: Event) => void,
+      capture = true,
     ) => {
-      target.addEventListener(name, run, true)
-      listeners.push(() => target.removeEventListener(name, run, true))
+      target.addEventListener(name, run, capture)
+      listeners.push(() => target.removeEventListener(name, run, capture))
     }
     for (const name of ['beforeinput', 'input'] as const)
       listen(root, name, (event) => {
@@ -206,6 +208,26 @@ export class Diagnostics {
           input,
         })
       })
+    // A key the editor handles itself prevents its default, so the browser
+    // fires no beforeinput or input for it. Listening as the event bubbles
+    // sees that decision. Only the category is kept, never the key.
+    listen(
+      root,
+      'keydown',
+      (event) => {
+        const key = event as KeyboardEvent
+        if (!key.defaultPrevented || key.isComposing) return
+        const command = key.metaKey || key.ctrlKey
+        const input: DiagnosticEvent['input'] =
+          key.key === 'Backspace' || key.key === 'Delete'
+            ? 'delete'
+            : command && /^[yz]$/i.test(key.key)
+              ? 'history'
+              : 'other'
+        this.capture({ kind: 'input', phase: 'handled', input })
+      },
+      false,
+    )
     for (const name of ['compositionstart', 'compositionend'] as const)
       listen(root, name, () =>
         this.capture({
