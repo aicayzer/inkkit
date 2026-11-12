@@ -320,7 +320,7 @@ export interface FileAdapter {
     reference: FileReference,
     context: FileContext,
   ): Promise<PortableImage>
-  /** Adds an Open button to file cards. */
+  /** Adds an Open button to file cards, and is what a placeholder's `action` button calls. */
   open?(reference: FileReference, context: DocumentContext): void
   /** Called for a context-menu request on a file card. */
   contextMenu?(

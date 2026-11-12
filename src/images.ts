@@ -693,7 +693,7 @@ function openArrow(): SVGElement {
   return icon
 }
 
-/** Decoration for a placeholder line, drawn in the text colour and hidden from assistive
+/** Decoration for a placeholder line, drawn in the label's secondary colour and hidden from assistive
  *  technology. */
 function fileSymbol(name: 'image' | 'file'): SVGElement {
   const icon = document.createElementNS(svg, 'svg')
