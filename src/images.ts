@@ -346,6 +346,8 @@ class ImageView implements NodeView {
     label: string,
     presentation: Extract<FilePresentation, { kind: 'file' }>,
   ): void {
+    if (this.resolution?.state.status !== 'loading' && !this.handle)
+      this.restoreResizeFocus = false
     this.element.dataset.inkkitFileAppearance = 'placeholder'
     const line = document.createElement('span')
     line.className = 'inkkit-file-footer inkkit-file-quiet'
