@@ -160,6 +160,49 @@ test.each(['audio', 'video', 'pdf', 'file', 'missing', 'error'] as const)(
   },
 )
 
+test('a file placeholder copies and prints as a file card, without its button text', async () => {
+  const files: FileAdapter = {
+    resolve: async () => ({
+      kind: 'file',
+      label: 'Photo',
+      appearance: 'placeholder',
+      symbol: 'image',
+      action: 'Load host text',
+    }),
+    exportImage: async () => {
+      throw new Error('A placeholder has no bytes to export')
+    },
+  }
+  const source = 'Before ![[opaque-name|240]] after.'
+  const doc = mixedFiles()
+  const copied = await portableClipboard(
+    doc.content,
+    schema,
+    source,
+    undefined,
+    context,
+    undefined,
+    files,
+  )
+  expect(copied.text).toBe('Before [File: Photo] after.')
+  expect(copied.markdown).toBe(source)
+  expect(copied.html).not.toContain('Load host text')
+  expect(copied.html).not.toMatch(/<(svg|button)\b/)
+  expect(copied.images).toEqual([])
+  const printed = await printableMarkdown(
+    doc.content,
+    schema,
+    undefined,
+    context,
+    files,
+  )
+  expect(
+    new DOMParser().parseFromString(printed.html, 'text/html').body.textContent,
+  ).toBe('Before [File: Photo] after.')
+  expect(printed.html).not.toContain('Load host text')
+  expect(printed.assets).toEqual([])
+})
+
 test('image export failure retains its useful description in copy and rejects complete print output', async () => {
   const files: FileAdapter = {
     resolve: async () => ({

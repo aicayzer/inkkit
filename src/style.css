@@ -471,6 +471,36 @@
   border-radius: 3px;
   cursor: pointer;
 }
+/* A placeholder is one quiet line, not a card: no border or padding, the footer's muted text, a
+   symbol before the label and a small pill button after it. */
+.inkkit-root
+  .ProseMirror
+  .inkkit-file[data-inkkit-file-appearance='placeholder'] {
+  border: 0;
+  padding: 0;
+}
+.inkkit-root .ProseMirror .inkkit-file-quiet {
+  flex-wrap: nowrap;
+  gap: 0.4em;
+}
+.inkkit-root .ProseMirror .inkkit-file-symbol {
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.inkkit-root .ProseMirror .inkkit-file-action {
+  padding: 0.05em 0.65em;
+  line-height: 1.5;
+  border-radius: 999px;
+}
+.inkkit-root .ProseMirror .inkkit-file-action:hover {
+  border-color: var(--_inkkit-muted);
+}
 .inkkit-root .ProseMirror .inkkit-file-open {
   /* The name and the arrow are one link: a plain control that the footer's muted text colours. */
   display: inline-flex;

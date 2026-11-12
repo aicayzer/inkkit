@@ -976,3 +976,208 @@ test('an unknown layout or activation value is an invalid presentation', async (
       ),
     ).rejects.toThrow(TypeError)
 })
+
+const placeholder = (
+  extra: Partial<Extract<FilePresentation, { kind: 'file' }>> = {},
+) =>
+  fileCard({
+    appearance: 'placeholder',
+    action: 'Load',
+    ...extra,
+  })
+const ready = (root: HTMLElement) =>
+  vi.waitFor(() =>
+    expect(
+      root.querySelector('[data-inkkit-file-state="resolved"]'),
+    ).not.toBeNull(),
+  )
+
+test('a placeholder draws a symbol, the label and a button with the host text, and is not itself a control', async () => {
+  const open = vi.fn()
+  await mounted(
+    { resolve: async () => placeholder(), open },
+    async (editor, root) => {
+      await ready(root)
+      const line = root.querySelector<HTMLElement>('.inkkit-file')!
+      expect(line.dataset.inkkitFileAppearance).toBe('placeholder')
+      expect(line.getAttribute('role')).toBe('group')
+      expect(line.hasAttribute('tabindex')).toBe(false)
+      expect(line.dataset.inkkitFileActivation).toBeUndefined()
+      expect(line.querySelector('.inkkit-file-label')!.textContent).toBe(
+        'Picture',
+      )
+      const symbol = line.querySelector('svg')!
+      expect(symbol.getAttribute('aria-hidden')).toBe('true')
+      expect(line.querySelector('.inkkit-file-open')).toBeNull()
+      const buttons = line.querySelectorAll('button')
+      expect(buttons).toHaveLength(1)
+      expect(buttons[0]!.textContent).toBe('Load')
+      expect(buttons[0]!.getAttribute('aria-label')).toBe('Load Picture')
+      // Neither the line nor its label opens the file.
+      line.click()
+      line.querySelector<HTMLElement>('.inkkit-file-label')!.click()
+      expect(open).not.toHaveBeenCalled()
+      buttons[0]!.click()
+      expect(open).toHaveBeenCalledTimes(1)
+      expect(open).toHaveBeenCalledWith(
+        expect.objectContaining(reference),
+        expect.objectContaining({ documentId: 'files' }),
+      )
+      expect(editor.snapshot().text).toBe(source.text)
+    },
+  )
+})
+
+test('a placeholder button also works in a read-only editor', async () => {
+  const open = vi.fn()
+  await mounted(
+    { resolve: async () => placeholder(), open },
+    async (editor, root) => {
+      await ready(root)
+      editor.setEditable(false)
+      root.querySelector<HTMLButtonElement>('.inkkit-file-action')!.click()
+      expect(open).toHaveBeenCalledTimes(1)
+    },
+  )
+})
+
+test('a placeholder has the file symbol on request and the image symbol otherwise', async () => {
+  const shapes: string[] = []
+  for (const symbol of [undefined, 'file', 'image'] as const)
+    await mounted(
+      { resolve: async () => placeholder({ symbol }), open() {} },
+      async (_, root) => {
+        await ready(root)
+        shapes.push(root.querySelector('.inkkit-file-symbol')!.innerHTML)
+      },
+    )
+  expect(shapes[0]).toBe(shapes[2])
+  expect(shapes[1]).not.toBe(shapes[0])
+})
+
+test('a placeholder without an action, or without an open function, has no button', async () => {
+  await mounted(
+    { resolve: async () => placeholder({ action: undefined }), open() {} },
+    async (_, root) => {
+      await ready(root)
+      const line = root.querySelector<HTMLElement>('.inkkit-file')!
+      expect(line.dataset.inkkitFileAppearance).toBe('placeholder')
+      expect(line.querySelector('.inkkit-file-label')!.textContent).toBe(
+        'Picture',
+      )
+      expect(line.querySelectorAll('button')).toHaveLength(0)
+    },
+  )
+  await mounted({ resolve: async () => placeholder() }, async (_, root) => {
+    await ready(root)
+    expect(root.querySelectorAll('button')).toHaveLength(0)
+    expect(root.querySelector('.inkkit-file-label')!.textContent).toBe(
+      'Picture',
+    )
+  })
+})
+
+test('layout and activation do not apply to a placeholder', async () => {
+  const open = vi.fn()
+  await mounted(
+    {
+      resolve: async () => placeholder({ layout: 'fill', activation: 'card' }),
+      open,
+    },
+    async (_, root) => {
+      await ready(root)
+      const line = root.querySelector<HTMLElement>('.inkkit-file')!
+      expect(line.getAttribute('role')).toBe('group')
+      expect(line.hasAttribute('tabindex')).toBe(false)
+      expect(line.dataset.inkkitFileActivation).toBeUndefined()
+      expect(line.dataset.inkkitFileLayout).toBeUndefined()
+      line.click()
+      expect(open).not.toHaveBeenCalled()
+      expect(line.querySelectorAll('button')).toHaveLength(1)
+    },
+  )
+})
+
+test('with two references, only the placeholder that is activated opens', async () => {
+  const open = vi.fn()
+  await mounted(
+    {
+      resolve: async (reference) => placeholder({ label: reference.target }),
+      open,
+    },
+    async (editor, root) => {
+      await vi.waitFor(() =>
+        expect(root.querySelectorAll('.inkkit-file-action')).toHaveLength(2),
+      )
+      const text = editor.snapshot().text
+      const buttons = root.querySelectorAll<HTMLButtonElement>(
+        '.inkkit-file-action',
+      )
+      expect(buttons[1]!.getAttribute('aria-label')).toBe('Load second.png')
+      buttons[1]!.click()
+      expect(open).toHaveBeenCalledTimes(1)
+      expect(open.mock.calls[0]![0]).toMatchObject({ target: 'second.png' })
+      buttons[0]!.click()
+      expect(open).toHaveBeenCalledTimes(2)
+      expect(open.mock.calls[1]![0]).toMatchObject({ target: 'first.png' })
+      expect(editor.snapshot().text).toBe(text)
+    },
+    { text: '![[first.png]]\n\n![[second.png]]\n' },
+  )
+})
+
+test('a placeholder redraws in place as a picture and as an ordinary card, and leaves the document alone', async () => {
+  let answer: FilePresentation = placeholder()
+  await mounted(
+    { resolve: async () => answer, open() {} },
+    async (editor, root) => {
+      await ready(root)
+      const element = root.querySelector<HTMLElement>('.inkkit-file')!
+      const before = editor.snapshot()
+      answer = image
+      editor.refreshReferences(['opaque'])
+      await vi.waitFor(() =>
+        expect(element.querySelector('img')).not.toBeNull(),
+      )
+      expect(root.querySelector('.inkkit-file')).toBe(element)
+      expect(element.dataset.inkkitFileAppearance).toBeUndefined()
+      expect(element.dataset.inkkitFileKind).toBe('image')
+      expect(element.querySelector('button')).toBeNull()
+      expect(element.querySelector('.inkkit-file-symbol')).toBeNull()
+      expect(editor.snapshot()).toEqual(before)
+      answer = fileCard({})
+      editor.refreshReferences(['opaque'])
+      await vi.waitFor(() =>
+        expect(element.querySelector('.inkkit-file-open')).not.toBeNull(),
+      )
+      expect(root.querySelector('.inkkit-file')).toBe(element)
+      expect(element.querySelector('img')).toBeNull()
+      expect(element.dataset.inkkitFileAppearance).toBeUndefined()
+      answer = placeholder({ action: 'Retry load' })
+      editor.refreshReferences(['opaque'])
+      await vi.waitFor(() =>
+        expect(element.querySelector('.inkkit-file-action')?.textContent).toBe(
+          'Retry load',
+        ),
+      )
+      expect(editor.snapshot()).toEqual(before)
+    },
+  )
+})
+
+test('an unknown appearance, symbol or action is an invalid presentation', async () => {
+  for (const extra of [
+    { appearance: 'quiet' },
+    { appearance: 'placeholder', symbol: 'folder' },
+    { appearance: 'placeholder', action: '' },
+    { appearance: 'placeholder', action: '   ' },
+    { appearance: 'placeholder', action: 3 },
+  ])
+    await expect(
+      resolveFile(
+        { resolve: async () => ({ kind: 'file', ...extra }) as never },
+        reference,
+        context(),
+      ),
+    ).rejects.toThrow(TypeError)
+})

@@ -137,14 +137,14 @@ const editor = await InkKitEditor.mount(root, events, { files })
 How the result shows:
 
 - **`image`, `audio`, `video` or `pdf`** shows the resource at `url`. The `mimeType`, when given, must match the kind. An image is drawn bare: rounded corners, no border, padding or caption, with its label as hover text.
-- **`file`** shows a card with no preview.
+- **`file`** shows a card with no preview. With `appearance: 'placeholder'` it shows one quiet line instead: a symbol, the label and, when you give `action`, a small button that calls `open` for that file. Use it for a picture the person hasn't loaded yet, then answer again with an `image` after `refreshReferences`. See [placeholder options](/reference/adapters#placeholder-options).
 - **`missing`** shows a card with the `fileMissing` label.
 - **`error`** shows a card whose status is your `message`, a short reason written for the person.
 - **A rejected or invalid result** shows a card with the `fileError` label and reports `file-unavailable` through `events.error`.
 
 `reference.raw` is the embed's Markdown as the document holds it, such as `![a|120](a\_b.png "T")` or `![[photo.png|400]]`: use it to match the embed to the text you saved. Escapes, the alias and the width stay as written, and a table cell's `\|` escapes are included. Find the file by `target`, never by `raw`. The [reference](/reference/adapters#filereference) says exactly what it holds.
 
-A card that is loading, failed, missing or in error has a Retry button, which calls `resolve` again. Setting `open` makes the name on a file card an Open link: the name and the arrow after it are one control, and hovering it underlines the name and highlights the arrow. A `file` presentation can instead make the whole card the control with `activation: 'card'`, and fill the column with `layout: 'fill'`; see [file card options](/reference/adapters#file-card-options). A picture that loads is drawn without a caption, so it has no Open link: offer Open from `contextMenu`, which receives right-clicks on pictures and cards with a `ClientPoint`. An exception they throw is reported as `file-unavailable`. Both return nothing, so handle failures of asynchronous work inside them.
+A card that is loading, failed, missing or in error has a Retry button, which calls `resolve` again. Setting `open` makes the name on a file card an Open link: the name and the arrow after it are one control, and hovering it underlines the name and highlights the arrow. A `file` presentation can instead make the whole card the control with `activation: 'card'`, and fill the column with `layout: 'fill'`; see [file card options](/reference/adapters#file-card-options). A placeholder has no Open link: its button, when you set `action`, is the one control. A picture that loads is drawn without a caption, so it has no Open link: offer Open from `contextMenu`, which receives right-clicks on pictures and cards with a `ClientPoint`. An exception they throw is reported as `file-unavailable`. Both return nothing, so handle failures of asynchronous work inside them.
 
 Abandon the work when `context.signal` aborts. Inkkit aborts a request when the reference changes, the person retries, the mode changes, the document reloads or the editor is destroyed, and it ignores late results even if you don't stop.
 
