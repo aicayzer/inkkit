@@ -313,12 +313,14 @@ In a path, the fragment starts at the first `#`, so write a `#` that belongs to 
 
 A `FilePresentation` is what `FileAdapter.resolve` returns: one of these shapes, chosen by `kind`. Every shape takes an optional `label`, the name the card shows.
 
-| `kind`                           | Other fields                             | The card shows                                                                                                                                                                                                                                    |
-| -------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `image`, `audio`, `video`, `pdf` | `url: string`, `mimeType?: string`       | The resource at `url`. An image is drawn bare, with rounded corners and no border, padding or caption; its label is its hover text and accessible name. Audio and video use native controls and never autoplay. A PDF shows in a sandboxed frame. |
-| `file`                           | `layout?: 'fill'`, `activation?: 'card'` | A card with no preview. See [file card options](#file-card-options).                                                                                                                                                                              |
-| `missing`                        | None                                     | A card with the `fileMissing` label.                                                                                                                                                                                                              |
-| `error`                          | `message: string`                        | A card whose status is `message`, a short reason for the person. An empty `message` shows the `fileError` label.                                                                                                                                  |
+| `kind`                           | Other fields                                                                                                            | The card shows                                                                                                                                                                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image`, `audio`, `video`, `pdf` | `url: string`, `mimeType?: string`                                                                                      | The resource at `url`. An image is drawn bare, with rounded corners and no border, padding or caption; its label is its hover text and accessible name. Audio and video use native controls and never autoplay. A PDF shows in a sandboxed frame. |
+| `file`                           | `layout?: 'fill'`, `activation?: 'card'`, `appearance?: 'placeholder'`, `symbol?: 'image' \| 'file'`, `action?: string` | A card with no preview, or with `appearance: 'placeholder'` one quiet line. See [file card options](#file-card-options) and [placeholder options](#placeholder-options).                                                                          |
+| `missing`                        | None                                                                                                                    | A card with the `fileMissing` label.                                                                                                                                                                                                              |
+| `error`                          | `message: string`                                                                                                       | A card whose status is `message`, a short reason for the person. An empty `message` shows the `fileError` label.                                                                                                                                  |
+
+The `url` is for display only and must serve the declared kind offline in your page. Its lifetime, access checks and byte validation are yours. A `mimeType`, when given, must match the kind: `image/*`, `audio/*`, `video/*` or `application/pdf`.
 
 #### File card options
 
@@ -327,9 +329,19 @@ A `file` presentation takes two optional fields. Without them the card is as wid
 - **`layout: 'fill'`** stretches the card to the full width of the column.
 - **`activation: 'card'`** makes the whole card the one control: it has the `button` role, takes focus, and is named by the `fileOpen` label followed by the card's name. A click, or Return or Space with the card focused, calls [`FileAdapter.open`](#fileadapter), also in a read-only editor. The card has no separate Open link, so there is one control rather than two. Without `FileAdapter.open`, the field has no effect.
 
-A host that shows a not-yet-loaded picture as a file card can set both, so every placeholder has the same width and one target. Don't style Inkkit's internal classes for this.
+A host that shows a not-yet-loaded picture as a file card can set both, so every card has the same width and one target. For a lighter look, use [`appearance: 'placeholder'`](#placeholder-options). Don't style Inkkit's internal classes for either.
 
-The `url` is for display only and must serve the declared kind offline in your page. Its lifetime, access checks and byte validation are yours. A `mimeType`, when given, must match the kind: `image/*`, `audio/*`, `video/*` or `application/pdf`.
+#### Placeholder options
+
+A `file` presentation with **`appearance: 'placeholder'`** draws one quiet line in the text instead of a card, for a file that isn't shown yet, such as a picture that the person hasn't loaded. The line has no border or fill. It holds a small symbol, the label in secondary text and, at the end, an optional button. Any other `appearance`, `symbol` or `action` value makes the result invalid.
+
+- **`symbol`** is `'image'` (the default) or `'file'`. Inkkit draws it as its own inline SVG in the text color, and hides it from assistive technology. Without `appearance: 'placeholder'`, it has no effect.
+- **`action`** is the button's text, such as `Load`. The button calls [`FileAdapter.open`](#fileadapter) for this reference alone, also in a read-only editor. It is a native button: it takes focus in the tab order, and Return or Space activates it. Its accessible name is `action` followed by the label, so `Load` and `Photo` read as "Load Photo". Without `action`, or without `FileAdapter.open`, the line has no button, which suits a state the host sets, such as "Loading Picture…". An empty `action` makes the result invalid. Without `appearance: 'placeholder'`, it has no effect.
+- **`layout` and `activation`** have no effect on a placeholder. The line is as wide as its content, and the line itself is never a control.
+
+A placeholder is a presentation, not content: the document's bytes are the same as when the file is shown. When the host answers again with another presentation after [`refreshReferences`](/reference/editor#refreshreferences), the same place redraws as a picture or an ordinary card. Copy, print and Markdown output describe a placeholder as they describe a file card, `[File: label]`; the `action` text never reaches them.
+
+The line has no tokens of its own. The symbol and label take [`--inkkit-muted-color`](/reference/appearance#tokens), and the button takes `--inkkit-text-color`, `--inkkit-code-background` and `--inkkit-rule-color`, like the other file card buttons. The button's focus ring follows the [focus tokens](/guides/appearance).
 
 ### WikiLinkReference
 

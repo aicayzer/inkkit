@@ -84,6 +84,22 @@ export async function resolveFile(
       presentation.activation !== 'card'
     )
       throw new TypeError('File presentation activation must be card')
+    if (
+      presentation.appearance !== undefined &&
+      presentation.appearance !== 'placeholder'
+    )
+      throw new TypeError('File presentation appearance must be placeholder')
+    if (
+      presentation.symbol !== undefined &&
+      presentation.symbol !== 'image' &&
+      presentation.symbol !== 'file'
+    )
+      throw new TypeError('File presentation symbol must be image or file')
+    if (
+      presentation.action !== undefined &&
+      (typeof presentation.action !== 'string' || !presentation.action.trim())
+    )
+      throw new TypeError('File presentation action must be text')
   }
   if (presentation.kind === 'error' && typeof presentation.message !== 'string')
     throw new TypeError('File presentation error must include a message')

@@ -137,7 +137,7 @@ const editor = await InkKitEditor.mount(root, events, { files })
 How the result shows:
 
 - **`image`, `audio`, `video` or `pdf`** shows the resource at `url`. The `mimeType`, when given, must match the kind. An image is drawn bare: rounded corners, no border, padding or caption, with its label as hover text.
-- **`file`** shows a card with no preview.
+- **`file`** shows a card with no preview. With `appearance: 'placeholder'` it shows one quiet line instead: a symbol, the label and, when you give `action`, a small button that calls `open` for that file. Use it for a picture the person hasn't loaded yet, then answer again with an `image` after `refreshReferences`. See [placeholder options](/reference/adapters#placeholder-options).
 - **`missing`** shows a card with the `fileMissing` label.
 - **`error`** shows a card whose status is your `message`, a short reason written for the person.
 - **A rejected or invalid result** shows a card with the `fileError` label and reports `file-unavailable` through `events.error`.

@@ -9,6 +9,7 @@ import { NodeSelection } from '@milkdown/kit/prose/state'
 import {
   InkKitError,
   type FileAdapter,
+  type FilePresentation,
   type FileReference,
   type ImageAdapter,
 } from './types'
@@ -339,6 +340,30 @@ class ImageView implements NodeView {
     this.element.append(footer)
   }
 
+  /** One quiet line for a file that is not shown yet: a symbol, the label and, when the host gave
+   *  the button a text and can open files, that button. The line itself is not a control. */
+  private placeholder(
+    label: string,
+    presentation: Extract<FilePresentation, { kind: 'file' }>,
+  ): void {
+    this.element.dataset.inkkitFileAppearance = 'placeholder'
+    const line = document.createElement('span')
+    line.className = 'inkkit-file-footer inkkit-file-quiet'
+    const text = document.createElement('span')
+    text.className = 'inkkit-file-label'
+    text.textContent = label
+    text.title = label
+    line.append(fileSymbol(presentation.symbol ?? 'image'), text)
+    const { action } = presentation
+    if (action && this.runtime?.adapter.open) {
+      const button = this.button(action, this.activate)
+      button.classList.add('inkkit-file-action')
+      button.setAttribute('aria-label', `${action} ${label}`)
+      line.append(button)
+    }
+    this.element.append(line)
+  }
+
   private failPreview(): void {
     this.previewFailed = true
     this.runtime?.error?.(
@@ -368,6 +393,7 @@ class ImageView implements NodeView {
     this.element.removeAttribute('title')
     this.element.removeAttribute('data-inkkit-file-activation')
     this.element.removeAttribute('data-inkkit-file-layout')
+    this.element.removeAttribute('data-inkkit-file-appearance')
     this.cardKeys = false
     this.image = undefined
     this.handle = undefined
@@ -450,6 +476,11 @@ class ImageView implements NodeView {
         this.pdf = pdf
         this.element.append(pdf)
         this.card(label, this.runtime.labels.filePDFPreview)
+      } else if (
+        presentation.kind === 'file' &&
+        presentation.appearance === 'placeholder'
+      ) {
+        this.placeholder(label, presentation)
       } else if (presentation.kind === 'file') {
         if (presentation.layout === 'fill')
           this.element.dataset.inkkitFileLayout = 'fill'
@@ -659,6 +690,45 @@ function openArrow(): SVGElement {
   const path = document.createElementNS(svg, 'path')
   path.setAttribute('d', 'M4 2.5h5.5V8M9.5 2.5 2.5 9.5')
   icon.append(path)
+  return icon
+}
+
+/** Decoration for a placeholder line, drawn in the text colour and hidden from assistive
+ *  technology. */
+function fileSymbol(name: 'image' | 'file'): SVGElement {
+  const icon = document.createElementNS(svg, 'svg')
+  icon.setAttribute('viewBox', '0 0 16 16')
+  icon.setAttribute('aria-hidden', 'true')
+  icon.setAttribute('focusable', 'false')
+  icon.classList.add('inkkit-file-symbol')
+  const shapes =
+    name === 'image'
+      ? [
+          [
+            'rect',
+            { x: '1.75', y: '2.75', width: '12.5', height: '10.5', rx: '2' },
+          ],
+          ['circle', { cx: '5.5', cy: '6.5', r: '1' }],
+          ['path', { d: 'M2 12 6 8.25l2.75 2.5 1.75-1.5L14 12.5' }],
+        ]
+      : [
+          [
+            'path',
+            {
+              d: 'M4.5 1.75h4.75L12.75 5.25v8a1 1 0 0 1-1 1h-7.25a1 1 0 0 1-1-1v-10.5a1 1 0 0 1 1-1Z',
+            },
+          ],
+          ['path', { d: 'M9 2v3.5h3.5' }],
+        ]
+  for (const [tag, attributes] of shapes as [
+    string,
+    Record<string, string>,
+  ][]) {
+    const shape = document.createElementNS(svg, tag)
+    for (const [key, value] of Object.entries(attributes))
+      shape.setAttribute(key, value)
+    icon.append(shape)
+  }
   return icon
 }
 

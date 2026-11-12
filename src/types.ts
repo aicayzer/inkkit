@@ -296,6 +296,14 @@ export type FilePresentation =
       layout?: 'fill'
       /** `'card'` makes the whole card the one control that calls `FileAdapter.open`. */
       activation?: 'card'
+      /** `'placeholder'` draws one quiet line of text in place of a card, for a file that is not
+       *  shown yet. `layout` and `activation` have no effect on it. */
+      appearance?: 'placeholder'
+      /** The small picture drawn before a placeholder's label. Only a placeholder uses it. */
+      symbol?: 'image' | 'file'
+      /** The text of the placeholder's button, which calls `FileAdapter.open` for this
+       *  reference alone. Without it, or without `FileAdapter.open`, the line has no button. */
+      action?: string
     }
   | { kind: 'missing'; label?: string }
   | { kind: 'error'; label?: string; message: string }
