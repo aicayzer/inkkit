@@ -17,7 +17,7 @@ import { Mapping, liftTarget } from '@milkdown/kit/prose/transform'
 import { splitBlock } from '@milkdown/kit/prose/commands'
 import { undoInputRule } from '@milkdown/kit/prose/inputrules'
 import { keymap } from '@milkdown/kit/prose/keymap'
-import { liftListItem } from '@milkdown/kit/prose/schema-list'
+import { liftListItem, splitListItem } from '@milkdown/kit/prose/schema-list'
 import { $prose } from '@milkdown/kit/utils'
 import { textInputPlugin } from './text-input'
 
@@ -109,6 +109,36 @@ export const calloutEnter = $prose(() =>
   }),
 )
 
+// The preset copies the completed state when it splits a task.
+export const taskItemEnter = $prose(() =>
+  keymap({
+    Enter: (state, dispatch) => {
+      const { $from } = state.selection
+      if (
+        $from.depth < 3 ||
+        $from.node(-1).type.name !== 'list_item' ||
+        $from.node(-1).attrs.checked == null ||
+        $from.parent.type.name !== 'paragraph' ||
+        $from.parent.content.size === 0
+      )
+        return false
+      return splitListItem(state.schema.nodes.list_item!)(
+        state,
+        dispatch &&
+          ((tr) => {
+            const $at = tr.selection.$from
+            const item = $at.node(-1)
+            tr.setNodeMarkup($at.before(-1), undefined, {
+              ...item.attrs,
+              checked: false,
+            })
+            dispatch(tr)
+          }),
+      )
+    },
+  }),
+)
+
 // The preset lifts only an item's first line, which cannot leave on its own while the item holds
 // more, such as a nested list: at the top of a document Backspace did nothing, and below another block
 // it merged the line upward and left an empty bullet. The whole item is lifted instead, and a nested
@@ -119,6 +149,14 @@ export const listItemBackspace = $prose(() =>
       const { $from, empty } = state.selection
       if (!empty || $from.parentOffset > 0 || $from.depth < 3) return false
       const item = $from.node(-1)
+      // Joining an empty task backward leaves its paragraph inside the previous task.
+      if (
+        item.type.name === 'list_item' &&
+        item.attrs.checked != null &&
+        item.childCount === 1 &&
+        $from.parent.content.size === 0
+      )
+        return liftItem(state, dispatch)
       if (
         item.type.name !== 'list_item' ||
         item.childCount < 2 ||

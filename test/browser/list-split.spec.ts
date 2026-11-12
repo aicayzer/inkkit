@@ -23,6 +23,20 @@ async function reopens(page: Page, saved: string) {
 
 for (const [name, source, at, keys, saved] of [
   [
+    'a completed task followed by a new unchecked task',
+    '- [x] Thank you.\n',
+    'Thank you.',
+    ['Enter', 'n', 'e', 'w'],
+    '- [x] Thank you.\n- [ ] new\n',
+  ],
+  [
+    'Backspace exits a newly created empty task',
+    '- [x] Thank you.\n',
+    'Thank you.',
+    ['Enter', 'Backspace', 'n', 'e', 'w'],
+    '- [x] Thank you.\n\nnew\n',
+  ],
+  [
     'a * list ended after its first item',
     '* __a__ one\n* _b_ two\n* c three\n',
     'a one',

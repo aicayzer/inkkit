@@ -1,5 +1,42 @@
 const assert = (path, equals) => ({ op: 'assert', path, equals })
 export const scenarios = {}
+scenarios['native-long-list-task-exit'] = {
+  fixture: {
+    source: '+ [x] Café 😀\r\n',
+    historyClock: true,
+    configuration: 'minimal',
+    operations: [
+      { op: 'select', text: 'Café 😀', from: 7, to: 7 },
+      { op: 'nativeInput', keyCode: 36, characters: '\r' },
+      assert('snapshot.text', '+ [x] Café 😀\r\n+ [ ] <br />\r\n'),
+      { op: 'historyBoundary' },
+      { op: 'nativeInput', keyCode: 51, characters: '\u007f' },
+      assert('snapshot.text', '+ [x] Café 😀\r\n\r\n<br />\r\n'),
+      { op: 'historyBoundary' },
+      { op: 'nativeInput', keyCode: 7, characters: 'x' },
+      assert('snapshot.text', '+ [x] Café 😀\r\n\r\nx\r\n'),
+      { op: 'undo' },
+      assert('snapshot.text', '+ [x] Café 😀\r\n\r\n<br />\r\n'),
+      { op: 'undo' },
+      assert('snapshot.text', '+ [x] Café 😀\r\n+ [ ] <br />\r\n'),
+      { op: 'redo' },
+      assert('snapshot.text', '+ [x] Café 😀\r\n\r\n<br />\r\n'),
+      { op: 'redo' },
+      assert('snapshot.text', '+ [x] Café 😀\r\n\r\nx\r\n'),
+      { op: 'save' },
+      { op: 'reopen' },
+      assert('snapshot.text', '+ [x] Café 😀\r\n\r\nx\r\n'),
+      assert('error', null),
+      assert('diagnostics', []),
+    ],
+  },
+  native: [
+    { key: 'Enter', collapsed: true },
+    { key: 'Backspace', collapsed: true },
+    { key: 'x', collapsed: true, beforeinput: 'insertText' },
+  ],
+  strict: true,
+}
 for (const [name, count, ending, marker] of [
   ['crlf-task', 5000, '\r\n', '+ [ ]'],
   ['lf-bullet', 20, '\n', '*'],

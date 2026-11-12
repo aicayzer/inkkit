@@ -89,7 +89,7 @@ test('lists all migrated cases with distinct tool requirements', () => {
   ])
   assert.equal(result.status, 0, result.stderr)
   const list = JSON.parse(result.stdout)
-  assert.equal(list.selected.length, 36)
+  assert.equal(list.selected.length, 37)
   for (const [family, count] of Object.entries({
     'literal-paste': 4,
     'paste-caret': 6,
@@ -97,7 +97,7 @@ test('lists all migrated cases with distinct tool requirements', () => {
     'source-redo': 2,
     'structural-deletion': 10,
     'image-drag': 2,
-    'long-list': 2,
+    'long-list': 3,
     'drawn-caret': 2,
   }))
     assert.equal(list.groups['native-' + family].length, count)
