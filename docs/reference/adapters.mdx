@@ -333,15 +333,15 @@ A host that shows a not-yet-loaded picture as a file card can set both, so every
 
 #### Placeholder options
 
-A `file` presentation with **`appearance: 'placeholder'`** draws one quiet line in the text instead of a card, for a file that isn't shown yet, such as a picture that the person hasn't loaded. The line has no border or fill. It holds a small symbol, the label in secondary text and, at the end, an optional button. Any other `appearance`, `symbol` or `action` value makes the result invalid.
+A `file` presentation with **`appearance: 'placeholder'`** draws one quiet line in the text instead of a card, for a file that isn't shown yet, such as a picture that the person hasn't loaded. By default the box has no border or fill. It holds a small symbol, the label in secondary text and, at the end, an optional button. Any other `appearance`, `symbol` or `action` value makes the result invalid.
 
 - **`symbol`** is `'image'` (the default) or `'file'`. Inkkit draws it as its own inline SVG in the secondary text color, and hides it from assistive technology. Without `appearance: 'placeholder'`, it has no effect.
 - **`action`** is the button's text, such as `Load`. The button calls [`FileAdapter.open`](#fileadapter) for this reference alone, also in a read-only editor. It is a native button: it takes focus in the tab order, and Return or Space activates it. Its accessible name is `action` followed by the label, so `Load` and `Photo` read as "Load Photo". Without `action`, or without `FileAdapter.open`, the line has no button, which suits a state the host sets, such as "Loading Picture…". An empty `action` makes the result invalid. Without `appearance: 'placeholder'`, it has no effect.
-- **`layout` and `activation`** have no effect on a placeholder. The line is as wide as its content, and the line itself is never a control.
+- **`layout` and `activation`** have no effect on a placeholder. The box is as wide as its content, and the line itself is never a control.
 
 A placeholder is a presentation, not content: the document's bytes are the same as when the file is shown. When the host answers again with another presentation after [`refreshReferences`](/reference/editor#refreshreferences), the same place redraws as a picture or an ordinary card. Copy, print and Markdown output describe a placeholder as they describe a file card, `[File: label]`; the `action` text never reaches them.
 
-The line has no tokens of its own. The symbol and label take [`--inkkit-muted-color`](/reference/appearance#tokens), and the button takes `--inkkit-text-color`, `--inkkit-code-background` and `--inkkit-rule-color`, like the other file card buttons. The button's focus ring follows the [focus tokens](/guides/appearance).
+Without tokens, the symbol and label take [`--inkkit-muted-color`](/reference/appearance#tokens), and the button takes `--inkkit-text-color`, `--inkkit-code-background` and `--inkkit-rule-color`, like the other file card buttons. A host changes the box, the label, the symbol and the button with the [file placeholder tokens](/reference/appearance#file-placeholder-tokens), and doesn't style Inkkit's classes. The button's focus ring follows the [focus tokens](/guides/appearance).
 
 ### WikiLinkReference
 

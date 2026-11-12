@@ -115,6 +115,52 @@ These tokens set the parts of a table that no other token covers. Each default i
 | `--inkkit-table-header-color`       | `inherit`                  | Text color of header cells.                                                                                                           |
 | `--inkkit-table-grip-color`         | `--inkkit-muted-color`     | Color of the dots on the column and row grips at rest. The pointer over a grip still darkens them, and an open grip keeps its accent. |
 
+### File placeholder tokens
+
+These tokens set the look of a [file placeholder](/reference/adapters#placeholder-options): the one quiet line that stands in for a file the host hasn't loaded. Set them on the editor root or an ancestor. Each default is the look the placeholder had before these tokens existed, so setting none of them changes nothing.
+
+The placeholder is a box that takes the width of its content. It holds a symbol, the label and, when the host gave an `action`, a button. The box has no border. The focus ring of the button follows the [focus tokens](/guides/appearance), and the tokens leave the accessible name and keyboard use as they are.
+
+| Token                                                 | Default                                       | Controls                                                                                                                         |
+| ----------------------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `--inkkit-file-placeholder-background`                | `transparent`                                 | Fill of the box.                                                                                                                 |
+| `--inkkit-file-placeholder-radius`                    | `6px`                                         | Corner radius of the box, including the outline drawn when the picture is selected.                                              |
+| `--inkkit-file-placeholder-min-height`                | `0px`                                         | Least height of the box. The symbol, label and button stay centered in it.                                                       |
+| `--inkkit-file-placeholder-padding`                   | `0px`                                         | Padding of the box. Any `padding` value works, such as `0 4px 0 9px`.                                                            |
+| `--inkkit-file-placeholder-gap`                       | `0.4em`                                       | Space between the symbol, the label and the button.                                                                              |
+| `--inkkit-file-placeholder-color`                     | `--inkkit-muted-color`                        | Color of the label. The symbol follows it unless `--inkkit-file-placeholder-symbol-color` is set.                                |
+| `--inkkit-file-placeholder-font-size`                 | `0.9em`                                       | Font size of the line: the label and, unless the button sets its own, the button. The symbol size and the gap in `em` follow it. |
+| `--inkkit-file-placeholder-symbol-color`              | `--inkkit-file-placeholder-color`             | Color of the symbol.                                                                                                             |
+| `--inkkit-file-placeholder-symbol-size`               | `1.15em`                                      | Width and height of the symbol.                                                                                                  |
+| `--inkkit-file-placeholder-button-background`         | `--inkkit-code-background`                    | Fill of the button.                                                                                                              |
+| `--inkkit-file-placeholder-button-hover-background`   | `--inkkit-file-placeholder-button-background` | Fill of the button while the pointer is over it. By default the fill doesn't change.                                             |
+| `--inkkit-file-placeholder-button-border-color`       | `--inkkit-rule-color`                         | Color of the button's 1px border. Set `transparent` for a button that shows no border.                                           |
+| `--inkkit-file-placeholder-button-hover-border-color` | `--inkkit-muted-color`                        | Color of the button's border while the pointer is over it.                                                                       |
+| `--inkkit-file-placeholder-button-color`              | `--inkkit-text-color`                         | Color of the button's text.                                                                                                      |
+| `--inkkit-file-placeholder-button-font-size`          | `inherit`                                     | Font size of the button's text, which is the line's font size by default.                                                        |
+| `--inkkit-file-placeholder-button-font-weight`        | `inherit`                                     | Font weight of the button's text, which is the text's own weight by default.                                                     |
+| `--inkkit-file-placeholder-button-height`             | `auto`                                        | Height of the button. By default the button is 1.5 lines of text, with 0.05em above and below.                                   |
+| `--inkkit-file-placeholder-button-padding-inline`     | `0.65em`                                      | Space between the button's text and its left and right edges.                                                                    |
+| `--inkkit-file-placeholder-button-radius`             | `999px`                                       | Corner radius of the button. The default makes a pill.                                                                           |
+
+For example, a host can draw a rounded box with a tinted button at its trailing end:
+
+```css
+.editor-container {
+  --inkkit-file-placeholder-background: rgb(128 128 128 / 8%);
+  --inkkit-file-placeholder-radius: 8px;
+  --inkkit-file-placeholder-min-height: 30px;
+  --inkkit-file-placeholder-padding: 0 4px 0 9px;
+  --inkkit-file-placeholder-color: CanvasText;
+  --inkkit-file-placeholder-button-background: rgb(0 105 209 / 14%);
+  --inkkit-file-placeholder-button-hover-background: rgb(0 105 209 / 24%);
+  --inkkit-file-placeholder-button-border-color: transparent;
+  --inkkit-file-placeholder-button-hover-border-color: transparent;
+  --inkkit-file-placeholder-button-color: rgb(0 105 209);
+  --inkkit-file-placeholder-button-height: 22px;
+}
+```
+
 Diagram previews use neutral surfaces and connectors. Category colors use the **Pale** palette by default: 35% color mixed with 65% background. For the stronger **Softer** option, set:
 
 ```css

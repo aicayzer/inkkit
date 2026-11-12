@@ -471,35 +471,79 @@
   border-radius: 3px;
   cursor: pointer;
 }
-/* A placeholder is one quiet line, not a card: no border or padding, the footer's muted text, a
-   symbol before the label and a small pill button after it. */
+/* A placeholder is one quiet line, not a card: no border, the footer's muted text, a symbol before
+   the label and a small pill button after it. Every look below is a token, and each fallback is the
+   look the placeholder had before the token existed. The box is a flex container so that a minimum
+   height keeps the line centred; it still takes the width of its content. */
 .inkkit-root
   .ProseMirror
   .inkkit-file[data-inkkit-file-appearance='placeholder'] {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--inkkit-file-placeholder-min-height, 0px);
   border: 0;
-  padding: 0;
+  border-radius: var(--inkkit-file-placeholder-radius, 6px);
+  padding: var(--inkkit-file-placeholder-padding, 0px);
+  background: var(--inkkit-file-placeholder-background, transparent);
+}
+.inkkit-root
+  .ProseMirror
+  :not(.inkkit-image-block)
+  > .inkkit-image.inkkit-file[data-inkkit-file-appearance='placeholder'] {
+  display: flex;
+}
+.inkkit-root
+  .ProseMirror
+  .inkkit-image-block.ProseMirror-selectednode
+  > .inkkit-image[data-inkkit-file-appearance='placeholder'] {
+  border-radius: var(--inkkit-file-placeholder-radius, 6px);
 }
 .inkkit-root .ProseMirror .inkkit-file-quiet {
+  flex: 1 1 auto;
   flex-wrap: nowrap;
-  gap: 0.4em;
+  min-width: 0;
+  gap: var(--inkkit-file-placeholder-gap, 0.4em);
+  font-size: var(--inkkit-file-placeholder-font-size, 0.9em);
+  color: var(--inkkit-file-placeholder-color, var(--_inkkit-muted));
 }
 .inkkit-root .ProseMirror .inkkit-file-symbol {
   flex: none;
-  width: 1.15em;
-  height: 1.15em;
+  width: var(--inkkit-file-placeholder-symbol-size, 1.15em);
+  height: var(--inkkit-file-placeholder-symbol-size, 1.15em);
   fill: none;
-  stroke: currentColor;
+  stroke: var(--inkkit-file-placeholder-symbol-color, currentColor);
   stroke-width: 1.25;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .inkkit-root .ProseMirror .inkkit-file-action {
-  padding: 0.05em 0.65em;
+  box-sizing: border-box;
+  height: var(--inkkit-file-placeholder-button-height, auto);
+  margin-inline-start: auto;
+  padding: 0.05em var(--inkkit-file-placeholder-button-padding-inline, 0.65em);
+  font-size: var(--inkkit-file-placeholder-button-font-size, inherit);
+  font-weight: var(--inkkit-file-placeholder-button-font-weight, inherit);
   line-height: 1.5;
-  border-radius: 999px;
+  color: var(--inkkit-file-placeholder-button-color, var(--_inkkit-text));
+  background: var(
+    --inkkit-file-placeholder-button-background,
+    var(--_inkkit-code-bg)
+  );
+  border-color: var(
+    --inkkit-file-placeholder-button-border-color,
+    var(--_inkkit-rule)
+  );
+  border-radius: var(--inkkit-file-placeholder-button-radius, 999px);
 }
 .inkkit-root .ProseMirror .inkkit-file-action:hover {
-  border-color: var(--_inkkit-muted);
+  background: var(
+    --inkkit-file-placeholder-button-hover-background,
+    var(--inkkit-file-placeholder-button-background, var(--_inkkit-code-bg))
+  );
+  border-color: var(
+    --inkkit-file-placeholder-button-hover-border-color,
+    var(--_inkkit-muted)
+  );
 }
 .inkkit-root .ProseMirror .inkkit-file-open {
   /* The name and the arrow are one link: a plain control that the footer's muted text colours. */
