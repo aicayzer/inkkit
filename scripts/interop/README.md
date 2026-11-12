@@ -104,7 +104,7 @@ These cases share the runner, evidence format and selection rules above. They re
 | `native-rich-text`           |     1 | An RTF `document` loaded through the facade takes trusted typing and a host `Mod-u` underline; the canonical snapshot, history and reopen agree.                                                                                                                                                          |
 | `native-drawn-caret`         |     2 | Under a loose line height, the drawn caret stands on the text of a wrapped line and, after trusted line and arrow keys, on the line WebKit chose at a soft wrap; a range hands back WebKit's caret. A selection over wrapped lines draws one bar per line, centred on its text, with no custom highlight. |
 
-`native-editing` selects all probe groups except image drag and rich text (31 cases); `native-rich-text` and `native-image-drag` are selected on their own. Case names begin with their group name. Use `--list` to inspect exact names and required tools before launching a host. Native groups are opt-in and do not expand the default core or legacy selection.
+`native-editing` selects all probe groups except image drag and rich text (35 cases); `native-rich-text` and `native-image-drag` are selected on their own. Case names begin with their group name. Use `--list` to inspect exact names and required tools before launching a host. Native groups are opt-in and do not expand the default core or legacy selection.
 
 Build the clipboard helper for literal paste and the specialised image-drag host for image drag:
 
