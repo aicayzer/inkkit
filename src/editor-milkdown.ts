@@ -63,6 +63,7 @@ import {
   undoTypedRule,
   quoteBackspace,
   calloutEnter,
+  taskItemEnter,
   listItemBackspace,
   nestedItemEnter,
   rejoinLists,
@@ -204,6 +205,7 @@ export async function createMilkdownEditor(
     .use(calloutEnter)
     .use(literalEnter)
     .use(literalReread)
+    .use(taskItemEnter)
     .use(listItemBackspace)
     .use(nestedItemEnter)
     .use(rejoinLists)
