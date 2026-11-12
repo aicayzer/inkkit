@@ -154,6 +154,8 @@ test('rejected typing and composition restore visible DOM and leave saving and h
   expect((await observe(page)).snapshot).toEqual(before)
   await surface.click()
   await page.keyboard.press('End')
+  // Keep this typing run in one undo group on a slow runner.
+  await page.clock.setFixedTime(await page.evaluate(() => Date.now()))
   await page.keyboard.type(' accepted')
   expect((await observe(page)).snapshot?.text).toBe('Before accepted\n')
   await operation(page, 'undo')
