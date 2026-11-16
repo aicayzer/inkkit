@@ -3,6 +3,7 @@ import { InkKitEditor, InkKitError } from '../src/core'
 import { documentOf, importsOf, diagnosticsOf } from './editor-access'
 import { Preservation, PreservationError } from '../src/preserve'
 import { PreservationRefusal } from '../src/preserve-error'
+import type { DiagnosticState } from '../src/core'
 
 let editor: InkKitEditor
 let root: HTMLElement
@@ -24,6 +25,19 @@ async function mount() {
   })
   return root.querySelector<HTMLElement>('.ProseMirror')!
 }
+// Alternating input categories, so consecutive events differ and none merge.
+function distinctInputs(surface: HTMLElement, total: number, data?: string) {
+  for (let index = 0; index < total; index++)
+    surface.dispatchEvent(
+      new InputEvent('beforeinput', {
+        bubbles: true,
+        inputType: index % 2 ? 'deleteContentBackward' : 'insertText',
+        data,
+      }),
+    )
+}
+const operations = () =>
+  editor.diagnosticReport().events.filter((event) => event.kind === 'operation')
 
 test('diagnostics stay off until enabled and disabling clears all tracing and listeners', async () => {
   const surface = await mount()
@@ -130,14 +144,7 @@ test('freezes refusal context, bounds overflow and returns detached reports with
   const surface = await mount()
   const original = editor.snapshot()
   editor.setDiagnosticsEnabled(true)
-  for (let index = 0; index < 220; index++)
-    surface.dispatchEvent(
-      new InputEvent('beforeinput', {
-        bubbles: true,
-        inputType: 'insertText',
-        data: privateText,
-      }),
-    )
+  distinctInputs(surface, 220, privateText)
   const failure = vi
     .spyOn(Preservation.prototype, 'serialize')
     .mockImplementation(() => {
@@ -153,14 +160,7 @@ test('freezes refusal context, bounds overflow and returns detached reports with
   )
   failure.mockRestore()
   expect(editor.snapshot()).toEqual(original)
-  for (let index = 0; index < 260; index++)
-    surface.dispatchEvent(
-      new InputEvent('beforeinput', {
-        bubbles: true,
-        inputType: privateText,
-        data: privateText,
-      }),
-    )
+  distinctInputs(surface, 260, privateText)
   const report = editor.diagnosticReport()
   expect(report.events).toHaveLength(200)
   expect(report.incident!.events).toEqual(incident.events)
@@ -221,18 +221,27 @@ test('records only known preservation refusal reasons and keeps the first recove
   expect(
     before.incident!.events.some((event) => event.reason === 'matching-budget'),
   ).toBe(true)
-  for (let index = 0; index < 50; index++)
-    surface.dispatchEvent(
-      new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText' }),
-    )
-  const frozen = editor.diagnosticReport().incident!.tail
-  for (let index = 0; index < 50; index++)
+  const inputTypes = ['insertText', 'deleteContentBackward']
+  let inputs = 0
+  while (editor.diagnosticReport().incident!.tail.length < 40)
     surface.dispatchEvent(
       new InputEvent('beforeinput', {
         bubbles: true,
-        inputType: 'deleteContentBackward',
+        inputType: inputTypes[inputs++ % 2],
       }),
     )
+  const frozen = editor.diagnosticReport().incident!.tail
+  expect(frozen.at(-1)).toEqual(editor.diagnosticReport().events.at(-1))
+  // Repeats of the full tail's last entry merge in the live events only.
+  for (let index = 0; index < 5; index++)
+    surface.dispatchEvent(
+      new InputEvent('beforeinput', {
+        bubbles: true,
+        inputType: inputTypes[(inputs - 1) % 2],
+      }),
+    )
+  expect(editor.diagnosticReport().events.at(-1)!.count).toBe(6)
+  distinctInputs(surface, 50)
   expect(editor.diagnosticReport().incident!.tail).toEqual(frozen)
   expect(JSON.stringify(editor.diagnosticReport())).not.toContain(
     'PRIVATE_SENTINEL',
@@ -330,13 +339,239 @@ test('keys the editor handles itself are recorded as input without the key', asy
   press({ key: 'z', metaKey: true }, true)
   press({ key: 'P', ctrlKey: true }, true)
   press({ key: 'Backspace', isComposing: true }, true)
-  expect(handled().map((event) => event.input)).toEqual([
-    'delete',
-    'delete',
-    'history',
-    'other',
+  // Backspace and Delete are the same category, so they merge into one event.
+  expect(handled().map((event) => [event.input, event.count ?? 1])).toEqual([
+    ['delete', 2],
+    ['history', 1],
+    ['other', 1],
   ])
   expect(JSON.stringify(editor.diagnosticReport())).not.toMatch(
     /"P"|Backspace|PRIVATE_SENTINEL/,
+  )
+})
+
+test('a synchronous call that succeeds records one success event', async () => {
+  await mount()
+  editor.setDiagnosticsEnabled(true)
+  editor.textSnapshot()
+  expect(operations()).toEqual([
+    expect.objectContaining({ phase: 'success', operation: 'output' }),
+  ])
+  expect(operations()[0]!.count).toBeUndefined()
+  const [enabled, success] = editor.diagnosticReport().events
+  expect(enabled!.kind).toBe('enabled')
+  expect(success!.sequence).toBe(enabled!.sequence + 1)
+})
+
+test('an asynchronous call records its begin before it settles, then its outcome', async () => {
+  await mount()
+  editor.setDiagnosticsEnabled(true)
+  const pending = editor.clipboardSnapshot()
+  expect(operations().map((event) => [event.phase, event.operation])).toEqual([
+    ['begin', 'output'],
+  ])
+  await pending
+  expect(operations().map((event) => [event.phase, event.operation])).toEqual([
+    ['begin', 'output'],
+    ['success', 'output'],
+  ])
+})
+
+test('a refused call still records its begin and its refusal', async () => {
+  const surface = await mount()
+  editor.setDiagnosticsEnabled(true)
+  surface.dispatchEvent(new CompositionEvent('compositionstart'))
+  for (let index = 0; index < 2; index++)
+    expect(() => editor.snapshot()).toThrow(
+      expect.objectContaining({ code: 'composition' }),
+    )
+  expect(
+    operations().map((event) => [event.phase, event.code, event.count]),
+  ).toEqual([
+    ['begin', undefined, undefined],
+    ['refused', 'composition', undefined],
+    ['begin', undefined, undefined],
+    ['refused', 'composition', undefined],
+  ])
+  expect(editor.diagnosticReport().incident).toBeUndefined()
+})
+
+test('a call that records other events while it runs keeps its begin', async () => {
+  await mount()
+  editor.setDiagnosticsEnabled(true)
+  // An edit runs the preservation check, which records its path during the call.
+  editor.insertText('kept', 1)
+  expect(
+    editor
+      .diagnosticReport()
+      .events.slice(1)
+      .map((event) => [event.kind, event.phase, event.operation]),
+  ).toEqual([
+    ['operation', 'begin', 'edit'],
+    ['preservation', undefined, undefined],
+    ['operation', 'success', 'edit'],
+  ])
+})
+
+test('calls the editor makes to its own methods are not recorded as operations', async () => {
+  root = document.createElement('div')
+  document.body.append(root)
+  let published = 0
+  let hostReads = false
+  editor = await InkKitEditor.mount(root, {
+    changed() {},
+    commandStateChanged: () => {
+      published++
+      // A host call made from an editor event is still the host's.
+      if (hostReads) editor.headings()
+    },
+  })
+  editor.loadDocument({
+    documentId: privateText,
+    generation: 1,
+    format: 'md',
+    text: `${privateText}\n`,
+  })
+  editor.setDiagnosticsEnabled(true)
+  const before = published
+  const { snapshotId } = editor.textSnapshot()
+  editor.selectTextRange({ snapshotId, from: 0, to: 1 }, { reveal: true })
+  editor.visibleTextRanges(editor.textSnapshot().snapshotId)
+  expect(published).toBeGreaterThan(before)
+  expect(
+    operations().map((event) => [event.phase, event.operation, event.count]),
+  ).toEqual([
+    ['success', 'output', undefined],
+    ['success', 'selection', undefined],
+    ['success', 'output', undefined],
+    ['success', 'selection', undefined],
+  ])
+  hostReads = true
+  editor.selectTextRange(
+    { snapshotId: editor.textSnapshot().snapshotId, from: 1, to: 2 },
+    { reveal: true },
+  )
+  expect(
+    operations()
+      .slice(-4)
+      .map((event) => [event.phase, event.operation]),
+  ).toEqual([
+    ['success', 'output'],
+    ['begin', 'selection'],
+    ['success', 'other'],
+    ['success', 'selection'],
+  ])
+})
+
+test('consecutive repeats merge into one event with a count and the latest sequence', async () => {
+  await mount()
+  editor.setDiagnosticsEnabled(true)
+  for (let index = 0; index < 3; index++) editor.textSnapshot()
+  const [enabled, merged, ...rest] = editor.diagnosticReport().events
+  expect(rest).toEqual([])
+  expect(merged).toMatchObject({
+    kind: 'operation',
+    phase: 'success',
+    operation: 'output',
+    count: 3,
+  })
+  // Each occurrence is numbered, so the merged range follows the previous event without a gap.
+  expect(merged!.sequence - merged!.count! + 1).toBe(enabled!.sequence + 1)
+  expect(merged!.elapsedMs).toBeGreaterThanOrEqual(enabled!.elapsedMs)
+  editor.textSnapshot()
+  const after = editor.diagnosticReport().events
+  expect(after).toHaveLength(2)
+  expect(after[1]).toMatchObject({ count: 4, sequence: merged!.sequence + 1 })
+})
+
+test('a repeat in a different state or category is a new event', async () => {
+  const surface = await mount()
+  editor.setDiagnosticsEnabled(true)
+  editor.textSnapshot()
+  editor.insertText('changed', 1)
+  editor.textSnapshot()
+  const output = operations().filter((event) => event.operation === 'output')
+  expect(output).toHaveLength(2)
+  expect(output[1]!.state.revision).toBeGreaterThan(output[0]!.state.revision)
+  const type = (inputType: string) =>
+    surface.dispatchEvent(
+      new InputEvent('beforeinput', { bubbles: true, inputType }),
+    )
+  type('insertText')
+  type('deleteContentBackward')
+  type('deleteContentBackward')
+  expect(
+    editor
+      .diagnosticReport()
+      .events.slice(-2)
+      .map((event) => [event.input, event.count]),
+  ).toEqual([
+    ['text', undefined],
+    ['delete', 2],
+  ])
+  const real = (
+    editor as unknown as { diagnosticState(): DiagnosticState }
+  ).diagnosticState()
+  const { selection: _, ...withoutSelection } = real
+  const variants: DiagnosticState[] = [
+    { ...real, revision: real.revision + 1 },
+    { ...real, generation: 9 },
+    { ...real, mode: 'source' },
+    { ...real, format: 'txt' },
+    { ...real, ready: !real.ready },
+    { ...real, editable: !real.editable },
+    { ...real, composing: !real.composing },
+    { ...real, pending: !real.pending },
+    { ...real, selection: { from: 0, to: 1 } },
+    { ...real, selection: { from: 1, to: 1 } },
+    withoutSelection,
+  ]
+  const state = vi.spyOn(
+    editor as unknown as { diagnosticState(): DiagnosticState },
+    'diagnosticState',
+  )
+  for (const variant of variants) {
+    state.mockReturnValue(variant)
+    type('deleteContentBackward')
+  }
+  state.mockRestore()
+  const deletes = editor.diagnosticReport().events.slice(-variants.length)
+  expect(deletes.map((event) => [event.input, event.count])).toEqual(
+    variants.map(() => ['delete', undefined]),
+  )
+  expect(deletes.map((event) => event.state)).toEqual(variants)
+})
+
+test('events that freeze an incident are never merged, and the tail merges repeats while it has room', async () => {
+  const surface = await mount()
+  editor.setDiagnosticsEnabled(true)
+  const failure = vi
+    .spyOn(Preservation.prototype, 'serialize')
+    .mockImplementation(() => {
+      throw new PreservationError(privateText)
+    })
+  for (let index = 0; index < 2; index++)
+    expect(() => editor.insertText('refused', 1)).toThrow(
+      expect.objectContaining({ code: 'preservation' }),
+    )
+  failure.mockRestore()
+  const report = editor.diagnosticReport()
+  const failures = report.events.filter(
+    (event) => event.code === 'preservation',
+  )
+  expect(failures.length).toBeGreaterThanOrEqual(4)
+  expect(failures.every((event) => event.count === undefined)).toBe(true)
+  const trigger = report.incident!.events.at(-1)!
+  expect(trigger.sequence).toBe(report.incident!.triggerSequence)
+  expect(trigger.count).toBeUndefined()
+  for (let index = 0; index < 5; index++)
+    surface.dispatchEvent(
+      new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText' }),
+    )
+  const tail = editor.diagnosticReport().incident!.tail
+  expect(tail.at(-1)).toMatchObject({ input: 'text', count: 5 })
+  expect(tail.at(-1)).toEqual(editor.diagnosticReport().events.at(-1))
+  expect(editor.diagnosticReport().incident!.events).toEqual(
+    report.incident!.events,
   )
 })

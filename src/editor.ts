@@ -768,6 +768,7 @@ const stateEvents: readonly (string | symbol)[] = [
 export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private editor!: Editor
   private readonly diagnostics = new Diagnostics(() => this.diagnosticState())
+  private unrecordedDepth = 0
   private readonly document = new EditorDocument({
     ctx: () => this.editor.ctx,
     literal: () => this.literalSurface,
@@ -1188,6 +1189,18 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.history.restore(before.history)
   }
 
+  /** Calls the editor makes to its own public methods, to publish command state, keep the selection
+   *  in view or finish another method's work. Diagnostics record what the host or person did, so
+   *  these run without operation events. */
+  private unrecorded<T>(run: () => T): T {
+    this.unrecordedDepth++
+    try {
+      return run()
+    } finally {
+      this.unrecordedDepth--
+    }
+  }
+
   /** Reports a refused edit to the facade call that made it, or else to `events.error`. */
   private refuse(error: InkKitError): void {
     this.diagnostics.capture({
@@ -1480,7 +1493,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       this.destroyed
     )
       return
-    this.events.commandStateChanged?.(this.commandState())
+    this.events.commandStateChanged?.(
+      this.unrecorded(() => this.commandState()),
+    )
     this.refreshFindSessions()
   }
 
@@ -1562,7 +1577,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
 
   private historyInputPlugin = createHistoryInputPlugin({
     writable: () => this.writable,
-    available: (name) => this.ready && this.commandState().commands[name],
+    available: (name) =>
+      this.ready && this.unrecorded(() => this.commandState()).commands[name],
     run: (name) => {
       this.forPerson(() => this[name](), true)
     },
@@ -1769,7 +1785,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       // Text-only surfaces have nowhere to store an image, so an image alone is refused.
       if (!text && input.images?.length && !this.options.images)
         throw imagesRefused()
-      this.pasteAsPlainText(text)
+      this.unrecorded(() => this.pasteAsPlainText(text))
       return
     }
     await this.pasteController.paste(input)
@@ -2045,7 +2061,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
           if (!instance.loading && instance.ready)
             instance.revealCurrentSelection()
         },
-        visibleRect: () => instance.viewport().rect,
+        visibleRect: () => instance.unrecorded(() => instance.viewport()).rect,
         capture: () => instance.adapterCapture(),
         active: () =>
           instance.ready && !instance.destroyed && !instance.literalSurface,
@@ -2188,13 +2204,13 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.reportingSuppressed = true
     this.reloading = true
     try {
-      this.loadDocument(document)
+      this.unrecorded(() => this.loadDocument(document))
       if (
         previous.sourceMode &&
         this.document.handler.sourceMode &&
         previousMode === 'source'
       )
-        this.setEditingMode('source', input.generation)
+        this.unrecorded(() => this.setEditingMode('source', input.generation))
       restoreReloadSurface(
         view,
         this.source.element,
@@ -2275,7 +2291,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         this.source.element.focus({ preventScroll: true })
       else this.editor.ctx.get(editorViewCtx).focus()
     }
-    if (reveal) this.revealTextRange(range)
+    if (reveal) this.unrecorded(() => this.revealTextRange(range))
     this.publishCommandState()
   }
 
@@ -2306,7 +2322,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   visibleTextRanges(snapshotId: string): readonly TextRange[] {
     this.assertAlive()
     expectString(snapshotId, 'snapshotId')
-    const snapshot = this.textSnapshot()
+    const snapshot = this.unrecorded(() => this.textSnapshot())
     this.validateTextRange({ snapshotId, from: 0, to: 0 })
     return this.geometry.visibleRanges(
       snapshotId,
@@ -2319,7 +2335,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   revealTextRange(range: TextRange): void {
     const projection = this.validateTextRange(range)
     if (!this.literalSurface) this.geometry.revealCallouts(range, projection)
-    this.geometry.revealRects(this.textRangesRects([range])[0]!)
+    this.geometry.revealRects(
+      this.unrecorded(() => this.textRangesRects([range]))[0]!,
+    )
   }
 
   private revealCurrentSelection(): void {
@@ -2333,7 +2351,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       this.geometry.revealFormattedSelection(range, projection)
       return
     }
-    this.revealTextRange(range)
+    this.unrecorded(() => this.revealTextRange(range))
   }
 
   private revealLiteralSelection(): void {
@@ -2642,11 +2660,11 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.assertMutation(expectedGeneration)
     if (paths.length === 0) return false
     if (this.literalSurface) {
-      this.pasteAsPlainText(paths.join('\n\n'))
+      this.unrecorded(() => this.pasteAsPlainText(paths.join('\n\n')))
       return true
     }
     insertPaths(this.editor.ctx.get(editorViewCtx), paths, point)
-    this.focus()
+    this.unrecorded(() => this.focus())
     return true
   }
 
@@ -2664,7 +2682,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     if (!images.length || !this.canInsertImages || this.literalSurface)
       return false
     return insertImages(this.editor.ctx.get(editorViewCtx), images, point, () =>
-      this.focus(),
+      this.unrecorded(() => this.focus()),
     )
   }
 
@@ -2775,7 +2793,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     // Alignment, and anything an RTF document cannot hold, applies only where it is available.
     if (
       (this.document.handler.richText || command.startsWith('align')) &&
-      !this.commandState().commands.format[command]
+      !this.unrecorded(() => this.commandState()).commands.format[command]
     )
       return false
     applyFormat(
@@ -2785,7 +2803,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       (destination) => this.link(destination),
       this.document.handler.richText != null,
     )
-    this.focus()
+    this.unrecorded(() => this.focus())
     const after = view.state
     const marks = (state: EditorState) =>
       state.storedMarks ?? state.selection.$from.marks()
@@ -2866,7 +2884,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       label,
       () => this.savedText().text,
     )
-    this.focus()
+    this.unrecorded(() => this.focus())
     return true
   }
 
@@ -2882,7 +2900,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     if (this.literalSurface) return false
     if (!navigateFootnote(this.editor.ctx.get(editorViewCtx), target))
       return false
-    this.focus()
+    this.unrecorded(() => this.focus())
     return true
   }
 
@@ -2959,10 +2977,10 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         value(this: InkKitEditor, ...args: unknown[]) {
           if (name === 'setDiagnosticsEnabled' || name === 'diagnosticReport')
             return method.apply(this, args)
-          if (!this.diagnostics.enabled)
+          if (!this.diagnostics.enabled || this.unrecordedDepth)
             return this.facadeCall(() => method.apply(this, args))
           const operation = diagnosticOperation(name)
-          this.diagnostics.capture({
+          const begin = this.diagnostics.begin({
             kind: 'operation',
             phase: 'begin',
             operation,
@@ -2977,6 +2995,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
           }
           const refused = (error: unknown): never => {
             const failure = coded(error)
+            this.diagnostics.settle(begin, true)
             this.diagnostics.capture({
               kind: 'operation',
               phase: 'refused',
@@ -2990,6 +3009,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
           }
           try {
             const result = this.facadeCall(() => method.apply(this, args))
+            // Only a pending result keeps its begin event, so a call that never settles shows.
+            this.diagnostics.settle(begin, result instanceof Promise)
             return result instanceof Promise
               ? result.then(success, refused)
               : success(result)

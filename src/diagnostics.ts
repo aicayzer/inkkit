@@ -22,6 +22,8 @@ export type DiagnosticState = {
 export type DiagnosticEvent = {
   sequence: number
   elapsedMs: number
+  /** Consecutive identical occurrences this event stands for. Absent means one. */
+  count?: number
   kind:
     | 'input'
     | 'composition'
@@ -111,7 +113,41 @@ export type DiagnosticReport = {
   presentation?: DiagnosticPresentation
 }
 
-type Detail = Omit<DiagnosticEvent, 'sequence' | 'elapsedMs' | 'state'>
+type Detail = Omit<
+  DiagnosticEvent,
+  'sequence' | 'elapsedMs' | 'state' | 'count'
+>
+type Prepared = Omit<DiagnosticEvent, 'sequence'>
+
+const ringSize = 200
+const tailSize = 40
+
+/** The events that freeze an incident. They are never merged, so a trigger stays visible on its own. */
+const triggers = (event: Detail): boolean =>
+  event.code === 'preservation' ||
+  event.code === 'internal' ||
+  (event.kind === 'preservation' && event.phase === 'refused')
+
+function sameFields(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  skip: readonly string[],
+): boolean {
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)]))
+    if (!skip.includes(key) && a[key] !== b[key]) return false
+  return true
+}
+
+/** Every field except when it happened. Generic, so a field added later also separates events. */
+function repeats(last: DiagnosticEvent, next: Prepared): boolean {
+  const selection = (state: DiagnosticState) => state.selection ?? {}
+  return (
+    sameFields(last, next, ['sequence', 'elapsedMs', 'count', 'state']) &&
+    sameFields(last.state, next.state, ['selection']) &&
+    Boolean(last.state.selection) === Boolean(next.state.selection) &&
+    sameFields(selection(last.state), selection(next.state), [])
+  )
+}
 const observers = new WeakMap<object, (detail: Detail) => void>()
 export function observePreservation(
   ctx: object,
@@ -131,6 +167,8 @@ export class Diagnostics {
   private sequence = 0
   private events: DiagnosticEvent[] = []
   private incident?: DiagnosticReport['incident']
+  /** A call's begin event, held until the call is known to need it. */
+  private held?: Prepared
   private dispose?: () => void
   private latestState: DiagnosticState = {
     ready: false,
@@ -158,6 +196,32 @@ export class Diagnostics {
     }
   }
 
+  /**
+   * Holds the begin event of a public call. A synchronous call that succeeds with nothing else
+   * recorded meanwhile needs only its outcome, so `settle` drops the held event. Anything recorded
+   * during the call, a refusal, an asynchronous result or a report request writes it first, in
+   * order, so the events a call caused stay between its begin and its outcome.
+   */
+  begin(detail: Detail): object | undefined {
+    try {
+      if (!this.enabled) return undefined
+      this.release()
+      return (this.held = this.prepare(detail))
+    } catch {
+      return undefined
+    }
+  }
+
+  settle(begin: object | undefined, keep: boolean): void {
+    try {
+      if (!begin || begin !== this.held) return
+      if (keep) this.release()
+      else this.held = undefined
+    } catch {
+      // As for `capture`.
+    }
+  }
+
   constructor(private readonly state: () => DiagnosticState) {}
 
   setEnabled(enabled: boolean, root: HTMLElement, ctx: object): void {
@@ -168,6 +232,7 @@ export class Diagnostics {
     this.enabled = enabled
     this.events = []
     this.incident = undefined
+    this.held = undefined
     this.sequence = 0
     if (!enabled) return
     this.sessionId = randomSession()
@@ -257,6 +322,11 @@ export class Diagnostics {
 
   private record(detail: Detail): void {
     if (!this.enabled) return
+    this.release()
+    this.append(this.prepare(detail))
+  }
+
+  private prepare(detail: Detail): Prepared {
     const safe = { ...detail }
     if (safe.code && !editorErrorCodes.includes(safe.code))
       safe.code = 'internal'
@@ -271,21 +341,36 @@ export class Diagnostics {
       ].includes(safe.reason)
     )
       safe.reason = 'unexpected'
-    const event: DiagnosticEvent = {
+    return {
       ...safe,
-      sequence: ++this.sequence,
       elapsedMs: Math.round(performance.now() - this.started),
       state: this.currentState(),
     }
+  }
+
+  private release(): void {
+    const held = this.held
+    this.held = undefined
+    if (held) this.append(held)
+  }
+
+  private append(prepared: Prepared): void {
+    const event: DiagnosticEvent = { ...prepared, sequence: ++this.sequence }
+    const last = this.events.at(-1)
+    if (last && !triggers(last) && !triggers(event) && repeats(last, event)) {
+      // A new object, so the frozen incident and a full tail keep the copy they hold.
+      const merged = { ...event, count: (last.count ?? 1) + 1 }
+      this.events[this.events.length - 1] = merged
+      const tail = this.incident?.tail
+      if (tail && tail.length < tailSize && tail.at(-1) === last)
+        tail[tail.length - 1] = merged
+      return
+    }
     this.events.push(event)
-    if (this.events.length > 200) this.events.shift()
+    if (this.events.length > ringSize) this.events.shift()
     if (this.incident) {
-      if (this.incident.tail.length < 40) this.incident.tail.push(event)
-    } else if (
-      safe.code === 'preservation' ||
-      safe.code === 'internal' ||
-      (safe.kind === 'preservation' && safe.phase === 'refused')
-    ) {
+      if (this.incident.tail.length < tailSize) this.incident.tail.push(event)
+    } else if (triggers(event)) {
       this.incident = {
         triggerSequence: event.sequence,
         events: this.events.slice(),
@@ -295,6 +380,12 @@ export class Diagnostics {
   }
 
   report(presentation?: DiagnosticPresentation): DiagnosticReport {
+    // A call still running when the report is taken has begun, whatever it returns.
+    try {
+      if (this.enabled) this.release()
+    } catch {
+      // As for `capture`.
+    }
     return structuredClone({
       schemaVersion: 1,
       enabled: this.enabled,
@@ -313,6 +404,7 @@ export class Diagnostics {
     this.enabled = false
     this.events = []
     this.incident = undefined
+    this.held = undefined
   }
 }
 
