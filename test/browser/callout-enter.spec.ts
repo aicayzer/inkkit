@@ -64,7 +64,7 @@ const edits: [string, string, string, boolean, string[], string, string][] = [
     'second',
     false,
     ['Enter'],
-    '> [!NOTE]\n> first&#x20;\n>\n> second\n>\n> after\n',
+    '> [!NOTE]\n> first\n>\n> second\n>\n> after\n',
     'NOTE(p p p)',
   ],
   [

@@ -97,7 +97,12 @@ test('ordinary and Markdown copy have distinct content, including whitespace', (
     dom.innerHTML = clip.html
     expect(dom.querySelector('strong')!.textContent!.trim()).toBe('bold')
     expect(clip.markdown).toBe(editor.snapshot().text)
-    expect(editor.snapshot().dirty).toBe(true)
+    // The Markdown leaves out the space at the end of the paragraph, so it is
+    // the loaded text.
+    expect(editor.snapshot()).toMatchObject({
+      text: 'tight. and **bold**',
+      dirty: false,
+    })
   }))
 
 test('table commands create, add, align and delete editable cells', () =>

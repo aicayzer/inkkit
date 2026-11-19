@@ -247,14 +247,14 @@ test('pasted paragraphs join the text on either side of the caret', async () => 
 
 test('pasted blocks other than paragraphs still split the paragraph', async () => {
   expect(await pasteAt('Before ‸after.\n', { text: '- one\n- two' })).toEqual({
-    text: 'Before&#x20;\n\n- one\n- two\n\nafter.\n',
-    typed: 'Before&#x20;\n\n- one\n- two\n\nXafter.\n',
+    text: 'Before\n\n- one\n- two\n\nafter.\n',
+    typed: 'Before\n\n- one\n- two\n\nXafter.\n',
   })
   expect(
     await pasteAt('Before ‸after.\n', { text: '# Title\n\nbody ' }),
   ).toEqual({
-    text: 'Before&#x20;\n\n# Title\n\nbody after.\n',
-    typed: 'Before&#x20;\n\n# Title\n\nbody Xafter.\n',
+    text: 'Before\n\n# Title\n\nbody after.\n',
+    typed: 'Before\n\n# Title\n\nbody Xafter.\n',
   })
   expect(
     await pasteAt('Before ‸after.\n', { text: 'lead\n\n```\ncode\n```' }),

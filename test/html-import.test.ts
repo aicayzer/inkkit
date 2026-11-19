@@ -1,4 +1,4 @@
-import { ctxOf, importsOf } from './editor-access'
+import { ctxOf, documentOf, importsOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -129,7 +129,11 @@ async function insert(
       .paste({ text: 'text', html })
       .catch((error: InkKitError) => session.errors.push(error.message))
   else await drop(session, html)
-  return { text: session.editor.snapshot().text, doc: session.view.state.doc }
+  // The editor keeps spaces at the end of a block; the saved document does not.
+  return {
+    text: session.editor.snapshot().text,
+    doc: documentOf(session.editor).savedDocument(session.view.state.doc),
+  }
 }
 
 /** Drops HTML on the editor as a browser does, and waits for the import. */

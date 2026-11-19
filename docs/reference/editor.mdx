@@ -246,7 +246,7 @@ With `expectedGeneration`, the loaded document must be that generation, or the c
 
 `snapshot(expectedGeneration?: number): DocumentSnapshot<F>`
 
-Returns the complete current document, which is what a host saves. For Markdown and TXT, the `text` is the exact source, including line endings; an unedited document returns the bytes that were loaded. In source mode it includes what was typed there. For RTF, the `document` is the canonical form of the current document, a new object on each call, which you pass to your converter to write the file.
+Returns the complete current document, which is what a host saves. For Markdown and TXT, the `text` is the exact source, including line endings; an unedited document returns the bytes that were loaded. In source mode it includes what was typed there. In formatted Markdown, spaces at the end of a paragraph, heading, list item or table cell that an edit reached are left out of `text`, while the editor keeps showing them; see [preservation](/concepts/preservation#when-a-block-is-written-afresh). For RTF, the `document` is the canonical form of the current document, a new object on each call, which you pass to your converter to write the file.
 
 {/* @api DocumentSnapshot */}
 A `DocumentSnapshot` is a `TextDocumentSnapshot` for Markdown and TXT, or a `RichTextDocumentSnapshot` for RTF. Its type argument is the formats the editor offers, and without `rtf` it is always a `TextDocumentSnapshot`. Narrow on `format` before you read `text` or `document`.

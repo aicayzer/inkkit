@@ -1,6 +1,6 @@
 import { test, expect, observe, operation, caretAfterMatch } from './fixtures'
 
-test('typing spaces beside an image and formatted text in a table cell saves spaces', async ({
+test('typing spaces beside an image and formatted text in a table cell saves the spaces inside it', async ({
   page,
   openFixture,
 }) => {
@@ -23,7 +23,7 @@ test('typing spaces beside an image and formatted text in a table cell saves spa
   await typeSpace('word', 'ArrowRight')
   const saved = (await observe(page)).snapshot!.text
   expect(saved).toBe(
-    '| Name | Other |\n| --- | --- |\n| Tiny ![a](images/native.png) tail | **bold** word&#x20; |\n',
+    '| Name | Other |\n| --- | --- |\n| Tiny ![a](images/native.png) tail | **bold** word |\n',
   )
   await page.evaluate(
     (text) => window.inkkitPlayground.replaceDocument(text, 'md'),

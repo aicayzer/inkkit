@@ -47,18 +47,20 @@ async function saves(editor: InkKitEditor, expected: string) {
   })
 }
 
-for (const [source, saved] of [
-  [
-    'Start (www.example.com)\n',
-    'Start ([www.example.com](http://www.example.com))&#x20;\n',
-  ],
-  ['Start \\[a](http://x.com)\n', 'Start \\[a](<http://x.com>)&#x20;\n'],
+// A space typed at the end of a block is not saved, so the link keeps its
+// authored form.
+for (const source of [
+  'Start (www.example.com)\n',
+  'Start \\[a](http://x.com)\n',
 ] as const)
-  test(`a trailing space after ${source.trim()} reopens identically`, () =>
+  test(`a trailing space after ${source.trim()} saves the loaded text`, () =>
     session(source, async (editor) => {
       caret(editor, ')')
       editor.insertText(' ', 1)
-      await saves(editor, saved)
+      expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
+      caret(editor, ') ')
+      editor.insertText('x', 1)
+      await saves(editor, source.replace(')\n', ') x\n'))
       editor.undo()
       await saves(editor, source)
     }))
@@ -68,7 +70,9 @@ test('punctuation and a trailing space after an email address keep it bare', () 
     caret(editor, 'example.com')
     editor.insertText('.', 1)
     editor.insertText(' ', 1)
-    await saves(editor, 'Mail ada@example.com.&#x20;\n')
+    expect(editor.snapshot().text).toBe('Mail ada@example.com.\n')
+    editor.insertText('x', 1)
+    await saves(editor, 'Mail ada@example.com. x\n')
   }))
 
 for (const text of [
@@ -83,11 +87,14 @@ for (const text of [
       expect(editor.pasteAsPlainText(text)).toBe(true)
       const expected =
         text === ' (www.example.com). '
-          ? 'Start ([www.example.com](http://www.example.com)).&#x20;\n'
+          ? 'Start (www.example.com).\n'
           : text === ' **literal** http://x.com'
             ? 'Start \\*\\*literal\\*\\* http://x.com\n'
             : `Start${text}\n`
-      await saves(editor, expected)
+      // The editor keeps the pasted end space, which is not saved, so only
+      // the saved text can match a reopened copy.
+      if (text.endsWith(' ')) expect(editor.snapshot().text).toBe(expected)
+      else await saves(editor, expected)
       editor.undo()
       await saves(editor, 'Start\n')
     }))

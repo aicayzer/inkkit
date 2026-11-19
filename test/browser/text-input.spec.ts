@@ -34,7 +34,7 @@ const chunks: [string, string, string, boolean, string, string][] = [
     'Second',
     true,
     ' see https://example.com ',
-    'First line\n\nSecond see <https://example.com>&#x20;\n',
+    'First line\n\nSecond see https://example.com\n',
   ],
   [
     'strong emphasis',

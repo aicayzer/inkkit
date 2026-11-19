@@ -14,6 +14,7 @@ import { Transform, type Step } from '@milkdown/kit/prose/transform'
 import type { Root } from 'mdast'
 import { Preservation, PreservationError, crossCheck } from '../src/preserve'
 import { withEditor } from './harness'
+import { withoutTypedEndBlanks } from '../src/source'
 import { blocks, definitions, snippets } from './preservation-documents'
 
 // Saves `doc` twice: as typing does, and with local validation disabled, which
@@ -172,7 +173,10 @@ test(
           }
           const before = doc
           doc = tr.doc
-          const { fast, whole } = compare(local, full, doc)
+          // The editor saves its document without the spaces an edit leaves
+          // at the end of a block; the facade does that itself.
+          const saving = withoutTypedEndBlanks(doc, local.baseline)
+          const { fast, whole } = compare(local, full, saving)
           if (fast === undefined) continue
           expectFacadeSave(
             editor,
@@ -186,7 +190,7 @@ test(
           if (!doc.child(target.top).eq(before.child(target.top)))
             kinds.set(kind, (kinds.get(kind) ?? 0) + 1)
           expect(reopen(parse(fast)), `seed ${seed} step ${step}`).toBe(
-            reopen(doc),
+            reopen(saving),
           )
           expect(
             whole,

@@ -38,7 +38,7 @@ test('splitting a completed task in the middle leaves its second part unchecked'
       session.caret('Thank ')
       session.key('Enter')
     }),
-  ).toBe('- [x] Thank&#x20;\n- [ ] you.\n')
+  ).toBe('- [x] Thank\n- [ ] you.\n')
 })
 
 test('Backspace on an empty task between other tasks preserves both neighbours', async () => {

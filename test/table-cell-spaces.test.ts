@@ -1,4 +1,4 @@
-import { ctxOf } from './editor-access'
+import { ctxOf, documentOf } from './editor-access'
 import { expect, test } from 'vitest'
 import {
   Editor,
@@ -7,6 +7,7 @@ import {
   remarkStringifyOptionsCtx,
   rootCtx,
 } from '@milkdown/kit/core'
+import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { createDialect, serialize, stringifyOptions } from '../src/dialect'
@@ -161,9 +162,9 @@ test('pasted table cells with formatted text save plain spaces', async () => {
   expect((await parsed(markdown)).markdown).toBe(markdown)
 })
 
-function cellTexts(view: EditorView): string[] {
+function cellTexts(doc: ProseNode): string[] {
   const texts: string[] = []
-  view.state.doc.descendants((node) => {
+  doc.descendants((node) => {
     if (node.type.name !== 'table_cell' && node.type.name !== 'table_header')
       return true
     texts.push(node.textContent)
@@ -201,7 +202,9 @@ async function typed(
     body(editor, view)
     expect(errors).toEqual([])
     const saved = editor.snapshot().text
-    const edited = cellTexts(view)
+    // The editor keeps spaces typed at the end of a cell; the saved document
+    // does not.
+    const edited = cellTexts(documentOf(editor).savedDocument(view.state.doc))
     editor.loadDocument({
       documentId: 'cells',
       generation: 2,
@@ -211,7 +214,7 @@ async function typed(
     expect(editor.snapshot().text).toBe(saved)
     // Whitespace typed at a mark boundary may reopen outside the mark, which the
     // editor's own preservation check already treats as the same document.
-    expect(cellTexts(ctx.get(editorViewCtx))).toEqual(edited)
+    expect(cellTexts(ctx.get(editorViewCtx).state.doc)).toEqual(edited)
     return saved
   } finally {
     await editor.destroy()
@@ -266,14 +269,26 @@ test('typing a space beside formatted text in a table cell saves a space', async
   ).toBe('| H | Other |\n| --- | --- |\n| **z** w | x `a` |\n')
 })
 
-test('typing a space at the edge of a table cell saves an entity', async () => {
+test('typing a space at the start of a table cell saves an entity', async () => {
+  const table = '| H | Other |\n| --- | --- |\n| **z** w | `a` |\n'
+  expect(
+    await typed(table, (editor, view) => {
+      caret(view, { text: 'z', offset: 0 })
+      editor.insertText(' ', 1)
+    }),
+  ).toBe('| H | Other |\n| --- | --- |\n| &#x20;**z** w | `a` |\n')
+})
+
+test('a space typed at the end of a table cell is not saved', async () => {
   const table = '| H | Other |\n| --- | --- |\n| **z** w | `a` |\n'
   expect(
     await typed(table, (editor, view) => {
       caret(view, { text: ' w', offset: 2 })
       editor.insertText(' ', 1)
+      caret(view, { text: 'a', offset: 1 })
+      editor.insertText('\t', 1)
     }),
-  ).toBe('| H | Other |\n| --- | --- |\n| **z** w&#x20; | `a` |\n')
+  ).toBe(table)
 })
 
 test('authored entities beside formatting survive an edit elsewhere in the table', async () => {
@@ -299,7 +314,7 @@ test('authored entities beside formatting survive an edit in the same cell', asy
   ).toBe('| H | Other |\n| --- | --- |\n| **z**&#x20;wx | b |\n')
 })
 
-test('a space left at the edge of a table cell by a deletion keeps an entity', async () => {
+test('a space left at the start of a table cell by a deletion keeps an entity', async () => {
   const table =
     '| H | Other |\n| --- | --- |\n| ![a](s.png) tail | **z** w |\n| head ![b](t.png) | w `c` |\n'
   expect(
@@ -315,11 +330,11 @@ test('a space left at the edge of a table cell by a deletion keeps an entity', a
       remove({ text: 'c', offset: 0 })
     }),
   ).toBe(
-    '| H | Other |\n| --- | --- |\n| &#x20;tail | &#x20;w |\n| head&#x20; | w&#x20; |\n',
+    '| H | Other |\n| --- | --- |\n| &#x20;tail | &#x20;w |\n| head | w |\n',
   )
 })
 
-test('typing a space at the start of a table cell before an image saves an entity', async () => {
+test('a space typed before an image at the start of a table cell saves an entity', async () => {
   const table = '| H | Other |\n| --- | --- |\n| ![a](s.png) | b |\n'
   expect(
     await typed(table, (editor, view) => {
@@ -328,10 +343,10 @@ test('typing a space at the start of a table cell before an image saves an entit
       caret(view, { image: 0, side: 'after' })
       editor.insertText(' ', 1)
     }),
-  ).toBe('| H | Other |\n| --- | --- |\n| &#x20;![a](s.png)&#x20; | b |\n')
+  ).toBe('| H | Other |\n| --- | --- |\n| &#x20;![a](s.png) | b |\n')
 })
 
-test('a space typed after a URL at the end of a table cell saves without joining the URL', async () => {
+test('a space typed after a URL at the end of a table cell is not saved, so the URL stays bare', async () => {
   const table = '| H | Other |\n| --- | --- |\n| see | b |\n'
   expect(
     await typed(table, (_editor, view) => {
@@ -345,7 +360,5 @@ test('a space typed after a URL at the end of a table cell saves without joining
       )
       view.dispatch(view.state.tr.insertText(' ', view.state.selection.from))
     }),
-  ).toBe(
-    '| H | Other |\n| --- | --- |\n| see <https://example.com>&#x20; | b |\n',
-  )
+  ).toBe('| H | Other |\n| --- | --- |\n| see https://example.com | b |\n')
 })

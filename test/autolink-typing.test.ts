@@ -67,11 +67,16 @@ async function session(
           generation: ++generation,
           text: saved,
         })
+        // The editor keeps spaces typed at the end of a block; the saved
+        // document does not.
+        const written = documentOf(main.editor).savedDocument(
+          main.view.state.doc,
+        )
         return {
           saved,
           same:
             JSON.stringify(content(other.view)) ===
-            JSON.stringify(content(main.view)),
+            JSON.stringify(semanticSignature(written)),
         }
       },
     })
@@ -358,9 +363,8 @@ test('deleting the words after an address to a trailing space saves at each step
       s.view.dispatch(s.view.state.tr.delete(end - 1, end))
       await expectSaves(s)
     }
-    expect(s.editor.snapshot().text).toBe(
-      'See <https://example.com/path>&#x20;\n',
-    )
+    // The space left at the end is not saved, so the address stays bare.
+    expect(s.editor.snapshot().text).toBe('See https://example.com/path\n')
   }))
 
 // 7. Addresses typed into plain text.

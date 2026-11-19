@@ -267,16 +267,16 @@ for (const [name, source, anchor, insert] of typed) {
 }
 
 for (const [block, write] of blocks) {
-  test(`a space typed after a bare URL at the end of ${block} is kept`, async () => {
+  test(`a space typed after a bare URL at the end of ${block} is not saved`, async () => {
     const source = block === 'a paragraph' ? `Visit ${url}\n` : write(url)
     const result = await edit(source, 'https', (text) => {
       const end = text.indexOf('path') + 4
       return [end, end, ' ']
     })
     expect(result.errors).toEqual([])
-    expect(result.saved).toContain(`<${url}>&#x20;`)
+    // The URL stays bare, and the document reads as it did before the space.
+    expect(result.saved).toBe(source)
     expect(result.links).toEqual([`${url} -> ${url}`])
-    expect(result.reopened).toEqual(result.edited)
   })
 
   test(`a space typed before a bare URL at the start of ${block} is kept`, async () => {
