@@ -4,7 +4,7 @@ const longName =
   'An unusually long attachment filename with spaces and an_unbroken_segment_abcdefghijklmnopqrstuvwxyz.png'
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`file card name and arrow stay readable at narrow widths in ${colorScheme} @linked-files`, async ({
+  test(`file card name and Open icon stay readable at narrow widths in ${colorScheme} @linked-files`, async ({
     page,
     openFixture,
   }, testInfo) => {
@@ -31,12 +31,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
       const bounds = element.getBoundingClientRect()
       const label = element.querySelector('.inkkit-file-label')!
       const control = element.querySelector('button')!
-      const arrow = control.querySelector('svg')!
       return {
         card: bounds.toJSON(),
         label: label.getBoundingClientRect().toJSON(),
         control: control.getBoundingClientRect().toJSON(),
-        arrow: arrow.getBoundingClientRect().toJSON(),
         labelLineHeight: parseFloat(getComputedStyle(label).lineHeight),
         labelOverflow: getComputedStyle(label).textOverflow,
         overflow: element.scrollWidth > element.clientWidth,
@@ -46,9 +44,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     expect(layout.labelOverflow).toBe('ellipsis')
     expect(layout.overflow).toBe(false)
     expect(layout.control.right).toBeLessThanOrEqual(layout.card.right)
-    // The arrow stays visible after a truncated name.
-    expect(layout.arrow.right).toBeLessThanOrEqual(layout.control.right + 1)
-    expect(layout.arrow.left).toBeGreaterThanOrEqual(layout.label.right - 1)
+    // The icon stays in the corner after a truncated name.
+    expect(layout.control.left).toBeGreaterThanOrEqual(layout.label.right - 1)
     await open.focus()
     await page.keyboard.press('Enter')
     await page.keyboard.press('Space')

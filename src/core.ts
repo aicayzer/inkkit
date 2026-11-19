@@ -54,6 +54,7 @@ export type {
   ClientPoint,
   FileContext,
   FilePresentation,
+  FileCardAction,
   FileAdapter,
   CapturedImage,
   PortableImage,

@@ -304,9 +304,26 @@ export type FilePresentation =
       /** The text of the placeholder's button, which calls `FileAdapter.open` for this
        *  reference alone. Without it, or without `FileAdapter.open`, the line has no button. */
       action?: string
+      /** Actions the host adds to the card, drawn as icon buttons in its corner before Open. A
+       *  placeholder, and a card with `activation: 'card'`, whose whole card is the Open control,
+       *  take none: a presentation that gives them is refused. */
+      actions?: readonly FileCardAction[]
     }
   | { kind: 'missing'; label?: string }
   | { kind: 'error'; label?: string; message: string }
+/** An action a host adds to a file card, such as a quick look. InkKit draws it as an icon button in
+ *  the card's corner with no text, shown while the pointer is over the card or focus is inside it,
+ *  and always on a device with no hover. It works in a read-only editor, as Open does. */
+export interface FileCardAction {
+  /** The button's accessible name and hover help, used as given. Include the file's name when
+   *  several cards could be confused. */
+  label: string
+  /** An image drawn as a mask in the button's color, such as a data URL of an SVG. A URL that
+   *  loads from the network or runs script is refused. */
+  icon: string
+  /** Called by a click, or by Enter or Space on the focused button. */
+  run(reference: FileReference, context: DocumentContext): void
+}
 /** Resolves, exports and opens files. The host owns storage, permissions and native actions. */
 export interface FileAdapter {
   /** Decides what kind of file `reference` is and how to show it. InkKit never guesses from the
@@ -320,7 +337,7 @@ export interface FileAdapter {
     reference: FileReference,
     context: FileContext,
   ): Promise<PortableImage>
-  /** Adds an Open button to file cards, and is what a placeholder's `action` button calls. */
+  /** Adds an Open icon button to file cards, and is what a placeholder's `action` button calls. */
   open?(reference: FileReference, context: DocumentContext): void
   /** Called for a context-menu request on a file card. */
   contextMenu?(

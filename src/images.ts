@@ -9,6 +9,7 @@ import { NodeSelection } from '@milkdown/kit/prose/state'
 import {
   InkKitError,
   type FileAdapter,
+  type FileCardAction,
   type FilePresentation,
   type FileReference,
   type ImageAdapter,
@@ -26,6 +27,7 @@ import {
 import { fileReference } from './linked-syntax'
 import { imageBlockSchema } from './image-blocks'
 import { defaultLabels } from './labels'
+import { cssUrl, iconUrl } from './icon-url'
 
 /** A width rides in the alt text, as `![a picture|400](images/….png)`. Other Markdown readers
  *  show the picture and keep the number without requiring a private extension. */
@@ -125,7 +127,7 @@ class ImageView implements NodeView {
     return (
       event.target instanceof Element &&
       (!!event.target.closest(
-        '.inkkit-image-handle, .inkkit-file-control, audio, video, iframe',
+        '.inkkit-image-handle, .inkkit-file-control, .inkkit-file-icon, audio, video, iframe',
       ) ||
         // Return and Space on a focused card belong to the card, not the editor.
         (event.type === 'keydown' &&
@@ -214,12 +216,71 @@ class ImageView implements NodeView {
     return button
   }
 
+  /** An icon button for the card's corner. It has no text, so its name is its label. */
+  private iconButton(
+    name: string,
+    icon: SVGElement | HTMLElement,
+    action: () => void,
+  ): HTMLButtonElement {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'inkkit-file-icon'
+    button.setAttribute('aria-label', name)
+    button.title = name
+    button.append(icon)
+    button.addEventListener('click', (event) => {
+      event.preventDefault()
+      action()
+    })
+    return button
+  }
+
+  /** The card's actions, in the order a reader meets them: the host's, then Open. */
+  private cornerActions(
+    label: string,
+    open: boolean,
+    actions: readonly FileCardAction[],
+  ): HTMLElement | undefined {
+    if (!open && !actions.length) return undefined
+    const corner = document.createElement('span')
+    corner.className = 'inkkit-file-actions'
+    for (const action of actions) {
+      const picture = document.createElement('span')
+      picture.className = 'inkkit-file-icon-image'
+      picture.setAttribute('aria-hidden', 'true')
+      picture.style.setProperty(
+        '--_inkkit-file-action-icon',
+        cssUrl(iconUrl(action.icon, 'File card action icon')),
+      )
+      corner.append(
+        this.iconButton(action.label, picture, () => this.perform(action)),
+      )
+    }
+    if (open) {
+      const opening = `${this.runtime!.labels.fileOpen} ${label}`
+      const button = this.iconButton(opening, openArrow(), this.activate)
+      button.classList.add('inkkit-file-open')
+      corner.append(button)
+    }
+    return corner
+  }
+
   private activate = (): void => {
     if (!this.runtime || !this.active()) return
     const captured = this.runtime.capture()
     try {
       if (captured.isCurrent())
         this.runtime.adapter.open?.(this.reference(), captured.context)
+    } catch (error) {
+      this.report(error)
+    }
+  }
+
+  private perform(action: FileCardAction): void {
+    if (!this.runtime || !this.active()) return
+    const captured = this.runtime.capture()
+    try {
+      if (captured.isCurrent()) action.run(this.reference(), captured.context)
     } catch (error) {
       this.report(error)
     }
@@ -276,7 +337,10 @@ class ImageView implements NodeView {
     this.activate()
   }
 
-  private cardClick = (): void => this.activate()
+  private cardClick = (event: MouseEvent): void => {
+    if (!(event.target instanceof Element && event.target.closest('button')))
+      this.activate()
+  }
 
   /** Makes the whole card the one control that opens the file, in place of the arrow button. */
   private activateCard(label: string): void {
@@ -298,6 +362,7 @@ class ImageView implements NodeView {
     status?: string,
     retry = false,
     activation = false,
+    actions: readonly FileCardAction[] = [],
   ): void {
     if (this.resolution?.state.status !== 'loading' && !this.handle)
       this.restoreResizeFocus = false
@@ -308,22 +373,17 @@ class ImageView implements NodeView {
     const text = document.createElement('span')
     text.className = 'inkkit-file-label'
     text.textContent = label
-    if (this.runtime?.adapter.open && !activation) {
-      // The name and the arrow are one control: hovering either marks both, and a click on
-      // either opens.
-      const open = this.button('', this.activate)
-      open.classList.add('inkkit-file-open')
-      const opening = `${this.runtime.labels.fileOpen} ${label}`
-      open.setAttribute('aria-label', opening)
-      open.title = opening
-      open.append(text, openArrow())
-      name.append(open)
-    } else {
-      text.title = label
-      name.append(text)
-      if (activation && this.runtime?.adapter.open) this.activateCard(label)
-    }
+    text.title = label
+    name.append(text)
+    if (activation && this.runtime?.adapter.open) this.activateCard(label)
     footer.append(name)
+    const corner = this.cornerActions(
+      label,
+      !!this.runtime?.adapter.open && !activation,
+      actions,
+    )
+    // The corner follows the name so that it ends the first row, before a status on its own line.
+    if (corner) footer.append(corner)
     if (status) {
       const description = document.createElement('span')
       description.className = 'inkkit-file-status'
@@ -486,7 +546,13 @@ class ImageView implements NodeView {
       } else if (presentation.kind === 'file') {
         if (presentation.layout === 'fill')
           this.element.dataset.inkkitFileLayout = 'fill'
-        this.card(label, undefined, false, presentation.activation === 'card')
+        this.card(
+          label,
+          undefined,
+          false,
+          presentation.activation === 'card',
+          presentation.actions,
+        )
       } else this.card(label)
       this.restoreHandleFocus()
       return

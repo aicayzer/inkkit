@@ -4,6 +4,7 @@ import { $view } from '@milkdown/kit/utils'
 import { wikiLinkSchema, wikiReference } from './linked-syntax'
 import { mediaPolicyEvent, refreshOf, refreshes } from './files'
 import { modHeld } from './modifier'
+import { cssUrl, iconUrl } from './icon-url'
 import type {
   DocumentContext,
   InkKitError,
@@ -49,25 +50,13 @@ function drawn(presentation: WikiLinkPresentation): Drawn {
   const result: Drawn = {}
   if (tint !== undefined) result.tint = checkedColor(tint, 'tint')
   if (icon === undefined) return result
-  if (typeof icon !== 'string' || !icon.trim())
-    throw new TypeError('Wiki link icon needs a URL')
-  // The address that is checked is the address that is fetched: a relative one would otherwise
-  // resolve against the stylesheet that reads the variable, not against the page.
-  const url = new URL(icon, document.baseURI)
-  if (['http:', 'https:', 'javascript:', 'vbscript:'].includes(url.protocol))
-    throw new TypeError('Wiki link icons must load offline')
-  if (url.protocol === 'data:' && !/^image\//i.test(url.pathname))
-    throw new TypeError('Wiki link icon data URL must be an image')
+  const url = iconUrl(icon, 'Wiki link icon')
   result.icon =
     iconColor === undefined
-      ? { url: url.href }
-      : { url: url.href, color: checkedColor(iconColor, 'icon color') }
+      ? { url }
+      : { url, color: checkedColor(iconColor, 'icon color') }
   return result
 }
-
-/** A quoted CSS url() whose text cannot end the string or the declaration early. */
-const cssUrl = (url: string) =>
-  `url("${url.replace(/[\\"\n\r\f]/g, (character) => `\\${character.charCodeAt(0).toString(16)} `)}")`
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 

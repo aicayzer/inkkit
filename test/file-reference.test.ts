@@ -144,9 +144,7 @@ test('FileReference gives the target without its fragment for every syntax form'
 
     const cards = [...root.querySelectorAll<HTMLElement>('.inkkit-file')]
     expect(cards).toHaveLength(forms.length)
-    cards[0]!
-      .querySelector<HTMLButtonElement>('.inkkit-file-name button')!
-      .click()
+    cards[0]!.querySelector<HTMLButtonElement>('.inkkit-file-open')!.click()
     cards[8]!.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, clientX: 4, clientY: 8 }),
     )
