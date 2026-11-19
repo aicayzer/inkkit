@@ -375,7 +375,7 @@ test('spreadsheet rejects excessive growth and explicit/plain-text paths are lef
     expect(editor.snapshot().text).toBe(source)
   }))
 
-test('public paste creates a TSV table with literal edge whitespace and punctuation and isolated undo', () =>
+test('public paste creates a TSV table with literal leading whitespace and punctuation and isolated undo', () =>
   run(async (editor, ctx) => {
     const text = 'Before\n\n\n'
     editor.loadDocument({ ...input, text })
@@ -393,10 +393,11 @@ test('public paste creates a TSV table with literal edge whitespace and punctuat
     const saved = editor.snapshot().text
     undo(view.state, view.dispatch)
     expect(editor.snapshot().text).toBe(text)
+    // Spaces at the start of a cell are saved; spaces at its end are not.
     editor.loadDocument({ ...input, generation: 2, text: saved })
     expect(values(ctx)).toEqual([
-      [' Header ', 'Second'],
-      [' **literal** | pipe ', '&amp;'],
+      [' Header', 'Second'],
+      [' **literal** | pipe', '&amp;'],
     ])
   }))
 

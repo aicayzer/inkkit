@@ -91,7 +91,7 @@ test('a pasted list still splits the paragraph', async ({ page }) => {
   await pastePlain(page, '- one\n- two')
   await expect
     .poll(async () => (await observe(page)).snapshot!.text)
-    .toBe('Before&#x20;\n\n- one\n- two\n\nafter.\n')
+    .toBe('Before\n\n- one\n- two\n\nafter.\n')
 })
 
 test('typing after a paste over a selection keeps the pasted text', async ({

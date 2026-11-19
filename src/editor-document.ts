@@ -13,6 +13,7 @@ import {
 import {
   sourceAttribute,
   cleanSourceDoc,
+  withoutTypedEndBlanks,
   type SourceProvenance,
 } from './source'
 import { assertCommentsEndWhereWritten } from './comments'
@@ -81,17 +82,9 @@ export class EditorDocument {
     if (this.handler.literalOnly) return provenance?.text ?? this.original
     let text: string
     try {
-      let preservation = this.preservation
-      if (provenance) {
-        preservation = this.sourcePreservations.get(provenance)
-        if (!preservation) {
-          preservation = this.handler.parse(this.runtime.ctx(), provenance.text)
-          this.sourcePreservations.set(provenance, preservation)
-        }
-      }
-      // A line typed in Markdown is complete only at its end; an RTF break is content.
-      text = preservation!.serialize!(
-        this.handler.richText ? doc : cleanSourceDoc(doc),
+      const preservation = this.preservationOf(doc)
+      text = preservation.serialize!(
+        this.savedDocument(doc, preservation),
         this.carried,
       )
     } catch (error) {
@@ -99,6 +92,33 @@ export class EditorDocument {
     }
     this.sourceTexts.set(doc, text)
     return text
+  }
+
+  // The loaded document's preservation, or that of the source text the
+  // document was read from.
+  private preservationOf(doc: ProseNode): FormatSource {
+    const provenance = doc.attrs[sourceAttribute] as SourceProvenance | null
+    if (!provenance) return this.preservation!
+    let preservation = this.sourcePreservations.get(provenance)
+    if (!preservation) {
+      preservation = this.handler.parse(this.runtime.ctx(), provenance.text)
+      this.sourcePreservations.set(provenance, preservation)
+    }
+    return preservation
+  }
+
+  /**
+   * The formatted document that saving `doc` writes. A line typed in Markdown
+   * is complete only at its end, and so is its last word: a block the edit
+   * reached saves without a pending break or the spaces at the end of its
+   * text. An RTF break or space is content.
+   */
+  savedDocument(
+    doc: ProseNode,
+    preservation = this.preservationOf(doc),
+  ): ProseNode {
+    if (this.handler.richText || this.handler.literalOnly) return doc
+    return withoutTypedEndBlanks(cleanSourceDoc(doc), preservation.baseline)
   }
 
   /**

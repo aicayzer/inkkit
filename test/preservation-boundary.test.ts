@@ -62,44 +62,55 @@ for (const spacing of [
   })
 }
 
-test('an authored space entity before a newly exposed trailing space is not duplicated', async () => {
-  const root = document.createElement('div')
-  document.body.append(root)
-  const editor = await InkKitEditor.mount(root, {
-    changed() {},
-    copy() {},
-    openLink() {},
+// Before a soft break the exposed spaces are kept, with the authored entity
+// retained; at the end of the paragraph they are not saved.
+for (const [place, tail, kept] of [
+  [
+    'before a soft break',
+    '\nnext',
+    '[Retained][Original] and&#x20;&#x20;\nnext',
+  ],
+  ['at the end of a paragraph', '', '[Retained][Original] and\n\n'],
+] as const)
+  test(`an authored space entity before a newly exposed trailing space ${place} is not duplicated`, async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const editor = await InkKitEditor.mount(root, {
+      changed() {},
+      copy() {},
+      openLink() {},
+    })
+    const input = {
+      documentId: 'trailing-boundary',
+      generation: 1,
+      format: 'md' as const,
+    }
+    const source = `[Retained][Original] and&#x20; [Destination][Original]${tail}\n\n[Original]: /destination\n`
+    try {
+      editor.loadDocument({ ...input, text: source })
+      editor.find('Destination')
+      const ctx = ctxOf(editor)
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.deleteSelection())
+      const saved = editor.snapshot().text
+      expect(saved).toContain(kept)
+      const paragraphs: string[] = []
+      view.state.doc.forEach((node) => {
+        if (node.type.name === 'paragraph') paragraphs.push(node.textContent)
+      })
+      expect(paragraphs).toContain(`Retained and  ${tail}`)
+      undo(view.state, view.dispatch)
+      expect(editor.snapshot().text).toBe(source)
+      editor.loadDocument({ ...input, generation: 2, text: saved })
+      const reopened: string[] = []
+      view.state.doc.forEach((node) => {
+        if (node.type.name === 'paragraph') reopened.push(node.textContent)
+      })
+      expect(reopened).toEqual(
+        tail ? paragraphs : paragraphs.map((text) => text.trimEnd()),
+      )
+    } finally {
+      await editor.destroy()
+      root.remove()
+    }
   })
-  const input = {
-    documentId: 'trailing-boundary',
-    generation: 1,
-    format: 'md' as const,
-  }
-  const source =
-    '[Retained][Original] and&#x20; [Destination][Original]\n\n[Original]: /destination\n'
-  try {
-    editor.loadDocument({ ...input, text: source })
-    editor.find('Destination')
-    const ctx = ctxOf(editor)
-    const view = ctx.get(editorViewCtx)
-    view.dispatch(view.state.tr.deleteSelection())
-    const saved = editor.snapshot().text
-    expect(saved).toContain('[Retained][Original] and&#x20;&#x20;')
-    const paragraphs: string[] = []
-    view.state.doc.forEach((node) => {
-      if (node.type.name === 'paragraph') paragraphs.push(node.textContent)
-    })
-    expect(paragraphs).toContain('Retained and  ')
-    undo(view.state, view.dispatch)
-    expect(editor.snapshot().text).toBe(source)
-    editor.loadDocument({ ...input, generation: 2, text: saved })
-    const reopened: string[] = []
-    view.state.doc.forEach((node) => {
-      if (node.type.name === 'paragraph') reopened.push(node.textContent)
-    })
-    expect(reopened).toEqual(paragraphs)
-  } finally {
-    await editor.destroy()
-    root.remove()
-  }
-})

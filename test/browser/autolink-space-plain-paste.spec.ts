@@ -77,9 +77,8 @@ for (const eol of ['\n', '\r\n'])
         await caret(page, punctuation)
         await page.keyboard.press('Space')
         expect((await observe(page)).diagnostics).toEqual([])
-        const spaced = middle
-          ? `${body} after`
-          : `Start ([www.example.com](http://www.example.com)${punctuation}&#x20;`
+        // A space at the end of the block is not saved.
+        const spaced = middle ? `${body} after` : body
         expect((await observe(page)).snapshot!.text).toBe(
           `${prefix}${spaced}${suffix}`,
         )

@@ -1,5 +1,6 @@
 import { ctxOf, facadeFixture } from './editor-access'
 import { expectFacadeSave } from './facade-preservation'
+import { withoutTypedEndBlanks } from '../src/source'
 import {
   localEditsOf,
   regionsOf,
@@ -153,7 +154,11 @@ describe('structural edits validated in place save exactly what whole-document p
     if (step === 7) current = undefined
     expect(generated.done).toBe(false)
     if (!generated.value) return
-    const { kind, source, doc, local, full } = generated.value
+    const { kind, source, local, full } = generated.value
+    // The editor saves its document without the spaces an edit leaves at the
+    // end of a block; the facade does that itself.
+    const edited = generated.value.doc
+    const doc = withoutTypedEndBlanks(edited, local.baseline)
     const fromLocal = localEditsOf(local, doc)
     let fast = fromLocal
     try {
@@ -170,7 +175,7 @@ describe('structural edits validated in place save exactly what whole-document p
     }
     const label = `seed ${seed} step ${step} ${kind}: ${JSON.stringify(source)}`
     expect(whole, label).toBe(fast)
-    expectFacadeSave(editor, source, doc, fast, label)
+    expectFacadeSave(editor, source, edited, fast, label)
     // The whole-document path's own test of what reopening must keep.
     expect(semanticSignature(parse(fast)), label).toBe(semanticSignature(doc))
     if (fromLocal === undefined) {

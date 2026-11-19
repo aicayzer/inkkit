@@ -1,4 +1,4 @@
-import { ctxOf } from './editor-access'
+import { ctxOf, documentOf } from './editor-access'
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
@@ -46,11 +46,16 @@ async function session(source: string, run: (session: Session) => void) {
           generation: ++saves,
           text: saved,
         })
+        // The editor keeps spaces typed at the end of a block; the saved
+        // document does not.
+        const written = documentOf(main.editor).savedDocument(
+          main.view.state.doc,
+        )
         return {
           saved,
           same:
             JSON.stringify(semanticSignature(other.view.state.doc)) ===
-            JSON.stringify(semanticSignature(main.view.state.doc)),
+            JSON.stringify(semanticSignature(written)),
         }
       },
     })
@@ -100,7 +105,7 @@ const chunks: [string, string, string, boolean, string, string][] = [
     'Second',
     true,
     ' see https://example.com ',
-    'First line\n\nSecond see <https://example.com>&#x20;\n',
+    'First line\n\nSecond see https://example.com\n',
   ],
   [
     'a URL and a space in a block after another block',
