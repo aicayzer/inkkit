@@ -296,7 +296,7 @@ test('a picture that fails to load falls back to a card with its name and Open',
   })
 })
 
-test('the name and the arrow on a file card are one Open control', async () => {
+test('Open on a file card is an icon button with no words, apart from the name', async () => {
   const open = vi.fn()
   await mounted(
     { resolve: async () => ({ kind: 'file', label: 'Report.zip' }), open },
@@ -308,23 +308,218 @@ test('the name and the arrow on a file card are one Open control', async () => {
       )
       const buttons = root.querySelectorAll('.inkkit-file button')
       expect(buttons).toHaveLength(1)
-      const link = buttons[0] as HTMLButtonElement
-      expect(link.getAttribute('aria-label')).toBe('Open Report.zip')
-      expect(link.title).toBe('Open Report.zip')
-      const label = link.querySelector('.inkkit-file-label')!
-      expect(label.textContent).toBe('Report.zip')
-      expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe(
+      const button = buttons[0] as HTMLButtonElement
+      expect(button.closest('.inkkit-file-actions')).not.toBeNull()
+      expect(button.getAttribute('aria-label')).toBe('Open Report.zip')
+      expect(button.title).toBe('Open Report.zip')
+      expect(button.textContent).toBe('')
+      expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe(
         'true',
       )
-      // The name is inside the control, not beside it, so a click on it opens.
-      label.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      expect(open).toHaveBeenCalledTimes(1)
-      link
-        .querySelector('svg')!
+      // The name is text beside the actions, not a control.
+      expect(
+        root.querySelector('.inkkit-file-label')!.closest('button'),
+      ).toBeNull()
+      root
+        .querySelector('.inkkit-file-label')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      expect(open).toHaveBeenCalledTimes(2)
+      expect(open).not.toHaveBeenCalled()
+      button.click()
+      expect(open).toHaveBeenCalledTimes(1)
     },
   )
+})
+
+const cornerIcon =
+  'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E'
+
+test("host actions sit in the corner before Open and run with the card's file, also read-only", async () => {
+  const open = vi.fn()
+  const run = vi.fn()
+  await mounted(
+    {
+      resolve: async () =>
+        fileCard({
+          label: 'Quotes.pdf',
+          actions: [{ label: 'Quick Look Quotes.pdf', icon: cornerIcon, run }],
+        }),
+      open,
+    },
+    async (editor, root) => {
+      await vi.waitFor(() =>
+        expect(
+          root.querySelector('[data-inkkit-file-state="resolved"]'),
+        ).not.toBeNull(),
+      )
+      const buttons = [
+        ...root.querySelectorAll<HTMLButtonElement>(
+          '.inkkit-file-actions button',
+        ),
+      ]
+      expect(
+        buttons.map((button) => button.getAttribute('aria-label')),
+      ).toEqual(['Quick Look Quotes.pdf', 'Open Quotes.pdf'])
+      expect(buttons.map((button) => button.title)).toEqual([
+        'Quick Look Quotes.pdf',
+        'Open Quotes.pdf',
+      ])
+      expect(buttons.map((button) => button.textContent)).toEqual(['', ''])
+      const picture = buttons[0]!.querySelector<HTMLElement>(
+        '.inkkit-file-icon-image',
+      )!
+      expect(picture.getAttribute('aria-hidden')).toBe('true')
+      expect(
+        picture.style.getPropertyValue('--_inkkit-file-action-icon'),
+      ).toContain('data:image/svg+xml')
+      const before = editor.snapshot()
+      editor.setEditable(false)
+      buttons[0]!.click()
+      expect(run).toHaveBeenCalledTimes(1)
+      expect(run.mock.calls[0]![0]).toMatchObject({
+        target: 'opaque',
+        kind: 'path',
+      })
+      expect(run.mock.calls[0]![1]).toMatchObject({ documentId: 'files' })
+      expect(open).not.toHaveBeenCalled()
+      buttons[1]!.click()
+      expect(open).toHaveBeenCalledTimes(1)
+      expect(editor.snapshot()).toEqual(before)
+    },
+  )
+})
+
+test('a card shows host actions without an Open adapter, and none by default', async () => {
+  const run = vi.fn()
+  await mounted(
+    {
+      resolve: async () =>
+        fileCard({ actions: [{ label: 'Preview', icon: cornerIcon, run }] }),
+    },
+    async (_, root) => {
+      await vi.waitFor(() =>
+        expect(
+          root.querySelector('[data-inkkit-file-state="resolved"]'),
+        ).not.toBeNull(),
+      )
+      const buttons = root.querySelectorAll('.inkkit-file-actions button')
+      expect(buttons).toHaveLength(1)
+      expect(root.querySelector('.inkkit-file-open')).toBeNull()
+    },
+  )
+  await mounted({ resolve: async () => fileCard({}) }, async (_, root) => {
+    await vi.waitFor(() =>
+      expect(
+        root.querySelector('[data-inkkit-file-state="resolved"]'),
+      ).not.toBeNull(),
+    )
+    expect(root.querySelector('.inkkit-file-actions')).toBeNull()
+  })
+})
+
+test('a host action that throws is reported and changes nothing', async () => {
+  const error = vi.fn()
+  await mounted(
+    {
+      resolve: async () =>
+        fileCard({
+          actions: [
+            {
+              label: 'Preview',
+              icon: cornerIcon,
+              run() {
+                throw new Error('Host preview failed')
+              },
+            },
+          ],
+        }),
+    },
+    async (editor, root) => {
+      await vi.waitFor(() =>
+        expect(
+          root.querySelector('[data-inkkit-file-state="resolved"]'),
+        ).not.toBeNull(),
+      )
+      const before = editor.snapshot()
+      root
+        .querySelector<HTMLButtonElement>('.inkkit-file-actions button')!
+        .click()
+      expect(error.mock.calls.map(([failure]) => failure.message)).toEqual([
+        'Host preview failed',
+      ])
+      expect(editor.snapshot()).toEqual(before)
+    },
+    { error },
+  )
+})
+
+test.each([
+  [
+    'an icon that loads from the network',
+    { label: 'A', icon: 'https://example.test/a.svg' },
+  ],
+  ['an icon that runs script', { label: 'A', icon: 'javascript:alert(1)' }],
+  ['an icon that is not an image', { label: 'A', icon: 'data:text/html,hi' }],
+  ['an icon that is missing', { label: 'A' }],
+  ['a label that is blank', { label: '  ', icon: cornerIcon }],
+  ['a label that is missing', { icon: cornerIcon }],
+])('a file card action with %s is refused', async (_, action) => {
+  const error = vi.fn()
+  await mounted(
+    {
+      resolve: async () =>
+        fileCard({
+          actions: [{ run() {}, ...action }] as never,
+        }),
+      open() {},
+    },
+    async (_, root) => {
+      await vi.waitFor(() =>
+        expect(
+          root.querySelector('[data-inkkit-file-state="failed"]'),
+        ).not.toBeNull(),
+      )
+      expect(root.querySelector('.inkkit-file-icon-image')).toBeNull()
+      expect(error).toHaveBeenCalledTimes(1)
+    },
+    { error },
+  )
+})
+
+test('a file card action without a run function, or on a card that opens as a whole, or on a placeholder, is refused', async () => {
+  const action = { label: 'A', icon: cornerIcon, run() {} }
+  const adapter = (presentation: object): FileAdapter => ({
+    resolve: async () => presentation as FilePresentation,
+  })
+  await expect(
+    resolveFile(
+      adapter(
+        fileCard({ actions: [{ label: 'A', icon: cornerIcon }] as never }),
+      ),
+      reference,
+      context(),
+    ),
+  ).rejects.toThrow('needs a run function')
+  await expect(
+    resolveFile(
+      adapter(fileCard({ activation: 'card', actions: [action] })),
+      reference,
+      context(),
+    ),
+  ).rejects.toThrow('opens as a whole')
+  await expect(
+    resolveFile(
+      adapter(fileCard({ appearance: 'placeholder', actions: [action] })),
+      reference,
+      context(),
+    ),
+  ).rejects.toThrow('placeholder')
+  await expect(
+    resolveFile(
+      adapter(fileCard({ actions: 'Quick Look' as never })),
+      reference,
+      context(),
+    ),
+  ).rejects.toThrow('must be a list')
 })
 
 test.each(['image', 'audio', 'video', 'pdf', 'file'] as const)(
@@ -374,9 +569,9 @@ test.each(['image', 'audio', 'video', 'pdf', 'file'] as const)(
             )
             const fallback = root.querySelector('.inkkit-file-label')!
             expect(fallback.textContent).toBe('Useful name')
-            expect(fallback.closest('button')?.getAttribute('title')).toBe(
-              'Open Useful name',
-            )
+            expect(
+              root.querySelector('.inkkit-file-open')?.getAttribute('title'),
+            ).toBe('Open Useful name')
             expect(root.querySelector('[role="status"]')?.textContent).toBe(
               'Open to view this PDF',
             )
@@ -459,7 +654,7 @@ test('host action failures are reported without escaping the view or changing so
       )
       const before = editor.snapshot()
       editor.setEditable(false)
-      root.querySelector<HTMLButtonElement>('.inkkit-file-control')!.click()
+      root.querySelector<HTMLButtonElement>('.inkkit-file-open')!.click()
       root
         .querySelector('.inkkit-file')!
         .dispatchEvent(

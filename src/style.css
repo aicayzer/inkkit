@@ -421,10 +421,11 @@
 .inkkit-root .ProseMirror .inkkit-file-footer:not(:first-child) {
   margin-block-start: 0.25em;
 }
-/* The name truncates; the open arrow stays visible right after it. */
+/* The name truncates and takes what the card's actions leave. A basis of zero keeps the actions on
+   the name's row however long the name is. */
 .inkkit-root .ProseMirror .inkkit-file-name {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   align-items: center;
   gap: 0.25em;
   min-width: 0;
@@ -545,42 +546,71 @@
     var(--_inkkit-muted)
   );
 }
-.inkkit-root .ProseMirror .inkkit-file-open {
-  /* The name and the arrow are one link: a plain control that the footer's muted text colours. */
+/* A card's actions are icon buttons at the end of its first row, the corner under the pointer. They
+   wait out of sight until the pointer is over the card or focus is in it, and stay focusable, so
+   Tab reaches them and shows them. A device with no hover shows them always. */
+.inkkit-root .ProseMirror .inkkit-file-actions {
   display: inline-flex;
-  flex: 0 1 auto;
-  align-items: center;
-  gap: 0.25em;
-  min-width: 0;
-  max-width: 100%;
-  padding: 0;
-  color: var(--_inkkit-muted);
-  background: transparent;
-  border: 0;
-  border-radius: 3px;
-  text-align: start;
+  flex: none;
+  gap: 2px;
+  margin-inline-start: auto;
+  opacity: 0;
 }
-.inkkit-root .ProseMirror .inkkit-file-open:hover {
+.inkkit-root .ProseMirror .inkkit-file:hover .inkkit-file-actions,
+.inkkit-root .ProseMirror .inkkit-file:focus-within .inkkit-file-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .inkkit-root .ProseMirror .inkkit-file-actions {
+    opacity: 1;
+  }
+}
+.inkkit-root .ProseMirror .inkkit-file-icon {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 24px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--_inkkit-muted);
+  cursor: pointer;
+}
+.inkkit-root .ProseMirror .inkkit-file-icon:hover {
+  background: color-mix(in srgb, CanvasText 10%, transparent);
   color: var(--_inkkit-text);
 }
-.inkkit-root .ProseMirror .inkkit-file-open:hover .inkkit-file-label {
-  text-decoration: underline;
+.inkkit-root .ProseMirror .inkkit-file-icon:focus-visible {
+  outline: var(--inkkit-focus-width, 2px) solid
+    var(--inkkit-focus-color, var(--_inkkit-accent));
+  outline-offset: var(--inkkit-focus-offset, 1px);
 }
-.inkkit-root .ProseMirror .inkkit-file-open svg {
-  flex: none;
-  box-sizing: content-box;
-  width: 0.85em;
-  height: 0.85em;
-  padding: 0.2em;
-  border-radius: 3px;
+.inkkit-root .ProseMirror .inkkit-file-icon svg {
+  width: 14px;
+  height: 14px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.inkkit-root .ProseMirror .inkkit-file-open:hover svg {
-  background: var(--_inkkit-code-bg);
+.inkkit-root .ProseMirror .inkkit-file-icon-image {
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  mask-image: var(--_inkkit-file-action-icon);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+}
+@media (forced-colors: active) {
+  .inkkit-root .ProseMirror .inkkit-file-icon-image {
+    forced-color-adjust: none;
+    background-color: ButtonText;
+  }
 }
 
 .inkkit-root .ProseMirror {
@@ -913,6 +943,24 @@
 .inkkit-root .ProseMirror pre .inkkit-copy:hover {
   background: color-mix(in srgb, CanvasText 10%, transparent);
   color: var(--_inkkit-text);
+}
+
+/* Copy waits out of sight until the pointer is over the block or focus, the caret included, is in
+   it. It stays focusable, so Tab reaches it and shows it. A device with no hover shows it always. */
+.inkkit-root .ProseMirror pre .inkkit-copy {
+  opacity: 0;
+}
+.inkkit-root .ProseMirror pre:hover .inkkit-copy,
+.inkkit-root .ProseMirror pre:focus-within .inkkit-copy,
+.inkkit-root .ProseMirror pre[data-inkkit-code-active] .inkkit-copy,
+.inkkit-root .ProseMirror pre .inkkit-copy:focus-visible,
+.inkkit-root .ProseMirror pre .inkkit-copy[data-copied] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .inkkit-root .ProseMirror pre .inkkit-copy {
+    opacity: 1;
+  }
 }
 
 .inkkit-root .ProseMirror pre > code {

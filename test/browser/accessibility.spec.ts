@@ -46,12 +46,15 @@ test('cards, notes and preserved blocks have accessible roles and no axe finding
         - group "Photo":
           - img "Photo"
         - group "Archive":
+          - text: Archive
           - button "Open Archive"
         - group "Missing":
+          - text: Missing
           - button "Open Missing"
           - status: File unavailable
           - button "Retry"
         - group "Voice#t=0,0.5":
+          - text: Voice#t=0,0.5
           - button "Open Voice#t=0,0.5"
         - note "Footnote 1":
           - paragraph: The note.`)

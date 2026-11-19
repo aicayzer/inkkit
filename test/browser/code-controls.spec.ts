@@ -235,7 +235,7 @@ test('language menu survives queued scrolls and list scrolling but closes when i
   await expect(menu).toHaveCount(0)
 })
 
-test('code controls stay visible when idle, hovered, focused and after focus leaves the editor', async ({
+test('the language stays visible, and Copy shows only under the pointer or with focus or the caret in the block', async ({
   page,
   openFixture,
 }) => {
@@ -250,49 +250,53 @@ test('code controls stay visible when idle, hovered, focused and after focus lea
     name: 'Code language',
     exact: true,
   })
-  const visible = async () => {
-    for (const control of [controls, copy]) {
-      await expect(control).toBeVisible()
-      await expect(control).toHaveCSS('opacity', '1')
-      await expect(control).toHaveCSS('pointer-events', 'auto')
-    }
+  const languageShown = async () => {
+    await expect(controls).toBeVisible()
+    await expect(controls).toHaveCSS('opacity', '1')
+    await expect(controls).toHaveCSS('pointer-events', 'auto')
+  }
+  const shown = async (opacity: '0' | '1') => {
+    await languageShown()
+    await expect(copy).toHaveCSS('opacity', opacity)
+    await expect(copy).toHaveCSS('pointer-events', 'auto')
   }
   await page.mouse.move(0, 0)
-  await visible()
+  await shown('0')
   await pre.hover()
-  await visible()
+  await shown('1')
   await page.mouse.move(0, 0)
-  await visible()
+  await shown('0')
   await caretAfterMatch(page, 'café')
-  await visible()
+  await shown('1')
   await caretAfterMatch(page, 'Before')
-  await visible()
+  await shown('0')
+  // Tab reaches the hidden Copy button, and focus shows it.
   await page.keyboard.press('Tab')
   await expect(language).toBeFocused()
-  await visible()
+  await shown('1')
   await page.keyboard.press('Tab')
   await expect(copy).toBeFocused()
-  await visible()
+  await shown('1')
   await page.keyboard.press('Shift+Tab')
   await page.keyboard.press('Enter')
   await expect(
     page.getByRole('searchbox', { name: 'Search languages' }),
   ).toBeFocused()
-  await visible()
+  await shown('1')
   await page.keyboard.press('Tab')
   const wrap = page.getByRole('button', { name: 'Wrap code' })
   await expect(wrap).toBeFocused()
   await page.keyboard.press('Space')
   await expect(wrap).toHaveAttribute('aria-pressed', 'true')
-  await visible()
+  await shown('1')
   await page.keyboard.press('Escape')
   await expect(language).toBeFocused()
-  await visible()
+  await shown('1')
   await caretAfterMatch(page, 'After')
-  await visible()
+  await shown('0')
   await caretAfterMatch(page, 'café')
   await page.getByRole('textbox', { name: 'Host text' }).focus()
-  await visible()
+  await languageShown()
   expect((await observe(page)).snapshot!.text).toBe(source)
 })
 

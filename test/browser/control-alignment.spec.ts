@@ -71,16 +71,19 @@ test('the code block Copy button holds its icon in the middle and the file Open 
   await expectCentered(copy, 'copy button')
   const open = page.getByRole('button', { name: /^Open Document/ })
   await expect(open).toHaveCount(1)
-  // The name and the arrow are one control; the arrow is level with the name's line.
+  await expectCentered(open, 'file Open button')
+  // The icon sits level with the name's line.
   const level = await open.evaluate((element) => {
-    const label = element.querySelector('.inkkit-file-label')!
-    const svg = element.querySelector('svg')!.getBoundingClientRect()
+    const label = element
+      .closest('.inkkit-file')!
+      .querySelector('.inkkit-file-label')!
+    const icon = element.getBoundingClientRect()
     const text = label.getBoundingClientRect()
-    return svg.top + svg.height / 2 - (text.top + text.height / 2)
+    return icon.top + icon.height / 2 - (text.top + text.height / 2)
   })
   expect(
     Math.abs(level),
-    'file Open arrow vertical offset',
+    'file Open button vertical offset',
   ).toBeLessThanOrEqual(1)
 })
 

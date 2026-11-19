@@ -3,11 +3,13 @@ import type {
   InkKitError,
   DocumentContext,
   FileAdapter,
+  FileCardAction,
   FileContext,
   FilePresentation,
   FileReference,
 } from './types'
 import type { EditorLabels } from './types'
+import { iconUrl } from './icon-url'
 
 /** What an image view needs from the editor to call a host adapter. */
 export interface AdapterHost {
@@ -100,6 +102,26 @@ export async function resolveFile(
       (typeof presentation.action !== 'string' || !presentation.action.trim())
     )
       throw new TypeError('File presentation action must be text')
+    if (presentation.actions !== undefined) {
+      if (!Array.isArray(presentation.actions))
+        throw new TypeError('File presentation actions must be a list')
+      if (presentation.appearance === 'placeholder')
+        throw new TypeError('A file placeholder takes no card actions')
+      if (presentation.activation === 'card')
+        throw new TypeError(
+          'A card that opens as a whole takes no card actions',
+        )
+      for (const action of presentation.actions as readonly unknown[]) {
+        const entry = action as Partial<FileCardAction> | null
+        if (!entry || typeof entry !== 'object')
+          throw new TypeError('A file card action must be an object')
+        if (typeof entry.label !== 'string' || !entry.label.trim())
+          throw new TypeError('A file card action needs a label')
+        iconUrl(entry.icon, 'File card action icon')
+        if (typeof entry.run !== 'function')
+          throw new TypeError('A file card action needs a run function')
+      }
+    }
   }
   if (presentation.kind === 'error' && typeof presentation.message !== 'string')
     throw new TypeError('File presentation error must include a message')
@@ -128,7 +150,11 @@ export async function resolveFile(
   } else if (['image', 'audio', 'video', 'pdf'].includes(presentation.kind)) {
     throw new TypeError('File presentation needs a resource URL')
   }
-  return Object.freeze({ ...presentation })
+  return Object.freeze(
+    presentation.kind === 'file' && presentation.actions
+      ? { ...presentation, actions: Object.freeze([...presentation.actions]) }
+      : { ...presentation },
+  )
 }
 
 type FileResolutionState =
@@ -161,13 +187,32 @@ export function refreshes(refresh: ReferenceRefresh, target: string): boolean {
   return !refresh.targets || refresh.targets.has(target)
 }
 
+/** A host that builds its action list again on every answer still gives the same card. */
+function sameActions(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length)
+    return false
+  return a.every((action: FileCardAction, index) => {
+    const other = b[index] as FileCardAction
+    return (
+      action.label === other.label &&
+      action.icon === other.icon &&
+      action.run === other.run
+    )
+  })
+}
+
 function samePresentation(a: FilePresentation, b: FilePresentation): boolean {
   const left = a as unknown as Record<string, unknown>
   const right = b as unknown as Record<string, unknown>
   const keys = Object.keys(left)
   return (
     keys.length === Object.keys(right).length &&
-    keys.every((key) => left[key] === right[key])
+    keys.every((key) =>
+      key === 'actions'
+        ? sameActions(left[key], right[key])
+        : left[key] === right[key],
+    )
   )
 }
 

@@ -20,6 +20,7 @@ function copyButton(
   button.tabIndex = 0
   button.className = 'inkkit-copy'
   button.setAttribute('aria-label', label)
+  button.title = label
   button.innerHTML = copyIcon
   button.addEventListener('mousedown', (event) => event.preventDefault())
   button.addEventListener('click', () => {
