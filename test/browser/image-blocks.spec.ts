@@ -370,62 +370,65 @@ for (const colorScheme of ['light', 'dark'] as const) {
     })
   })
 
-  test(`a file card's name and arrow are one link in ${colorScheme} @linked-files`, async ({
+  test(`a file card's Open icon waits in its corner until the card is hovered in ${colorScheme} @linked-files`, async ({
     page,
   }, testInfo) => {
     await page.emulateMedia({ colorScheme })
     await open(page, '![[Archive]]\n\n![[Photo|60]]\n', 'linked-files')
     const card = page.locator('.inkkit-file[data-inkkit-file-kind="file"]')
-    const link = card.getByRole('button', { name: 'Open Archive' })
-    const label = link.locator('.inkkit-file-label')
-    const arrow = link.locator('svg')
-    const look = () =>
-      link.evaluate((element) => {
-        const label = element.querySelector('.inkkit-file-label')!
-        const svg = element.querySelector('svg')!
-        return {
-          underline: getComputedStyle(label).textDecorationLine,
-          labelColor: getComputedStyle(label).color,
-          arrowColor: getComputedStyle(svg).color,
-          arrowBackground: getComputedStyle(svg).backgroundColor,
-          gap:
-            svg.getBoundingClientRect().left -
-            label.getBoundingClientRect().right,
-        }
-      })
-    // The name is inside the control, and the arrow follows it closely.
-    expect((await look()).gap).toBeLessThanOrEqual(8)
-    const rest = await look()
-    expect(rest.underline).toBe('none')
+    const button = card.getByRole('button', { name: 'Open Archive' })
+    const corner = card.locator('.inkkit-file-actions')
+    await page.mouse.move(0, 0)
+    await expect(corner).toHaveCSS('opacity', '0')
+    // The name is plain text beside the icon, which has no text of its own.
+    expect(await button.textContent()).toBe('')
+    expect(
+      await card
+        .locator('.inkkit-file-label')
+        .evaluate((label) => Boolean(label.closest('button'))),
+    ).toBe(false)
     await testInfo.attach(`${colorScheme}-file-rest`, {
       body: await card.screenshot(),
       contentType: 'image/png',
     })
-    // Hovering the name marks the arrow, and hovering the arrow marks the name.
-    await label.hover()
-    const overName = await look()
-    expect(overName.underline).toBe('underline')
-    expect(overName.arrowColor).not.toBe(rest.arrowColor)
-    expect(overName.arrowBackground).not.toBe(rest.arrowBackground)
+    await card.hover()
+    await expect(corner).toHaveCSS('opacity', '1')
+    const rest = await button.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    )
+    await button.hover()
+    const over = await button.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    )
+    expect(over).not.toBe(rest)
     await testInfo.attach(`${colorScheme}-file-hover`, {
       body: await card.screenshot(),
       contentType: 'image/png',
     })
-    await page.mouse.move(0, 0)
-    await arrow.hover()
-    const overArrow = await look()
-    expect(overArrow.underline).toBe('underline')
-    expect(overArrow.labelColor).toBe(overName.labelColor)
-    // A click on the name opens, as does one on the arrow.
-    await label.click()
-    await arrow.click()
+    // The icon is level with the name and ends the card's first row.
+    const level = await card.evaluate((element) => {
+      const icon = element
+        .querySelector('.inkkit-file-open')!
+        .getBoundingClientRect()
+      const text = element
+        .querySelector('.inkkit-file-label')!
+        .getBoundingClientRect()
+      const bounds = element.getBoundingClientRect()
+      return {
+        offset: icon.top + icon.height / 2 - (text.top + text.height / 2),
+        right: bounds.right - icon.right,
+      }
+    })
+    expect(Math.abs(level.offset)).toBeLessThanOrEqual(1)
+    expect(level.right).toBeLessThan(16)
+    await button.click()
     const events = (await operation(page, 'fileEvents')) as {
       operation: string
       reference?: string
     }[]
     expect(
       events.filter((e) => e.operation === 'open' && e.reference === 'Archive'),
-    ).toHaveLength(2)
+    ).toHaveLength(1)
   })
 }
 
