@@ -1,4 +1,7 @@
-import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import {
+  DOMSerializer,
+  type Node as ProseNode,
+} from '@milkdown/kit/prose/model'
 import {
   AllSelection,
   NodeSelection,
@@ -13,8 +16,12 @@ import {
   Decoration,
   DecorationSet,
   type EditorView,
+  type NodeView,
+  type ViewMutationRecord,
 } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { carriedBlocks } from './block-move'
+import { commentsVisible, isComment } from './comments'
 import { displayCtx } from './display'
 import { editorLabels } from './labels'
 import type { EditorLabels } from './types'
@@ -34,6 +41,7 @@ interface Folds {
 interface FoldMeta {
   enabled?: boolean
   toggle?: number
+  unfold?: readonly number[]
   clear?: boolean
 }
 
@@ -74,19 +82,37 @@ function reaches(selection: Selection, from: number, to: number): boolean {
   return [selection.anchor, selection.head].some((at) => at >= from && at <= to)
 }
 
+function topLevelPosition(doc: ProseNode, node: ProseNode): number | undefined {
+  let found: number | undefined
+  doc.forEach((child, offset) => {
+    if (found == null && child === node) found = offset
+  })
+  return found
+}
+
 function mapFolds(
   folded: readonly number[],
   tr: Transaction,
   before: ProseNode,
 ): number[] {
+  // A block move carries the nodes themselves, so a heading it moves keeps its fold wherever it
+  // lands.
+  const carried = tr.getMeta(carriedBlocks) as readonly ProseNode[] | undefined
   const kept: number[] = []
   for (const pos of folded) {
+    const heading = headingAt(before, pos)!
+    const moved = carried?.includes(heading)
+      ? topLevelPosition(tr.doc, heading)
+      : undefined
+    if (moved != null) {
+      if (!kept.includes(moved)) kept.push(moved)
+      continue
+    }
     const result = tr.mapping.mapResult(pos, 1)
     const node = headingAt(tr.doc, result.pos)
     if (!node) continue
     // A level change replaces the heading's boundary tokens, which maps as a deletion.
-    if (result.deleted && !node.content.eq(headingAt(before, pos)!.content))
-      continue
+    if (result.deleted && !node.content.eq(heading.content)) continue
     if (!kept.includes(result.pos)) kept.push(result.pos)
   }
   return kept.sort((a, b) => a - b)
@@ -107,10 +133,10 @@ function foldDecorations(
       const block = doc.nodeAt(at)!
       if (!hidden.has(at)) {
         hidden.add(at)
+        // The class hides the block in the stylesheet, so no other rule decides its visibility.
         found.push(
           Decoration.node(at, at + block.nodeSize, {
             class: 'inkkit-folded-content',
-            'aria-hidden': 'true',
           }),
         )
       }
@@ -120,70 +146,156 @@ function foldDecorations(
   return DecorationSet.create(doc, found)
 }
 
-type Labels = () => Readonly<EditorLabels>
-
-function controls(doc: ProseNode, labels: Labels): Decoration[] {
+/**
+ * A decoration on each top-level heading. It carries the heading's fold state, and its arrival,
+ * removal or change is what makes ProseMirror ask the heading's view whether it still fits.
+ */
+function headingDecorations(
+  doc: ProseNode,
+  folded: readonly number[],
+): Decoration[] {
   const found: Decoration[] = []
   doc.forEach((node, offset) => {
     if (node.type.name !== 'heading') return
     found.push(
-      Decoration.widget(
-        offset + 1,
-        (view, getPos) => control(view, getPos, labels),
-        {
-          side: -1,
-          key: 'heading-fold',
-          ignoreSelection: true,
-          stopEvent: () => true,
-        },
-      ),
+      Decoration.node(offset, offset + node.nodeSize, {
+        'data-inkkit-heading-fold': folded.includes(offset) ? 'folded' : 'open',
+      }),
     )
   })
   return found
 }
 
-const positions = new WeakMap<HTMLElement, () => number | undefined>()
+type Labels = () => Readonly<EditorLabels>
 
-function control(
-  view: EditorView,
-  getPos: () => number | undefined,
-  labels: Labels,
-): HTMLElement {
-  const wrapper = document.createElement('span')
-  wrapper.className = 'inkkit-heading-fold'
-  wrapper.contentEditable = 'false'
-  const button = document.createElement('button')
-  button.type = 'button'
-  button.tabIndex = 0
-  button.setAttribute('data-inkkit-heading-toggle', '')
-  // The pointer must not move the caret out of the text it is in.
-  button.addEventListener('mousedown', (event) => event.preventDefault())
-  button.addEventListener('click', () => {
-    const at = getPos()
-    if (at != null) toggleHeadingFold(view, at - 1)
+/**
+ * The words a reader sees in the heading. A comment is left out while it is hidden, as the
+ * heading's own name leaves it out.
+ */
+function visibleText(node: ProseNode, comments: boolean): string {
+  let text = ''
+  node.descendants((child) => {
+    if (isComment(child)) {
+      if (comments) text += child.textContent
+      return false
+    }
+    if (child.isText) text += child.text
+    else if (child.isLeaf) text += ' '
+    return true
   })
-  wrapper.append(button)
-  positions.set(button, getPos)
-  syncControl(view.state, button, getPos(), labels)
-  return wrapper
+  return text.replace(/\s+/g, ' ').trim()
 }
 
-function syncControl(
-  state: EditorState,
-  button: HTMLButtonElement,
-  at: number | undefined,
-  labels: Labels,
-): void {
-  const folded =
-    at != null && (foldKey.getState(state)?.folded.includes(at - 1) ?? false)
-  const text = button.parentElement?.parentElement?.textContent?.trim() ?? ''
-  const name = folded ? labels().unfoldHeading : labels().foldHeading
-  const label = `${name} ${text}`.trim()
-  if (button.getAttribute('aria-label') !== label)
-    button.setAttribute('aria-label', label)
-  const expanded = String(!folded)
-  if (button.getAttribute('aria-expanded') !== expanded)
-    button.setAttribute('aria-expanded', expanded)
+/**
+ * A top-level heading in a wrapper beside its fold control. The heading is the content, so its
+ * accessible name is its own text; the control is an uneditable sibling, named from the heading's
+ * visible text. Another heading, and every heading while the option is off, is the plain element
+ * the schema describes.
+ */
+class HeadingView implements NodeView {
+  readonly dom: HTMLElement
+  readonly contentDOM: HTMLElement
+  private readonly wrapped: boolean
+  private readonly button?: HTMLButtonElement
+  private readonly control?: HTMLElement
+
+  constructor(
+    private node: ProseNode,
+    private readonly view: EditorView,
+    private readonly getPos: () => number | undefined,
+    private readonly labels: Labels,
+    private readonly live: Set<HeadingView>,
+  ) {
+    const rendered = DOMSerializer.renderSpec(
+      document,
+      node.type.spec.toDOM!(node),
+    )
+    this.contentDOM = rendered.contentDOM as HTMLElement
+    this.wrapped = this.fits()
+    if (!this.wrapped) {
+      this.dom = rendered.dom as HTMLElement
+      return
+    }
+    this.dom = document.createElement('div')
+    this.dom.className = 'inkkit-heading-block'
+    this.dom.setAttribute('data-inkkit-heading-level', String(node.attrs.level))
+    this.control = document.createElement('span')
+    this.control.className = 'inkkit-heading-fold'
+    this.control.setAttribute('contenteditable', 'false')
+    this.button = document.createElement('button')
+    this.button.type = 'button'
+    this.button.tabIndex = 0
+    this.button.setAttribute('data-inkkit-heading-toggle', '')
+    // The pointer must not move the caret out of the text it is in.
+    this.button.addEventListener('mousedown', (event) => event.preventDefault())
+    this.button.addEventListener('click', () => {
+      const at = this.getPos()
+      if (at != null) toggleHeadingFold(this.view, at)
+    })
+    this.control.append(this.button)
+    this.dom.append(this.control, rendered.dom)
+    this.live.add(this)
+    this.sync()
+  }
+
+  /** Whether the heading is the kind the preference calls for: wrapped when it folds. */
+  private fits(): boolean {
+    const at = this.getPos()
+    return (
+      (foldKey.getState(this.view.state)?.enabled ?? false) &&
+      at != null &&
+      headingAt(this.view.state.doc, at) != null
+    )
+  }
+
+  update(node: ProseNode): boolean {
+    if (
+      node.type !== this.node.type ||
+      !node.sameMarkup(this.node) ||
+      this.fits() !== this.wrapped
+    )
+      return false
+    this.node = node
+    this.sync()
+    return true
+  }
+
+  /** The control's name and state, which follow the heading's text and its fold. */
+  sync(): void {
+    const { button } = this
+    if (!button) return
+    const at = this.getPos()
+    const folded =
+      at != null &&
+      (foldKey.getState(this.view.state)?.folded.includes(at) ?? false)
+    const text = visibleText(this.node, commentsVisible(this.view.state))
+    const name = folded
+      ? this.labels().unfoldHeading
+      : this.labels().foldHeading
+    const label = `${name} ${text}`.trim()
+    if (button.getAttribute('aria-label') !== label)
+      button.setAttribute('aria-label', label)
+    const expanded = String(!folded)
+    if (button.getAttribute('aria-expanded') !== expanded)
+      button.setAttribute('aria-expanded', expanded)
+  }
+
+  /** The browser edits the heading's text, never the control beside it. */
+  ignoreMutation(mutation: ViewMutationRecord): boolean {
+    return (
+      this.wrapped &&
+      mutation.type !== 'selection' &&
+      !this.contentDOM.contains(mutation.target)
+    )
+  }
+
+  stopEvent(event: Event): boolean {
+    return this.control?.contains(event.target as Node | null) ?? false
+  }
+
+  destroy(): void {
+    this.live.delete(this)
+  }
 }
 
 /** Folds or unfolds the top-level heading at `pos`. Folding moves a selection in the section to the heading. */
@@ -218,6 +330,52 @@ export function clearHeadingFolds(view: EditorView): void {
   )
 }
 
+/**
+ * Whether a person's edit would change text that a fold hides, and what then happens: the edit
+ * is refused and the transaction returned unfolds the sections it reached, so what changes is
+ * seen. It is a check on the transaction, so it holds for every input path, such as a key the
+ * browser acts on itself, a cut, a paste or a drop. An edit whose selection covers a whole
+ * folded section, heading included, is the person deleting or replacing that section on
+ * purpose, and goes through. Undefined when the edit may be applied.
+ */
+export function refuseFoldedEdit(
+  state: EditorState,
+  tr: Transaction,
+): Transaction | undefined {
+  const folded = foldKey.getState(state)?.folded
+  if (!folded?.length || !tr.docChanged) return undefined
+  const { selection } = state
+  const reached: number[] = []
+  for (const pos of folded) {
+    const heading = headingAt(state.doc, pos)
+    if (!heading) continue
+    let from = pos + heading.nodeSize
+    let to = sectionEnd(state.doc, pos, Number(heading.attrs.level))
+    if (to <= from) continue
+    if (selection.from <= pos && selection.to >= to) continue
+    // The hidden range is followed through the steps, so a later step is read against the
+    // document the earlier ones made.
+    for (let index = 0; index < tr.steps.length; index++) {
+      const map = tr.mapping.maps[index]!
+      let touches = false
+      map.forEach((start, end) => {
+        if (start < to && end > from) touches = true
+      })
+      if (touches) {
+        reached.push(pos)
+        break
+      }
+      from = map.map(from, 1)
+      to = map.map(to, -1)
+      if (to <= from) break
+    }
+  }
+  if (!reached.length) return undefined
+  return state.tr
+    .setMeta(foldKey, { unfold: reached } satisfies FoldMeta)
+    .setMeta('addToHistory', false)
+}
+
 /** The folded headings' positions, for tests. */
 export function foldedHeadings(state: EditorState): readonly number[] {
   return foldKey.getState(state)?.folded ?? []
@@ -225,6 +383,7 @@ export function foldedHeadings(state: EditorState): readonly number[] {
 
 export const headingFold = $prose((ctx) => {
   const labels: Labels = () => editorLabels(ctx)
+  const live = new Set<HeadingView>()
   return new Plugin<Folds>({
     key: foldKey,
     state: {
@@ -234,7 +393,7 @@ export const headingFold = $prose((ctx) => {
           enabled,
           folded: [],
           decorations: enabled
-            ? DecorationSet.create(state.doc, controls(state.doc, labels))
+            ? DecorationSet.create(state.doc, headingDecorations(state.doc, []))
             : DecorationSet.empty,
         }
       },
@@ -249,6 +408,8 @@ export const headingFold = $prose((ctx) => {
         if (meta?.clear) folded = []
         if (tr.docChanged && folded.length)
           folded = mapFolds(folded, tr, oldState.doc)
+        if (meta?.unfold)
+          folded = folded.filter((pos) => !meta.unfold!.includes(pos))
         if (meta?.toggle != null && headingAt(tr.doc, meta.toggle))
           folded = folded.includes(meta.toggle)
             ? folded.filter((pos) => pos !== meta.toggle)
@@ -273,7 +434,7 @@ export const headingFold = $prose((ctx) => {
           folded,
           decorations: foldDecorations(tr.doc, folded).add(
             tr.doc,
-            controls(tr.doc, labels),
+            headingDecorations(tr.doc, folded),
           ),
         }
       },
@@ -297,7 +458,9 @@ export const headingFold = $prose((ctx) => {
           event.metaKey
         )
           return false
-        // A deletion reaching the hidden text opens its section first, so nothing goes unseen.
+        // A plain deletion beside a section opens it first. A key that edits the text across the
+        // boundary is caught by `refuseFoldedEdit`; this one also covers the block that ends the
+        // section, which Backspace turns into a paragraph that the section would then hide.
         const backward = event.key === 'Backspace'
         const edge = backward ? selection.$from : selection.$to
         if (
@@ -317,29 +480,22 @@ export const headingFold = $prose((ctx) => {
         if (hit == null) return false
         view.dispatch(
           view.state.tr
-            .setMeta(foldKey, { toggle: hit } satisfies FoldMeta)
+            .setMeta(foldKey, { unfold: [hit] } satisfies FoldMeta)
             .setMeta('addToHistory', false),
         )
         return true
       },
+      nodeViews: {
+        heading: (node: ProseNode, view: EditorView, getPos) =>
+          new HeadingView(node, view, getPos, labels, live),
+      },
     },
-    view(view) {
-      const sync = (next: EditorState) => {
-        for (const button of view.dom.querySelectorAll<HTMLButtonElement>(
-          '[data-inkkit-heading-toggle]',
-        ))
-          syncControl(next, button, positions.get(button)?.(), labels)
-      }
-      sync(view.state)
+    view() {
       return {
         update(updated, previous) {
-          // Edits change the names, which read the heading text.
-          if (
-            foldKey.getState(updated.state)?.enabled &&
-            (updated.state.doc !== previous.doc ||
-              foldKey.getState(updated.state) !== foldKey.getState(previous))
-          )
-            sync(updated.state)
+          // A comment that shows is part of the heading's text, and a hidden one is not.
+          if (commentsVisible(updated.state) !== commentsVisible(previous))
+            for (const heading of live) heading.sync()
         },
       }
     },

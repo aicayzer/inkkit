@@ -149,7 +149,7 @@ import type { TextProjection } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
 import { isWrittenEdit, setCommentVisibility } from './comments'
 import type { DisplayState } from './display'
-import { clearHeadingFolds } from './heading-fold'
+import { clearHeadingFolds, refuseFoldedEdit } from './heading-fold'
 import { assertHiddenCommentsKept } from './hidden-comments'
 import { PasteController, imagesRefused } from './paste'
 import { EditorFindSession } from './find-session'
@@ -2058,6 +2058,21 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private dispatchTransaction(view: EditorView, tr: Transaction): void {
     // A call whose edit was refused changes nothing more; it throws when it returns.
     if (this.call?.refusal && tr.docChanged) return
+    // A person's edit that would change text a fold hides opens the fold instead, so nothing
+    // changes unseen. A host call, a history step and a source replacement name what they change.
+    if (
+      !this.call &&
+      !this.loading &&
+      tr.docChanged &&
+      tr.getMeta('addToHistory') !== false &&
+      isWrittenEdit(tr)
+    ) {
+      const unfold = refuseFoldedEdit(view.state, tr)
+      if (unfold) {
+        view.updateState(view.state.apply(unfold))
+        return
+      }
+    }
     this.document.carry(tr.getMeta(carriedBlocks) ?? [])
     this.suggestions?.beforeTransaction(tr)
     const base = this.suggestionBase ?? view.state
