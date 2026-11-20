@@ -1192,18 +1192,12 @@ describe('pairs are tracked only through typing inside them', () => {
       expect(shown()).toBe('([a])|')
     }))
 
-  test('a deletion inside a pair is not typing and forgets it', () =>
+  test('a deletion that nothing announced forgets the pair', () =>
     withPairing('|', ({ plain, browserType, shown }) => {
       browserType('(')
       browserType('a')
       browserType('b')
       plain.setRangeText('', 2, 3, 'end')
-      plain.dispatchEvent(
-        new InputEvent('beforeinput', {
-          bubbles: true,
-          inputType: 'deleteContentBackward',
-        }),
-      )
       plain.dispatchEvent(
         new InputEvent('input', {
           bubbles: true,
@@ -1261,6 +1255,332 @@ describe('pairs are tracked only through typing inside them', () => {
       expect(shown()).toBe('(a)|')
     })
   })
+})
+
+/**
+ * An edit as a browser makes it on the textarea: the input event that announces it, the change, and
+ * the input event that follows.
+ */
+function native(
+  plain: HTMLTextAreaElement,
+  inputType: string,
+  from: number,
+  to: number,
+  text = '',
+  selection = inputType.endsWith('Forward')
+    ? { from, to: from }
+    : { from: to, to },
+) {
+  plain.setSelectionRange(selection.from, selection.to)
+  const data = inputType === 'insertText' ? text : null
+  const before = new InputEvent('beforeinput', {
+    bubbles: true,
+    cancelable: true,
+    inputType,
+    data,
+  })
+  plain.dispatchEvent(before)
+  if (before.defaultPrevented) return before
+  plain.setRangeText(text, from, to, 'end')
+  plain.dispatchEvent(
+    new InputEvent('input', { bubbles: true, inputType, data }),
+  )
+  return before
+}
+
+describe('the person correcting what they typed inside a pair', () => {
+  const typed = (
+    run: (session: Session) => void,
+    text = '|',
+    format?: DocumentInput['format'],
+  ) => withPairing(text, run, format)
+
+  test('Backspace inside a pair keeps it: (ab, Backspace, ) gives (a)', async () => {
+    for (const format of ['md', 'txt'] as const)
+      await typed(
+        ({ plain, browserType, shown, editor }) => {
+          for (const character of '(ab') browserType(character)
+          native(plain, 'deleteContentBackward', 2, 3)
+          expect(shown()).toBe('(a|)')
+          browserType(')')
+          expect(shown(), format).toBe('(a)|')
+          expect(editor.snapshot().text).toBe('(a)')
+        },
+        '|',
+        format,
+      )
+  })
+
+  test('Backspace and typing again: (foo, Backspace, o) gives (foo)', () =>
+    typed(({ plain, browserType, shown }) => {
+      for (const character of '(foo') browserType(character)
+      native(plain, 'deleteContentBackward', 3, 4)
+      for (const character of 'o)') browserType(character)
+      expect(shown()).toBe('(foo)|')
+    }))
+
+  test('Delete keeps the pair: (ab, Left, Delete, ) gives (a)', () =>
+    typed(({ plain, browserType, shown }) => {
+      for (const character of '(ab') browserType(character)
+      native(plain, 'deleteContentForward', 2, 3)
+      browserType(')')
+      expect(shown()).toBe('(a)|')
+    }))
+
+  test('a word deletion, a line deletion and a selection deleted keep the pair', async () => {
+    await typed(({ plain, browserType, shown }) => {
+      for (const character of '(one two') browserType(character)
+      native(plain, 'deleteWordBackward', 5, 8)
+      browserType(')')
+      expect(shown()).toBe('(one )|')
+    })
+    await typed(({ plain, browserType, shown }) => {
+      for (const character of '(one two') browserType(character)
+      native(plain, 'deleteSoftLineBackward', 1, 8)
+      browserType(')')
+      expect(shown()).toBe('()|')
+    })
+    await typed(({ plain, browserType, shown }) => {
+      for (const character of '(one two') browserType(character)
+      native(plain, 'deleteContentBackward', 5, 8, '', { from: 5, to: 8 })
+      browserType(')')
+      expect(shown()).toBe('(one )|')
+    })
+    await typed(({ plain, browserType, shown }) => {
+      for (const character of '(one two') browserType(character)
+      native(plain, 'deleteWordForward', 5, 8)
+      browserType(')')
+      expect(shown()).toBe('(one )|')
+    })
+  })
+
+  test('a Backspace, Delete and Return that the host forwards keep the pair', async () => {
+    await typed(({ editor, type, key, shown }) => {
+      type('(ab')
+      expect(key('Backspace')).toBe(true)
+      type(')')
+      expect(shown()).toBe('(a)|')
+      expect(editor.snapshot().text).toBe('(a)')
+    })
+    await typed(({ plain, type, key, shown }) => {
+      type('(ab')
+      plain.setSelectionRange(2, 2)
+      expect(key('Delete')).toBe(true)
+      type(')')
+      expect(shown()).toBe('(a)|')
+    })
+    await typed(({ type, key, shown }) => {
+      type('(ab')
+      expect(key('Enter')).toBe(true)
+      type(')')
+      expect(shown()).toBe('(ab\n)|')
+    })
+  })
+
+  test('Return inside a pair keeps it', async () => {
+    await typed(({ plain, press, browserType, shown, editor }) => {
+      for (const character of '(ab') browserType(character)
+      // Not a list, so the browser inserts the line break.
+      expect(press('Enter').defaultPrevented).toBe(false)
+      native(plain, 'insertLineBreak', 3, 3, '\n')
+      browserType(')')
+      expect(shown()).toBe('(ab\n)|')
+      expect(editor.snapshot().text).toBe('(ab\n)')
+    })
+    await typed(({ plain, browserType, shown }) => {
+      for (const character of '(ab') browserType(character)
+      native(plain, 'insertParagraph', 3, 3, '\n')
+      browserType(')')
+      expect(shown()).toBe('(ab\n)|')
+    })
+  })
+
+  test('Return that continues a list inside a pair keeps it', () =>
+    typed(({ press, browserType, shown, editor }) => {
+      for (const character of '(a') browserType(character)
+      expect(press('Enter').defaultPrevented).toBe(true)
+      expect(shown()).toBe('- (a\n- |)')
+      browserType(')')
+      expect(editor.snapshot().text).toBe('- (a\n- )')
+    }, '- |'))
+
+  const compose = (
+    plain: HTMLTextAreaElement,
+    steps: Array<[from: number, to: number, text: string]>,
+    start: { from: number; to: number },
+  ) => {
+    plain.setSelectionRange(start.from, start.to)
+    plain.dispatchEvent(
+      new CompositionEvent('compositionstart', { bubbles: true }),
+    )
+    for (const [from, to, text] of steps) {
+      plain.dispatchEvent(
+        new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertCompositionText',
+          data: text,
+          isComposing: true,
+        }),
+      )
+      plain.setRangeText(text, from, to, 'end')
+      plain.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertCompositionText',
+          data: text,
+          isComposing: true,
+        }),
+      )
+    }
+    plain.dispatchEvent(
+      new CompositionEvent('compositionend', { bubbles: true }),
+    )
+  }
+
+  test('a composition committed inside a pair keeps it, and the closer steps over', () =>
+    typed(({ plain, browserType, shown, editor }) => {
+      browserType('(')
+      compose(
+        plain,
+        [
+          [1, 1, 'に'],
+          [1, 2, 'にほ'],
+          [1, 3, '日本'],
+        ],
+        { from: 1, to: 1 },
+      )
+      expect(shown()).toBe('(日本|)')
+      browserType(')')
+      expect(shown()).toBe('(日本)|')
+      expect(editor.snapshot().text).toBe('(日本)')
+    }))
+
+  test('a composition that replaces the opener forgets the pair', () =>
+    typed(({ plain, browserType, shown }) => {
+      browserType('(')
+      compose(plain, [[0, 1, 'に']], { from: 0, to: 1 })
+      browserType(')')
+      expect(shown()).toBe('に)|)')
+    }))
+
+  test('a composition that starts outside the pair forgets it', () =>
+    typed(({ plain, browserType, shown }) => {
+      browserType('(')
+      compose(plain, [[0, 0, 'に']], { from: 0, to: 0 })
+      plain.setSelectionRange(2, 2)
+      browserType(')')
+      expect(shown()).toBe('に()|)')
+    }))
+
+  test('a paste, a drop and a cut inside a pair forget it', async () => {
+    await typed(({ plain, browserType, shown }) => {
+      for (const character of '(ab') browserType(character)
+      native(plain, 'insertFromPaste', 3, 3, 'zz')
+      browserType(')')
+      expect(shown()).toBe('(abzz)|)')
+    })
+    await typed(({ plain, browserType, shown }) => {
+      for (const character of '(ab') browserType(character)
+      native(plain, 'deleteByCut', 2, 3)
+      browserType(')')
+      expect(shown()).toBe('(a)|)')
+    })
+    await typed(({ plain, browserType, shown }) => {
+      for (const character of '(ab') browserType(character)
+      native(plain, 'insertFromDrop', 3, 3, 'zz')
+      browserType(')')
+      expect(shown()).toBe('(abzz)|)')
+    })
+  })
+
+  test('a replacement, an undo and a deletion by dragging inside a pair forget it', async () => {
+    for (const inputType of [
+      'insertReplacementText',
+      'historyUndo',
+      'deleteByDrag',
+    ]) {
+      await typed(({ plain, browserType, editor }) => {
+        for (const character of '(ab') browserType(character)
+        native(plain, inputType, 2, 3, inputType === 'deleteByDrag' ? '' : 'c')
+        browserType(')')
+        expect(editor.snapshot().text, inputType).toMatch(/\)\)$/)
+      })
+    }
+  })
+
+  test('a deletion that removes the opener forgets the pair', () =>
+    typed(({ plain, browserType, shown }) => {
+      for (const character of '(ab') browserType(character)
+      plain.setSelectionRange(1, 1)
+      native(plain, 'deleteContentBackward', 0, 1)
+      plain.setSelectionRange(2, 2)
+      browserType(')')
+      expect(shown()).toBe('ab)|)')
+    }))
+
+  test('a word deletion that reaches the opener forgets the pair', () =>
+    typed(({ plain, browserType, shown }) => {
+      for (const character of '(ab') browserType(character)
+      native(plain, 'deleteWordBackward', 0, 3)
+      browserType(')')
+      expect(shown()).toBe(')|)')
+    }))
+
+  test('a deletion of the closer forgets the pair', () =>
+    typed(({ plain, browserType, shown }) => {
+      for (const character of '(ab') browserType(character)
+      native(plain, 'deleteContentForward', 3, 4)
+      browserType('c')
+      browserType(')')
+      expect(shown()).toBe('(abc)|')
+      // The closer that was typed is the person's own: a second one does not step over it.
+      browserType(')')
+      expect(shown()).toBe('(abc))|')
+    }))
+
+  test('an edit outside the pair forgets only the pairs it is not inside', async () => {
+    await typed(({ plain, browserType, shown }) => {
+      for (const character of '(a[b') browserType(character)
+      plain.setSelectionRange(2, 2)
+      native(plain, 'deleteContentBackward', 1, 2)
+      plain.setSelectionRange(3, 3)
+      browserType(']')
+      expect(shown()).toBe('([b]|])')
+    })
+    await typed(({ plain, browserType, shown }) => {
+      for (const character of '(a[b') browserType(character)
+      plain.setSelectionRange(2, 2)
+      native(plain, 'deleteContentBackward', 1, 2)
+      plain.setSelectionRange(4, 4)
+      browserType(')')
+      expect(shown()).toBe('([b])|')
+    })
+  })
+
+  test('input whose range the text does not bear out forgets the pair', () =>
+    typed(({ plain, browserType, shown }) => {
+      for (const character of '(ab') browserType(character)
+      plain.setSelectionRange(3, 3)
+      plain.dispatchEvent(
+        new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'deleteContentBackward',
+        }),
+      )
+      // The browser did something else: the first character went, not the one before the caret.
+      plain.setRangeText('', 0, 1, 'end')
+      plain.setSelectionRange(2, 2)
+      plain.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'deleteContentBackward',
+        }),
+      )
+      browserType(')')
+      expect(shown()).toBe('ab)|)')
+    }))
 })
 
 describe('input that is not typing', () => {

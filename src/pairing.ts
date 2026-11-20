@@ -26,11 +26,14 @@ import {
  *   a curly quote that smart punctuation made pairs, and a closing curly quote does not.
  * - A closer typed straight before a closer that pairing inserted steps over it, by typing over
  *   it, so that a rule such as the one that turns `[[name]]` into a link still sees the character.
- *   Pairs are tracked strictly, as a stack: one stays valid only through typing inside it, which
- *   is one character typed, and the Backspace that removes an empty pair. Anything else forgets
- *   every pair: a deletion, a replacement from a spelling menu, a load, paste, drop, cut, undo,
- *   redo, replace or other host call, a mode switch and a change of preference. The brackets that
- *   remain are ordinary characters, and a closer the person typed or loaded is never stepped over.
+ *   Pairs are tracked strictly, as a stack. One stays valid while every edit is the person's own
+ *   keyboard or input-method editing and lies strictly between its opener and its closer: typing,
+ *   Backspace, Delete, word and line deletions, Return, and a composition from start to commit.
+ *   Anything else forgets it: an edit that touches or crosses the opener or the closer, paste,
+ *   drop, cut, undo, redo, a replacement from a spelling menu, a host call other than one typed
+ *   character or a key, a load, a mode switch and a change of preference. An edit outside a pair
+ *   forgets only the pairs it is not inside. The brackets that remain are ordinary characters,
+ *   and a closer the person typed or loaded is never stepped over.
  * - Backspace between an empty pair that pairing inserted removes both characters, whether it
  *   arrives as a key or as an input event on its own.
  * - A selection on one line is wrapped, and stays selected. Replacing a selection through an input
@@ -60,8 +63,8 @@ interface Change {
   drop?: number
   /** Forget every pair. */
   clear?: boolean
-  /** The transaction is typing inside the pairs, or the Backspace that removes an empty pair. Any
-   *  other change to the document forgets them. */
+  /** The transaction is the person's own typing, or the Backspace that removes an empty pair. A
+   *  pair survives it only where it lies inside the pair. */
   typing?: boolean
 }
 
@@ -184,6 +187,52 @@ interface Input {
   doc: ProseNode
 }
 
+/** The input types of a person's own editing that a pair survives, when the edit lies inside it. */
+const ownInputs = new Set([
+  'insertLineBreak',
+  'insertParagraph',
+  'deleteContent',
+  'deleteContentBackward',
+  'deleteContentForward',
+  'deleteWordBackward',
+  'deleteWordForward',
+  'deleteSoftLineBackward',
+  'deleteSoftLineForward',
+  'deleteHardLineBackward',
+  'deleteHardLineForward',
+  'deleteEntireSoftLine',
+  'deleteEntireHardLine',
+  'insertCompositionText',
+  'deleteCompositionText',
+  'insertFromComposition',
+])
+
+/** Whether an input event is a person's own typing, deletion, Return or composition. A spelling
+ *  replacement, history step, paste, drop and cut are not, and nor is text of more than one character
+ *  that arrives as typing. */
+function ownInput(inputType: string, data: string | null): boolean {
+  if (inputType === 'insertText')
+    return data !== null && Array.from(data).length === 1
+  return ownInputs.has(inputType)
+}
+
+/** Whether a key edits the text as the person's own: Backspace, Delete and Return. */
+function ownKey(event: KeyboardEvent): boolean {
+  const { key, metaKey, ctrlKey, altKey, shiftKey } = event
+  if (key === 'Backspace') return true
+  if (key === 'Delete') return !shiftKey
+  return key === 'Enter' && !(metaKey || ctrlKey || altKey)
+}
+
+/** Records, for the editor view, that a key about to run is a person's own editing. */
+const keyMarks = new WeakMap<EditorView, (event: KeyboardEvent) => void>()
+
+/** Notes that `event`, a key that the editor is about to handle, may be the person's own editing. A
+ *  host that forwards a key calls this before running the key handlers. */
+export function markKey(view: EditorView, event: KeyboardEvent): void {
+  keyMarks.get(view)?.(event)
+}
+
 export const pairing = [
   pairBracketsCtx,
   pairEpochCtx,
@@ -197,6 +246,19 @@ export const pairing = [
     let typing: ProseNode | undefined
     let stepped: Stepped | undefined
     let input: Input | undefined
+    // The document at the start of a person's own edit: a key or an input event that announced it.
+    // An edit that starts from any other document is not the person's own, and the record does
+    // not outlive the task that made it.
+    let gesture: ProseNode | undefined
+    let gestureTimer: ReturnType<typeof setTimeout> | undefined
+    function announce(doc: ProseNode | undefined): void {
+      clearTimeout(gestureTimer)
+      gesture = doc
+      if (doc)
+        gestureTimer = setTimeout(() => {
+          if (gesture === doc) gesture = undefined
+        }, 0)
+    }
     // Whether the person can type here, with no composition and pairing on.
     const active = (view: EditorView) =>
       on() && view.editable && !view.composing
@@ -286,26 +348,40 @@ export const pairing = [
 
     const plugin: Plugin<Tracked> = new Plugin<Tracked>({
       key: pairs,
+      view(view) {
+        keyMarks.set(view, (event) =>
+          announce(ownKey(event) ? view.state.doc : undefined),
+        )
+        return { destroy: () => keyMarks.delete(view) }
+      },
       state: {
         init: () => ({ list: [], epoch }),
         apply(tr, value, oldState) {
           const change = tr.getMeta(pairs) as Change | undefined
           let list = value.list
           if (tr.docChanged) {
-            // What the edit is was recorded when it started: one typed character, or the pair's own
-            // Backspace. Whatever else changes the document, as a paste, a drop, a cut, a history
-            // step, a replacement or a host call, is not typing, however much it looks like it.
+            // What the edit is was recorded when it started: one typed character, the pair's own
+            // Backspace, or a key or input event of the person's own editing, as a deletion, Return
+            // or a composition. Whatever else changes the document, as a paste, a drop, a cut, a
+            // history step, a replacement or a host call, is not, however much it looks like it.
             const root = tr.getMeta('appendedTransaction') as
               Transaction | undefined
+            const uiEvent = tr.getMeta('uiEvent') as string | undefined
             const typed =
               !change?.clear &&
               !isHistoryTransaction(tr) &&
+              uiEvent !== 'paste' &&
+              uiEvent !== 'drop' &&
+              uiEvent !== 'cut' &&
               (change?.typing === true ||
                 typing === oldState.doc ||
+                gesture === oldState.doc ||
+                tr.getMeta('composition') !== undefined ||
                 // What a rule appends to typing, such as a link made of what was typed, is part of it.
                 (root !== undefined && typedTransactions.has(root)))
             if (typed) typedTransactions.add(tr)
             typing = undefined
+            announce(undefined)
             if (list.length)
               list = typed
                 ? list.flatMap((pair) => followed(tr, pair) ?? [])
@@ -371,10 +447,15 @@ export const pairing = [
           return removePair(view)
         },
         handleDOMEvents: {
+          keydown(view, event) {
+            markKey(view, event)
+            return false
+          },
           // Input that arrives without a key, as on iOS and with some input methods.
           beforeinput(view, event) {
-            const { inputType } = event as InputEvent
+            const { inputType, data } = event as InputEvent
             input = { type: inputType, doc: view.state.doc }
+            announce(ownInput(inputType, data) ? view.state.doc : undefined)
             if (inputType === 'deleteContentBackward' && removePair(view)) {
               event.preventDefault()
               return true

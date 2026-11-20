@@ -85,6 +85,28 @@ interface ModeTransition {
   reveal(): void
 }
 
+/** The input types of a composition, whose text replaces a range from its start to its commit. */
+const compositionInputs: ReadonlySet<string> = new Set([
+  'insertCompositionText',
+  'deleteCompositionText',
+  'insertFromComposition',
+])
+
+/** The deletions that a person makes with a key, apart from a cut or a drag. */
+const ownDeletions: ReadonlySet<string> = new Set([
+  'deleteContent',
+  'deleteContentBackward',
+  'deleteContentForward',
+  'deleteWordBackward',
+  'deleteWordForward',
+  'deleteSoftLineBackward',
+  'deleteSoftLineForward',
+  'deleteHardLineBackward',
+  'deleteHardLineForward',
+  'deleteEntireSoftLine',
+  'deleteEntireHardLine',
+])
+
 /** Owns the source/TXT textarea and the DOM state of its current input. */
 export class SourceSurface {
   readonly element: HTMLTextAreaElement
@@ -97,6 +119,9 @@ export class SourceSurface {
   /** The edit that is typing, as the changes it makes to `known`, while it is being applied. A
    *  change to the text that no such edit announced forgets every pair. */
   private typed?: SourceChange[]
+  /** The text a composition replaces, in the text the surface last showed: where it started, and
+   *  where it ends now. A composition that stays inside a pair keeps it, from start to commit. */
+  private composition?: { from: number; to: number }
   /** The input event that is about to change the textarea, and where its selection was. */
   private pending?: {
     type: string
@@ -184,20 +209,14 @@ export class SourceSurface {
         this.setSourceValue(this.runtime.currentText())
         return
       }
-      // Only one typed character keeps the pairs that were tracked, and where it went is known
-      // from the input event that announced it. A paste, a drop, a replacement, a deletion, an
-      // undo or redo that the browser made on its own, and input that nothing announced, do not.
+      // The person's own typing, deletion, Return and composition keep the pairs that they lie
+      // inside, and where each went is known from the input event that announced it. A paste, a
+      // drop, a cut, a replacement, an undo or redo that the browser made on its own, and input
+      // that nothing announced, do not.
       const announced = this.pending
       this.pending = undefined
-      if (
-        announced?.type === 'insertText' &&
-        (event as InputEvent).inputType === 'insertText' &&
-        Array.from(announced.data).length === 1
-      )
-        this.follow(
-          [{ from: announced.from, to: announced.to, text: announced.data }],
-          this.element.value,
-        )
+      const changes = this.ownChanges(announced, event as InputEvent)
+      if (changes) this.follow(changes, this.element.value)
       else this.forgetPairs(this.element.value)
       try {
         this.runtime.applySource(
@@ -261,6 +280,10 @@ export class SourceSurface {
     })
     this.element.addEventListener('compositionstart', () => {
       this.composingValue = true
+      this.composition = {
+        from: this.element.selectionStart,
+        to: this.element.selectionEnd,
+      }
       this.runtime.publish()
     })
     this.element.addEventListener('compositionend', () => {
@@ -281,6 +304,7 @@ export class SourceSurface {
     this.composingValue = false
     this.beforeSelection = undefined
     this.pending = undefined
+    this.composition = undefined
     // The previous note's blocks are not kept for the next one.
     this.items.reset()
   }
@@ -376,6 +400,60 @@ export class SourceSurface {
     } finally {
       this.typed = before
     }
+  }
+
+  /**
+   * The change that a person's own input made to the text the surface last showed, as the input
+   * event announced it, or undefined when the input is not their own typing, deletion, Return or
+   * composition. A deletion that has no selection reaches back or forward from the caret by what
+   * the text lost. The range is checked against the text, so one that does not account for it is
+   * not trusted.
+   */
+  private ownChanges(
+    announced: SourceSurface['pending'],
+    event: InputEvent,
+  ): SourceChange[] | undefined {
+    const next = this.element.value
+    const type = event.inputType
+    const delta = next.length - this.known.length
+    let from: number
+    let to: number
+    if (
+      compositionInputs.has(type) ||
+      event.isComposing ||
+      this.composingValue
+    ) {
+      const composition = this.composition
+      if (!composition) return undefined
+      ;({ from, to } = composition)
+    } else {
+      this.composition = undefined
+      if (!announced || announced.type !== type) return undefined
+      ;({ from, to } = announced)
+      if (type === 'insertText') {
+        if (Array.from(announced.data).length !== 1) return undefined
+      } else if (type === 'insertLineBreak' || type === 'insertParagraph') {
+        // Return
+      } else if (ownDeletions.has(type)) {
+        if (from === to) {
+          if (delta >= 0 || /^deleteEntire|^deleteContent$/.test(type))
+            return undefined
+          if (type.endsWith('Forward')) to = from - delta
+          else from = from + delta
+        }
+      } else return undefined
+    }
+    const length = delta + to - from
+    if (
+      from < 0 ||
+      to > this.known.length ||
+      length < 0 ||
+      next.slice(0, from) !== this.known.slice(0, from) ||
+      next.slice(from + length) !== this.known.slice(to)
+    )
+      return undefined
+    if (this.composition) this.composition.to = from + length
+    return [{ from, to, text: next.slice(from, from + length) }]
   }
 
   /** Forgets the pairs that bracket pairing tracks, so their brackets are ordinary characters. */
@@ -487,8 +565,7 @@ export class SourceSurface {
       this.itemsOf(value, this.element.selectionStart),
     )
     if (!edit) return false
-    // A new line is not typing inside a pair.
-    this.applyEdit(edit, false)
+    this.asTyping(edit.changes, () => this.applyEdit(edit, false))
     return true
   }
 
@@ -547,7 +624,7 @@ export class SourceSurface {
   keyDown({ key, metaKey, ctrlKey, altKey, shiftKey }: KeyboardEvent): boolean {
     if (metaKey || ctrlKey || altKey) return false
     if (key === 'Enter') {
-      if (!this.continueList()) this.replaceLiteralSelection('\n', false)
+      if (!this.continueList()) this.typedReplacement('\n')
       return true
     }
     if (key === 'Tab') {
@@ -570,10 +647,18 @@ export class SourceSurface {
           segment.index + segment.segment.length,
         )
       }
-      this.replaceLiteralSelection('', false)
+      this.typedReplacement('')
       return true
     }
     return false
+  }
+
+  /** Replaces the selection with `text` as the person's own key, so pairs that it lies inside stay. */
+  private typedReplacement(text: string): void {
+    const { selectionStart: from, selectionEnd: to } = this.element
+    this.asTyping([{ from, to, text }], () =>
+      this.replaceLiteralSelection(text, false),
+    )
   }
 
   setMode(mode: EditingMode, transition: ModeTransition): boolean {

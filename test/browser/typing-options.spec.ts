@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import { controlInputTimers, finishInput } from './timing'
 import { test, expect, observe, operation } from './fixtures'
 
 // Bracket pairing, list continuation and indentation through a real browser's key and input
@@ -109,6 +110,128 @@ for (const mode of ['formatted', 'source'] as const) {
       await saved(page).toBe('a ()')
       await page.keyboard.type(')')
       await saved(page).toBe('a ()')
+    })
+
+    test('a correction inside a pair keeps it: (ab, Backspace, ) gives (a)', async ({
+      page,
+    }) => {
+      await open(page, 'x', 'x', mode, paired)
+      await page.keyboard.type(' (ab')
+      await saved(page).toBe('x (ab)')
+      await page.keyboard.press('Backspace')
+      await page.keyboard.type(')')
+      await saved(page).toBe('x (a)')
+      await open(page, 'x', 'x', mode, paired)
+      await page.keyboard.type(' (foo')
+      await page.keyboard.press('Backspace')
+      await page.keyboard.type('o)')
+      await saved(page).toBe('x (foo)')
+    })
+
+    test('Delete inside a pair keeps it: (ab, Left, Delete, ) gives (a)', async ({
+      page,
+    }) => {
+      await open(page, 'x', 'x', mode, paired)
+      await page.keyboard.type(' (ab')
+      await page.keyboard.press('ArrowLeft')
+      await page.keyboard.press('Delete')
+      await saved(page).toBe('x (a)')
+      await page.keyboard.type(')')
+      await saved(page).toBe('x (a)')
+    })
+
+    test('a word deletion inside a pair keeps it', async ({ page }) => {
+      await open(page, 'x', 'x', mode, paired)
+      await page.keyboard.type(' (one two')
+      await page.keyboard.press(
+        process.platform === 'darwin' ? 'Alt+Backspace' : 'Control+Backspace',
+      )
+      await saved(page).toBe('x (one )')
+      await page.keyboard.type(')')
+      await saved(page).toBe('x (one )')
+    })
+
+    test('Return inside a pair keeps it', async ({ page }) => {
+      await open(page, 'x', 'x', mode, paired)
+      await page.keyboard.type(' (ab')
+      await page.keyboard.press('Enter')
+      await page.keyboard.type(')')
+      await saved(page).toBe(mode === 'source' ? 'x (ab\n)' : 'x (ab\n\n)\n')
+    })
+
+    test('a composition committed inside a pair keeps it, and the closer steps over', async ({
+      page,
+      browserName,
+      openFixture,
+    }) => {
+      test.skip(
+        browserName !== 'chromium',
+        'Only Chromium lets a test drive an input method',
+      )
+      await controlInputTimers(page)
+      await openFixture()
+      await open(page, 'x', 'x', mode, paired)
+      await page.keyboard.type(' (')
+      const session = await page.context().newCDPSession(page)
+      await session.send('Input.imeSetComposition', {
+        text: 'に',
+        selectionStart: 1,
+        selectionEnd: 1,
+      })
+      await session.send('Input.imeSetComposition', {
+        text: '日本',
+        selectionStart: 2,
+        selectionEnd: 2,
+      })
+      await session.send('Input.insertText', { text: '日本' })
+      await finishInput(page)
+      await saved(page).toBe('x (日本)')
+      await page.keyboard.type(')')
+      await saved(page).toBe('x (日本)')
+    })
+
+    test('a paste inside a pair forgets it', async ({ page }) => {
+      await open(page, 'x', 'x', mode, paired)
+      await page.keyboard.type(' (ab')
+      await page.evaluate(() => {
+        const data = new DataTransfer()
+        data.setData('text/plain', 'zz')
+        document.activeElement!.dispatchEvent(
+          new ClipboardEvent('paste', {
+            clipboardData: data,
+            bubbles: true,
+            cancelable: true,
+          }),
+        )
+      })
+      await saved(page).toBe('x (abzz)')
+      await page.keyboard.type(')')
+      await saved(page).toBe('x (abzz))')
+    })
+
+    test('Backspace that deletes the opener forgets the pair', async ({
+      page,
+    }) => {
+      await open(page, 'x', 'x', mode, paired)
+      await page.keyboard.type(' (ab')
+      await page.keyboard.press('ArrowLeft')
+      await page.keyboard.press('ArrowLeft')
+      await page.keyboard.press('Backspace')
+      await saved(page).toBe('x ab)')
+      await page.keyboard.press('ArrowRight')
+      await page.keyboard.press('ArrowRight')
+      await page.keyboard.type(')')
+      await saved(page).toBe('x ab))')
+    })
+
+    test('undo after a correction forgets the pair', async ({ page }) => {
+      await open(page, 'x', 'x', mode, paired)
+      await page.keyboard.type(' (ab')
+      await page.keyboard.press('ControlOrMeta+z')
+      await page.keyboard.press('ControlOrMeta+Shift+z')
+      await saved(page).toBe('x (ab)')
+      await page.keyboard.type(')')
+      await saved(page).toBe('x (ab))')
     })
 
     test('an apostrophe after a letter stays single', async ({ page }) => {

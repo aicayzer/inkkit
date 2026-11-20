@@ -985,7 +985,7 @@ describe('what an edit is, not how it looks afterwards', () => {
       expect(shown()).toBe('([a])|')
     }))
 
-  test('a deletion inside a pair is not typing and forgets it', () =>
+  test('a document edit that nothing announced forgets the pair', () =>
     pairing('', ({ view, type, find, shown }) => {
       type('(ab')
       view.dispatch(view.state.tr.delete(find('b') - 1, find('b')))
@@ -1030,6 +1030,224 @@ describe('what an edit is, not how it looks afterwards', () => {
       type(')')
       expect(shown()).toBe('(b)|)')
     }))
+})
+
+/** The input event that a browser sends before it changes the page. */
+function announce(
+  view: EditorView,
+  inputType: string,
+  data: string | null = null,
+) {
+  const event = new InputEvent('beforeinput', {
+    inputType,
+    data,
+    bubbles: true,
+    cancelable: true,
+  })
+  view.dom.dispatchEvent(event)
+  return event
+}
+
+describe('the person correcting what they typed inside a pair', () => {
+  /** What the browser does after a deletion that the page announced: ProseMirror reads the change. */
+  const deleted = (
+    view: EditorView,
+    inputType: string,
+    from: number,
+    to: number,
+    caret = from,
+  ) => {
+    announce(view, inputType)
+    const tr = view.state.tr.delete(from, to)
+    view.dispatch(tr.setSelection(TextSelection.create(tr.doc, caret)))
+  }
+
+  test('Backspace inside a pair keeps it: (ab, Backspace, ) gives (a)', () =>
+    pairing('', ({ view, type, find, shown, save }) => {
+      type('(ab')
+      deleted(view, 'deleteContentBackward', find('b') - 1, find('b'))
+      expect(shown()).toBe('(a|)')
+      type(')')
+      expect(shown()).toBe('(a)|')
+      expect(save()).toBe('(a)\n')
+    }))
+
+  test('Backspace and typing again: (foo, Backspace, o) ) gives (foo)', () =>
+    pairing('', ({ view, type, find, shown, save }) => {
+      type('(foo')
+      deleted(view, 'deleteContentBackward', find('foo') - 1, find('foo'))
+      type('o)')
+      expect(shown()).toBe('(foo)|')
+      expect(save()).toBe('(foo)\n')
+    }))
+
+  test('Delete inside a pair keeps it', () =>
+    pairing('', ({ view, type, caret, find, shown }) => {
+      type('(ab')
+      caret(find('a'))
+      deleted(view, 'deleteContentForward', find('a'), find('b'))
+      expect(shown()).toBe('(a|)')
+      type(')')
+      expect(shown()).toBe('(a)|')
+    }))
+
+  test('a word deletion inside a pair keeps it', () =>
+    pairing('', ({ view, type, find, shown }) => {
+      type('(one two')
+      deleted(view, 'deleteWordBackward', find('one '), find('two'))
+      expect(shown()).toBe('(one |)')
+      type(')')
+      expect(shown()).toBe('(one )|')
+    }))
+
+  test('a deletion with no key keeps the pair too', () =>
+    pairing('', ({ view, type, find, shown }) => {
+      type('(ab')
+      deleted(view, 'deleteContent', find('b') - 1, find('b'))
+      type(')')
+      expect(shown()).toBe('(a)|')
+    }))
+
+  test('Return inside a pair keeps it', () =>
+    pairing('', ({ type, key, shown }) => {
+      type('(ab')
+      expect(key('Enter')).toBe(true)
+      expect(shown()).toBe('(ab\n|)')
+      type(')')
+      expect(shown()).toBe('(ab\n)|')
+    }))
+
+  test('a composition committed inside a pair keeps it', () =>
+    pairing('', ({ view, type, find, shown }) => {
+      type('(')
+      const at = find('(')
+      announce(view, 'insertCompositionText', 'に')
+      view.dispatch(
+        view.state.tr.insertText('に', at).setMeta('composition', 1),
+      )
+      announce(view, 'insertCompositionText', '日本')
+      view.dispatch(
+        view.state.tr.insertText('日本', at, at + 1).setMeta('composition', 1),
+      )
+      type(')')
+      expect(shown()).toBe('(日本)|')
+    }))
+
+  test('a composition that reaches the opener forgets the pair', () =>
+    pairing('', ({ view, type, shown }) => {
+      type('(')
+      announce(view, 'insertCompositionText', 'に')
+      view.dispatch(
+        view.state.tr.insertText('に', 1, 2).setMeta('composition', 1),
+      )
+      view.dispatch(
+        view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)),
+      )
+      type(')')
+      expect(shown()).toBe('に)|)')
+    }))
+
+  test('a deletion that reaches the opener forgets the pair', () =>
+    pairing('', ({ view, type, find, shown }) => {
+      type('(ab')
+      deleted(view, 'deleteWordBackward', find('(') - 1, find('ab'))
+      expect(shown()).toBe('|)')
+      type(')')
+      expect(shown()).toBe(')|)')
+    }))
+
+  test('Backspace that removes the opener forgets the pair', () =>
+    pairing('', ({ view, type, find, caret, shown }) => {
+      type('(ab')
+      caret(find('('))
+      deleted(view, 'deleteContentBackward', find('(') - 1, find('('))
+      caret(find('ab'))
+      type(')')
+      expect(shown()).toBe('ab)|)')
+    }))
+
+  test('a paste inside a pair forgets it', () =>
+    pairing('', ({ view, type, find, shown }) => {
+      type('(ab')
+      view.dispatch(
+        view.state.tr.insertText('zz', find('b')).setMeta('uiEvent', 'paste'),
+      )
+      type(')')
+      expect(shown()).toBe('(abzz)|)')
+    }))
+
+  test('a cut and a drop inside a pair forget it', async () => {
+    for (const uiEvent of ['cut', 'drop']) {
+      await pairing('', ({ view, type, find, shown }) => {
+        type('(ab')
+        view.dispatch(
+          view.state.tr
+            .delete(find('b') - 1, find('b'))
+            .setMeta('uiEvent', uiEvent),
+        )
+        type(')')
+        expect(shown(), uiEvent).toBe('(a)|)')
+      })
+    }
+  })
+
+  test('input that is a cut, a drag, a paste or a replacement is not the person editing', async () => {
+    for (const inputType of [
+      'deleteByCut',
+      'deleteByDrag',
+      'insertFromPaste',
+      'insertFromDrop',
+      'insertReplacementText',
+    ]) {
+      await pairing('', ({ view, type, find, shown }) => {
+        type('(ab')
+        deleted(view, inputType, find('b') - 1, find('b'))
+        type(')')
+        expect(shown(), inputType).toBe('(a)|)')
+      })
+    }
+  })
+
+  test('an edit outside the pair forgets only the pairs it is not inside', async () => {
+    // Deleting the a is inside the outer pair and before the inner opener.
+    await pairing('', ({ view, type, find, caret, shown }) => {
+      type('(a[b')
+      caret(find('a'))
+      deleted(view, 'deleteContentBackward', find('a') - 1, find('a'))
+      expect(shown()).toBe('(|[b])')
+      caret(find('b'))
+      type(']')
+      expect(shown()).toBe('([b]|])')
+    })
+    await pairing('', ({ view, type, find, caret, shown }) => {
+      type('(a[b')
+      caret(find('a'))
+      deleted(view, 'deleteContentBackward', find('a') - 1, find('a'))
+      caret(find('b]'))
+      type(')')
+      expect(shown()).toBe('([b])|')
+    })
+  })
+
+  test('a host call that is not one character or a key forgets the pair', () =>
+    pairing('', ({ editor, type, shown }) => {
+      type('(a')
+      expect(editor.insertText('bc', generation)).toBe(true)
+      type(')')
+      expect(shown()).toBe('(abc)|)')
+    }))
+
+  test('a stale announcement does not make a later host edit the person editing', async () => {
+    await pairing('', async ({ view, type, find, shown }) => {
+      type('(ab')
+      // A Backspace that changed nothing, and a task later a host edit.
+      announce(view, 'deleteContentBackward')
+      await new Promise((resolve) => setTimeout(resolve))
+      view.dispatch(view.state.tr.delete(find('b') - 1, find('b')))
+      type(')')
+      expect(shown()).toBe('(a)|)')
+    })
+  })
 })
 
 describe('input that is not typing', () => {
