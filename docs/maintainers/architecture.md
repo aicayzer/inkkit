@@ -61,6 +61,14 @@ The facade keeps public declarations, argument validation, readiness and mutatio
 
 Output records provenance through a narrow clipboard callback. Neither collaborator owns document freshness, public validation or the facade's atomic/event boundary. The facade cancels output at accepted edits and lifecycle transitions, and destroys clipboard listeners before the source surface and Milkdown.
 
+## Display preferences
+
+`display.ts` holds the preferences that the editor reads when a document loads, so a load starts from the current settings. `setDisplayPreferences` applies them to the loaded document in one transaction outside the history, and both plugins keep their state in the editor state, so nothing reaches the document or its saved text.
+
+- `heading-fold.ts` keeps the positions of folded top-level headings in plugin state and maps them through each transaction. Node decorations hide the covered blocks, and a widget in each heading draws the button. A selection that reaches a section opens it in the same transaction, and a deletion at a section's edge opens it first.
+- `code-line-numbers.ts` draws one widget for each line from a data attribute, with the digit count as a custom property on the block. `code-block-decorations.ts` redecorates only the code blocks an edit touched, and highlighting shares it.
+- A block that holds a control is not a plain block for `selection.ts`, so the painted selection splits into more ranges. `drawn-selection.ts` starts each range's walk at the range, so the cost does not grow with the document for each range.
+
 ## Diagram rendering
 
 `src/index.ts` registers the Pele renderer from `pele.ts`. That module validates parsed models against Inkkit's supported diagram policy and sanitizes SVG with DOMPurify. The `core` entry reaches neither dependency. `diagram-validation.ts` retains the supported families, source limits and refusals independently of the renderer.

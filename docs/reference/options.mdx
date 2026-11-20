@@ -21,12 +21,13 @@ const editor = await InkKitEditor.mount(root, events, options)
 
 ## Editor options
 
-Four options can change after mount, through a method. The rest are fixed at mount; to change one, destroy the editor and mount a new one.
+Five options can change after mount, through a method. The rest are fixed at mount; to change one, destroy the editor and mount a new one.
 
 | Option                                                                                                | After mount                                                                                                  |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `editable`                                                                                            | [`setEditable`](/reference/editor#editable-and-seteditable)                                                  |
 | `textInput`                                                                                           | [`setTextInputPreferences`](/reference/editor#settextinputpreferences)                                       |
+| `display`                                                                                             | [`setDisplayPreferences`](/reference/editor#setdisplaypreferences)                                           |
 | `keymap`                                                                                              | [`setKeymap`](/reference/editor#setkeymap)                                                                   |
 | `slashMenu.enabled`                                                                                   | [`setSlashMenuEnabled`](/reference/editor#setslashmenuenabled)                                               |
 | `formats`, `images`, `files`, `wikiLinks`, `labels`, `linkSchemes`, `rendering`, `slashMenu` commands | Fixed. Whether `events.copy` is set is fixed too, because it decides whether code blocks draw a Copy button. |
@@ -136,6 +137,29 @@ A `PasteRoute`: how a paste the person makes, or a call to [`paste`](/reference/
 </Expandable>
 
 The three attributes are hints: the browser and the operating system decide whether they take effect.
+
+</ResponseField>
+
+<ResponseField name="display" type="DisplayPreferences" default="{}">
+
+{/* @api DisplayPreferences */}
+A `DisplayPreferences` object: settings that change only what the formatted surface shows. Every field is optional. They never change the document, revision, history, dirty state, snapshot, copy or print output. `setDisplayPreferences` replaces the whole set, so a field you leave out returns to its default. Both fields apply in formatted mode.
+
+<Expandable title="DisplayPreferences">
+
+<ResponseField name="foldHeadings" type="boolean" default="false">
+
+Shows a fold control beside each top-level heading. It hides what follows the heading, up to the next heading of the same or a higher level, or the end of the document. See [Folding headings](/concepts/markdown#folding-headings).
+
+</ResponseField>
+
+<ResponseField name="codeLineNumbers" type="boolean" default="false">
+
+Shows a number for each line of a code block's text. The numbers can't be selected or copied, aren't read by assistive technology and aren't printed. Color them with [`--inkkit-code-line-number`](/reference/appearance#tokens). See [Code blocks and highlighting](/concepts/markdown#code-blocks-and-highlighting).
+
+</ResponseField>
+
+</Expandable>
 
 </ResponseField>
 

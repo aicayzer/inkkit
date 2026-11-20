@@ -699,6 +699,13 @@ async function operation(name: string, args: Record<string, unknown> = {}) {
           >[0],
         )
         break
+      case 'display':
+        result = editor.setDisplayPreferences(
+          args.preferences as Parameters<
+            InkKitEditor['setDisplayPreferences']
+          >[0],
+        )
+        break
       case 'keymap':
         result = editor.setKeymap(
           args.keymap as Parameters<InkKitEditor['setKeymap']>[0],

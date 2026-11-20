@@ -978,6 +978,35 @@
   overflow-wrap: anywhere;
 }
 
+/* Line numbers are widgets drawn from a data attribute, so no text enters the selection or the
+   clipboard. The number sits at the start of its line, so a wrapped line keeps one number and its
+   continuation lines align with the text. The gutter is margin on the code, so scrolling a long
+   line leaves the numbers in place. */
+.inkkit-root .ProseMirror[data-inkkit-code-line-numbers='true'] pre > code {
+  margin-inline-start: calc(var(--_inkkit-line-digits, 1) * 1ch + 1.25em);
+}
+
+.inkkit-root .ProseMirror .inkkit-line-number {
+  position: absolute;
+  inset-inline-start: calc(var(--_inkkit-font-size) * 0.933);
+  width: calc(var(--_inkkit-line-digits, 1) * 1ch);
+  text-align: end;
+  color: var(--inkkit-code-line-number, var(--_inkkit-muted));
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+}
+
+.inkkit-root .ProseMirror .inkkit-line-number::before {
+  content: attr(data-inkkit-line);
+}
+
+@media (forced-colors: active) {
+  .inkkit-root .ProseMirror .inkkit-line-number {
+    color: GrayText;
+  }
+}
+
 .inkkit-root .ProseMirror blockquote {
   position: relative;
   margin: 0 0 calc(var(--_inkkit-font-size) * 0.8);
@@ -1309,6 +1338,99 @@
   display: none;
 }
 
+/* Heading folds are presentation. The control hangs in the left margin, inside the smallest
+   inset, and shows when the pointer or focus is on the heading or the section is folded. */
+.inkkit-root .ProseMirror[data-inkkit-fold-headings='true'] > h1,
+.inkkit-root .ProseMirror[data-inkkit-fold-headings='true'] > h2,
+.inkkit-root .ProseMirror[data-inkkit-fold-headings='true'] > h3,
+.inkkit-root .ProseMirror[data-inkkit-fold-headings='true'] > h4,
+.inkkit-root .ProseMirror[data-inkkit-fold-headings='true'] > h5,
+.inkkit-root .ProseMirror[data-inkkit-fold-headings='true'] > h6 {
+  position: relative;
+}
+
+.inkkit-root .inkkit-heading-fold {
+  position: absolute;
+  inset-inline-start: -16px;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 1.25em;
+  height: 1lh;
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.inkkit-root .inkkit-heading-fold button {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 16px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--_inkkit-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.inkkit-root .inkkit-heading-fold button::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.inkkit-root .inkkit-heading-fold button[aria-expanded='false']::before {
+  transform: translateX(-1px) rotate(-45deg);
+}
+
+.inkkit-root h1:hover .inkkit-heading-fold button,
+.inkkit-root h2:hover .inkkit-heading-fold button,
+.inkkit-root h3:hover .inkkit-heading-fold button,
+.inkkit-root h4:hover .inkkit-heading-fold button,
+.inkkit-root h5:hover .inkkit-heading-fold button,
+.inkkit-root h6:hover .inkkit-heading-fold button,
+.inkkit-root .inkkit-heading-fold button:focus-visible,
+.inkkit-root .inkkit-heading-fold button[aria-expanded='false'] {
+  opacity: 1;
+}
+
+.inkkit-root .inkkit-heading-fold button:hover {
+  background: color-mix(in srgb, CanvasText 10%, transparent);
+  color: var(--_inkkit-text);
+}
+
+.inkkit-root .inkkit-heading-fold button:focus-visible {
+  outline: 2px solid var(--_inkkit-accent);
+  outline-offset: 1px;
+}
+
+@media (hover: none) {
+  .inkkit-root .inkkit-heading-fold button {
+    opacity: 1;
+  }
+}
+
+.inkkit-root .ProseMirror .inkkit-folded-content {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .inkkit-root .inkkit-heading-fold button {
+    color: ButtonText;
+  }
+}
+
 .inkkit-root .inkkit-comment {
   display: none;
 }
@@ -1352,6 +1474,19 @@
     .inkkit-callout[data-inkkit-folded='true']
     > .inkkit-callout-body {
     display: block !important;
+  }
+
+  .inkkit-root .ProseMirror .inkkit-folded-content {
+    display: revert !important;
+  }
+
+  .inkkit-root .inkkit-heading-fold,
+  .inkkit-root .ProseMirror .inkkit-line-number {
+    display: none !important;
+  }
+
+  .inkkit-root .ProseMirror[data-inkkit-code-line-numbers='true'] pre > code {
+    margin-inline-start: 0;
   }
 }
 /* Diagram previews are presentation; the authored code remains editable. */

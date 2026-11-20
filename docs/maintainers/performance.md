@@ -162,7 +162,7 @@ Both engines now meet the 100 ms target on this fixture, and doubling the docume
 
 ## Checks and limits
 
-`test/browser/long-note-scaling.spec.ts` compares median costs at 1,000 and 4,000 blocks for typing, trusted Enter, leaving source mode after an edit, whole-text selection, active-query typing and outline reads. It permits eight times the smaller measurement plus a small timer allowance. It runs with the existing browser checks; there is no extra CI job. Focused command:
+`test/browser/long-note-scaling.spec.ts` runs twice: once as described here, and once with `display.foldHeadings` and `display.codeLineNumbers` on and a code block every 500 paragraphs. It compares median costs at 1,000 and 4,000 blocks for typing, trusted Enter, leaving source mode after an edit, whole-text selection, active-query typing and outline reads. It permits eight times the smaller measurement plus a small timer allowance. It runs with the existing browser checks; there is no extra CI job. Focused command:
 
 ```sh
 pnpm exec playwright test --project=chromium test/browser/long-note-scaling.spec.ts

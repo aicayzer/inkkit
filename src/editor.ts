@@ -64,6 +64,7 @@ import {
 import {
   createMilkdownEditor,
   createDocumentState,
+  applyDisplay,
   initialDocumentSelection,
 } from './editor-milkdown'
 import { drawnCaretBar } from './drawn-caret'
@@ -147,6 +148,8 @@ import {
 import type { TextProjection } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
 import { isWrittenEdit, setCommentVisibility } from './comments'
+import type { DisplayState } from './display'
+import { clearHeadingFolds } from './heading-fold'
 import { assertHiddenCommentsKept } from './hidden-comments'
 import { PasteController, imagesRefused } from './paste'
 import { EditorFindSession } from './find-session'
@@ -464,6 +467,28 @@ function textInputPreferences(
   }
 }
 
+/** Presentation settings that never touch the document, its revision, history, dirty state,
+ *  snapshot, copy or print output. A field left out takes its default. */
+export interface DisplayPreferences {
+  /** In formatted mode, a control beside each top-level heading hides what follows it, up to the
+   *  next heading of the same or a higher level. Off unless true. */
+  foldHeadings?: boolean
+  /** In formatted mode, each code block shows a number for each line of its text. Off unless
+   *  true. */
+  codeLineNumbers?: boolean
+}
+
+function displayPreferences(value: unknown, name: string): DisplayPreferences {
+  const record = expectRecord(value, name, ['foldHeadings', 'codeLineNumbers'])
+  return {
+    foldHeadings: optionalBoolean(record.foldHeadings, `${name}.foldHeadings`),
+    codeLineNumbers: optionalBoolean(
+      record.codeLineNumbers,
+      `${name}.codeLineNumbers`,
+    ),
+  }
+}
+
 /** Mount options. Adapters, `formats`, `labels`, `linkSchemes` and `rendering` are fixed at mount;
  *  the rest can change. `F` is the formats offered. */
 export interface EditorOptions<F extends DocumentFormat = TextDocumentFormat> {
@@ -480,6 +505,8 @@ export interface EditorOptions<F extends DocumentFormat = TextDocumentFormat> {
   /** Defaults to true. See `setEditable`. */
   editable?: boolean
   textInput?: TextInputPreferences
+  /** See `setDisplayPreferences`. */
+  display?: DisplayPreferences
   /** Replaces built-in text and accessible names. */
   labels?: Partial<EditorLabels>
   /** See `setKeymap`. */
@@ -522,6 +549,7 @@ function editorOptions(value: unknown): EditorOptions {
       ...adapterNames,
       'editable',
       'textInput',
+      'display',
       'labels',
       'keymap',
       'linkSchemes',
@@ -537,6 +565,8 @@ function editorOptions(value: unknown): EditorOptions {
   optionalBoolean(options.editable, 'options.editable')
   if (!isOmitted(options.textInput))
     textInputPreferences(options.textInput, 'options.textInput')
+  if (!isOmitted(options.display))
+    displayPreferences(options.display, 'options.display')
   if (!isOmitted(options.keymap))
     keymapBindings(options.keymap, 'options.keymap')
   const linkSchemes = isOmitted(options.linkSchemes)
@@ -936,6 +966,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private pairEpoch = 0
   private writable = true
   private inputPreferences: TextInputPreferences = {}
+  private displayState: DisplayPreferences = {}
   private literalKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
   private indentKeys: (view: EditorView, event: KeyboardEvent) => boolean =
@@ -1029,6 +1060,10 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.inputPreferences = textInputPreferences(
       options.textInput ?? {},
       'options.textInput',
+    )
+    this.displayState = displayPreferences(
+      options.display ?? {},
+      'options.display',
     )
   }
 
@@ -1532,6 +1567,32 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     }
   }
 
+  /** Replaces the display preferences. A field left out takes its default. They change only what
+   *  the formatted surface shows: the document, revision, history, dirty state, snapshot, copy
+   *  and print output stay as they are. Throws `composition` during text composition. */
+  setDisplayPreferences(preferences: DisplayPreferences): void {
+    this.assertAlive()
+    const checked = displayPreferences(preferences, 'preferences')
+    if (this.composing)
+      throw new InkKitError('composition', 'Text composition is in progress')
+    const suppressed = this.reportingSuppressed
+    this.reportingSuppressed = true
+    try {
+      this.displayState = checked
+      applyDisplay(this.editor.ctx.get(editorViewCtx), this.currentDisplay())
+    } finally {
+      this.reportingSuppressed = suppressed
+    }
+    this.publishCommandState()
+  }
+
+  private currentDisplay(): DisplayState {
+    return {
+      foldHeadings: this.displayState.foldHeadings === true,
+      codeLineNumbers: this.displayState.codeLineNumbers === true,
+    }
+  }
+
   private applyInputPolicy(): void {
     applyInputPolicy(
       this.editor.ctx.get(editorViewCtx),
@@ -1682,6 +1743,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       },
       text: () => this.savedText().text,
       changed: () => {
+        // Folds belong to one stretch in the formatted surface, so a switch clears them.
+        clearHeadingFolds(this.editor.ctx.get(editorViewCtx))
         this.mode = mode
         this.forgetPairs()
         this.session.modeChanged()
@@ -2128,6 +2191,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         pairBrackets: () => instance.inputPreferences.pairBrackets === true,
         pairEpoch: () => instance.pairEpoch,
         continueLists: () => instance.inputPreferences.continueLists !== false,
+        display: () => instance.currentDisplay(),
         linkSchemes: instance.linkSchemes,
         mutate: (operation) =>
           instance.forPerson(
@@ -3017,6 +3081,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       'setEditable',
       'setHostActive',
       'setTextInputPreferences',
+      'setDisplayPreferences',
       'setSlashMenuEnabled',
       'setEditingMode',
       'replaceSource',

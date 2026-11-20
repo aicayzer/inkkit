@@ -79,6 +79,16 @@ Callouts follow [GitHub alerts](https://docs.github.com/en/get-started/writing-o
 
 In the body, Enter starts a new paragraph, and Enter in an empty last paragraph leaves the callout. Backspace at the start of the first block moves that block out of the callout. An empty paragraph in a callout is saved as a quoted `<br />` line. Copy and print include the full body of a folded callout.
 
+## Folding headings
+
+With [`display.foldHeadings`](/reference/options#editor-options) on, each top-level heading in formatted mode has a button beside it that hides what follows, up to the next heading of the same or a higher level, or the end of the document. A fold hides deeper headings too. Headings inside a quote, list or callout have no button.
+
+- **Presentation only:** the source, revision, history, dirty state, copy and print output don't change, and a fold is never saved. Print shows every section.
+- **Follows edits:** deleting a heading removes its fold. Changing its level changes what it hides.
+- **Opens on arrival:** a caret or selection that moves into a folded section, by arrow keys, find, undo or a host call, opens it first. Backspace or Delete that would reach hidden text opens the section instead of deleting it.
+- **Resets:** turning the option off unfolds everything. A switch to source mode and back, and a new load, start unfolded. A read-only editor can still fold.
+- **Accessible:** the button's name is [`foldHeading` or `unfoldHeading`](/reference/appearance#labels) followed by the heading's text, `aria-expanded` shows its state, and the hidden blocks are hidden from assistive technology.
+
 ## Highlights
 
 `==text==` is highlighted text. It needs exactly two `=` on each side; escaped delimiters and code stay literal. `format('highlight')` toggles it. The `highlight` shortcut name has no default key. Ordinary copy writes it as `<mark>`.
@@ -123,6 +133,7 @@ Some edits to comments are refused; see [Preservation](/concepts/preservation#wh
 - **Copy button:** shown only when you pass an `events.copy` handler, which receives the code.
 - **Controls:** the language button is always shown. The Copy button is an icon with no text, and it appears while the pointer is over the block, the focused editor’s selection is inside it, or a control has focus; a device with no hover always shows it. The controls stay at the block's right edge while code scrolls, and the hidden Copy button remains keyboard-accessible.
 - **Wrapping:** the **Wrap code** toggle at the end of the language search row wraps that block to its width. Long words wrap too. Wrapping is off by default and affects presentation only: saved source, revision, and undo history stay unchanged. Each block keeps its choice through edits; loading the document again resets it.
+- **Line numbers:** with [`display.codeLineNumbers`](/reference/options#editor-options) on, each code block in formatted mode shows a number for each line of its text, including an empty last line after a final newline. A wrapped line keeps one number, and its continuation lines align with the text. The numbers can't be selected or copied, aren't read by assistive technology and aren't printed. This is presentation only. Color them with `--inkkit-code-line-number`.
 - **Leaving code:** Command+Enter on macOS, or Ctrl+Enter elsewhere, inserts a paragraph after the code block and moves the caret there, including when the block is last in the document. Enter keeps a new line inside code. Moving to the document end does not create a paragraph.
 
 Highlighting recognizes Arduino, Bash, C, C++, C#, CSS, Diff, Go, GraphQL, INI, Java, JavaScript, JSON, Kotlin, Less, Lua, Makefile, Markdown, Objective-C, Perl, PHP, PHP template, Python, Python REPL, R, Ruby, Rust, SCSS, Shell, SQL, Swift, TypeScript, Visual Basic .NET, WebAssembly, HTML and XML, and YAML, under their [highlight.js](https://highlightjs.org) names and aliases, such as `js` and `py`.

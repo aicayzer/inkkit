@@ -23,7 +23,7 @@ Every output carries these as a `DocumentVersion` (`documentId`, `generation`, `
 
 The revision increases by one for each change to the document's content: typing, paste, drop, cut, undo, redo, a successful editing call such as `format` or `replaceSource`, and typing in source mode. It is a counter, not a name for the text: undoing an edit increases it again.
 
-These leave it unchanged: selection and caret moves, `setEditingMode`, `setEditable`, `setTextInputPreferences`, `setCommentsVisible`, `find`, reading calls such as `snapshot`, and any call that fails or edit that is refused.
+These leave it unchanged: selection and caret moves, `setEditingMode`, `setEditable`, `setTextInputPreferences`, `setDisplayPreferences`, `setCommentsVisible`, `find`, reading calls such as `snapshot`, and any call that fails or edit that is refused.
 
 ## Load a document
 
@@ -145,7 +145,7 @@ Pass the generation you loaded as the last argument of every call that takes one
 - **Optional, the last argument:** the calls that read or change the document, its selection or focus, such as `snapshot`, `commandState`, `format`, `paste`, `undo`, `printableSnapshot`, `clipboardSnapshot`, `focus` and `blur`.
 - **Optional, checked only when given:** `reloadDocument`.
 - **Carried by the argument:** calls that take a text range or a heading check the version that the range's `snapshotId` or the heading names.
-- **None:** `loadDocument`, which brings its own generation, and editor settings such as `setEditable`, `setTextInputPreferences`, `setKeymap`, `setViewport` and `setCommentsVisible`.
+- **None:** `loadDocument`, which brings its own generation, and editor settings such as `setEditable`, `setTextInputPreferences`, `setDisplayPreferences`, `setKeymap`, `setViewport` and `setCommentsVisible`.
 
 [State checks](/reference/editor#state-checks) lists every member and the checks it makes.
 
