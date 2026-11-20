@@ -7,7 +7,7 @@ import type { EditorOptions, InkKitEditor } from '../../src/core'
  * options on and off, because the options are presentation and must not change any edit.
  */
 
-const moduleUrl = `/@fs${process.cwd()}/src/index.ts`
+const moduleUrl = `/@fs${process.cwd()}/src/core.ts`
 
 declare global {
   interface Window {
