@@ -800,7 +800,7 @@ A `ClipboardDiagram` retains a complete Mermaid diagram and its optional rendere
 
 `paste(input: ClipboardInput, expectedGeneration?: number): Promise<void>`
 
-Pastes content that the host read from the native clipboard, through the same import as a paste the person makes. Read the clipboard once; don't read it again while this runs. An unknown field throws `invalid-argument`.
+Pastes content that the host read from the native clipboard, through the same import as a paste the person makes, including the [`textInput.paste`](/reference/options#editor-options) route. Read the clipboard once; don't read it again while this runs. An unknown field throws `invalid-argument`.
 
 {/* @api ClipboardInput */}
 A `ClipboardInput` supplies representations from one clipboard read. Inkkit chooses the applicable representation using the current mode and import rules.
@@ -822,7 +822,7 @@ An image item whose `source` equals an image's `src` belongs to that image; item
 
 `pasteAsPlainText(text: string, expectedGeneration?: number): boolean`
 
-Inserts `text` literally at the selection and returns whether the document changed. It is the one way to paste literal text in formatted mode, and it never makes links or formatting.
+Inserts `text` literally at the selection and returns whether the document changed. It never makes links or formatting. Use it for a **Paste as Plain Text** command; to make every paste literal, set [`textInput.paste`](/reference/options#editor-options) to `'plainText'`.
 
 {/* @api InkKitEditor.printableSnapshot */}
 
