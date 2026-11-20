@@ -11,6 +11,7 @@ import {
   TextSelection,
   type Transaction,
 } from '@milkdown/kit/prose/state'
+import { isHistoryTransaction } from '@milkdown/kit/prose/history'
 import { $prose } from '@milkdown/kit/utils'
 import { serialize } from './dialect'
 import { semanticSignature } from './preserve-shape'
@@ -48,6 +49,18 @@ function characters(
         form,
         marks,
       })
+  })
+  return result
+}
+
+// Where each entry of `characters` starts in the document.
+function entryStarts(block: ProseNode, start: number): number[] {
+  const result: number[] = []
+  block.forEach((child, offset) => {
+    if (!child.isText) result.push(start + offset)
+    else
+      for (let index = 0; index < child.text!.length; index++)
+        result.push(start + offset + index)
   })
   return result
 }
@@ -656,7 +669,13 @@ export const autolinkLiterals = $prose(
       appendTransaction(transactions, oldState, newState) {
         // A bare address is a link only in Markdown.
         if (!formatInput(ctx).markdownInput()) return null
-        if (!transactions.some((tr) => tr.docChanged)) return null
+        // Undo and Redo restore a document the editor held, with its links.
+        // Its text may come from character references the editor does not
+        // hold, so reading it again could link it differently.
+        if (
+          !transactions.some((tr) => tr.docChanged && !isHistoryTransaction(tr))
+        )
+          return null
         const base = newState.tr
         const written = transactions.every(isWrittenEdit)
         if (written) codeAngles(base, editedBlocks(oldState.doc, base.doc))
@@ -679,10 +698,11 @@ export const autolinkLiterals = $prose(
         for (const block of edited) {
           const { pos, from, to } = block
           const chars = characters(block.block, pos + 1)
+          // An inline node such as a line break holds an entry of its own, so
+          // an edit that ends directly before one reaches the text it ends.
+          const starts = entryStarts(block.block, pos + 1)
           const index = (at: number) => {
-            const found = chars.findIndex(
-              (char) => char !== undefined && char.pos >= at,
-            )
+            const found = starts.findIndex((start) => start >= at)
             return found < 0 ? chars.length : found
           }
           const wanted = wantedLinks(
