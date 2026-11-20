@@ -1,5 +1,22 @@
 # Performance evidence
 
+## Many folded sections, 20 November 2026
+
+Display option `foldHeadings` with every section folded but the one edited, in a 1,000-block and a 4,000-block note with a heading every five blocks. Apple M4 (10 cores), macOS 27.0, Playwright 1.64.0, development fixture, `test/browser/long-note-scaling.spec.ts` ("every section folded"). Medians of three fresh pages, in milliseconds, for `insertText` in the open section, typing with an active find query, and whole-text selection. The test machine was shared, so treat differences under about 20% as noise.
+
+| Engine and action | Before, 1,000 | Before, 4,000 | After, 1,000 | After, 4,000 |
+| ----------------- | ------------- | ------------- | ------------ | ------------ |
+| Chromium typing   | 12.1          | 126.7         | 6.5          | 47.9         |
+| Chromium find     | 12.4          | 142.3         | 7.4          | 54.0         |
+| Chromium select   | 12.7          | 137.4         | 10.4         | 81.5         |
+| WebKit typing     | 20            | 304           | 14           | 145          |
+| WebKit find       | 23            | 292           | 15           | 151          |
+| WebKit select     | 18            | 203           | 13           | 120          |
+
+The note with the same headings and no folds types in 4.3 and 16.2 ms in Chromium. The fold plugin used to read the document once for each folded section on every transaction, including every selection change, and rebuilt every decoration after every edit. It now finds all section ends in one pass, maps folded sections by position when an edit stays inside one block, and rebuilds only when blocks, headings or folds change.
+
+What remains is ProseMirror's own cost. It looks at every top-level decoration for every top-level block on each view update, and checks every decoration again when it maps a set through an edit. A hidden block needs a decoration, so with every block hidden the cost grows with the square of the note. A profile of 30 typed characters in Chromium put 22 ms per character in ProseMirror's `forChild`, called from its child update, and 11 ms in `DecorationSet.map`. The scaling test therefore allows the square of the size ratio for this case, and `test/display-fold.test.ts` bounds the fold plugin's own reads of the document. Removing the rest means hiding blocks without one decoration each, for example from a generated style rule, which depends on the order of the editor's top-level children.
+
 ## List and source input, 29 October 2026
 
 Compared released 0.3.5 (`b4f5822`) with the 0.3.6 runtime candidate (`8ddeb8c`) on Apple M4 (10 cores, 16 GB), macOS 27.0, Node.js 26.11.0, pnpm 11.0.9, Playwright 1.64.0, Chromium 156.0.8078.4 and WebKit 27.2. System WKWebView uses the same machine and its 60 Hz display. The candidate includes the independently merged format-list option and inline marks in #429 and #431. These are interaction measurements, separate from package or test-suite elapsed times.
@@ -162,7 +179,7 @@ Both engines now meet the 100 ms target on this fixture, and doubling the docume
 
 ## Checks and limits
 
-`test/browser/long-note-scaling.spec.ts` runs twice: once as described here, and once with `display.foldHeadings` and `display.codeLineNumbers` on and a code block every 500 paragraphs. It compares median costs at 1,000 and 4,000 blocks for typing, trusted Enter, leaving source mode after an edit, whole-text selection, active-query typing and outline reads. It permits eight times the smaller measurement plus a small timer allowance. It runs with the existing browser checks; there is no extra CI job. Focused command:
+`test/browser/long-note-scaling.spec.ts` runs three times: once as described here; once with `display.foldHeadings` and `display.codeLineNumbers` on and a code block every 500 paragraphs; and once with a heading every five blocks and every section but the edited one folded. It compares median costs at 1,000 and 4,000 blocks for typing, trusted Enter, leaving source mode after an edit, whole-text selection, active-query typing and outline reads. It permits eight times the smaller measurement plus a small timer allowance. It runs with the existing browser checks; there is no extra CI job. Focused command:
 
 ```sh
 pnpm exec playwright test --project=chromium test/browser/long-note-scaling.spec.ts

@@ -413,7 +413,7 @@ Replaces the input preferences on both surfaces. A field you leave out goes back
 
 `setDisplayPreferences(preferences: DisplayPreferences): void`
 
-Replaces the display preferences. A field you leave out goes back to its default. It throws `composition` during text composition and works before the first load. It's a presentation change, not an edit: the document, revision, history, dirty state, snapshot, change events, copy and print output stay as they are. Turning `foldHeadings` off unfolds every section, and a switch of editing mode or a new load starts unfolded. See [`DisplayPreferences`](/reference/options#editor-options).
+Replaces the display preferences. A field you leave out goes back to its default. It throws `composition` during text composition and works before the first load. It's a presentation change, not an edit: the document, revision, history, dirty state, snapshot, change events, copy and print output stay as they are. Preferences equal to the current ones change nothing and send no `commandStateChanged`. Turning `foldHeadings` off unfolds every section, and a switch of editing mode or a new load starts unfolded. See [`DisplayPreferences`](/reference/options#editor-options).
 
 {/* @api InkKitEditor.setSlashMenuEnabled */}
 
@@ -548,7 +548,7 @@ This call works in read-only mode and changes neither selection, focus, highligh
 
 `replaceAll(search: string, replacement: string, expectedGeneration?: number): number`
 
-`replace` replaces the selected match, or the next one, selects the inserted text and returns whether text changed. `replaceAll` replaces every non-overlapping match once and returns how many. Each call is one undo step. The replacement is literal: `$&`, `$1` and backslashes stay as typed. In formatted mode a replacement keeps the surrounding formatting, and a newline becomes a line break; in code, source and TXT it stays literal.
+`replace` replaces the selected match, or the next one, selects the inserted text and returns whether text changed. `replaceAll` replaces every non-overlapping match once and returns how many. Each call is one undo step. The replacement is literal: `$&`, `$1` and backslashes stay as typed. In formatted mode a replacement keeps the surrounding formatting, and a newline becomes a line break; in code, source and TXT it stays literal. The calls name the text they change, so they may change text that [a fold hides](/concepts/markdown#folding-headings).
 
 {/* @api InkKitEditor.findSession */}
 
@@ -909,7 +909,7 @@ A load, a reload, a new revision or a mode change makes earlier snapshot IDs sta
 
 `selectTextRange(range: TextRange, options?: { focus?: boolean; reveal?: boolean }): void`
 
-Selects the range. `focus` puts focus in the editor and `reveal` scrolls the range into view; both default to `false`, so focus stays in a host search field. A complete image alt text or footnote label selects that node, and a callout title selects the callout. Part of one throws `invalid-range`. It works in a read-only editor.
+Selects the range. A selection that includes text a [fold hides](/concepts/markdown#folding-headings), without covering the whole section, opens the section. `focus` puts focus in the editor and `reveal` scrolls the range into view; both default to `false`, so focus stays in a host search field. A complete image alt text or footnote label selects that node, and a callout title selects the callout. Part of one throws `invalid-range`. It works in a read-only editor.
 
 {/* @api InkKitEditor.revealTextRange */}
 
@@ -925,7 +925,7 @@ Scrolls the range into the viewport that [`setViewport`](#setviewport) describes
 
 `replaceTextRange(range: TextRange, text: string): boolean`
 
-Replaces the range with literal text as one undo step, keeping the surrounding structure and formatting, and returns whether the text changed. In formatted mode the range must sit in one text block. A range that crosses an image, a line break, a hidden comment or a block boundary throws `invalid-range`; use source mode to change syntax.
+Replaces the range with literal text as one undo step, keeping the surrounding structure and formatting, and returns whether the text changed. In formatted mode the range must sit in one text block. A range that crosses an image, a line break, a hidden comment or a block boundary throws `invalid-range`; use source mode to change syntax. The call names the text it changes, so it may change text that [a fold hides](/concepts/markdown#folding-headings).
 
 {/* @api InkKitEditor.textRangesRects */}
 
@@ -1015,7 +1015,7 @@ A host whose native layer receives typing or keys before the web view does passe
 
 `insertText(text: string, generation: number): boolean`
 
-Inserts exactly `text` at the selection and returns `true`. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode. Text of more than one character, and every other call that changes the document, makes the brackets around it ordinary characters, as [tracked pairs](/reference/options#paired-brackets-and-quotes) describes.
+Inserts exactly `text` at the selection and returns `true`. It has no exemption from a [fold](/concepts/markdown#folding-headings): a selection that reaches hidden text has already opened the section, so it replaces text that is shown. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode. Text of more than one character, and every other call that changes the document, makes the brackets around it ordinary characters, as [tracked pairs](/reference/options#paired-brackets-and-quotes) describes.
 
 {/* @api InkKitEditor.keyDown */}
 
@@ -1023,7 +1023,7 @@ Inserts exactly `text` at the selection and returns `true`. It returns `false`, 
 
 `keyDown(input: KeyInput, expectedGeneration: number): boolean`
 
-Runs a key press through Inkkit's key handling and returns whether Inkkit handled it. When it returns `true`, the host must not also handle the key natively.
+Runs a key press through Inkkit's key handling and returns whether Inkkit handled it. When it returns `true`, the host must not also handle the key natively. A deletion key has no exemption from a [fold](/concepts/markdown#folding-headings): it acts on shown text, and from a caret that would reach hidden text it opens the section and changes nothing.
 
 {/* @api KeyInput */}
 A `KeyInput` describes a native key press using DOM keyboard names and modifier state.
