@@ -186,15 +186,22 @@ export class PasteController {
                 : importableSlice(this.options.ctx(), slice),
             handlePaste: (view, event) => {
               this.claimed = false
-              const plain = event.clipboardData?.getData('text/plain')
+              const clipboard = event.clipboardData
               if (
-                plain &&
+                clipboard &&
                 view.editable &&
                 this.options.plainText?.() &&
                 this.options.pastePlainText
               ) {
+                const plain = clipboard.getData('text/plain')
+                // Without plain text only images are left; HTML and Markdown stay unread.
+                const images = plain ? [] : imageFiles(clipboard.files)
                 try {
-                  this.options.pastePlainText(plain)
+                  if (plain) this.options.pastePlainText(plain)
+                  else if (images.length)
+                    void this.run({ text: '' }, images).catch((error) =>
+                      options.onError?.(error),
+                    )
                 } catch (error) {
                   options.onError?.(error)
                 }

@@ -1792,9 +1792,14 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.assertAlive()
     input = this.clipboard.restore(clipboardInput(input))
     this.assertMutation(expectedGeneration)
-    if (this.pastesPlainText && input.text) {
-      this.unrecorded(() => this.pasteAsPlainText(input.text))
-      return
+    if (this.pastesPlainText) {
+      if (input.text) {
+        this.unrecorded(() => this.pasteAsPlainText(input.text))
+        return
+      }
+      // Without plain text only images are left; HTML and Markdown stay unread.
+      if (!input.images?.length) return
+      input = { text: '', images: input.images }
     }
     if (this.literalSurface) {
       const text = this.document.handler.literalPaste(input)

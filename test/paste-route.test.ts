@@ -112,10 +112,38 @@ describe('the plainText paste route', () => {
         pasteEvent(formattedSurface(root), clipboard)
         await settle()
         expect(editor.snapshot().text).toBe(expected)
+        editor.loadDocument({
+          documentId: 'paste-route',
+          generation: 2,
+          format: 'md',
+          text: expected,
+        })
+        expect(editor.snapshot().text).toBe(expected)
+      })
+      await session(source, { paste: 'plainText' }, async (editor, root) => {
+        selectTarget(editor)
+        pasteEvent(formattedSurface(root), clipboard)
+        await settle()
         editor.undo()
         expect(editor.snapshot().text).toBe(source)
       })
     })
+
+  test('a paste with no plain text ignores its HTML and Markdown', async () => {
+    await session('target\n', { paste: 'plainText' }, async (editor, root) => {
+      selectTarget(editor)
+      pasteEvent(formattedSurface(root), { html: '<b>Rich</b>' })
+      await settle()
+      await editor.paste({ text: '', html: '<b>Rich</b>', markdown: '# R' }, 1)
+      expect(editor.snapshot().text).toBe('target\n')
+      editor.setEditingMode('source')
+      selectTarget(editor)
+      pasteEvent(sourceSurface(root), { markdown: '# Rich' })
+      await settle()
+      await editor.paste({ text: '', markdown: '# Rich' }, 1)
+      expect(editor.snapshot().text).toBe('target\n')
+    })
+  })
 
   test('the formatted route still imports HTML', async () => {
     await session('target\n', undefined, async (editor, root) => {
