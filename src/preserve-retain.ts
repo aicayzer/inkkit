@@ -42,17 +42,17 @@ import { rowPipes, retainShortRow } from './preserve-table'
 import { retainLiteral, holdsLiteral } from './preserve-literal'
 import { PreservationRefusal } from './preserve-error'
 
-// A break written as trailing spaces takes in the spaces or tabs that end the
-// text before it, so it keeps that spelling only after other text.
+// A break written as trailing spaces takes in the spaces or tabs written
+// before it, so it keeps that spelling only after other bytes, such as the
+// `&#x20;` of an encoded space.
 function takesBlanks(
-  kept: SourceNode,
-  previous: SourceNode | undefined,
+  kept: SourceNode | undefined,
   source: string,
+  written: string,
 ): boolean {
   return (
-    kept.type === 'break' &&
-    previous?.type === 'text' &&
-    /[ \t]$/.test(previous.value ?? '') &&
+    kept?.type === 'break' &&
+    /[ \t]$/.test(written) &&
     /^[ \t]/.test(
       source.slice(kept.position?.start.offset, kept.position?.end.offset),
     )
@@ -430,15 +430,36 @@ export function retainSource(
               (candidate, candidateIndex) =>
                 !retained.has(candidateIndex) && same(candidate, incoming),
             )
-      const original = movedIndex < 0 ? child : before.children![movedIndex]!
+      let original = movedIndex < 0 ? child : before.children![movedIndex]!
       if (movedIndex >= 0) retained.add(movedIndex)
-      const childStart = child.position?.start.offset,
-        childEnd = child.position?.end.offset
+      let childStart = child.position?.start.offset
+      const childEnd = child.position?.end.offset
       if (childStart == null || childEnd == null)
         throw new PreservationRefusal(
           'source-location',
           'A source token has no location',
         )
+      // Markdown leaves the spaces and tabs before a line ending out of the
+      // text that starts with it, so they sit between that text and the node
+      // before. They are kept with the text, which drops them when an edit
+      // leaves a space or tab before them.
+      if (
+        index > 0 &&
+        movedIndex < 0 &&
+        original.type === 'text' &&
+        incoming.type === 'text' &&
+        /^[ \t]+$/.test(source.slice(at, childStart)) &&
+        /^\r?\n/.test(source.slice(childStart, childEnd))
+      ) {
+        childStart = at
+        original = {
+          ...original,
+          position: {
+            ...original.position!,
+            start: { ...original.position!.start, offset: at },
+          },
+        }
+      }
       let retainedSource =
         rewrittenAddress(
           before.type,
@@ -448,7 +469,8 @@ export function retainSource(
           index,
           source,
           canonical,
-        ) || takesBlanks(original, after.children![index - 1], source)
+        ) ||
+        takesBlanks(original, source, output + source.slice(at, childStart))
           ? withEnding(
               regutter(
                 canonical.slice(
@@ -592,156 +614,169 @@ export function retainSource(
       )
     )
       suffix--
-    // The run takes in a break that would take in its new text's spaces.
-    if (
-      suffix &&
-      takesBlanks(
-        before.children[before.children.length - suffix]!,
-        after.children[after.children.length - suffix - 1],
-        source,
-      )
-    )
-      suffix--
-    // Keep both authored formatting delimiters when inserting/removing inline
-    // children. A cell's pipe and padding also sit outside its content.
-    const wrapped =
-      (before.type === 'tableCell' || formatting.has(before.type)) &&
-      before.children.length > 0 &&
-      after.children.length > 0
-    const first = wrapped ? before.children[0]!.position?.start.offset : start
-    const last = wrapped ? before.children.at(-1)!.position?.end.offset : end
-    const newFirst = wrapped
-      ? after.children[0]!.position?.start.offset
-      : newStart
-    const newLast = wrapped
-      ? after.children.at(-1)!.position?.end.offset
-      : newEnd
-    // In a quote, a list's range takes in the `>` of the blank lines after
-    // it, and so does the range of an item that ends with a sublist. They
-    // separate the list from what follows, so the kept part ends where the
-    // innermost last item does and the separator comes from the canonical text.
-    const ending = (node: SourceNode): SourceNode => {
-      const last = node.children?.at(-1)
-      return last &&
-        (node.type === 'list' ||
-          (node.type === 'listItem' && last.type === 'list'))
-        ? ending(last)
-        : node
-    }
-    // The delimiter row follows the header and belongs to no row. Alignment
-    // is part of the table's own shape, so it is unchanged here, and a kept
-    // header keeps the delimiter row as written.
-    const header = (text: string, offset: number | undefined) =>
-      before.type === 'table' && prefix === 1 && offset != null
-        ? delimiterRowEnd(text, offset)
-        : offset
-    const from = prefix
-      ? header(
+    // The source with the last `suffix` children kept as authored, or
+    // undefined where those children must be written afresh.
+    const beforeChildren = before.children
+    const afterChildren = after.children
+    const write = (suffix: number): string | undefined => {
+      // Keep both authored formatting delimiters when inserting/removing inline
+      // children. A cell's pipe and padding also sit outside its content.
+      const wrapped =
+        (before.type === 'tableCell' || formatting.has(before.type)) &&
+        beforeChildren.length > 0 &&
+        afterChildren.length > 0
+      const first = wrapped ? beforeChildren[0]!.position?.start.offset : start
+      const last = wrapped ? beforeChildren.at(-1)!.position?.end.offset : end
+      const newFirst = wrapped
+        ? afterChildren[0]!.position?.start.offset
+        : newStart
+      const newLast = wrapped
+        ? afterChildren.at(-1)!.position?.end.offset
+        : newEnd
+      // In a quote, a list's range takes in the `>` of the blank lines after
+      // it, and so does the range of an item that ends with a sublist. They
+      // separate the list from what follows, so the kept part ends where the
+      // innermost last item does and the separator comes from the canonical text.
+      const ending = (node: SourceNode): SourceNode => {
+        const last = node.children?.at(-1)
+        return last &&
+          (node.type === 'list' ||
+            (node.type === 'listItem' && last.type === 'list'))
+          ? ending(last)
+          : node
+      }
+      // The delimiter row follows the header and belongs to no row. Alignment
+      // is part of the table's own shape, so it is unchanged here, and a kept
+      // header keeps the delimiter row as written.
+      const header = (text: string, offset: number | undefined) =>
+        before.type === 'table' && prefix === 1 && offset != null
+          ? delimiterRowEnd(text, offset)
+          : offset
+      const from = prefix
+        ? header(
+            source,
+            ending(beforeChildren[prefix - 1]!).position?.end.offset,
+          )
+        : first
+      const to = suffix
+        ? beforeChildren[beforeChildren.length - suffix]!.position?.start.offset
+        : last
+      const newFrom = prefix
+        ? header(
+            canonical,
+            ending(afterChildren[prefix - 1]!).position?.end.offset,
+          )
+        : newFirst
+      const newTo = suffix
+        ? afterChildren[afterChildren.length - suffix]!.position?.start.offset
+        : newLast
+      if (
+        first != null &&
+        last != null &&
+        newFirst != null &&
+        newLast != null &&
+        from != null &&
+        to != null &&
+        newFrom != null &&
+        newTo != null
+      ) {
+        const changed = beforeChildren.slice(
+          prefix,
+          beforeChildren.length - suffix,
+        )
+        const changes = afterChildren.slice(
+          prefix,
+          afterChildren.length - suffix,
+        )
+        const previous = authoredNeighbour(
+          beforeChildren[prefix - 1],
+          afterChildren[prefix - 1],
           source,
-          ending(before.children[prefix - 1]!).position?.end.offset,
         )
-      : first
-    const to = suffix
-      ? before.children[before.children.length - suffix]!.position?.start.offset
-      : last
-    const newFrom = prefix
-      ? header(
-          canonical,
-          ending(after.children[prefix - 1]!).position?.end.offset,
+        const next = authoredNeighbour(
+          beforeChildren[beforeChildren.length - suffix],
+          afterChildren[afterChildren.length - suffix],
+          source,
         )
-      : newFirst
-    const newTo = suffix
-      ? after.children[after.children.length - suffix]!.position?.start.offset
-      : newLast
-    if (
-      first != null &&
-      last != null &&
-      newFirst != null &&
-      newLast != null &&
-      from != null &&
-      to != null &&
-      newFrom != null &&
-      newTo != null
-    ) {
-      const changed = before.children.slice(
-        prefix,
-        before.children.length - suffix,
-      )
-      const changes = after.children.slice(
-        prefix,
-        after.children.length - suffix,
-      )
-      const previous = authoredNeighbour(
-        before.children[prefix - 1],
-        after.children[prefix - 1],
-        source,
-      )
-      const next = authoredNeighbour(
-        before.children[before.children.length - suffix],
-        after.children[after.children.length - suffix],
-        source,
-      )
-      const gutters = childGutters(before, after, source, canonical, !prefix)
-      const inherited = itemMarker(before, source)
-      return (
-        source.slice(start, first) +
-        retainBoundaryText(
+        const gutters = childGutters(before, after, source, canonical, !prefix)
+        const inherited = itemMarker(before, source)
+        const run =
           source.slice(first, from) +
-            withEnding(
-              (inlineParents.has(before.type)
-                ? retainRun(
-                    changed,
-                    changes,
-                    source,
-                    canonical,
-                    [from, to],
-                    [newFrom, newTo],
-                  )
-                : retainParts(
-                    retainSource,
-                    marker,
-                    [...changed, ...joined],
-                    changes,
-                    source,
-                    canonical,
-                    newFrom,
-                    newTo,
-                    lineEnding,
-                    previous,
-                    next,
-                    gutters,
-                    suffix > 0,
-                    inherited,
-                  )) ??
-                canonicalSlice(
-                  marker,
+          withEnding(
+            (inlineParents.has(before.type)
+              ? retainRun(
+                  changed,
                   changes,
+                  source,
+                  canonical,
+                  [from, to],
+                  [newFrom, newTo],
+                )
+              : retainParts(
+                  retainSource,
+                  marker,
+                  [...changed, ...joined],
+                  changes,
+                  source,
                   canonical,
                   newFrom,
                   newTo,
+                  lineEnding,
                   previous,
                   next,
                   gutters,
                   suffix > 0,
                   inherited,
-                ),
-              lineEnding,
-            ) +
-            // An unchanged suffix can now follow a break. Keep its spelling,
-            // but retain the escapes required at the new line boundary.
-            (inlineParents.has(before.type)
-              ? retainBoundaryText(
-                  source.slice(to, last),
-                  canonical.slice(newTo, newLast),
-                  after.children[after.children.length - suffix - 1]?.type ===
-                    'break',
-                )
-              : source.slice(to, last)),
-          canonical.slice(newFirst, newLast),
-        ) +
-        source.slice(last, end)
-      )
+                )) ??
+              canonicalSlice(
+                marker,
+                changes,
+                canonical,
+                newFrom,
+                newTo,
+                previous,
+                next,
+                gutters,
+                suffix > 0,
+                inherited,
+              ),
+            lineEnding,
+          )
+        // The run takes in a break written as spaces that would take in the
+        // spaces or tabs the run now ends with.
+        if (
+          suffix &&
+          inlineParents.has(before.type) &&
+          takesBlanks(
+            beforeChildren[beforeChildren.length - suffix],
+            source,
+            run,
+          )
+        )
+          return undefined
+        return (
+          source.slice(start, first) +
+          retainBoundaryText(
+            run +
+              // An unchanged suffix can now follow a break. Keep its spelling,
+              // but retain the escapes required at the new line boundary.
+              (inlineParents.has(before.type)
+                ? retainBoundaryText(
+                    source.slice(to, last),
+                    canonical.slice(newTo, newLast),
+                    afterChildren[afterChildren.length - suffix - 1]?.type ===
+                      'break',
+                  )
+                : source.slice(to, last)),
+            canonical.slice(newFirst, newLast),
+          ) +
+          source.slice(last, end)
+        )
+      }
+      return undefined
     }
+    const written = write(suffix) ?? (suffix ? write(suffix - 1) : undefined)
+    if (written !== undefined) return written
   }
   // A list can end after blank lines that its container gave it; keep the
   // authored ones rather than add the canonical ones beside them, unless the

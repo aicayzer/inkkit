@@ -75,28 +75,31 @@ function caretAt(editor: InkKitEditor, text: string, before = false): void {
   })
 }
 
-// Types each step, checking that it is applied and saves `expected`, that the
-// saved text reads back as the edited document, and that Undo returns the
-// loaded bytes.
-async function typed(
+// Applies each edit, checking that it is applied and saves `expected`, that
+// the saved text reads back as the edited document, that the link targets are
+// `targets` when given, and that Undo returns the loaded bytes.
+async function edited(
   source: string,
-  anchor: string,
-  steps: ReadonlyArray<readonly [typed: string, expected: string]>,
-  before = false,
+  steps: ReadonlyArray<
+    readonly [edit: (editor: InkKitEditor) => boolean, expected: string]
+  >,
+  targets?: string[],
+  start: (editor: InkKitEditor) => void = () => {},
 ): Promise<void> {
   const saves = await mounted(async (editor) => {
     load(editor, source)
-    caretAt(editor, anchor, before)
+    start(editor)
     const saves: Array<{
       saved: string
       readable: string
       edited: unknown
       links: string[]
     }> = []
-    for (const [text, expected] of steps) {
-      expect(editor.insertText(text, 1)).toBe(true)
+    for (const [edit, expected] of steps) {
+      expect(edit(editor)).toBe(true)
       const saved = editor.snapshot().text
       expect(saved).toBe(expected)
+      if (targets) expect(links(editor)).toEqual(targets)
       saves.push({
         saved,
         readable: editor.textSnapshot().text,
@@ -106,6 +109,7 @@ async function typed(
     }
     for (const _ of steps) editor.undo()
     expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
+    if (targets) expect(links(editor)).toEqual(targets)
     return saves
   })
   for (const { saved, readable, edited, links: linked } of saves)
@@ -115,6 +119,54 @@ async function typed(
       expect(content(editor)).toEqual(edited)
       expect(links(editor)).toEqual(linked)
     })
+}
+
+// Types each step at the caret after, or with `before` before, `anchor`.
+async function typed(
+  source: string,
+  anchor: string,
+  steps: ReadonlyArray<readonly [typed: string, expected: string]>,
+  { before = false, targets }: { before?: boolean; targets?: string[] } = {},
+): Promise<void> {
+  await edited(
+    source,
+    steps.map(
+      ([text, expected]) =>
+        [
+          (editor: InkKitEditor) => editor.insertText(text, 1),
+          expected,
+        ] as const,
+    ),
+    targets,
+    (editor) => caretAt(editor, anchor, before),
+  )
+}
+
+// Deletes the first `text` in the readable text.
+async function deleted(
+  source: string,
+  text: string,
+  expected: string,
+  targets?: string[],
+): Promise<void> {
+  await edited(
+    source,
+    [
+      [
+        (editor) => {
+          const snapshot = editor.textSnapshot()
+          const at = snapshot.text.indexOf(text)
+          expect(at).toBeGreaterThanOrEqual(0)
+          return editor.replaceTextRange(
+            { snapshotId: snapshot.snapshotId, from: at, to: at + text.length },
+            '',
+          )
+        },
+        expected,
+      ],
+    ],
+    targets,
+  )
 }
 
 for (const ending of ['\n', '\r\n']) {
@@ -194,7 +246,7 @@ for (const ending of ['\n', '\r\n']) {
       around('See\nhttps://example.com text'),
       'https://',
       [[' ', around('See\n&#x20;https://example.com text')]],
-      true,
+      { before: true },
     )
   })
 
@@ -248,6 +300,111 @@ for (const ending of ['\n', '\r\n']) {
         around('See https://example.com \\\nmore'),
       )
     })
+  })
+
+  const url = ['https://example.com -> https://example.com']
+
+  test(`a space typed after punctuation that ends a bare URL keeps the link target (${label})`, async () => {
+    // `&amp;` keeps the `&` out of the address; a bare `&` would join it.
+    await typed(
+      around('See https://example.com&amp;\nmore'),
+      '&',
+      [[' ', around('See <https://example.com>&amp;&#x20;\nmore')]],
+      { targets: url },
+    )
+    await typed(
+      around('See https://example.com&amp; x\nmore'),
+      '&',
+      [[' ', around('See https://example.com&amp;  x\nmore')]],
+      { targets: url },
+    )
+  })
+
+  test(`a space typed after punctuation that ends a bare URL at the end of a paragraph keeps the link target (${label})`, async () => {
+    await mounted(async (editor) => {
+      const source = around('See https://example.com&amp;')
+      load(editor, source)
+      caretAt(editor, '&')
+      expect(editor.insertText(' ', 1)).toBe(true)
+      // Spaces at the end of a block are not saved.
+      expect(editor.snapshot().text).toBe(source)
+      expect(links(editor)).toEqual(url)
+      expect(editor.undo()).toBe(true)
+      expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
+      expect(links(editor)).toEqual(url)
+    })
+  })
+
+  test(`a deletion that leaves a space after a bare URL before a soft line break is saved (${label})`, async () => {
+    await deleted(
+      around('See https://example.com and\nmore'),
+      'and',
+      around('See <https://example.com>&#x20;\nmore'),
+      url,
+    )
+    await deleted(
+      around('See https://example.com. and\nmore'),
+      'and',
+      around('See <https://example.com>.&#x20;\nmore'),
+      url,
+    )
+    await deleted(
+      around('See www.example.com and\nmore'),
+      'and',
+      around('See [www.example.com](http://www.example.com)&#x20;\nmore'),
+      ['www.example.com -> http://www.example.com'],
+    )
+    await deleted(
+      lines('- See https://example.com and\n  more\n'),
+      'and',
+      lines('- See <https://example.com>&#x20;\n  more\n'),
+      url,
+    )
+  })
+
+  test(`a space typed before a soft line break that already follows a space is saved (${label})`, async () => {
+    // Markdown drops a space or tab before a line ending; a second space
+    // beside it would make a hard line break.
+    await typed(around('See example \nmore'), 'example', [
+      [' ', around('See example&#x20;\nmore')],
+    ])
+    await typed(around('See example\t\nmore'), 'example', [
+      [' ', around('See example&#x20;\nmore')],
+    ])
+    await typed(
+      around('See https://example.com \nmore'),
+      'example.com',
+      [[' ', around('See <https://example.com>&#x20;\nmore')]],
+      { targets: url },
+    )
+    await deleted(around('See a b \nmore'), 'b', around('See a&#x20;\nmore'))
+  })
+
+  test(`a break written as spaces keeps its spelling when its text is edited elsewhere (${label})`, async () => {
+    await typed(around('See foo&#x20;  \nbar'), 'See', [
+      ['y', around('Seey foo&#x20;  \nbar')],
+    ])
+    await typed(around('See foo  \nbar'), 'See', [
+      ['y', around('Seey foo  \nbar')],
+    ])
+  })
+
+  test(`a space typed after a bare URL in formatting before a break keeps the formatting delimiters (${label})`, async () => {
+    await typed(
+      around('See **https://example.com  \nbar**'),
+      'example.com',
+      [[' ', around('See **https://example.com \\\nbar**')]],
+      { targets: url },
+    )
+  })
+
+  test(`punctuation typed after a bare URL in emphasis keeps the emphasis marker (${label})`, async () => {
+    await typed(
+      around('_https://example.com_ more'),
+      'example.com',
+      [['.', around('_<https://example.com>._ more')]],
+      { targets: url },
+    )
   })
 }
 

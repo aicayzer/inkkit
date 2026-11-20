@@ -228,12 +228,17 @@ export function retainRun(
       suffix--
       widened = true
     }
-    // A break written as trailing spaces would take in a space or tab typed
-    // before it, so the break is written as the canonical writer writes it.
+    // A break written as trailing spaces would take in a space or tab
+    // written before it, so the break is written as the canonical writer
+    // writes it. Only the bytes written before the break decide this: an
+    // encoded space there is not taken in.
     if (
       suffix > 0 &&
       old.breaks.has(a.length - suffix) &&
-      /[ \t]$/.test(b.slice(0, b.length - suffix)) &&
+      /[ \t]$/.test(
+        source.slice(from, old.offsets[prefix]) +
+          canonical.slice(now.offsets[prefix], now.offsets[b.length - suffix]),
+      ) &&
       /^[ \t]/.test(
         source.slice(
           old.offsets[a.length - suffix],
@@ -313,6 +318,17 @@ export function retainText(
   const read = decodedOffsets(raw, true)
   if (read?.decoded !== before) return after
   const { offsets } = read
+  // Markdown leaves out the spaces and tabs before a line ending, so an
+  // edit can leave text before them that ends in a space or tab. That text
+  // is all that should stand before the line ending: with the authored
+  // spaces it would read differently, or make a hard break.
+  const tail = () => {
+    const rest = raw.slice(offsets[before.length - suffix])
+    return after[after.length - suffix] === '\n' &&
+      /[ \t]$/.test(after.slice(0, after.length - suffix))
+      ? rest.replace(/^[ \t]+/, '')
+      : rest
+  }
   // A marker becomes structural only when the following space arrives. Its
   // required escape can therefore fall in the unchanged prefix of this edit.
   const lineStart = after.lastIndexOf('\n', prefix - 1) + 1
@@ -334,7 +350,7 @@ export function retainText(
               canonical.offsets[after.length - suffix],
             ),
           ) +
-          raw.slice(offsets[before.length - suffix])
+          tail()
         )
       }
     }
@@ -355,7 +371,7 @@ export function retainText(
             writtenOffsets.offsets[after.length - suffix],
           ),
         ) +
-        raw.slice(offsets[before.length - suffix])
+        tail()
       )
   }
   const inserted = after
@@ -375,11 +391,7 @@ export function retainText(
           : character
     })
     .join('')
-  return escapeReferences(
-    raw.slice(0, offsets[prefix]),
-    inserted,
-    raw.slice(offsets[before.length - suffix]),
-  )
+  return escapeReferences(raw.slice(0, offsets[prefix]), inserted, tail())
 }
 
 const characterReference = /&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]*);/g
@@ -503,11 +515,13 @@ export function retainBoundaryText(
 }
 
 // The text an address could run into from one side: up to the first space,
-// and whether the space is the last text of the block.
+// and whether the space is the last text of the block or the last of its
+// line. The writer encodes a space in either place, which an address before
+// it would run into.
 function edge(text: string): string {
   const run = /^\S*/.exec(text)![0]
   const rest = text.slice(run.length)
-  return `${run}|${rest === '' ? 'end' : /^\s+$/.test(rest) ? 'space' : rest[0]}`
+  return `${run}|${rest === '' ? 'end' : /^\s+$/.test(rest) ? 'space' : /^[ \t][\r\n]/.test(rest) ? 'line' : rest[0]}`
 }
 
 const reversed = (text: string) => [...text].reverse().join('')
