@@ -3,6 +3,7 @@ import { listItemsOf, type ListItems } from './source-typing'
 /** A top-level block of a parse: where it ends and the list items inside it, as offsets. */
 interface Block {
   type: string
+  start: number
   end: number
   items: number[]
 }
@@ -25,17 +26,38 @@ function commonPrefix(a: string, b: string): number {
   return at
 }
 
+/** The end of the line that holds offset `at`, or the end of the text. */
+function lineEndFrom(text: string, at: number): number {
+  const next = text.indexOf('\n', at)
+  return next < 0 ? text.length : next
+}
+
+// How far past the caret line the first parse reaches, in characters, and the least it grows by.
+const lookahead = 400
+
 /**
  * Where the Markdown parser puts list items in text that is being edited, found without parsing
  * the whole text each time.
  *
- * A parser reads blocks in order, so what it makes of a line depends only on the lines before it,
- * and a top-level block that ended before the first changed line is the same in the new text. The
- * index keeps the top-level blocks of the last parse and parses again only from the end of the
- * last one that the edit cannot have reached, as far as the line asked about. A Return in a long
- * list so costs the list, and a Return in a long note after the first costs the blocks that
- * changed since. Text with a `%%` comment is parsed whole. The line after the one asked about is parsed too, because an item is empty, or
- * opens with code, by what follows its marker.
+ * What a parser makes of a block depends on the lines before it and on the lines that continue
+ * it, such as the rest of a link reference definition, an item, or a fenced block. It does not
+ * depend on what follows once another top-level block has begun. So a parse of the text up to a
+ * block that starts after the caret's line reads the blocks before that one as a parse of the
+ * whole text does, whatever follows. The index parses from a safe start to the end of the text
+ * that holds the caret's block, and as far as the start of the next block, and widens the range
+ * until a block starts after the caret's line, or the text ends. The answer does not depend on
+ * which lines were asked about before.
+ *
+ * The safe start is the end of a block kept from the last parse, so a Return after the first costs
+ * the blocks that changed since. A kept block is one that a later block followed in that parse, and
+ * that an edit cannot have reached: a paragraph, heading or thematic break, a blank line and a line
+ * with content after it, all before the first changed line. Text with a `%%` comment before the
+ * end of the range is parsed whole, because the comment syntax runs across blocks.
+ *
+ * The cost of one call is the text from the safe start to the start of the block after the caret's
+ * block. In the worst case that is the whole text from the first line: the first call after the
+ * text is loaded, text with a `%%` comment before the caret, and a caret in a block that runs to
+ * the end of the text, such as an unclosed code fence.
  */
 export class ListItemIndex {
   private text = ''
@@ -51,13 +73,10 @@ export class ListItemIndex {
 
   /** The list items in `text`, complete up to the end of the line that ends at `lineEnd`. */
   through(text: string, lineEnd: number, bom: number): ListItems {
-    // One line more than asked about, since the item on a line is empty or not by the line after it.
-    const after = text.indexOf('\n', lineEnd + 1)
-    const reach = after < 0 ? text.length : after
-    // A `%%` comment runs across blocks and may close after the line, so text with one before
-    // the end of the lines asked about is read whole.
+    // A `%%` comment runs across blocks and may close after the range, so text with one before
+    // the end of the range is read whole.
     const comment = text.indexOf('%%')
-    if (comment >= 0 && comment < reach) {
+    const whole = () => {
       this.reset()
       return listItemsOf(this.parse(text), bom)
     }
@@ -90,28 +109,46 @@ export class ListItemIndex {
     const kept = this.blocks.slice(0, keep)
     const start = keep > 0 ? kept[keep - 1]!.end + 1 : 0
     const items = new Set<number>()
-    for (const block of kept) for (const item of block.items) items.add(item)
-    if (start > lineEnd) {
+    const add = (block: Block) => {
+      // Only what the caller asked about, so that the answer is the same after any earlier call.
+      if (block.start <= lineEnd)
+        for (const item of block.items) if (item <= lineEnd) items.add(item)
+    }
+    for (const block of kept) add(block)
+    // The kept blocks reach past the line, so the caret's block is among them.
+    if (kept.at(-1) && kept.at(-1)!.end >= lineEnd) {
       this.text = text
       this.blocks = kept
       return items
     }
-    const tree = this.parse(text.slice(start, reach)) as Root
-    // Positions in the first parse leave out a byte order mark.
-    const shift = start + (start === 0 ? bom : 0)
-    const parsed: Block[] = tree.children.map((child) => {
-      const only = listItemsOf({ type: 'root', children: [child] }, shift)
-      return {
-        type: child.type,
-        end: (child.position?.end.offset ?? 0) + shift,
-        items: [...only],
+    let reach = lineEndFrom(text, lineEnd + 1 + lookahead)
+    for (;;) {
+      if (comment >= 0 && comment < reach) return whole()
+      const tree = this.parse(text.slice(start, reach)) as Root
+      // Positions in the first parse leave out a byte order mark.
+      const shift = start + (start === 0 ? bom : 0)
+      const parsed: Block[] = tree.children.map((child) => {
+        const only = listItemsOf({ type: 'root', children: [child] }, shift)
+        return {
+          type: child.type,
+          start: (child.position?.start.offset ?? 0) + shift,
+          end: (child.position?.end.offset ?? 0) + shift,
+          items: [...only],
+        }
+      })
+      // A block that starts after the caret's line shows that the ones before it are complete. The
+      // last block of a range that stops short may be cut off, and may read differently with the
+      // lines that follow it, so it is not kept.
+      if (
+        reach >= text.length ||
+        parsed.some((block) => block.start > lineEnd)
+      ) {
+        for (const block of parsed) add(block)
+        this.text = text
+        this.blocks = [...kept, ...parsed.slice(0, -1)]
+        return items
       }
-    })
-    for (const block of parsed) for (const item of block.items) items.add(item)
-    // The last line may have been read as the end of the block before it, or the start of its own,
-    // only for want of a line after it, so the last two blocks are not kept.
-    this.text = text
-    this.blocks = [...kept, ...parsed.slice(0, -2)]
-    return items
+      reach = lineEndFrom(text, reach + Math.max(lookahead, reach - start))
+    }
   }
 }

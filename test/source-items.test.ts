@@ -45,6 +45,13 @@ const lines = [
   'a | b',
   '--|--',
   '[ref]: /url',
+  '[ref]:',
+  '  "title"',
+  '"title"',
+  '- [reference',
+  '  name]:',
+  '  /url',
+  '    /url',
   '',
   '',
   '',
@@ -111,6 +118,57 @@ describe('the list item index', () => {
     }
   })
 
+  // Where a multi-line definition or an item that reads differently by a later line is asked
+  // about, in every order of asking, the answer is the whole parse's.
+  test.each([
+    [
+      'a reference definition in an item',
+      '- [reference\n  name]:\n  /url\n\nafter',
+    ],
+    [
+      'a definition with a title in an item',
+      '- [ref]: /url\n  "title"\n\nafter',
+    ],
+    [
+      'a definition with a title on the next line',
+      '- [ref]:\n  /url\n  "title"\n\nafter',
+    ],
+    ['a definition after a list', '- a\n\n[ref]: /url\n"title"\n- b\n\nafter'],
+    ['a bare marker before code', '-\n    code\n\nafter'],
+    ['a definition at the end of the text', '- [reference\n  name]:\n  /url'],
+  ])('reads %s as the whole text does, in any order', async (_name, text) => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const editor = await InkKitEditor.mount(root, { changed() {} }, {})
+    const parse = (value: string) => ctxOf(editor).get(remarkCtx).parse(value)
+    try {
+      const whole = listItemsOf(parse(text), 0)
+      const ends: number[] = []
+      for (let at = text.indexOf('\n'); ; at = text.indexOf('\n', at + 1)) {
+        ends.push(at < 0 ? text.length : at)
+        if (at < 0) break
+      }
+      const orders = [
+        ends,
+        [...ends].reverse(),
+        [ends.at(-1)!, ends[0]!, ...ends],
+      ]
+      for (const order of orders) {
+        const index = new ListItemIndex(parse)
+        for (const end of order) {
+          const expected = [...whole]
+            .filter((at) => at <= end)
+            .sort((a, b) => a - b)
+          const got = [...index.through(text, end, 0)].sort((a, b) => a - b)
+          expect(got, `end ${end} after ${order.join(',')}`).toEqual(expected)
+        }
+      }
+    } finally {
+      await editor.destroy()
+      root.remove()
+    }
+  })
+
   test('parses only what changed after the first call', async () => {
     const root = document.createElement('div')
     document.body.append(root)
@@ -135,13 +193,13 @@ describe('the list item index', () => {
       index.through(text, end, 0)
       const first = parsed
       // Up to the line asked about, and the line after it.
-      expect(first).toBeLessThanOrEqual(end + 30)
+      expect(first).toBeLessThanOrEqual(end + 600)
       parsed = 0
       const edited = text.slice(0, end) + '\n- ' + text.slice(end)
       const again = index.through(edited, end + 3, 0)
       expect(again.has(text.indexOf('- b'))).toBe(true)
-      // The list, not the note before it.
-      expect(parsed).toBeLessThan(40)
+      // The list and the block after it, not the note before it.
+      expect(parsed).toBeLessThan(700)
     } finally {
       await editor.destroy()
       root.remove()
