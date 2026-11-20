@@ -981,32 +981,52 @@
 /* Line numbers sit in a gutter beside the code's text, inside the block but outside the text the
    browser edits, so editing the text is the same with and without them. Each entry draws its
    number from a data attribute, so no text enters the selection or the clipboard. The gutter is
-   not scrolled with the code, so a long line leaves the numbers in place. A wrapped line keeps one
-   number on its first line: the view adds the height of the continuation lines below the entry. */
+   not scrolled with the code, so a long line leaves the numbers in place.
+
+   The gutter spans the block's content box, and each entry leaves the code's own start margin for
+   its number. While lines wrap, an entry holds a hidden copy of its line with the code's font,
+   width and wrapping, so the entry is as tall as the line and the next number falls where the
+   next line begins, whatever the font or width. */
 .inkkit-root .ProseMirror pre[data-inkkit-line-numbers] > code {
   margin-inline-start: calc(var(--_inkkit-line-digits, 1) * 1ch + 1.25em);
 }
 
 .inkkit-root .ProseMirror pre > .inkkit-code-gutter {
   position: absolute;
-  inset-inline-start: calc(var(--_inkkit-font-size) * 0.933);
+  inset-inline: calc(var(--_inkkit-font-size) * 0.933);
   display: block;
-  width: calc(var(--_inkkit-line-digits, 1) * 1ch);
-  text-align: end;
   pointer-events: none;
   user-select: none;
 }
 
 .inkkit-root .ProseMirror .inkkit-line-number {
+  position: relative;
   display: block;
-  height: 1.5em;
-  height: 1lh;
+  min-height: 1.5em;
+  min-height: 1lh;
+  padding-inline-start: calc(var(--_inkkit-line-digits, 1) * 1ch + 1.25em);
   color: var(--inkkit-code-line-number, var(--_inkkit-muted));
   font-variant-numeric: tabular-nums;
 }
 
 .inkkit-root .ProseMirror .inkkit-line-number::before {
   content: attr(data-inkkit-line);
+  position: absolute;
+  inset-inline-start: 0;
+  width: calc(var(--_inkkit-line-digits, 1) * 1ch);
+  text-align: end;
+}
+
+.inkkit-root .ProseMirror .inkkit-line-copy {
+  display: none;
+  visibility: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-variant-numeric: normal;
+}
+
+.inkkit-root .ProseMirror pre.inkkit-code-wrapped .inkkit-line-copy {
+  display: block;
 }
 
 @media (forced-colors: active) {

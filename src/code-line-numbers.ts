@@ -53,48 +53,22 @@ function decorations(doc: ProseNode): DecorationSet {
   return DecorationSet.create(doc, found)
 }
 
-/** The number of lines in the text. A trailing newline starts one more, empty line. */
-function lineCount(text: string): number {
-  let lines = 1
-  for (let at = text.indexOf('\n'); at >= 0; at = text.indexOf('\n', at + 1))
-    lines++
-  return lines
-}
-
-type Read = () => (() => void) | undefined
-
-const measuring = new Set<Read>()
-let flushing = false
-
-/**
- * Measures after the whole update has reached the DOM. Every pending block reads before any
- * block writes, so one layout serves them all.
- */
-function measureSoon(read: Read): void {
-  measuring.add(read)
-  if (flushing) return
-  flushing = true
-  queueMicrotask(() => {
-    flushing = false
-    const pending = [...measuring]
-    measuring.clear()
-    for (const write of pending.map((item) => item())) write?.()
-  })
-}
-
 /**
  * The code block's own DOM holds the numbers beside its text, in a gutter that is not part of the
  * editable content. The text stays the only content of `code`, so the browser edits it as it
  * would without numbers.
+ *
+ * Each entry holds a hidden copy of its line, laid out with the code's font, width and wrapping,
+ * so the browser places the next number by flow. A font, token or width change reflows the copy
+ * with the text, and nothing here measures or listens for it. The copy is `visibility: hidden`,
+ * `aria-hidden` and not selectable, so it is never read, found, selected or copied.
  */
 class CodeBlockView implements NodeView {
   readonly dom: HTMLElement
   readonly contentDOM: HTMLElement
   private readonly gutter?: HTMLElement
-  private readonly entries: HTMLElement[] = []
-  private readonly observer?: ResizeObserver
-  private spaced = false
-  private lines = 0
+  private readonly entries: { entry: HTMLElement; text: string }[] = []
+  private digits = 0
 
   private readonly numbered: boolean
 
@@ -116,11 +90,6 @@ class CodeBlockView implements NodeView {
     this.gutter.setAttribute('contenteditable', 'false')
     this.dom.insertBefore(this.gutter, this.contentDOM)
     this.fill()
-    if (typeof ResizeObserver !== 'undefined') {
-      // A resize or a wrap toggle can change where lines break without any edit.
-      this.observer = new ResizeObserver(() => measureSoon(this.measure))
-      this.observer.observe(this.contentDOM)
-    }
   }
 
   /**
@@ -136,10 +105,7 @@ class CodeBlockView implements NodeView {
     )
       return false
     this.node = node
-    if (this.numbered) {
-      this.fill()
-      measureSoon(this.measure)
-    }
+    if (this.numbered) this.fill()
     return true
   }
 
@@ -155,111 +121,31 @@ class CodeBlockView implements NodeView {
     return this.gutter?.contains(event.target as Node | null) ?? false
   }
 
-  destroy(): void {
-    this.observer?.disconnect()
-    measuring.delete(this.measure)
-  }
-
-  /** One entry for each line of the text, and the gutter as wide as the largest number. */
+  /** One entry for each line of the text, holding that line, and the gutter as wide as the largest number. */
   private fill(): void {
-    const lines = lineCount(this.node.textContent)
-    if (lines === this.lines) return
-    this.lines = lines
-    while (this.entries.length < lines) {
+    const lines = this.node.textContent.split('\n')
+    while (this.entries.length < lines.length) {
       const entry = document.createElement('span')
       entry.className = 'inkkit-line-number'
       entry.setAttribute('data-inkkit-line', String(this.entries.length + 1))
+      entry.append(document.createElement('span'))
+      entry.firstElementChild!.className = 'inkkit-line-copy'
       this.gutter!.append(entry)
-      this.entries.push(entry)
+      this.entries.push({ entry, text: '' })
     }
-    while (this.entries.length > lines) this.entries.pop()!.remove()
-    this.dom.style.setProperty(
-      '--_inkkit-line-digits',
-      String(String(lines).length),
-    )
-  }
-
-  /**
-   * Reads where each text line begins, then returns the writes that space the numbers to them.
-   * Without wrapping every line is one line tall and the numbers already match, so nothing is
-   * read. A wrapped line takes several lines, and its number keeps the first: the entries that
-   * follow move down by the lines it added. The reads of every pending block come before any
-   * write, so one layout serves them all.
-   */
-  private readonly measure: Read = () => {
-    const { dom, contentDOM, entries } = this
-    if (!this.gutter || !dom.isConnected) return undefined
-    const wrapped = dom.classList.contains('inkkit-code-wrapped')
-    if (!wrapped || typeof Range.prototype.getClientRects !== 'function')
-      return () => this.space([])
-    const tops = this.lineTops()
-    const height = entries[0]?.getBoundingClientRect().height ?? 0
-    const bottom = contentDOM.getBoundingClientRect().bottom
-    const spacing = tops.map((top, index) => {
-      const next = index + 1 < tops.length ? tops[index + 1]! : bottom
-      const extra = next - top - height
-      return Number.isFinite(extra) && extra > 0.5 ? extra : 0
-    })
-    return () => this.space(spacing)
-  }
-
-  private space(spacing: number[]): void {
-    const used = spacing.some((extra) => extra > 0)
-    if (!used && !this.spaced) return
-    this.spaced = used
-    for (const [index, entry] of this.entries.entries()) {
-      const extra = spacing[index] ?? 0
-      entry.style.marginBottom = extra ? `${extra}px` : ''
+    while (this.entries.length > lines.length)
+      this.entries.pop()!.entry.remove()
+    for (const [index, item] of this.entries.entries()) {
+      const text = lines[index]!
+      if (item.text === text) continue
+      item.text = text
+      item.entry.firstElementChild!.textContent = text
     }
-  }
-
-  /** The top of the first character of each text line, as it is laid out now. */
-  private lineTops(): number[] {
-    const tops: number[] = []
-    const walker = document.createTreeWalker(
-      this.contentDOM,
-      NodeFilter.SHOW_TEXT,
-      {
-        // A control the editor draws in the block is not part of its text.
-        acceptNode: (node) =>
-          node.parentElement?.closest('.ProseMirror-widget')
-            ? NodeFilter.FILTER_REJECT
-            : NodeFilter.FILTER_ACCEPT,
-      },
-    )
-    const range = document.createRange()
-    const top = (node: Text, offset: number): number => {
-      range.setStart(node, offset)
-      range.setEnd(node, offset + 1)
-      return range.getClientRects()[0]?.top ?? Number.NaN
+    const digits = String(lines.length).length
+    if (digits !== this.digits) {
+      this.digits = digits
+      this.dom.style.setProperty('--_inkkit-line-digits', String(digits))
     }
-    let starting = true
-    for (
-      let node = walker.nextNode() as Text | null;
-      node;
-      node = walker.nextNode() as Text | null
-    ) {
-      const data = node.data
-      if (!data.length) continue
-      if (starting) {
-        tops.push(top(node, 0))
-        starting = false
-      }
-      for (
-        let at = data.indexOf('\n');
-        at >= 0;
-        at = data.indexOf('\n', at + 1)
-      ) {
-        if (at + 1 < data.length) tops.push(top(node, at + 1))
-        else starting = true
-      }
-    }
-    // A trailing newline starts an empty line, which the browser draws with a break.
-    if (starting) {
-      const trail = this.contentDOM.querySelector(':scope > br')
-      tops.push(trail?.getBoundingClientRect().top ?? Number.NaN)
-    }
-    return tops
   }
 }
 

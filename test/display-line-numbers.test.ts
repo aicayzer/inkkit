@@ -61,8 +61,12 @@ test('the numbers carry no text, no selectable content and no accessible name', 
     const gutter = mounted.root.querySelector('.inkkit-code-gutter')!
     expect(gutter.getAttribute('aria-hidden')).toBe('true')
     expect(gutter.getAttribute('contenteditable')).toBe('false')
-    for (const element of gutter.querySelectorAll('.inkkit-line-number'))
-      expect(element.textContent).toBe('')
+    // The entries hold a hidden copy of each line for layout, and the digits come from attributes.
+    expect(
+      [...gutter.querySelectorAll('.inkkit-line-number')].map(
+        (element) => element.textContent,
+      ),
+    ).toEqual(['a', 'b'])
     expect(mounted.root.querySelector('pre')!.textContent).not.toMatch(/[12]/)
   }))
 
