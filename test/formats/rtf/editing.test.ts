@@ -17,6 +17,16 @@ const t = (value: string, ...marks: RichTextMark[]) =>
     : { type: 'text' as const, text: value }
 
 describe('typing in an RTF document', () => {
+  test('brackets pair when the host turns pairing on', () =>
+    withRichEditor({ textInput: { pairBrackets: true } }, ({ editor }) => {
+      editor.loadDocument(rich(doc(para('Hello'))))
+      select(editor, 'Hello', { caret: 'end' })
+      type(editor, ' (a [b]) "c"')
+      expect(richSnapshot(editor).document).toEqual(
+        doc(para('Hello (a [b]) "c"')),
+      )
+    }))
+
   test('typed text saves, marks the document dirty and counts revisions', () =>
     withRichEditor({}, ({ editor, changes }) => {
       editor.loadDocument(rich(doc(para('Hello'))))

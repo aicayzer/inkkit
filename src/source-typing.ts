@@ -407,7 +407,7 @@ export function indentEdit(
     markdown
       ? line.from + quotePrefix.exec(value.slice(line.from, line.to))![0].length
       : line.from
-  if (lines.length === 1) {
+  if (lines.length === 1 && !value.slice(start, end).includes('\n')) {
     const item =
       markdown &&
       itemLine(value.slice(first.from, first.to)) !== undefined &&

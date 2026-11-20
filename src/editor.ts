@@ -2598,12 +2598,17 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       this.source.typeText(text)
       return true
     }
-    const doc = this.editor.ctx.get(editorViewCtx).state.doc
+    const view = this.editor.ctx.get(editorViewCtx)
+    const { doc, selection } = view.state
     if (/[\r\n]/.test(text)) this.insertPlainText(text)
-    else if (!insertNativeText(this.editor.ctx.get(editorViewCtx), text))
-      return false
-    // Text an RTF document can't hold, such as U+0000, is refused.
-    return !(text && this.refusedRichEdit(doc))
+    else if (!insertNativeText(view, text)) return false
+    // Text an RTF document can't hold, such as U+0000, is refused. A closer typed over the one that
+    // pairing inserted moves the caret and changes nothing else.
+    return !(
+      text &&
+      this.refusedRichEdit(doc) &&
+      view.state.selection.eq(selection)
+    )
   }
 
   /**

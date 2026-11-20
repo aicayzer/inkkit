@@ -684,6 +684,8 @@ describe('indenting in source and TXT modes', () => {
     await tab('|a\nb\nc|', '|  a\n  b\n  c|', spaces(2))
     await tab('|a\n\nc|', '|\ta\n\n\tc|')
     await tab('|a\nb\n|c', '|\ta\n\tb\n|c')
+    await tab('|a\n|b', '|\ta\n|b')
+    await tab('|a\n|b', '|  a\n|b', spaces(2))
     await tab('|\ta\n b|', '|\t\ta\n\t b|')
   })
 
