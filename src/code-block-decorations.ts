@@ -2,24 +2,35 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Transaction } from '@milkdown/kit/prose/state'
 import { type Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 
-// Every range of the new document an update may have touched: each step's own
-// range, plus the whole span where the two documents differ, which also covers
-// steps that change a node without changing its size.
+// Every range of the new document an update may have touched, from each step's own map. A step
+// whose map is empty, such as one that sets an attribute or a mark, changes a node without
+// changing its size, so the two documents on either side of it are compared. The comparison is
+// never made across the whole transaction: the span between two distant edits, as `replaceAll`
+// makes, would then name every block between them.
 function touched(tr: Transaction): [number, number][] {
   const ranges: [number, number][] = []
   tr.mapping.maps.forEach((map, index) => {
     const rest = tr.mapping.slice(index + 1)
-    map.forEach((_, __, from, to) =>
-      ranges.push([rest.map(from, -1), rest.map(to, 1)]),
-    )
-  })
-  const start = tr.before.content.findDiffStart(tr.doc.content)
-  if (start != null) {
-    const end = tr.before.content.findDiffEnd(tr.doc.content)
+    let mapped = false
+    map.forEach((_, __, from, to) => {
+      mapped = true
+      ranges.push([rest.map(from, -1), rest.map(to, 1)])
+    })
+    if (mapped) return
+    const before = tr.docs[index]!
+    const after = tr.docs[index + 1] ?? tr.doc
+    const start = before.content.findDiffStart(after.content)
+    if (start == null) return
+    const end = before.content.findDiffEnd(after.content)
     // The scans overlap when inserted or deleted text repeats its neighbours.
-    if (end)
-      ranges.push([start, end.b + Math.max(0, start - Math.min(end.a, end.b))])
-  }
+    ranges.push([
+      rest.map(start, -1),
+      rest.map(
+        end ? end.b + Math.max(0, start - Math.min(end.a, end.b)) : start,
+        1,
+      ),
+    ])
+  })
   return ranges
 }
 
