@@ -6,6 +6,7 @@ import {
   type Transaction,
 } from '@milkdown/kit/prose/state'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
+import { isHistoryTransaction } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $ctx, $prose } from '@milkdown/kit/utils'
 import { closerOf, pairsBefore, quoteMayPair } from './source-typing'
@@ -25,10 +26,11 @@ import {
  *   a curly quote that smart punctuation made pairs, and a closing curly quote does not.
  * - A closer typed straight before a closer that pairing inserted steps over it, by typing over
  *   it, so that a rule such as the one that turns `[[name]]` into a link still sees the character.
- *   Pairs are tracked strictly: one stays valid only through typing inside it. A load, paste, drop,
- *   undo, redo, replace or other host call, a mode switch and a change of preference forget every
- *   pair, so the brackets that remain are ordinary characters, and a closer the person typed or
- *   loaded is never stepped over.
+ *   Pairs are tracked strictly, as a stack: one stays valid only through typing inside it, which
+ *   is one character typed, and the Backspace that removes an empty pair. Anything else forgets
+ *   every pair: a deletion, a replacement from a spelling menu, a load, paste, drop, cut, undo,
+ *   redo, replace or other host call, a mode switch and a change of preference. The brackets that
+ *   remain are ordinary characters, and a closer the person typed or loaded is never stepped over.
  * - Backspace between an empty pair that pairing inserted removes both characters, whether it
  *   arrives as a key or as an input event on its own.
  * - A selection on one line is wrapped, and stays selected. Replacing a selection through an input
@@ -58,6 +60,9 @@ interface Change {
   drop?: number
   /** Forget every pair. */
   clear?: boolean
+  /** The transaction is typing inside the pairs, or the Backspace that removes an empty pair. Any
+   *  other change to the document forgets them. */
+  typing?: boolean
 }
 
 /** The pairs that pairing inserted and still tracks, and the reader of the current epoch. */
@@ -68,13 +73,13 @@ interface Tracked {
 
 const pairs = new PluginKey<Tracked>('inkkitPairing')
 
+/** The transactions that were typing, so that what other plugins append to them is too. */
+const typedTransactions = new WeakSet<Transaction>()
+
 /** Marks `tr` as an edit that is not typing, so that pairing forgets the pairs it tracks. */
 export function forgetPairs(tr: Transaction): Transaction {
   return tr.setMeta(pairs, { clear: true } satisfies Change)
 }
-
-/** A paste, drop or cut is not typing. */
-const notTyping = new Set(['paste', 'drop', 'cut'])
 
 /**
  * The pair as it stands after `tr`, or undefined when `tr` did more than type inside it: every
@@ -187,6 +192,9 @@ export const pairing = [
     const epoch = () => ctx.get(pairEpochCtx.key)()
     const smart = () => ctx.get(smartPunctuationCtx.key)()
     let typed: Typed | undefined
+    // The document that a single typed character is about to change, so that the transaction for
+    // it is known to be typing. It is never typing unless it was recorded here when it started.
+    let typing: ProseNode | undefined
     let stepped: Stepped | undefined
     let input: Input | undefined
     // Whether the person can type here, with no composition and pairing on.
@@ -217,7 +225,7 @@ export const pairing = [
       stepped = undefined
       const tr = state.tr
         .setSelection(TextSelection.create(state.doc, pos + 1))
-        .setMeta(pairs, { drop: pos } satisfies Change)
+        .setMeta(pairs, { drop: pos, typing: true } satisfies Change)
       // The marks stored for the next character stay, as they do when a character is typed.
       if (state.storedMarks) tr.setStoredMarks(state.storedMarks)
       dispatch(tr)
@@ -254,6 +262,7 @@ export const pairing = [
           to + opening.length,
         ),
       )
+      tr.setMeta(pairs, { typing: true } satisfies Change)
       view.dispatch(tr.scrollIntoView())
       return true
     }
@@ -266,7 +275,12 @@ export const pairing = [
       const caret = state.selection.from
       const pair = pairAt(state, caret)
       if (!pair || pair.open !== caret - 1) return false
-      view.dispatch(state.tr.delete(pair.open, pair.close + 1).scrollIntoView())
+      view.dispatch(
+        state.tr
+          .delete(pair.open, pair.close + 1)
+          .setMeta(pairs, { typing: true } satisfies Change)
+          .scrollIntoView(),
+      )
       return true
     }
 
@@ -274,18 +288,28 @@ export const pairing = [
       key: pairs,
       state: {
         init: () => ({ list: [], epoch }),
-        apply(tr, value) {
+        apply(tr, value, oldState) {
           const change = tr.getMeta(pairs) as Change | undefined
           let list = value.list
-          if (tr.docChanged && list.length) {
-            // Only typing inside a pair keeps it. A paste, a drop, a cut and an undo or redo do not.
-            const typing =
+          if (tr.docChanged) {
+            // What the edit is was recorded when it started: one typed character, or the pair's own
+            // Backspace. Whatever else changes the document, as a paste, a drop, a cut, a history
+            // step, a replacement or a host call, is not typing, however much it looks like it.
+            const root = tr.getMeta('appendedTransaction') as
+              Transaction | undefined
+            const typed =
               !change?.clear &&
-              !notTyping.has(tr.getMeta('uiEvent') as string) &&
-              tr.getMeta('addToHistory') !== false
-            list = typing
-              ? list.flatMap((pair) => followed(tr, pair) ?? [])
-              : []
+              !isHistoryTransaction(tr) &&
+              (change?.typing === true ||
+                typing === oldState.doc ||
+                // What a rule appends to typing, such as a link made of what was typed, is part of it.
+                (root !== undefined && typedTransactions.has(root)))
+            if (typed) typedTransactions.add(tr)
+            typing = undefined
+            if (list.length)
+              list = typed
+                ? list.flatMap((pair) => followed(tr, pair) ?? [])
+                : []
           }
           if (change?.clear) list = []
           if (change?.drop !== undefined)
@@ -297,15 +321,26 @@ export const pairing = [
       props: {
         handleTextInput(view, from, to, text) {
           typed = undefined
+          typing = undefined
           // Typing arrives as `insertText`. A replacement from a spelling menu, or any other input
-          // that is not typing, puts its text in as it is.
+          // that is not typing, puts its text in as it is, and forgets the pairs.
           if (
             input &&
             input.type !== 'insertText' &&
             input.doc === view.state.doc
           )
             return false
-          if (!active(view) || Array.from(text).length !== 1) return false
+          // One character is typing. More is a paste or a host call.
+          if (Array.from(text).length !== 1) return false
+          if (!view.composing) {
+            const doc = view.state.doc
+            typing = doc
+            // The change follows at once. If none does, the record must not outlive this task.
+            queueMicrotask(() => {
+              if (typing === doc) typing = undefined
+            })
+          }
+          if (!active(view)) return false
           if (
             from === to &&
             stepOver(view, from, text, plugin.props.handleTextInput)
@@ -397,6 +432,7 @@ export const pairing = [
         if (stored) tr.setStoredMarks(stored)
         return tr.setMeta(pairs, {
           add: { open: pending.from, close: caret, epoch: epoch() },
+          typing: true,
         } satisfies Change)
       },
     })

@@ -2,6 +2,7 @@ import { ctxOf } from './editor-access'
 import { describe, expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { Selection, TextSelection } from '@milkdown/kit/prose/state'
+import { closeHistory } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import {
   InkKitEditor,
@@ -938,6 +939,96 @@ describe('pairing tracks a pair only through typing inside it', () => {
       caret(4)
       type(')')
       expect(shown()).toBe('z(a)|)')
+    }))
+})
+
+describe('what an edit is, not how it looks afterwards', () => {
+  test('an Undo that the host forwards as a key forgets the pair', () =>
+    pairing('', ({ editor, view, type, shown }) => {
+      type('(')
+      // The next edit is a history step of its own.
+      view.dispatch(closeHistory(view.state.tr))
+      type('a')
+      expect(editor.keyDown({ key: 'z', metaKey: true }, generation)).toBe(true)
+      expect(shown()).toBe('(|)')
+      // The brackets are ordinary: Backspace is the browser's and deletes the opener alone.
+      expect(editor.keyDown({ key: 'Backspace' }, generation)).toBe(false)
+      expect(shown()).toBe('(|)')
+    }))
+
+  test('a Redo that the host forwards as a key forgets the pair too', () =>
+    pairing('', ({ editor, view, type, shown }) => {
+      type('(')
+      view.dispatch(closeHistory(view.state.tr))
+      type('a')
+      editor.keyDown({ key: 'z', metaKey: true }, generation)
+      editor.keyDown({ key: 'z', metaKey: true, shiftKey: true }, generation)
+      expect(shown()).toBe('(a|)')
+      type(')')
+      expect(shown()).toBe('(a)|)')
+    }))
+
+  test('Backspace of an inner pair keeps the pair around it', () =>
+    pairing('', ({ type, key, shown }) => {
+      type('([')
+      expect(shown()).toBe('([|])')
+      expect(key('Backspace')).toBe(true)
+      expect(shown()).toBe('(|)')
+      type(')')
+      expect(shown()).toBe('()|')
+    }))
+
+  test('typing inside two pairs keeps both, and typing the closers steps over each', () =>
+    pairing('', ({ type, shown }) => {
+      type('([a')
+      type('])')
+      expect(shown()).toBe('([a])|')
+    }))
+
+  test('a deletion inside a pair is not typing and forgets it', () =>
+    pairing('', ({ view, type, find, shown }) => {
+      type('(ab')
+      view.dispatch(view.state.tr.delete(find('b') - 1, find('b')))
+      expect(shown()).toBe('(a|)')
+      type(')')
+      expect(shown()).toBe('(a)|)')
+    }))
+
+  test('a batched insertText inside a pair forgets it', () =>
+    pairing('', ({ editor, type, shown }) => {
+      type('(')
+      expect(editor.insertText('abc', generation)).toBe(true)
+      type(')')
+      expect(shown()).toBe('(abc)|)')
+    }))
+
+  test('a replacement from a spelling menu inside a pair forgets the enclosing pair', () =>
+    pairing('', ({ view, type, find, shown }) => {
+      type('(a')
+      const before = find('a') - 1
+      view.dom.dispatchEvent(
+        new InputEvent('beforeinput', {
+          inputType: 'insertReplacementText',
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+      // What ProseMirror does with the text it read from the page.
+      const deflt = () => view.state.tr.insertText('b', before, before + 1)
+      if (
+        !view.someProp('handleTextInput', (f) =>
+          f(view, before, before + 1, 'b', deflt),
+        )
+      )
+        view.dispatch(deflt())
+      view.dispatch(
+        view.state.tr.setSelection(
+          TextSelection.create(view.state.doc, find('b')),
+        ),
+      )
+      expect(shown()).toBe('(b|)')
+      type(')')
+      expect(shown()).toBe('(b)|)')
     }))
 })
 

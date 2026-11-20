@@ -128,7 +128,11 @@ async function withSource(
             from + character.length,
           )
           plain.dispatchEvent(
-            new InputEvent('input', { bubbles: true, inputType: 'insertText' }),
+            new InputEvent('input', {
+              bubbles: true,
+              inputType: 'insertText',
+              data: character,
+            }),
           )
         }
         return event
@@ -607,6 +611,51 @@ describe('continuing lists in source mode', () => {
     await withSource('text|\nz', { crlf: true }, ({ key, editor }) => {
       expect(key('Enter')).toBe(true)
       expect(editor.snapshot().text).toBe('text\r\n\r\nz')
+    })
+  })
+
+  test('Return in a multi-line reference definition is a plain line, as a parse of the whole text reads it', async () => {
+    await enter(
+      '- [reference|\n  name]:\n  /url',
+      '- [reference\n|\n  name]:\n  /url',
+    )
+    await enter(
+      '- [reference|\n  name]:\n  /url\n  "title"\n\nz',
+      '- [reference\n|\n  name]:\n  /url\n  "title"\n\nz',
+    )
+    // The same line, asked about after a Return further down.
+    await withSource(
+      '- [reference|\n  name]:\n  /url\n\n- b\n- c',
+      {},
+      ({ key, plain, editor }) => {
+        plain.setSelectionRange(plain.value.length, plain.value.length)
+        expect(key('Enter')).toBe(true)
+        expect(editor.snapshot().text).toBe(
+          '- [reference\n  name]:\n  /url\n\n- b\n- c\n- ',
+        )
+        plain.setSelectionRange(12, 12)
+        expect(key('Enter')).toBe(true)
+        expect(editor.snapshot().text).toBe(
+          '- [reference\n\n  name]:\n  /url\n\n- b\n- c\n- ',
+        )
+      },
+    )
+  })
+
+  test('the parsed blocks are not kept for the next note', async () => {
+    await withSource('- a|\n\nz', {}, ({ key, editor }) => {
+      expect(key('Enter')).toBe(true)
+      const items = (editor as unknown as { source: { items: unknown } }).source
+        .items as { text: string; blocks: unknown[] }
+      expect(items.text).not.toBe('')
+      editor.loadDocument({
+        documentId: 'next',
+        generation: generation + 1,
+        format: 'md',
+        text: 'other',
+      })
+      expect(items.text).toBe('')
+      expect(items.blocks).toEqual([])
     })
   })
 
@@ -1091,6 +1140,109 @@ describe('pairs are tracked only through typing inside them', () => {
       expect(editor.snapshot().text).toBe('())')
     })
   })
+
+  test('an opener typed before the pair is an edit outside it, so the closer is typed', () =>
+    withPairing('|', ({ editor, plain, browserType, shown }) => {
+      browserType('(')
+      plain.setSelectionRange(0, 0)
+      browserType('(')
+      expect(shown()).toBe('(|()')
+      plain.setSelectionRange(2, 2)
+      browserType(')')
+      expect(editor.snapshot().text).toBe('(())')
+      expect(shown()).toBe('(()|)')
+    }))
+
+  test('Backspace of an inner pair keeps the pair around it', async () => {
+    await withPairing('|', ({ press, browserType, shown, editor }) => {
+      browserType('(')
+      browserType('[')
+      expect(shown()).toBe('([|])')
+      expect(press('Backspace').defaultPrevented).toBe(true)
+      expect(shown()).toBe('(|)')
+      browserType(')')
+      expect(editor.snapshot().text).toBe('()')
+      expect(shown()).toBe('()|')
+    })
+    await withPairing('|', ({ key, type, shown }) => {
+      type('([')
+      expect(key('Backspace')).toBe(true)
+      type(')')
+      expect(shown()).toBe('()|')
+    })
+    await withPairing('|', ({ plain, browserType, shown }) => {
+      browserType('(')
+      browserType('[')
+      // Input that arrives without a key.
+      plain.dispatchEvent(
+        new InputEvent('beforeinput', {
+          inputType: 'deleteContentBackward',
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+      browserType(')')
+      expect(shown()).toBe('()|')
+    })
+  })
+
+  test('typing inside two pairs keeps both', () =>
+    withPairing('|', ({ browserType, shown }) => {
+      for (const character of '([a])') browserType(character)
+      expect(shown()).toBe('([a])|')
+    }))
+
+  test('a deletion inside a pair is not typing and forgets it', () =>
+    withPairing('|', ({ plain, browserType, shown }) => {
+      browserType('(')
+      browserType('a')
+      browserType('b')
+      plain.setRangeText('', 2, 3, 'end')
+      plain.dispatchEvent(
+        new InputEvent('beforeinput', {
+          bubbles: true,
+          inputType: 'deleteContentBackward',
+        }),
+      )
+      plain.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'deleteContentBackward',
+        }),
+      )
+      browserType(')')
+      expect(shown()).toBe('(a)|)')
+    }))
+
+  test('input that nothing announced is not typing', () =>
+    withPairing('|', ({ plain, browserType, shown }) => {
+      browserType('(')
+      plain.setRangeText('a', 1, 1, 'end')
+      // No beforeinput came first, so where the character went is not known.
+      plain.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertText',
+          data: 'a',
+        }),
+      )
+      browserType(')')
+      expect(shown()).toBe('(a)|)')
+    }))
+
+  test('separate insertText calls: a call of more than one character forgets the pair', () =>
+    withPairing('|', ({ editor, shown }) => {
+      for (const text of ['(', 'abc', ')'])
+        expect(editor.insertText(text, generation)).toBe(true)
+      expect(shown()).toBe('(abc)|)')
+    }))
+
+  test('insertText of single characters follows the pair', () =>
+    withPairing('|', ({ editor, shown }) => {
+      for (const text of ['(', 'a', 'b', 'c', ')'])
+        expect(editor.insertText(text, generation)).toBe(true)
+      expect(shown()).toBe('(abc)|')
+    }))
 
   test('an edit outside the pair forgets it, and typing inside keeps it', async () => {
     await withPairing('|', ({ plain, browserType, shown }) => {

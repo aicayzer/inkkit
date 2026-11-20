@@ -88,6 +88,29 @@ for (const mode of ['formatted', 'source'] as const) {
       await saved(page).toBe('a))')
     })
 
+    test('an opener typed before a pair is an edit outside it, so a closer typed after is not swallowed', async ({
+      page,
+    }) => {
+      await open(page, 'a', 'a', mode, paired)
+      await page.keyboard.type(' (')
+      await page.keyboard.press('ArrowLeft')
+      await page.keyboard.type('(')
+      await page.keyboard.press('ArrowRight')
+      await page.keyboard.type(')')
+      await saved(page).toBe('a (())')
+    })
+
+    test('Backspace of an inner pair keeps the pair around it', async ({
+      page,
+    }) => {
+      await open(page, 'a', 'a', mode, paired)
+      await page.keyboard.type(' ([')
+      await page.keyboard.press('Backspace')
+      await saved(page).toBe('a ()')
+      await page.keyboard.type(')')
+      await saved(page).toBe('a ()')
+    })
+
     test('an apostrophe after a letter stays single', async ({ page }) => {
       await open(page, 'don', 'don', mode, paired)
       await page.keyboard.type("'t")

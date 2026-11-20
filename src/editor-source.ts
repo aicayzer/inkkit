@@ -12,7 +12,6 @@ import {
   normalizedOffset,
   type SourceProvenance,
 } from './source'
-import { matchingTextEdges } from './text-edges'
 import { ListItemIndex } from './source-items'
 import { leadingBOMLength } from './bom'
 import {
@@ -23,6 +22,7 @@ import {
   pairEdit,
   type IndentStyle,
   type ItemsReader,
+  type SourceChange,
   type SourceEdit,
 } from './source-typing'
 
@@ -37,22 +37,6 @@ const modifierKeys: ReadonlySet<string> = new Set([
   'Control',
   'Alt',
   'Meta',
-])
-
-/** The kinds of input that are typing, so that a pair stays valid through them. */
-const typingInputs: ReadonlySet<string> = new Set([
-  'insertText',
-  'insertCompositionText',
-  'insertLineBreak',
-  'insertParagraph',
-  'deleteContentBackward',
-  'deleteContentForward',
-  'deleteWordBackward',
-  'deleteWordForward',
-  'deleteSoftLineBackward',
-  'deleteSoftLineForward',
-  'deleteHardLineBackward',
-  'deleteHardLineForward',
 ])
 
 /** The typing preferences that the source and TXT surfaces follow. */
@@ -106,14 +90,23 @@ export class SourceSurface {
   readonly element: HTMLTextAreaElement
   private composingValue = false
   private beforeSelection?: { from: number; to: number }
-  /** The text the surface last showed, and the pairs that bracket pairing inserted into it. */
+  /** The text the surface last showed, and the pairs that bracket pairing inserted into it. A
+   *  pair stays valid only through typing inside it, so each is dropped by any other edit. */
   private known = ''
   private pairs: Array<{ open: number; close: number }> = []
+  /** The edit that is typing, as the changes it makes to `known`, while it is being applied. A
+   *  change to the text that no such edit announced forgets every pair. */
+  private typed?: SourceChange[]
+  /** The input event that is about to change the textarea, and where its selection was. */
+  private pending?: {
+    type: string
+    data: string
+    from: number
+    to: number
+  }
   private readonly items = new ListItemIndex((text) =>
     this.runtime.parseMarkdown(text),
   )
-  /** Whether the change being made is typing, which keeps the pairs that are tracked. */
-  private typing = false
   /** Escape was pressed, so the next Tab or Shift-Tab moves focus instead of indenting. */
   private tabEscaped = false
 
@@ -173,11 +166,17 @@ export class SourceSurface {
         event.preventDefault()
         return
       }
-      if (this.runtime.ready() && this.runtime.literal())
+      if (this.runtime.ready() && this.runtime.literal()) {
         this.beforeSelection = {
           from: this.element.selectionStart,
           to: this.element.selectionEnd,
         }
+        this.pending = {
+          type: event instanceof InputEvent ? event.inputType : '',
+          data: event instanceof InputEvent ? (event.data ?? '') : '',
+          ...this.beforeSelection,
+        }
+      }
     })
     this.element.addEventListener('input', (event) => {
       if (!this.runtime.ready() || !this.runtime.literal()) return
@@ -185,10 +184,20 @@ export class SourceSurface {
         this.setSourceValue(this.runtime.currentText())
         return
       }
-      // Only typing keeps the pairs that were tracked. A paste, a drop, a replacement and an undo
-      // or redo that the browser made on its own do not.
-      this.typing = typingInputs.has((event as InputEvent).inputType ?? '')
-      if (this.typing) this.remapPairs(this.element.value)
+      // Only one typed character keeps the pairs that were tracked, and where it went is known
+      // from the input event that announced it. A paste, a drop, a replacement, a deletion, an
+      // undo or redo that the browser made on its own, and input that nothing announced, do not.
+      const announced = this.pending
+      this.pending = undefined
+      if (
+        announced?.type === 'insertText' &&
+        (event as InputEvent).inputType === 'insertText' &&
+        Array.from(announced.data).length === 1
+      )
+        this.follow(
+          [{ from: announced.from, to: announced.to, text: announced.data }],
+          this.element.value,
+        )
       else this.forgetPairs(this.element.value)
       try {
         this.runtime.applySource(
@@ -202,7 +211,6 @@ export class SourceSurface {
         this.runtime.report(error)
       } finally {
         this.beforeSelection = undefined
-        this.typing = false
       }
     })
     this.element.addEventListener('keydown', (event) => {
@@ -272,9 +280,13 @@ export class SourceSurface {
   reset(): void {
     this.composingValue = false
     this.beforeSelection = undefined
+    this.pending = undefined
+    // The previous note's blocks are not kept for the next one.
+    this.items.reset()
   }
 
   destroy(): void {
+    this.items.reset()
     this.element.remove()
   }
 
@@ -293,8 +305,10 @@ export class SourceSurface {
   setSourceValue(text: string): void {
     const plain = this.element
     const shown = text.replace(/\r\n?/g, '\n')
-    if (this.typing) this.remapPairs(shown)
-    else this.forgetPairs(shown)
+    if (shown !== this.known) {
+      if (this.typed) this.follow(this.typed, shown)
+      else this.forgetPairs(shown)
+    }
     if (text.length < 65_536 || !plain.isConnected || this.composing) {
       plain.value = text
       return
@@ -337,20 +351,30 @@ export class SourceSurface {
     this.runtime.applySource(source, isolated, caret, caret)
   }
 
-  /** Text that was typed, which brackets and quotes may pair or step over. */
+  /** Text that was typed, which brackets and quotes may pair or step over. One character is
+   *  typing, and keeps the pairs that are tracked. More is not, and forgets them. */
   typeText(text: string): void {
-    this.asTyping(() => {
-      if (!this.pairTyped(text)) this.replaceLiteralSelection(text, false)
-    })
+    const { selectionStart: start, selectionEnd: end } = this.element
+    const character = Array.from(text).length === 1 && !/[\r\n]/.test(text)
+    if (character && this.pairTyped(text)) return
+    this.asTyping(
+      character ? [{ from: start, to: end, text }] : undefined,
+      () => this.replaceLiteralSelection(text, false),
+    )
   }
 
-  private asTyping(operation: () => void): void {
-    const before = this.typing
-    this.typing = true
+  /** Runs `operation`, an edit that makes `changes` to the text and is typing inside the pairs
+   *  that it leaves alone. Without `changes` it is not typing. */
+  private asTyping(
+    changes: SourceChange[] | undefined,
+    operation: () => boolean | void,
+  ): void {
+    const before = this.typed
+    this.typed = changes
     try {
       operation()
     } finally {
-      this.typing = before
+      this.typed = before
     }
   }
 
@@ -371,21 +395,25 @@ export class SourceSurface {
   }
 
   /**
-   * Follows the pairs through typing. A pair stays valid only while the edit is inside it, between
-   * its opener and its closer; an edit anywhere else, or one that removes a bracket, forgets it.
+   * Follows the pairs through an edit that is typing, as the changes it made to the text that was
+   * shown. A pair stays valid while every change is inside it, between its opener and its closer;
+   * an edit anywhere else, including before the opener, forgets it. Text whose length does not
+   * match the changes was not made by them, and forgets every pair.
    */
-  private remapPairs(next: string): void {
-    const before = this.known
-    this.known = next
-    if (!this.pairs.length || before === next) return
-    const { prefix, suffix } = matchingTextEdges(before, next)
-    const stop = before.length - suffix
-    const delta = next.length - before.length
-    this.pairs = this.pairs.flatMap(({ open, close }) =>
-      prefix >= open + 1 && stop <= close
-        ? [{ open, close: close + delta }]
-        : [],
+  private follow(changes: SourceChange[], next: string): void {
+    const delta = changes.reduce(
+      (sum, { from, to, text }) => sum + text.length - (to - from),
+      0,
     )
+    const matches = next.length === this.known.length + delta
+    this.known = next
+    this.pairs = matches
+      ? this.pairs.flatMap(({ open, close }) =>
+          changes.every(({ from, to }) => from >= open + 1 && to <= close)
+            ? [{ open, close: close + delta }]
+            : [],
+        )
+      : []
   }
 
   private pairAt(close: number): { open: number; close: number } | undefined {
@@ -418,17 +446,14 @@ export class SourceSurface {
     }
     const edit = pairEdit(value, start, end, text)
     if (!edit) return false
-    this.typing = true
-    try {
+    this.asTyping(edit.changes, () => {
       if (
         this.applyEdit(edit, false) &&
         start === end &&
         this.element.value !== value
       )
         this.pairs.push({ open: start, close: start + 1 })
-    } finally {
-      this.typing = false
-    }
+    })
     return true
   }
 
@@ -443,13 +468,11 @@ export class SourceSurface {
       this.pairAt(start)!.open !== start - 1
     )
       return false
-    this.applyEdit(
-      {
-        changes: [{ from: start - 1, to: start + 1, text: '' }],
-        selection: { from: start - 1, to: start - 1 },
-      },
-      false,
-    )
+    const edit: SourceEdit = {
+      changes: [{ from: start - 1, to: start + 1, text: '' }],
+      selection: { from: start - 1, to: start - 1 },
+    }
+    this.asTyping(edit.changes, () => this.applyEdit(edit, false))
     return true
   }
 
@@ -464,7 +487,8 @@ export class SourceSurface {
       this.itemsOf(value, this.element.selectionStart),
     )
     if (!edit) return false
-    this.asTyping(() => this.applyEdit(edit, false))
+    // A new line is not typing inside a pair.
+    this.applyEdit(edit, false)
     return true
   }
 
@@ -523,8 +547,7 @@ export class SourceSurface {
   keyDown({ key, metaKey, ctrlKey, altKey, shiftKey }: KeyboardEvent): boolean {
     if (metaKey || ctrlKey || altKey) return false
     if (key === 'Enter') {
-      if (!this.continueList())
-        this.asTyping(() => this.replaceLiteralSelection('\n', false))
+      if (!this.continueList()) this.replaceLiteralSelection('\n', false)
       return true
     }
     if (key === 'Tab') {
@@ -547,7 +570,7 @@ export class SourceSurface {
           segment.index + segment.segment.length,
         )
       }
-      this.asTyping(() => this.replaceLiteralSelection('', false))
+      this.replaceLiteralSelection('', false)
       return true
     }
     return false
