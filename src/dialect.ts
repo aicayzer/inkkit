@@ -938,11 +938,9 @@ const headingsWithBreaks = headingSchema.extendSchema((base) => (ctx) => {
   }
 })
 
-// Milkdown's serializer moves spaces at the edge of formatting or a link out
-// of it as the formatting closes, but only from text at its edge. Empty text
-// beside formatted text that starts or ends with spaces keeps them in place,
-// so that `settleFormatting` can first write formatting a link shares with
-// the text beside it once around both.
+// Milkdown moves spaces out of formatting only from text at its edge, so empty
+// text beside formatted text that starts or ends with a space keeps them in
+// place for `settleFormatting`.
 const edgeSpacesKept = $node('text', () => ({
   ...textSchema.schema,
   toMarkdown: {
