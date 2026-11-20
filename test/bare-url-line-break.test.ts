@@ -1,0 +1,284 @@
+import { editorViewCtx } from '@milkdown/kit/core'
+import { expect, test } from 'vitest'
+import { InkKitEditor } from '../src/core'
+import { ctxOf } from './editor-access'
+
+// A space before a soft line break is written as `&#x20;`. A bare address
+// would take that reference in, so typing a space after one there was refused
+// with `preservation` and the keystroke did nothing.
+
+// The edited document, without how each link was written: a bare address
+// saved in angle brackets reads as the same link. Spaces carry no visible
+// formatting, and Markdown puts a space at the edge of emphasis outside it.
+function content(editor: InkKitEditor): unknown {
+  const doc = ctxOf(editor).get(editorViewCtx).state.doc
+  return JSON.parse(
+    JSON.stringify(doc.toJSON(), (key, value) =>
+      key === 'form' ? undefined : value,
+    ),
+    function (key, value) {
+      if (key !== 'marks' || !/^\s+$/.test(this.text ?? '')) return value
+      const kept = value.filter(
+        (mark: { type: string }) => mark.type === 'link',
+      )
+      return kept.length ? kept : undefined
+    },
+  )
+}
+
+function links(editor: InkKitEditor): string[] {
+  const found: string[] = []
+  ctxOf(editor)
+    .get(editorViewCtx)
+    .state.doc.descendants((node) => {
+      const link = node.marks.find((mark) => mark.type.name === 'link')
+      if (node.isText && link) found.push(`${node.text} -> ${link.attrs.href}`)
+    })
+  return found
+}
+
+async function mounted<T>(run: (editor: InkKitEditor) => Promise<T>) {
+  const errors: Error[] = []
+  const root = document.body.appendChild(document.createElement('div'))
+  const editor = await InkKitEditor.mount(root, {
+    changed() {},
+    copy() {},
+    openLink() {},
+    error: (error) => errors.push(error),
+  })
+  try {
+    const result = await run(editor)
+    expect(errors).toEqual([])
+    return result
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+}
+
+function load(editor: InkKitEditor, text: string): void {
+  editor.loadDocument({ documentId: 'url', generation: 1, format: 'md', text })
+  // An unedited document saves its bytes.
+  expect(editor.snapshot()).toMatchObject({ text, dirty: false })
+}
+
+// Places the caret after, or with `before` before, `text` in the readable text.
+function caretAt(editor: InkKitEditor, text: string, before = false): void {
+  const snapshot = editor.textSnapshot()
+  const at = snapshot.text.indexOf(text)
+  expect(at).toBeGreaterThanOrEqual(0)
+  const offset = before ? at : at + text.length
+  editor.selectTextRange({
+    snapshotId: snapshot.snapshotId,
+    from: offset,
+    to: offset,
+  })
+}
+
+// Types each step, checking that it is applied and saves `expected`, that the
+// saved text reads back as the edited document, and that Undo returns the
+// loaded bytes.
+async function typed(
+  source: string,
+  anchor: string,
+  steps: ReadonlyArray<readonly [typed: string, expected: string]>,
+  before = false,
+): Promise<void> {
+  const saves = await mounted(async (editor) => {
+    load(editor, source)
+    caretAt(editor, anchor, before)
+    const saves: Array<{
+      saved: string
+      readable: string
+      edited: unknown
+      links: string[]
+    }> = []
+    for (const [text, expected] of steps) {
+      expect(editor.insertText(text, 1)).toBe(true)
+      const saved = editor.snapshot().text
+      expect(saved).toBe(expected)
+      saves.push({
+        saved,
+        readable: editor.textSnapshot().text,
+        edited: content(editor),
+        links: links(editor),
+      })
+    }
+    for (const _ of steps) editor.undo()
+    expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
+    return saves
+  })
+  for (const { saved, readable, edited, links: linked } of saves)
+    await mounted(async (editor) => {
+      load(editor, saved)
+      expect(editor.textSnapshot().text).toBe(readable)
+      expect(content(editor)).toEqual(edited)
+      expect(links(editor)).toEqual(linked)
+    })
+}
+
+for (const ending of ['\n', '\r\n']) {
+  const lines = (text: string) => text.replaceAll('\n', ending)
+  const label = JSON.stringify(ending)
+  // Blocks around the edited paragraph, spelt as the writer would not spell
+  // them, keep their bytes.
+  const around = (paragraph: string) =>
+    lines(`Intro *text*  \nhere\n\n${paragraph}\n\n* item __one__\n`)
+
+  test(`a space typed after a bare URL before a soft line break is saved (${label})`, async () => {
+    await typed(around('See https://example.com\nmore text'), 'example.com', [
+      [' ', around('See <https://example.com>&#x20;\nmore text')],
+      // Once the space is not the last on its line, the URL is bare again.
+      ['and', around('See https://example.com and\nmore text')],
+    ])
+  })
+
+  test(`a second space after a bare URL before a soft line break is saved (${label})`, async () => {
+    await typed(around('See https://example.com\nmore text'), 'example.com', [
+      [' ', around('See <https://example.com>&#x20;\nmore text')],
+      [' ', around('See https://example.com &#x20;\nmore text')],
+    ])
+  })
+
+  test(`a space typed after a bare address and punctuation before a soft line break is saved (${label})`, async () => {
+    await typed(around('See https://example.com.\nmore text'), 'example.com.', [
+      [' ', around('See <https://example.com>.&#x20;\nmore text')],
+      [' ', around('See https://example.com. &#x20;\nmore text')],
+    ])
+    await typed(around('See (https://example.com)\nmore'), 'example.com)', [
+      [' ', around('See (<https://example.com>)&#x20;\nmore')],
+    ])
+  })
+
+  test(`a space typed after a www or email address before a soft line break is saved (${label})`, async () => {
+    // A `www.` address cannot be written in angle brackets.
+    await typed(around('See www.example.com\nmore text'), 'example.com', [
+      [
+        ' ',
+        around(
+          'See [www.example.com](http://www.example.com)&#x20;\nmore text',
+        ),
+      ],
+      [' ', around('See www.example.com &#x20;\nmore text')],
+    ])
+    // An email address stops at the reference, so it stays bare.
+    await typed(around('Mail ada@example.com\nmore text'), 'example.com', [
+      [' ', around('Mail ada@example.com&#x20;\nmore text')],
+    ])
+  })
+
+  test(`a space typed after a formatted bare URL before a soft line break is saved (${label})`, async () => {
+    await typed(around('See *https://example.com*\nmore'), 'example.com', [
+      [' ', around('See *<https://example.com>*&#x20;\nmore')],
+    ])
+  })
+
+  test(`a space typed after a bare URL in a list item or quote before a soft line break is saved (${label})`, async () => {
+    await typed(lines('- See https://example.com\n  more\n'), 'example.com', [
+      [' ', lines('- See <https://example.com>&#x20;\n  more\n')],
+    ])
+    await typed(lines('> See https://example.com\n> more\n'), 'example.com', [
+      [' ', lines('> See <https://example.com>&#x20;\n> more\n')],
+    ])
+  })
+
+  test(`a space typed after an angle autolink before a soft line break is saved (${label})`, async () => {
+    await typed(around('See <https://example.com>\nmore text'), 'example.com', [
+      [' ', around('See <https://example.com>&#x20;\nmore text')],
+      [' ', around('See <https://example.com> &#x20;\nmore text')],
+    ])
+  })
+
+  test(`a space typed before a bare URL after a soft line break is saved (${label})`, async () => {
+    await typed(
+      around('See\nhttps://example.com text'),
+      'https://',
+      [[' ', around('See\n&#x20;https://example.com text')]],
+      true,
+    )
+  })
+
+  test(`a space typed after a bare URL at the end of a paragraph is not saved (${label})`, async () => {
+    await mounted(async (editor) => {
+      const source = around('See https://example.com')
+      load(editor, source)
+      caretAt(editor, 'example.com')
+      expect(editor.insertText(' ', 1)).toBe(true)
+      expect(editor.insertText(' ', 1)).toBe(true)
+      // Spaces at the end of a block are not saved.
+      expect(editor.snapshot().text).toBe(source)
+    })
+  })
+
+  test(`a space typed after a bare URL before a hard line break is saved (${label})`, async () => {
+    await typed(around('See https://example.com<br>more'), 'example.com', [
+      [' ', around('See https://example.com <br>more')],
+    ])
+    // Markdown reads spaces before a break written as spaces as part of the
+    // break, so the break is written as a backslash.
+    await typed(around('See https://example.com  \nmore'), 'example.com', [
+      [' ', around('See https://example.com \\\nmore')],
+      [' ', around('See https://example.com  \\\nmore')],
+    ])
+    await typed(around('See example  \nmore'), 'example', [
+      ['\t', around('See example\t\\\nmore')],
+    ])
+  })
+
+  test(`a hard line break typed after a bare URL is saved (${label})`, async () => {
+    await mounted(async (editor) => {
+      const source = around('See https://example.com more')
+      load(editor, source)
+      caretAt(editor, 'example.com')
+      const snapshot = editor.textSnapshot()
+      const at = snapshot.text.indexOf('example.com') + 'example.com'.length
+      editor.selectTextRange({
+        snapshotId: snapshot.snapshotId,
+        from: at,
+        to: at + 1,
+      })
+      expect(editor.keyDown({ key: 'Enter', shiftKey: true }, 1)).toBe(true)
+      // A backslash after a bare URL would join it.
+      expect(editor.snapshot().text).toBe(
+        around('See <https://example.com>\\\nmore'),
+      )
+      caretAt(editor, 'example.com')
+      expect(editor.insertText(' ', 1)).toBe(true)
+      expect(editor.snapshot().text).toBe(
+        around('See https://example.com \\\nmore'),
+      )
+    })
+  })
+}
+
+test('a deletion that leaves a space before a break written as spaces is saved', async () => {
+  await mounted(async (editor) => {
+    const source = 'See a b  \nmore\n'
+    load(editor, source)
+    const snapshot = editor.textSnapshot()
+    const at = snapshot.text.indexOf('b')
+    expect(
+      editor.replaceTextRange(
+        { snapshotId: snapshot.snapshotId, from: at, to: at + 1 },
+        '',
+      ),
+    ).toBe(true)
+    expect(editor.snapshot().text).toBe('See a \\\nmore\n')
+    expect(editor.undo()).toBe(true)
+    expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
+  })
+})
+
+test('unedited documents with addresses beside line breaks save their bytes', async () => {
+  for (const source of [
+    'See https://example.com\nmore\n',
+    'See https://example.com.\r\nmore\r\n',
+    'See <https://example.com>&#x20;\nmore\n',
+    'See https://example.com &#x20;\nmore\n',
+    'See https://example.com  \nmore\n',
+    'See https://example.com\\\nmore\n',
+    'See www.example.com\t\nmore',
+    'See https://example.com&#x20;\nmore\n',
+  ])
+    await mounted(async (editor) => load(editor, source))
+})

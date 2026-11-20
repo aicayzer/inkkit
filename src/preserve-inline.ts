@@ -490,8 +490,15 @@ export function retainBoundaryText(
     rawEnd &&
     encodedEnd?.includes('&') &&
     decoded(rawEnd) === decoded(encodedEnd)
-  )
-    raw = raw.slice(0, -end.length) + encode(end)
+  ) {
+    // Encode only as many as the writer does. A space left plain before the
+    // reference keeps a bare address before it from running into it.
+    const count = Math.min(
+      end.length,
+      decoded(encodedEnd.slice(encodedEnd.indexOf('&'))).length,
+    )
+    raw = raw.slice(0, raw.length - count) + encode(end.slice(-count))
+  }
   return raw
 }
 

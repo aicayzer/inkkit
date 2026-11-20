@@ -182,22 +182,28 @@ function writesBare(node: Link, index: number, ancestors: Parents[]): boolean {
     parent.children.at(at) === text
   const follows = (parent: Parents, text: PhrasingContent): boolean => {
     if (text.type !== 'text') return false
-    const run = /^\S*/.exec(text.value)![0]
-    // Edge spaces become character references even after punctuation. The
-    // reader would then include that punctuation in a bare address. An email
-    // address stops at the reference, so it stays bare.
+    // A soft line break is a text node of its own, so read on through the
+    // text nodes that follow.
+    const siblings = parent.children as PhrasingContent[]
+    let value = '',
+      at = siblings.indexOf(text)
+    for (let sibling = siblings[at]; sibling?.type === 'text';) {
+      value += sibling.value
+      sibling = siblings[++at]
+    }
+    const last = blocks.has(parent.type) && at === siblings.length
+    const run = /^\S*/.exec(value)![0]
+    const rest = value.slice(run.length)
+    // Spaces at the end of a block, and a space or tab directly before a line
+    // ending, become character references even after punctuation. The reader
+    // would then include that punctuation and the reference in a bare
+    // address. An email address stops at the reference, so it stays bare.
     if (
       !node.url.startsWith('mailto:') &&
-      blocks.has(parent.type) &&
-      parent.children.at(-1) === text &&
-      /^[ \t]+$/.test(text.value.slice(run.length))
+      ((last && /^[ \t]+$/.test(rest)) || /^[ \t][\r\n]/.test(rest))
     )
       return false
-    return (
-      trailing.test(run) &&
-      (run.length < text.value.length ||
-        (blocks.has(parent.type) && parent.children.at(-1) === text))
-    )
+    return trailing.test(run) && (rest !== '' || last)
   }
   const side = (step: -1 | 1): boolean => {
     let current: Parents | Link = node
