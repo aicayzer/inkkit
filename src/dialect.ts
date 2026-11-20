@@ -182,22 +182,28 @@ function writesBare(node: Link, index: number, ancestors: Parents[]): boolean {
     parent.children.at(at) === text
   const follows = (parent: Parents, text: PhrasingContent): boolean => {
     if (text.type !== 'text') return false
-    const run = /^\S*/.exec(text.value)![0]
-    // Edge spaces become character references even after punctuation. The
-    // reader would then include that punctuation in a bare address. An email
-    // address stops at the reference, so it stays bare.
+    // A soft line break is a text node of its own, so read on through the
+    // text nodes that follow.
+    const siblings = parent.children as PhrasingContent[]
+    let value = '',
+      at = siblings.indexOf(text)
+    for (let sibling = siblings[at]; sibling?.type === 'text';) {
+      value += sibling.value
+      sibling = siblings[++at]
+    }
+    const last = blocks.has(parent.type) && at === siblings.length
+    const run = /^\S*/.exec(value)![0]
+    const rest = value.slice(run.length)
+    // Spaces at the end of a block, and a space or tab directly before a line
+    // ending, become character references even after punctuation. The reader
+    // would then include that punctuation and the reference in a bare
+    // address. An email address stops at the reference, so it stays bare.
     if (
       !node.url.startsWith('mailto:') &&
-      blocks.has(parent.type) &&
-      parent.children.at(-1) === text &&
-      /^[ \t]+$/.test(text.value.slice(run.length))
+      ((last && /^[ \t]+$/.test(rest)) || /^[ \t][\r\n]/.test(rest))
     )
       return false
-    return (
-      trailing.test(run) &&
-      (run.length < text.value.length ||
-        (blocks.has(parent.type) && parent.children.at(-1) === text))
-    )
+    return trailing.test(run) && (rest !== '' || last)
   }
   const side = (step: -1 | 1): boolean => {
     let current: Parents | Link = node
@@ -231,20 +237,65 @@ let bareLinks = new WeakSet<Link>()
 
 type Wrapper = PhrasingContent & { children: PhrasingContent[] }
 
-// The formatting a link written with brackets wraps as its only child. A
-// collapsed or shortcut reference is left alone, since its label names its
-// definition.
+// The formatting a bare address can sit inside, since it ends before `*`,
+// `_`, `~` and the `<` of a tag but would run into other delimiters.
+const outsideLiteral: ReadonlySet<string> = new Set([
+  'emphasis',
+  'strong',
+  'delete',
+  ...htmlMarkTypes,
+])
+
+// The formatting a link wraps as its only child. A collapsed or shortcut
+// reference is left alone, since its label names its definition.
 function linkFormatting(node: PhrasingContent): Wrapper | undefined {
-  const plain =
-    (node.type === 'link' && !formOf(node)) ||
+  const linked =
+    node.type === 'link' ||
     (node.type === 'linkReference' && node.referenceType === 'full')
-  const [inner] = plain ? (node as Wrapper).children : []
-  return plain &&
+  const [inner] = linked ? (node as Wrapper).children : []
+  return linked &&
     (node as Wrapper).children.length === 1 &&
     inner &&
-    wrappers.has(inner.type)
+    wrappers.has(inner.type) &&
+    (node.type !== 'link' ||
+      formOf(node) !== 'literal' ||
+      outsideLiteral.has(inner.type))
     ? (inner as Wrapper)
     : undefined
+}
+
+// The writer moves spaces at the edges of formatting out of it, leaving
+// empty text where a child was only spaces. Beside a link that shares the
+// formatting, such a space is put back, so that the formatting is written
+// once around both rather than closed and reopened around the space.
+function restoreMovedSpaces(children: PhrasingContent[]): void {
+  children.forEach((child, index) => {
+    if (child.type !== 'text' || !/^ +$/.test(child.value)) return
+    for (const [wrapper, link, edge] of [
+      [children[index + 1], children[index - 1], 0],
+      [children[index - 1], children[index + 1], -1],
+    ] as const) {
+      if (!wrapper || !wrappers.has(wrapper.type) || !link) continue
+      const empty = (wrapper as Wrapper).children.at(edge)
+      const formatting = linkFormatting(link)
+      if (
+        empty?.type === 'text' &&
+        empty.value === '' &&
+        formatting &&
+        sameFormatting(formatting, wrapper)
+      ) {
+        empty.value = child.value
+        child.value = ''
+        return
+      }
+    }
+  })
+}
+
+function sameFormatting(left: PhrasingContent, right: PhrasingContent) {
+  const { children: _left, position: _a, ...leftRest } = left as Wrapper
+  const { children: _right, position: _b, ...rightRest } = right as Wrapper
+  return JSON.stringify(leftRest) === JSON.stringify(rightRest)
 }
 
 // The writer opens a link outside the formatting in it, so formatting that
@@ -252,11 +303,6 @@ function linkFormatting(node: PhrasingContent): Wrapper | undefined {
 // `[**a**](u)**b**`. Formatting that a link shares with the text beside it is
 // written once around both instead, as `**[a](u)b**`.
 function shareFormatting(children: PhrasingContent[]): void {
-  const same = (left: PhrasingContent, right: PhrasingContent) => {
-    const { children: _left, position: _a, ...leftRest } = left as Wrapper
-    const { children: _right, position: _b, ...rightRest } = right as Wrapper
-    return JSON.stringify(leftRest) === JSON.stringify(rightRest)
-  }
   for (let index = 0; index < children.length; index++) {
     const child = children[index]!
     const formatting = linkFormatting(child)
@@ -266,8 +312,8 @@ function shareFormatting(children: PhrasingContent[]): void {
     const next = children[index + 1]
     // Booleans, since the count of nodes replaced below is computed from them: with no node on
     // one side, `undefined` would make it NaN, remove nothing and write the content twice.
-    const before = Boolean(previous && same(previous, formatting))
-    const after = Boolean(next && same(next, formatting))
+    const before = Boolean(previous && sameFormatting(previous, formatting))
+    const after = Boolean(next && sameFormatting(next, formatting))
     if (!before && !after) continue
     const merged = {
       ...formatting,
@@ -295,6 +341,7 @@ const root: (typeof defaultHandlers)['root'] = (node, parent, state, info) => {
       'children' in child &&
       child.children.every(empty))
   const visit = (current: Parents, ancestors: Parents[]) => {
+    restoreMovedSpaces(current.children as PhrasingContent[])
     if (current.children.some((child) => empty(child as PhrasingContent)))
       current.children = current.children.filter(
         (child) => !empty(child as PhrasingContent),
@@ -400,8 +447,7 @@ function formattedOutside(node: Link): PhrasingContent | undefined {
     'children' in inner &&
     inner.type !== 'link' &&
     inner.children.length === 1 &&
-    (!literal ||
-      ['emphasis', 'strong', 'delete', ...htmlMarkTypes].includes(inner.type))
+    (!literal || outsideLiteral.has(inner.type))
   ) {
     wrappers.push(inner as PhrasingContent & { children: PhrasingContent[] })
     inner = inner.children[0]

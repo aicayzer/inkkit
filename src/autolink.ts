@@ -291,15 +291,16 @@ interface Wanted {
 
 // Where a link is wanted on each character of a block that an edit reaches:
 // the runs that hold the changed characters `from` to `to`, or touch them
-// with no space between. A run a space separates from the change is left as
-// it is, since its text may come from character references or escapes the
-// editor does not hold. Characters inside a link written with brackets are
-// left as they are.
+// with no space between. A run a space separates from the change, or one
+// whose text the edit left as it was, is left as it is, since its text may
+// come from character references or escapes the editor does not hold.
+// Characters inside a link written with brackets are left as they are.
 function wantedLinks(
   ctx: Ctx,
   chars: Array<Character | undefined>,
   from: number,
   to: number,
+  unchanged: (start: number, end: number) => boolean = () => false,
 ): Map<number, Wanted | null> {
   const wanted = new Map<number, Wanted | null>()
   // An address in angle brackets keeps them while it is still one. Text after
@@ -381,7 +382,8 @@ function wantedLinks(
       sameMarks(chars[end]!.marks, char!.marks)
     )
       end++
-    if (end >= from && index <= to) spans.push([index, end])
+    if (end >= from && index <= to && !unchanged(index, end))
+      spans.push([index, end])
     index = end
   }
   const found = literals(
@@ -518,6 +520,63 @@ interface Edited {
   // The edited range, as positions in the new document.
   from: number
   to: number
+  // The block before the edit, and the content it and the new block differ
+  // in: from `start` to `endOld` in it, and to `endNew` in the new block.
+  previous?: { block: ProseNode; start: number; endOld: number; endNew: number }
+}
+
+// Whether the run of `chars` from `start` to `end` was a run of the same
+// characters before the edit, with the same text beside it. Reading its text
+// again could change its links: a typed space must not change where an
+// address that ends beside it points, and Undo must restore its links.
+function unchangedRun(
+  edited: Edited,
+  chars: Array<Character | undefined>,
+): (start: number, end: number) => boolean {
+  const { previous } = edited
+  if (!previous) return () => false
+  const old = characters(previous.block, 0)
+  const at = new Map(old.map((char, index) => [char?.pos, index]))
+  const base = edited.pos + 1
+  return (start, end) => {
+    const from = chars[start]!.pos - base
+    const to = chars[end - 1]!.pos + 1 - base
+    const shift =
+      to <= previous.start
+        ? 0
+        : from >= previous.endNew
+          ? previous.endOld - previous.endNew
+          : undefined
+    if (shift === undefined) return false
+    const first = at.get(from + shift)
+    const last = at.get(to - 1 + shift)
+    if (first === undefined || last !== first + end - start - 1) return false
+    for (let index = 0; index < end - start; index++) {
+      const now = chars[start + index]!
+      const then = old[first + index]
+      if (
+        !then ||
+        then.text !== now.text ||
+        then.form !== now.form ||
+        !sameMarks(then.marks, now.marks) ||
+        !(then.link ? now.link?.eq(then.link) : !now.link)
+      )
+        return false
+    }
+    // The characters beside the run end it as they did.
+    const ends = (char: Character | undefined, other: Character | undefined) =>
+      !char ||
+      !other ||
+      /\s/.test(char.text) ||
+      !sameMarks(char.marks, other.marks) ||
+      char.marks.some((mark) => mark.type.spec.code)
+    return (
+      ends(old[first - 1], old[first]) &&
+      ends(old[last + 1], old[last]) &&
+      ends(chars[start - 1], chars[start]) &&
+      ends(chars[end], chars[end - 1])
+    )
+  }
 }
 
 const textblocks = (doc: ProseNode, from: number, to: number) => {
@@ -568,8 +627,17 @@ function editedBlocks(before: ProseNode, after: ProseNode): Edited[] {
       return { pos, block: node, from: pos + 1, to: pos + node.nodeSize - 1 }
     let { a: endOld, b: endNew } = previous.content.findDiffEnd(node.content)!
     const shared = from - Math.min(endOld, endNew)
-    if (shared > 0) endNew += shared
-    return { pos, block: node, from: pos + 1 + from, to: pos + 1 + endNew }
+    if (shared > 0) {
+      endOld += shared
+      endNew += shared
+    }
+    return {
+      pos,
+      block: node,
+      from: pos + 1 + from,
+      to: pos + 1 + endNew,
+      previous: { block: previous, start: from, endOld, endNew },
+    }
   })
 }
 
@@ -593,10 +661,12 @@ export const autolinkLiterals = $prose(
         const written = transactions.every(isWrittenEdit)
         if (written) codeAngles(base, editedBlocks(oldState.doc, base.doc))
         let edited = editedBlocks(oldState.doc, base.doc)
+        let completed = false
         if (written && edited.length === 1) {
           const { pos, block, from, to } = edited[0]!
           const start = base.steps.length
           if (completedAngle(base, characters(block, pos + 1), from, to)) {
+            completed = true
             edited = editedBlocks(oldState.doc, base.doc)
             // Consuming `>` can make the diff look like only `<` was deleted.
             // The suffix at the completion caret still needs recomputing.
@@ -606,15 +676,24 @@ export const autolinkLiterals = $prose(
           }
         }
         const blocks: Block[] = []
-        for (const { pos, block, from, to } of edited) {
-          const chars = characters(block, pos + 1)
+        for (const block of edited) {
+          const { pos, from, to } = block
+          const chars = characters(block.block, pos + 1)
           const index = (at: number) => {
             const found = chars.findIndex(
               (char) => char !== undefined && char.pos >= at,
             )
             return found < 0 ? chars.length : found
           }
-          const wanted = wantedLinks(ctx, chars, index(from), index(to))
+          const wanted = wantedLinks(
+            ctx,
+            chars,
+            index(from),
+            index(to),
+            // Completing an angle link takes its delimiters out of the text
+            // beside it, so that text is read again.
+            completed ? undefined : unchangedRun(block, chars),
+          )
           if (differs(chars, wanted)) blocks.push({ pos, chars, wanted })
         }
         if (!base.steps.length && !blocks.length) return null

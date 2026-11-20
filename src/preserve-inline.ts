@@ -228,6 +228,27 @@ export function retainRun(
       suffix--
       widened = true
     }
+    // A break written as trailing spaces would take in a space or tab
+    // written before it, so the break is written as the canonical writer
+    // writes it. Only the bytes written before the break decide this: an
+    // encoded space there is not taken in.
+    if (
+      suffix > 0 &&
+      old.breaks.has(a.length - suffix) &&
+      /[ \t]$/.test(
+        source.slice(from, old.offsets[prefix]) +
+          canonical.slice(now.offsets[prefix], now.offsets[b.length - suffix]),
+      ) &&
+      /^[ \t]/.test(
+        source.slice(
+          old.offsets[a.length - suffix],
+          old.offsets[a.length - suffix + 1],
+        ),
+      )
+    ) {
+      suffix--
+      widened = true
+    }
     // One entity can read as several characters. A boundary inside it has
     // the same source offset as the next boundary, so widen to include the
     // whole entity rather than retaining or dropping only part of its value.
@@ -274,6 +295,9 @@ export function retainRun(
   )
 }
 
+// A space or tab, plain or as a reference.
+const blankToken = '(?:[ \\t]|&#(?:[xX]0*(?:20|9)|0*(?:32|9));|&Tab;)'
+
 export function retainText(
   raw: string,
   before: string,
@@ -297,6 +321,44 @@ export function retainText(
   const read = decodedOffsets(raw, true)
   if (read?.decoded !== before) return after
   const { offsets } = read
+  // Markdown leaves out the spaces and tabs before a line ending, so an
+  // edit can leave text before them that ends in a space or tab. That text
+  // is all that should stand before the line ending: with the authored
+  // spaces it would read differently, or make a hard break. Blanks that hold
+  // a tab read as a soft break here, but CommonMark and GFM readers read two
+  // final spaces as a hard break, so those blanks stay and the edited text's
+  // own blanks end in a reference, which keeps them out of the line ending.
+  const rest = raw.slice(offsets[before.length - suffix])
+  const blanks =
+    after[after.length - suffix] === '\n' &&
+    /[ \t]$/.test(after.slice(0, after.length - suffix))
+      ? /^[ \t]*/.exec(rest)![0]
+      : ''
+  const close = (text: string) => {
+    if (!blanks.endsWith('  ')) return text + rest.slice(blanks.length)
+    const trailing = new RegExp(`${blankToken}+$`)
+    const end = trailing.exec(text)?.[0] ?? ''
+    // The writer ends its blanks with a reference too, and leaves the ones
+    // before it plain where a bare address before them needs that.
+    const canonical =
+      written === undefined ? undefined : decodedOffsets(written, true)
+    const writtenEnd =
+      canonical?.decoded === after
+        ? trailing.exec(
+            written!.slice(0, canonical.offsets[after.length - suffix]),
+          )?.[0]
+        : undefined
+    return (
+      text.slice(0, text.length - end.length) +
+      (writtenEnd?.endsWith(';') &&
+      decodedOffsets(writtenEnd)?.decoded === decodedOffsets(end)?.decoded
+        ? writtenEnd
+        : end.replace(/[ \t]/g, (blank) =>
+            blank === '\t' ? '&#x9;' : '&#x20;',
+          )) +
+      rest
+    )
+  }
   // A marker becomes structural only when the following space arrives. Its
   // required escape can therefore fall in the unchanged prefix of this edit.
   const lineStart = after.lastIndexOf('\n', prefix - 1) + 1
@@ -310,15 +372,14 @@ export function retainText(
         prefix - lineStart <= decodedOffsets(marker)!.decoded.length
       ) {
         prefix = lineStart
-        return (
+        return close(
           raw.slice(0, offsets[prefix]) +
-          guttered(
-            written.slice(
-              canonical.offsets[prefix],
-              canonical.offsets[after.length - suffix],
+            guttered(
+              written.slice(
+                canonical.offsets[prefix],
+                canonical.offsets[after.length - suffix],
+              ),
             ),
-          ) +
-          raw.slice(offsets[before.length - suffix])
         )
       }
     }
@@ -331,15 +392,14 @@ export function retainText(
   ) {
     const writtenOffsets = decodedOffsets(written)
     if (writtenOffsets && writtenOffsets.decoded === after)
-      return (
+      return close(
         raw.slice(0, offsets[prefix]) +
-        guttered(
-          written.slice(
-            writtenOffsets.offsets[prefix],
-            writtenOffsets.offsets[after.length - suffix],
+          guttered(
+            written.slice(
+              writtenOffsets.offsets[prefix],
+              writtenOffsets.offsets[after.length - suffix],
+            ),
           ),
-        ) +
-        raw.slice(offsets[before.length - suffix])
       )
   }
   const inserted = after
@@ -359,11 +419,15 @@ export function retainText(
           : character
     })
     .join('')
-  return escapeReferences(
-    raw.slice(0, offsets[prefix]),
-    inserted,
-    raw.slice(offsets[before.length - suffix]),
-  )
+  // Blanks kept before the line ending leave no reference for the inserted
+  // text to complete with the text after it.
+  return blanks.endsWith('  ')
+    ? close(escapeReferences(raw.slice(0, offsets[prefix]), inserted, ''))
+    : escapeReferences(
+        raw.slice(0, offsets[prefix]),
+        inserted,
+        rest.slice(blanks.length),
+      )
 }
 
 const characterReference = /&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]*);/g
@@ -403,6 +467,8 @@ export function retainBoundaryText(
   raw: string,
   canonical: string,
   afterBreak = false,
+  // Whether a line ending follows the text.
+  beforeLineEnding = false,
 ): string {
   // A new line can turn unchanged punctuation into a block opener. Take its
   // opening escapes from the writer, retaining the authored text after them.
@@ -414,9 +480,8 @@ export function retainBoundaryText(
       raw = opening + raw.slice(original.offsets[written.decoded.length])
   }
   // A middle-of-line space becomes indentation or trimmed text at a block edge.
-  const token = '(?:[ \\t]|&#(?:[xX]0*(?:20|9)|0*(?:32|9));|&Tab;)'
   const decoded = (value: string): string =>
-    (value.match(new RegExp(token, 'g')) ?? [])
+    (value.match(new RegExp(blankToken, 'g')) ?? [])
       .map((value) =>
         value === '\t' || /(?:9;|Tab;)$/.test(value) ? '\t' : ' ',
       )
@@ -446,19 +511,28 @@ export function retainBoundaryText(
           const canonicalBody = canonicalLine.slice(canonicalPrefix.length)
           return (
             prefix +
-            retainBoundaryText(line.slice(prefix.length), canonicalBody)
+            retainBoundaryText(
+              line.slice(prefix.length),
+              canonicalBody,
+              false,
+              index < lines.length - 1,
+            )
           )
         })
         .join('')
   }
-  const rawStart = new RegExp(`^${token}+`).exec(raw)?.[0]
-  const encodedStart = new RegExp(`^${token}+`).exec(canonical)?.[0]
+  // Plain blanks before a line ending are not content: Markdown leaves them
+  // out, and `retainText` keeps them only after text it has encoded.
+  const run = new RegExp(`^${blankToken}+`).exec(raw)?.[0]
+  const rawStart =
+    beforeLineEnding && run === raw ? run.replace(/[ \t]+$/, '') : run
+  const encodedStart = new RegExp(`^${blankToken}+`).exec(canonical)?.[0]
   if (rawStart && encodedStart?.includes('&')) {
     // Only the tail from the first reference is content. The whitespace
     // before it can be container indentation, whose width differs in the
     // authored and canonical forms. Keep that prefix and entity spelling.
     const content = decoded(encodedStart.slice(encodedStart.indexOf('&')))
-    const parts = rawStart.match(new RegExp(token, 'g'))!
+    const parts = rawStart.match(new RegExp(blankToken, 'g'))!
     const from = parts.length - content.length
     if (from >= 0 && decoded(parts.slice(from).join('')) === content)
       raw =
@@ -467,24 +541,33 @@ export function retainBoundaryText(
           .join('') + raw.slice(rawStart.length)
   }
   const end = /[ \t]+$/.exec(raw)?.[0]
-  const rawEnd = new RegExp(`${token}+$`).exec(raw)?.[0]
-  const encodedEnd = new RegExp(`${token}+$`).exec(canonical)?.[0]
+  const rawEnd = new RegExp(`${blankToken}+$`).exec(raw)?.[0]
+  const encodedEnd = new RegExp(`${blankToken}+$`).exec(canonical)?.[0]
   if (
     end &&
     rawEnd &&
     encodedEnd?.includes('&') &&
     decoded(rawEnd) === decoded(encodedEnd)
-  )
-    raw = raw.slice(0, -end.length) + encode(end)
+  ) {
+    // Encode only as many as the writer does. A space left plain before the
+    // reference keeps a bare address before it from running into it.
+    const count = Math.min(
+      end.length,
+      decoded(encodedEnd.slice(encodedEnd.indexOf('&'))).length,
+    )
+    raw = raw.slice(0, raw.length - count) + encode(end.slice(-count))
+  }
   return raw
 }
 
 // The text an address could run into from one side: up to the first space,
-// and whether the space is the last text of the block.
+// and whether the space is the last text of the block or the last of its
+// line. The writer encodes a space in either place, which an address before
+// it would run into.
 function edge(text: string): string {
   const run = /^\S*/.exec(text)![0]
   const rest = text.slice(run.length)
-  return `${run}|${rest === '' ? 'end' : /^\s+$/.test(rest) ? 'space' : rest[0]}`
+  return `${run}|${rest === '' ? 'end' : /^\s+$/.test(rest) ? 'space' : /^[ \t][\r\n]/.test(rest) ? 'line' : rest[0]}`
 }
 
 const reversed = (text: string) => [...text].reverse().join('')
