@@ -51,10 +51,10 @@ test('a heading fold control hides its section, names itself and works from the 
   const control = (await folded.boundingBox())!
   const heading = (await page.locator('.ProseMirror h1').first().boundingBox())!
   expect(control.x + control.width).toBeLessThanOrEqual(heading.x + 1)
-  // Hidden content is out of the accessibility tree.
-  await expect(page.locator('.inkkit-folded-content').first()).toHaveAttribute(
-    'aria-hidden',
-    'true',
+  // Hidden content is not displayed, so it is out of the accessibility tree too.
+  await expect(page.locator('.inkkit-folded-content').first()).toHaveCSS(
+    'display',
+    'none',
   )
   await folded.focus()
   await expect(folded).toBeFocused()
@@ -101,28 +101,44 @@ test('arrow keys never leave the caret in hidden content', async ({
   page,
   openFixture,
 }) => {
-  await open(page, openFixture, '# One\n\n---\n\n# Two\n\ntail\n', {
-    foldHeadings: true,
-  })
+  const text = '# One\n\nhidden words\n\n# Two\n\ntail\n'
+  await open(page, openFixture, text, { foldHeadings: true })
   await page.getByRole('button', { name: 'Fold section One' }).click()
   await page.locator('.ProseMirror h1').first().click()
   await page.keyboard.press('End')
-  await page.keyboard.press('ArrowDown')
-  const hiddenHasSelection = await page.evaluate(() => {
-    const node = getSelection()?.anchorNode
-    return Boolean(
-      node &&
-      (node instanceof Element ? node : node.parentElement)?.closest(
-        '.inkkit-folded-content',
-      ),
-    )
+  const where = () =>
+    page.evaluate(() => {
+      const selection = getSelection()!
+      const node = selection.anchorNode
+      const element = node instanceof Element ? node : node?.parentElement
+      return {
+        block: element?.closest('h1,h2,p')?.textContent,
+        hidden: Boolean(element?.closest('.inkkit-folded-content')),
+        collapsed: selection.isCollapsed,
+      }
+    })
+  expect(await where()).toEqual({
+    block: 'One',
+    hidden: false,
+    collapsed: true,
   })
-  const hidden = await page.locator('.inkkit-folded-content').count()
-  // Either the section stayed folded and the caret passed it, or the section opened to hold it.
-  expect(hiddenHasSelection && hidden > 0).toBe(false)
-  expect((await observe(page)).snapshot!.text).toBe(
-    '# One\n\n---\n\n# Two\n\ntail\n',
-  )
+  await page.keyboard.press('ArrowDown')
+  // The caret passes the folded paragraph and lands in the next visible heading, section still closed.
+  expect(await where()).toEqual({
+    block: 'Two',
+    hidden: false,
+    collapsed: true,
+  })
+  await expect(
+    page.getByRole('button', { name: 'Unfold section One' }),
+  ).toHaveAttribute('aria-expanded', 'false')
+  await page.keyboard.press('ArrowUp')
+  expect(await where()).toEqual({
+    block: 'One',
+    hidden: false,
+    collapsed: true,
+  })
+  expect((await observe(page)).snapshot!.text).toBe(text)
 })
 
 test('backspace after a folded section opens it instead of deleting what is hidden', async ({

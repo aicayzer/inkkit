@@ -58,12 +58,11 @@ test('code in a list, a quote and a callout is numbered, and inline code is not'
 test('the numbers carry no text, no selectable content and no accessible name', () =>
   withEditor(numbered, (mounted) => {
     load(mounted, '```\na\nb\n```\n')
-    for (const element of mounted.root.querySelectorAll(
-      '.inkkit-line-number',
-    )) {
+    const gutter = mounted.root.querySelector('.inkkit-code-gutter')!
+    expect(gutter.getAttribute('aria-hidden')).toBe('true')
+    expect(gutter.getAttribute('contenteditable')).toBe('false')
+    for (const element of gutter.querySelectorAll('.inkkit-line-number'))
       expect(element.textContent).toBe('')
-      expect(element.getAttribute('aria-hidden')).toBe('true')
-    }
     expect(mounted.root.querySelector('pre')!.textContent).not.toMatch(/[12]/)
   }))
 
@@ -106,17 +105,17 @@ test('editing a code block rebuilds only that block', () =>
       new Set(
         lineNumberDecorations(v.state)
           .find(start, start + v.state.doc.nodeAt(start)!.nodeSize)
-          .filter((decoration) => decoration.from === decoration.to)
+          .filter((decoration) => decoration.from === start)
           .map((decoration) => decoration.spec),
       )
     const before = blocks.map(specsIn)
-    expect(before.map((specs) => specs.size)).toEqual([2, 2, 2])
+    expect(before.map((specs) => specs.size)).toEqual([1, 1, 1])
     // A new line in the middle block, which also moves the block after it.
     v.dispatch(v.state.tr.insertText('\nnew', blocks[1]! + 3))
     const after = blocks.map((start, index) =>
       specsIn(index === 2 ? start + 4 : start),
     )
-    expect(after.map((specs) => specs.size)).toEqual([2, 3, 2])
+    expect(after.map((specs) => specs.size)).toEqual([1, 1, 1])
     expect([...after[0]!].every((spec) => before[0]!.has(spec))).toBe(true)
     expect([...after[2]!].every((spec) => before[2]!.has(spec))).toBe(true)
     expect([...after[1]!].some((spec) => before[1]!.has(spec))).toBe(false)
@@ -153,17 +152,75 @@ test('turning the option off removes the numbers and the load keeps it', () =>
 
 test('a surrogate pair and a combining mark do not shift the numbers', () =>
   withEditor(numbered, (mounted) => {
-    load(mounted, '```\n\u{1F600}\né\nz\n```\n')
+    load(mounted, '```\n\u{1F600}\n\u0065\u0301\nz\n```\n')
     expect(numbers(mounted)).toEqual(['1', '2', '3'])
-    const v = view(mounted)
-    const widgets = lineNumberDecorations(v.state).find()
-    const code = v.state.doc.firstChild!
-    expect(
-      widgets
-        .filter((decoration) => decoration.from === decoration.to)
-        .map(
-          (decoration) =>
-            code.textBetween(0, decoration.from - 1).split('\n').length,
+  }))
+
+test('no node of the gutter is inside the code text', () =>
+  withEditor(numbered, (mounted) => {
+    load(mounted, '```js\none\ntwo\nthree\n```\n')
+    const pre = mounted.root.querySelector('pre')!
+    const code = pre.querySelector(':scope > code')!
+    expect(code.querySelector('.inkkit-line-number')).toBeNull()
+    expect(code.querySelector('.inkkit-code-gutter')).toBeNull()
+    // The gutter is the block's own, beside the text, and the text is the only thing the code holds.
+    expect(pre.querySelector(':scope > .inkkit-code-gutter')).not.toBeNull()
+    const visible = [...code.childNodes].filter(
+      (node) =>
+        !(
+          node instanceof Element &&
+          node.classList.contains('ProseMirror-widget')
         ),
-    ).toEqual([1, 2, 3])
+    )
+    expect(visible.map((node) => node.textContent).join('')).toBe(
+      'one\ntwo\nthree',
+    )
+    expect(pre.getAttribute('data-inkkit-line-numbers')).toBe('')
+  }))
+
+test('turning numbers on and off swaps the block view and keeps the bytes', () =>
+  withEditor(undefined, (mounted) => {
+    const source = '```js\none\ntwo\n```\n\nText\n'
+    load(mounted, source)
+    expect(mounted.root.querySelector('.inkkit-code-gutter')).toBeNull()
+    mounted.editor.setDisplayPreferences({ codeLineNumbers: true })
+    expect(numbers(mounted)).toEqual(['1', '2'])
+    mounted.editor.setDisplayPreferences({})
+    expect(mounted.root.querySelector('.inkkit-code-gutter')).toBeNull()
+    expect(
+      mounted.root
+        .querySelector('pre')!
+        .hasAttribute('data-inkkit-line-numbers'),
+    ).toBe(false)
+    expect(mounted.editor.snapshot().text).toBe(source)
+    expect(mounted.changes).toEqual([])
+  }))
+
+test('replaceAll rebuilds only the blocks a replacement touched', () =>
+  withEditor(numbered, (mounted) => {
+    load(mounted, 'needle\n\n```\na\nb\n```\n\nneedle\n')
+    const v = view(mounted)
+    let fence = -1
+    v.state.doc.forEach((node, offset) => {
+      if (node.type.name === 'code_block') fence = offset
+    })
+    const specs = (start: number) =>
+      lineNumberDecorations(v.state)
+        .find(start, start + v.state.doc.nodeAt(start)!.nodeSize)
+        .filter((decoration) => decoration.from === start)
+        .map((decoration) => decoration.spec)
+    const before = specs(fence)
+    expect(before).toHaveLength(1)
+    expect(
+      mounted.editor.replaceAll('needle', 'a much longer replacement'),
+    ).toBe(2)
+    let after = -1
+    v.state.doc.forEach((node, offset) => {
+      if (node.type.name === 'code_block') after = offset
+    })
+    expect(after).toBeGreaterThan(fence)
+    // The fence is the same block with the same decoration, moved by the first replacement.
+    expect(specs(after)).toEqual(before)
+    expect(specs(after)[0]).toBe(before[0])
+    expect(numbers(mounted)).toEqual(['1', '2'])
   }))

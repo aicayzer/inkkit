@@ -359,11 +359,7 @@ test('a fold control is a named button whose state and hidden content are expose
     button.click()
     expect(button.getAttribute('aria-expanded')).toBe('false')
     expect(button.getAttribute('aria-label')).toBe('Unfold section One')
-    expect(
-      mounted.root
-        .querySelector('.inkkit-folded-content')!
-        .getAttribute('aria-hidden'),
-    ).toBe('true')
+    expect(mounted.root.querySelector('.inkkit-folded-content')).not.toBeNull()
     // The name follows the heading's text, and the button stays the same element.
     const v = view(mounted)
     v.dispatch(v.state.tr.insertText('Two', 2))
@@ -440,4 +436,183 @@ test('display preferences are refused during composition', () =>
       mounted.editor.setDisplayPreferences({ foldHeadings: false }),
     ).toThrow(expect.objectContaining({ code: 'composition' }))
     view(mounted).dom.dispatchEvent(new CompositionEvent('compositionend'))
+  }))
+
+/** The position of the heading that reads `text`, and of the block after the section. */
+const headingPos = (v: EditorView, text: string): number => {
+  let found = -1
+  v.state.doc.forEach((node, offset) => {
+    if (node.type.name === 'heading' && node.textContent === text)
+      found = offset
+  })
+  return found
+}
+
+const outline = '# One\n\nHidden\n\n# Two\n'
+
+test('a fold sits beside its heading, outside it, and leaves the heading its own text', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, '# One %%private%%\n\nbody\n\n> ## Nested\n')
+    const heading = mounted.root.querySelector('h1')!
+    const wrapper = heading.parentElement!
+    expect(wrapper.classList.contains('inkkit-heading-block')).toBe(true)
+    expect(heading.querySelector('button')).toBeNull()
+    expect(heading.querySelector('[data-inkkit-heading-toggle]')).toBeNull()
+    const control = wrapper.querySelector('.inkkit-heading-fold')!
+    expect(control.parentElement).toBe(wrapper)
+    expect(control.getAttribute('contenteditable')).toBe('false')
+    expect(control.closest('[aria-hidden="true"]')).toBeNull()
+    // The heading's text is its own, and the name of its control leaves a hidden comment out.
+    expect(heading.textContent).toBe('One private')
+    const button = control.querySelector('button')!
+    expect(button.getAttribute('aria-label')).toBe('Fold section One')
+    // A heading that cannot fold is the plain element.
+    const nested = mounted.root.querySelector('blockquote h2')!
+    expect(nested.parentElement!.tagName).toBe('BLOCKQUOTE')
+    expect(mounted.root.querySelectorAll('.inkkit-heading-block')).toHaveLength(
+      1,
+    )
+  }))
+
+test('with the option off a heading is the plain element, and turning it on and off swaps it', () =>
+  withEditor(undefined, (mounted) => {
+    load(mounted, '# One\n\nbody\n')
+    const plain = mounted.root.querySelector('h1')!
+    expect(plain.parentElement!.classList.contains('ProseMirror')).toBe(true)
+    mounted.editor.setDisplayPreferences({ foldHeadings: true })
+    const wrapped = mounted.root.querySelector('h1')!
+    expect(
+      wrapped.parentElement!.classList.contains('inkkit-heading-block'),
+    ).toBe(true)
+    mounted.editor.setDisplayPreferences({})
+    expect(
+      mounted.root
+        .querySelector('h1')!
+        .parentElement!.classList.contains('ProseMirror'),
+    ).toBe(true)
+    expect(
+      mounted.root.querySelector('[data-inkkit-heading-toggle]'),
+    ).toBeNull()
+    expect(mounted.editor.snapshot().text).toBe('# One\n\nbody\n')
+  }))
+
+test('a comment that shows is named by the control, and one that hides is not', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, '# One %%private%%\n')
+    const button = buttons(mounted)[0]!
+    expect(button.getAttribute('aria-label')).toBe('Fold section One')
+    mounted.editor.setCommentsVisible(true)
+    expect(button.getAttribute('aria-label')).toContain('private')
+    mounted.editor.setCommentsVisible(false)
+    expect(button.getAttribute('aria-label')).toBe('Fold section One')
+  }))
+
+test('a person edit that reaches folded text is refused and opens the section', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, outline)
+    toggleOf(mounted, 'One').click()
+    const v = view(mounted)
+    const revision = mounted.editor.snapshot().revision
+    const one = headingPos(v, 'One')
+    const hiddenStart = one + v.state.doc.nodeAt(one)!.nodeSize
+    const attempts: ((v: EditorView) => void)[] = [
+      // Delete forward from the end of the heading, joining the hidden paragraph.
+      (v) => v.dispatch(v.state.tr.delete(hiddenStart - 1, hiddenStart + 1)),
+      // Delete backward from the start of the next heading.
+      (v) => {
+        const two = headingPos(v, 'Two')
+        v.dispatch(v.state.tr.delete(two - 1, two + 1))
+      },
+      // Type into the hidden paragraph, and replace it.
+      (v) => v.dispatch(v.state.tr.insertText('x', hiddenStart + 2)),
+      (v) =>
+        v.dispatch(v.state.tr.replaceWith(hiddenStart, hiddenStart + 8, [])),
+    ]
+    for (const attempt of attempts) {
+      load(mounted, outline)
+      toggleOf(mounted, 'One').click()
+      expect(hidden(mounted)).toEqual(['Hidden'])
+      const before = mounted.editor.snapshot()
+      attempt(view(mounted))
+      expect(mounted.editor.snapshot()).toEqual(before)
+      expect(hidden(mounted)).toEqual([])
+      expect(foldedHeadings(view(mounted).state)).toEqual([])
+    }
+    expect(mounted.changes).toEqual([])
+    expect(mounted.editor.commandState().commands.undo).toBe(false)
+    expect(mounted.editor.snapshot().revision).toBeGreaterThanOrEqual(revision)
+  }))
+
+test('an edit a fold does not reach goes through and leaves the fold', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, outline)
+    toggleOf(mounted, 'One').click()
+    const v = view(mounted)
+    const two = headingPos(v, 'Two')
+    v.dispatch(v.state.tr.insertText('!', two + 4))
+    expect(mounted.editor.snapshot().text).toBe('# One\n\nHidden\n\n# Two!\n')
+    expect(hidden(mounted)).toEqual(['Hidden'])
+    const one = headingPos(v, 'One')
+    v.dispatch(v.state.tr.insertText('!', one + 4))
+    expect(mounted.editor.snapshot().text).toBe('# One!\n\nHidden\n\n# Two!\n')
+    expect(hidden(mounted)).toEqual(['Hidden'])
+  }))
+
+test('a selection that covers a whole folded section may replace or delete it', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, 'Intro\n\n# One\n\nHidden\n\n# Two\n')
+    toggleOf(mounted, 'One').click()
+    const v = view(mounted)
+    const one = headingPos(v, 'One')
+    const two = headingPos(v, 'Two')
+    // From the intro to the next heading covers the whole section, heading included.
+    v.dispatch(
+      v.state.tr.setSelection(TextSelection.create(v.state.doc, 1, two + 1)),
+    )
+    v.dispatch(v.state.tr.deleteSelection())
+    expect(mounted.editor.snapshot().text).not.toContain('Hidden')
+    expect(one).toBeGreaterThan(0)
+  }))
+
+test('a selection that covers only the hidden text is refused', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, outline)
+    toggleOf(mounted, 'One').click()
+    const v = view(mounted)
+    const one = headingPos(v, 'One')
+    const two = headingPos(v, 'Two')
+    // From the end of the heading's text to the start of the next heading's, hidden text between.
+    v.dispatch(
+      v.state.tr.setSelection(
+        TextSelection.create(v.state.doc, one + 4, two + 1),
+      ),
+    )
+    const before = mounted.editor.snapshot()
+    v.dispatch(v.state.tr.deleteSelection())
+    expect(mounted.editor.snapshot()).toEqual(before)
+  }))
+
+test('a host call names what it changes, even in folded text', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, outline)
+    toggleOf(mounted, 'One').click()
+    expect(mounted.editor.replaceAll('Hidden', 'Shown')).toBe(1)
+    expect(mounted.editor.snapshot().text).toBe('# One\n\nShown\n\n# Two\n')
+    expect(hidden(mounted)).toEqual(['Shown'])
+  }))
+
+test('moving a folded heading keeps its fold', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, 'Intro\n\n# One\n\nBody\n\n# Two\n')
+    expect(mounted.editor.find('One')).toBe(true)
+    toggleOf(mounted, 'One').click()
+    expect(hidden(mounted)).toEqual(['Body'])
+    expect(mounted.editor.moveBlock('up')).toBe(true)
+    expect(mounted.editor.snapshot().text).toBe(
+      '# One\n\nIntro\n\nBody\n\n# Two\n',
+    )
+    expect(foldedHeadings(view(mounted).state)).toHaveLength(1)
+    expect(hidden(mounted)).toEqual(['Intro', 'Body'])
+    expect(toggleOf(mounted, 'One').getAttribute('aria-expanded')).toBe('false')
+    expect(mounted.editor.snapshot().dirty).toBe(true)
   }))
