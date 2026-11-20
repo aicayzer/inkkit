@@ -169,7 +169,7 @@ A primary click with Mod (Command on Apple platforms, Control elsewhere) calls `
 ## Line breaks
 
 - **Shift+Enter** inserts a hard line break, saved as a backslash and a line ending. Tables and ATX headings save it as `<br />` so the row or heading stays on one line, and so does a break directly before an inline HTML comment.
-- **Authored breaks** keep their spelling: a backslash, two trailing spaces, or `<br>` in any of its forms.
+- **Authored breaks** keep their spelling: a backslash, two trailing spaces, or `<br>` in any of its forms. A break written as trailing spaces is saved as a backslash once a space or tab comes before it, because Markdown would read that space as part of the break.
 - **A break at the end of a paragraph or setext heading** stays pending: snapshots leave it out until text follows it, because Markdown can't represent it. Reopening the snapshot drops the empty line. Spaces before or after a pending break are left out with it.
 - **Soft line breaks**, single line endings inside a paragraph, are kept as written.
 - **Deleting all the text of a line** inside a paragraph also deletes its line ending, soft or hard, in the same step, because Markdown can't represent most empty lines inside a paragraph. One Undo restores both.

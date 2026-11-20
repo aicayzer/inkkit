@@ -42,6 +42,23 @@ import { rowPipes, retainShortRow } from './preserve-table'
 import { retainLiteral, holdsLiteral } from './preserve-literal'
 import { PreservationRefusal } from './preserve-error'
 
+// A break written as trailing spaces takes in the spaces or tabs that end the
+// text before it, so it keeps that spelling only after other text.
+function takesBlanks(
+  kept: SourceNode,
+  previous: SourceNode | undefined,
+  source: string,
+): boolean {
+  return (
+    kept.type === 'break' &&
+    previous?.type === 'text' &&
+    /[ \t]$/.test(previous.value ?? '') &&
+    /^[ \t]/.test(
+      source.slice(kept.position?.start.offset, kept.position?.end.offset),
+    )
+  )
+}
+
 // Patch changed leaves so an adjacent edit retains authored delimiters and labels.
 export function retainSource(
   before: SourceNode,
@@ -422,58 +439,62 @@ export function retainSource(
           'source-location',
           'A source token has no location',
         )
-      let retainedSource = rewrittenAddress(
-        before.type,
-        before.children!,
-        movedIndex < 0 ? index : movedIndex,
-        after.children!,
-        index,
-        source,
-        canonical,
-      )
-        ? regutter(
-            canonical.slice(
-              incoming.position!.start.offset!,
-              incoming.position!.end.offset!,
-            ),
-            gutters,
-          )
-        : incoming.type === 'list' && !sameList(original, incoming)
+      let retainedSource =
+        rewrittenAddress(
+          before.type,
+          before.children!,
+          movedIndex < 0 ? index : movedIndex,
+          after.children!,
+          index,
+          source,
+          canonical,
+        ) || takesBlanks(original, after.children![index - 1], source)
           ? withEnding(
-              canonicalSlice(
-                undefined,
-                [incoming],
-                canonical,
-                incoming.position!.start.offset!,
-                incoming.position!.end.offset!,
-                previous,
-                authoredNeighbour(
-                  before.children![index + 1],
-                  after.children![index + 1],
-                  source,
+              regutter(
+                canonical.slice(
+                  incoming.position!.start.offset!,
+                  incoming.position!.end.offset!,
                 ),
                 gutters,
               ),
               lineEnding,
             )
-          : retainSource(
-              original,
-              incoming,
-              source,
-              canonical,
-              lineEnding,
-              inTable || before.type === 'tableCell',
-              before.type === 'table'
-                ? before.children![0]?.children?.length
-                : undefined,
-              [
-                after.children![index - 1]?.type === 'link',
-                after.children![index + 1]?.type === 'link',
-              ],
-              joined,
-              reorder,
-              after.children![index - 1]?.type === 'break',
-            )
+          : incoming.type === 'list' && !sameList(original, incoming)
+            ? withEnding(
+                canonicalSlice(
+                  undefined,
+                  [incoming],
+                  canonical,
+                  incoming.position!.start.offset!,
+                  incoming.position!.end.offset!,
+                  previous,
+                  authoredNeighbour(
+                    before.children![index + 1],
+                    after.children![index + 1],
+                    source,
+                  ),
+                  gutters,
+                ),
+                lineEnding,
+              )
+            : retainSource(
+                original,
+                incoming,
+                source,
+                canonical,
+                lineEnding,
+                inTable || before.type === 'tableCell',
+                before.type === 'table'
+                  ? before.children![0]?.children?.length
+                  : undefined,
+                [
+                  after.children![index - 1]?.type === 'link',
+                  after.children![index + 1]?.type === 'link',
+                ],
+                joined,
+                reorder,
+                after.children![index - 1]?.type === 'break',
+              )
       if (
         before.type === 'tableRow' &&
         movedIndex >= 0 &&
@@ -568,6 +589,16 @@ export function retainSource(
         after.children.length - suffix,
         source,
         canonical,
+      )
+    )
+      suffix--
+    // The run takes in a break that would take in its new text's spaces.
+    if (
+      suffix &&
+      takesBlanks(
+        before.children[before.children.length - suffix]!,
+        after.children[after.children.length - suffix - 1],
+        source,
       )
     )
       suffix--

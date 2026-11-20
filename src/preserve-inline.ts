@@ -228,6 +228,22 @@ export function retainRun(
       suffix--
       widened = true
     }
+    // A break written as trailing spaces would take in a space or tab typed
+    // before it, so the break is written as the canonical writer writes it.
+    if (
+      suffix > 0 &&
+      old.breaks.has(a.length - suffix) &&
+      /[ \t]$/.test(b.slice(0, b.length - suffix)) &&
+      /^[ \t]/.test(
+        source.slice(
+          old.offsets[a.length - suffix],
+          old.offsets[a.length - suffix + 1],
+        ),
+      )
+    ) {
+      suffix--
+      widened = true
+    }
     // One entity can read as several characters. A boundary inside it has
     // the same source offset as the next boundary, so widen to include the
     // whole entity rather than retaining or dropping only part of its value.
