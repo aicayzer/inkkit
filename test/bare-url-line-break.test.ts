@@ -380,6 +380,46 @@ for (const ending of ['\n', '\r\n']) {
     await deleted(around('See a b \nmore'), 'b', around('See a&#x20;\nmore'))
   })
 
+  test(`a space typed before blanks that end in two spaces keeps them (${label})`, async () => {
+    // Inkkit reads blanks holding a tab before a line ending as a soft break,
+    // but CommonMark and GFM readers read two final spaces as a hard break.
+    // Keeping the blanks keeps the break each reader saw.
+    await typed(around('See ex\t  \nmore'), 'See ex', [
+      [' ', around('See ex&#x20;\t  \nmore')],
+      ['y', around('See ex y\t  \nmore')],
+    ])
+    await typed(around('See ex \t   \nmore'), 'See ex', [
+      [' ', around('See ex&#x20; \t   \nmore')],
+      [' ', around('See ex &#x20; \t   \nmore')],
+    ])
+    await typed(
+      around('See https://example.com\t  \nmore'),
+      'example.com',
+      [
+        [' ', around('See <https://example.com>&#x20;\t  \nmore')],
+        // A plain space ends the bare address and the reference after it
+        // keeps that space out of the line ending.
+        [' ', around('See https://example.com &#x20;\t  \nmore')],
+      ],
+      { targets: url },
+    )
+    await typed(around('See www.example.com\t  \nmore'), 'example.com', [
+      [
+        ' ',
+        around('See [www.example.com](http://www.example.com)&#x20;\t  \nmore'),
+      ],
+    ])
+    await deleted(
+      around('See a b\t  \nmore'),
+      'b',
+      around('See a&#x20;\t  \nmore'),
+    )
+    // Blanks that do not end in two spaces read as a soft break everywhere.
+    await typed(around('See ex  \t\nmore'), 'See ex', [
+      [' ', around('See ex&#x20;\nmore')],
+    ])
+  })
+
   test(`a break written as spaces keeps its spelling when its text is edited elsewhere (${label})`, async () => {
     await typed(around('See foo&#x20;  \nbar'), 'See', [
       ['y', around('Seey foo&#x20;  \nbar')],
