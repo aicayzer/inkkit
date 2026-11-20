@@ -1012,20 +1012,21 @@ describe('pairs are tracked only through typing inside them', () => {
       expect(editor.snapshot().text).toBe('())')
     }))
 
-  test('a closer pasted before the tracked one is ordinary, and so is the tracked one', () =>
+  test('text with a closer pasted before the tracked one leaves both ordinary', () =>
     withPairing('|', ({ plain, browserType, shown }) => {
       browserType('(')
       expect(shown()).toBe('(|)')
-      plain.setRangeText(')', 1, 1, 'end')
+      plain.setRangeText('a)', 1, 1, 'end')
       plain.dispatchEvent(
         new InputEvent('input', {
           bubbles: true,
           inputType: 'insertFromPaste',
         }),
       )
-      expect(shown()).toBe('()|)')
+      expect(shown()).toBe('(a)|)')
+      // By hand the closer is typed in: it does not step over the one that follows.
       browserType(')')
-      expect(shown()).toBe('())|)')
+      expect(shown()).toBe('(a))|)')
     }))
 
   test('a drop, a replacement and a cut forget the pair', async () => {

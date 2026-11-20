@@ -144,13 +144,15 @@ test.describe('source mode', () => {
   }) => {
     await open(page, 'ab\n', 'ab', 'source', { indentWidth: 2 })
     const focused = () =>
-      page.evaluate(() => document.activeElement?.tagName === 'TEXTAREA')
+      page.evaluate(() =>
+        document.activeElement?.classList.contains('inkkit-plain'),
+      )
     await page.keyboard.press('Tab')
-    await saved(page).toBe('ab  \n')
+    await saved(page).toBe('ab\t\n')
     expect(await focused()).toBe(true)
     await page.keyboard.press('Escape')
     await page.keyboard.press('Tab')
-    await saved(page).toBe('ab  \n')
+    await saved(page).toBe('ab\t\n')
     expect(await focused()).toBe(false)
     await open(page, 'ab\n', 'ab', 'source', { indentWidth: 2 })
     await page.keyboard.press('Escape')
@@ -160,7 +162,7 @@ test.describe('source mode', () => {
     // Back in the source, Tab indents again.
     await open(page, 'ab\n', 'ab', 'source', { indentWidth: 2 })
     await page.keyboard.press('Tab')
-    await saved(page).toBe('ab  \n')
+    await saved(page).toBe('ab\t\n')
   })
 
   test('Return reads the Markdown around the caret', async ({ page }) => {

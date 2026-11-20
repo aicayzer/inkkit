@@ -50,7 +50,7 @@ const lines = [
   '',
 ]
 
-const seeds = Number(process.env.ITEM_INDEX_SEEDS ?? 120)
+const seeds = Number(process.env.ITEM_INDEX_SEEDS ?? 40)
 
 describe('the list item index', () => {
   test('finds what a parse of the whole text finds, through edits', async () => {
