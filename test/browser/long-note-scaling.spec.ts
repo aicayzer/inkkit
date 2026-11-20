@@ -2,12 +2,16 @@ import { keyToFrame } from './key-timing'
 import { expect, test } from '@playwright/test'
 
 // The second run turns on both display options, so the fold controls and line numbers are in
-// the measured work. Its note also holds a code block every 500 paragraphs.
-for (const display of [false, true])
-  test(`long-note editing avoids quadratic interactive work${display ? ' with display options on' : ''}`, async ({
+// the measured work. Its note also holds a code block every 500 paragraphs. The third folds every
+// section but the one being edited, in a note with a heading every five blocks, so the cost of
+// many folded sections is in the measured work.
+for (const mode of ['plain', 'display', 'folded'] as const) {
+  const display = mode !== 'plain'
+  const folded = mode === 'folded'
+  test(`long-note editing avoids quadratic interactive work${display ? ' with display options on' : ''}${folded ? ' and every section folded' : ''}`, async ({
     page,
   }) => {
-    test.setTimeout(90_000)
+    test.setTimeout(folded ? 300_000 : 90_000)
     const samples: Record<number, Record<string, number>[]> = {}
     for (let run = 0; run < 3; run++) {
       for (const size of [1000, 4000]) {
@@ -16,11 +20,11 @@ for (const display of [false, true])
         )
         await page.waitForFunction(() => window.inkkitPlayground?.observe)
         const result = await page.evaluate(
-          async ({ size, display }) => {
+          async ({ size, display, folded }) => {
             const api = window.inkkitPlayground
             const text =
               Array.from({ length: size }, (_, i) =>
-                i % 100 === 0
+                i % (folded ? 5 : 100) === 0
                   ? `## Heading ${i}`
                   : display && i % 500 === 50
                     ? '```js\nconst a = 1\nconst b = 2\nconst c = 3\n```'
@@ -31,6 +35,12 @@ for (const display of [false, true])
               await api.operation('display', {
                 preferences: { foldHeadings: true, codeLineNumbers: true },
               })
+            if (folded)
+              for (const button of document.querySelectorAll<HTMLElement>(
+                '[data-inkkit-heading-toggle]',
+              ))
+                button.click()
+            // Finding the paragraph opens its section; every other section stays folded.
             const result: Record<string, number> = {}
             const timed = async (name: string, action: () => unknown) => {
               const start = performance.now()
@@ -100,7 +110,7 @@ for (const display of [false, true])
             )
             return result
           },
-          { size, display },
+          { size, display, folded },
         )
         await page.locator('.inkkit-root .ProseMirror.editor').focus()
         const beforeEnter = await page.evaluate(
@@ -117,6 +127,26 @@ for (const display of [false, true])
     }
     const median = (size: number, name: string) =>
       samples[size]!.map((sample) => sample[name]!).sort((a, b) => a - b)[1]!
+    if (process.env.INKKIT_SCALING_REPORT)
+      console.log(
+        `${mode} ${test.info().project.name} ${JSON.stringify(
+          Object.fromEntries(
+            [1000, 4000].map((size) => [
+              size,
+              Object.fromEntries(
+                Object.keys(samples[size]![0]!).map((name) => [
+                  name,
+                  Math.round(median(size, name) * 10) / 10,
+                ]),
+              ),
+            ]),
+          ),
+        )}`,
+      )
+    // With every block hidden, ProseMirror itself looks at each top-level decoration for each
+    // block on every update, so the cost there grows with the square of the note. That budget is
+    // the square of the size ratio. `test/display-fold.test.ts` bounds the fold plugin's own reads.
+    const factor = folded ? 16 : 8
     // Four times the document may cost linearly more. The small timer allowance absorbs
     // timer granularity and shared-runner noise; quadratic paths exceed this budget.
     for (const name of [
@@ -129,10 +159,11 @@ for (const display of [false, true])
       expect(
         median(4000, name),
         `${name}: ${JSON.stringify(samples)}`,
-      ).toBeLessThan(median(1000, name) * 8 + 10)
+      ).toBeLessThan(median(1000, name) * factor + 10)
     // Selection has a separate deterministic traversal guard. Its DOM geometry work
     // has a wider allowance on shared WebKit hosts.
     expect(median(4000, 'selectAll')).toBeLessThan(
-      median(1000, 'selectAll') * 8 + 20,
+      median(1000, 'selectAll') * factor + 20,
     )
   })
+}

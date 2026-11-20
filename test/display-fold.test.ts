@@ -1,5 +1,6 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
+import { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitError, type EditorOptions } from '../src/core'
@@ -731,6 +732,35 @@ test('moving a folded heading keeps its fold through undo and redo', () =>
         'false',
       )
     }
+  }))
+
+test('an edit in an open section reads the document no more often for more folded sections', () =>
+  withEditor(fold, (mounted) => {
+    // Reads of the top-level blocks while the state takes one typed character, with every section
+    // but the last folded. The count must not grow with the number of folds.
+    const reads = (sections: number) => {
+      load(
+        mounted,
+        Array.from(
+          { length: sections },
+          (_, i) => `# Section ${i}\n\nfirst ${i}\n\nsecond ${i}\n`,
+        ).join('\n'),
+      )
+      for (const button of buttons(mounted).slice(0, -1)) button.click()
+      const v = view(mounted)
+      expect(foldedHeadings(v.state)).toHaveLength(sections - 1)
+      const at = v.state.doc.content.size - 3
+      const spy = vi.spyOn(ProseNode.prototype, 'forEach')
+      try {
+        v.state.apply(v.state.tr.insertText('x', at))
+        return spy.mock.calls.length
+      } finally {
+        spy.mockRestore()
+      }
+    }
+    const few = reads(10)
+    expect(few).toBeLessThan(10)
+    expect(reads(40)).toBe(few)
   }))
 
 test('the same display preferences announce nothing and a change announces once', () =>

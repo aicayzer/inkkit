@@ -216,11 +216,16 @@ test('line numbers sit beside the first line of each text line, with and without
         ...document.querySelectorAll<HTMLElement>('.inkkit-line-number'),
       ].map((element) => {
         const rect = element.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        // The number is drawn on the entry's first line, and a wrapped line makes the entry taller.
+        const lineHeight =
+          Number.parseFloat(style.lineHeight) ||
+          Number.parseFloat(style.fontSize) * 1.5
         return {
           line: element.getAttribute('data-inkkit-line'),
           top: rect.top,
-          bottom: rect.bottom,
-          right: rect.right,
+          bottom: rect.top + lineHeight,
+          right: rect.left + Number.parseFloat(style.paddingInlineStart),
         }
       })
       // The first character of each text line, found after each newline.
@@ -264,7 +269,7 @@ test('line numbers sit beside the first line of each text line, with and without
       const middle = (number.top + number.bottom) / 2
       expect(middle).toBeGreaterThan(start.top - 2)
       expect(middle).toBeLessThan(start.bottom + 2)
-      expect(number.right).toBeLessThan(start.left)
+      expect(number.right).toBeLessThanOrEqual(start.left + 0.5)
     }
     if (wrapped) {
       // The long line wrapped, so a continuation line exists and aligns with its first line.
@@ -274,6 +279,86 @@ test('line numbers sit beside the first line of each text line, with and without
       )
     }
   }
+})
+
+test('line numbers stay beside their lines after a font change with no edit and no resize', async ({
+  page,
+  openFixture,
+}) => {
+  const longer = 'word '.repeat(300).trim()
+  const text = `\`\`\`\nfirst\n${longer}\nmiddle ${long}\nlast\n\`\`\`\n`
+  await open(page, openFixture, text, { codeLineNumbers: true })
+  await page.locator('.ProseMirror pre').hover()
+  await page.getByRole('button', { name: 'Code language' }).click()
+  await page.getByRole('button', { name: 'Wrap code' }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.ProseMirror pre')).toHaveClass(
+    /inkkit-code-wrapped/,
+  )
+  /** How far each entry starts above the first character of its text line. */
+  const offsets = () =>
+    page.evaluate(() => {
+      const code = document.querySelector('.ProseMirror pre > code')!
+      const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) =>
+          node.parentElement?.closest('.inkkit-code-controls')
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT,
+      })
+      const tops: number[] = []
+      let starting = true
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const data = node.textContent ?? ''
+        for (let at = 0; at < data.length; at++) {
+          if (starting) {
+            const range = document.createRange()
+            range.setStart(node, at)
+            range.setEnd(node, at + 1)
+            tops.push(range.getClientRects()[0]!.top)
+            starting = false
+          }
+          if (data[at] === '\n') starting = true
+        }
+      }
+      const entries = [
+        ...document.querySelectorAll<HTMLElement>('.inkkit-line-number'),
+      ]
+      const box = code.getBoundingClientRect()
+      return {
+        gaps: entries.map(
+          (entry, index) =>
+            Math.round(
+              (entry.getBoundingClientRect().top - tops[index]!) * 10,
+            ) / 10,
+        ),
+        // The line's own height shows whether the swap changed where lines break.
+        heights: entries.map((entry) =>
+          Math.round(entry.getBoundingClientRect().height),
+        ),
+        box: [Math.round(box.width), Math.round(box.height)],
+      }
+    })
+  const before = await offsets()
+  expect(before.gaps).toHaveLength(4)
+  // The gap is the line's half-leading, the same for every line when the numbers are level.
+  const level = (gaps: number[]) =>
+    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThan(1.5)
+  level(before.gaps)
+  await page.locator('.inkkit-root').evaluate((root) => {
+    root.style.setProperty('--inkkit-monospace-font', 'serif')
+  })
+  await expect(page.locator('.ProseMirror pre > code')).toHaveCSS(
+    'font-family',
+    'serif',
+  )
+  // The swap reflows the wrapped lines with no edit and no change to the box's width.
+  await expect
+    .poll(async () => (await offsets()).heights)
+    .not.toEqual(before.heights)
+  const after = await offsets()
+  // The start margin is in `ch`, so the width moves by a pixel or two with the font and no more.
+  expect(Math.abs(after.box[0]! - before.box[0]!)).toBeLessThanOrEqual(2)
+  level(after.gaps)
 })
 
 test('line numbers are not copied, selected or printed', async ({

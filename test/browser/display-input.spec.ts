@@ -13,6 +13,7 @@ declare global {
   interface Window {
     displayEditor: InkKitEditor
     displayGeneration: number
+    releaseClipboard?: () => void
   }
 }
 
@@ -20,11 +21,13 @@ async function mount(
   page: Page,
   text: string,
   options: EditorOptions = {},
+  /** A host clipboard whose write stays pending until the test releases it. */
+  deferredClipboard = false,
 ): Promise<void> {
   await page.goto('/')
   await page.waitForFunction(() => Boolean(window.inkkitPlayground))
   await page.evaluate(
-    async ({ moduleUrl, text, options }) => {
+    async ({ moduleUrl, text, options, deferredClipboard }) => {
       const { InkKitEditor } = await import(moduleUrl)
       document.body.replaceChildren()
       document.body.style.cssText = 'margin:0;padding:10px;width:620px'
@@ -34,7 +37,17 @@ async function mount(
       document.body.append(root)
       const editor = await InkKitEditor.mount(
         root,
-        { changed() {} },
+        {
+          changed() {},
+          ...(deferredClipboard
+            ? {
+                clipboard: () =>
+                  new Promise<void>((resolve) => {
+                    window.releaseClipboard = resolve
+                  }),
+              }
+            : {}),
+        },
         { rendering: { drawnSelection: false }, ...options },
       )
       window.displayGeneration = 1
@@ -46,7 +59,7 @@ async function mount(
       })
       window.displayEditor = editor
     },
-    { moduleUrl, text, options },
+    { moduleUrl, text, options, deferredClipboard },
   )
 }
 
@@ -72,9 +85,13 @@ const caret = (page: Page) =>
   page.evaluate(() => {
     const selection = getSelection()!
     const node = selection.anchorNode
-    const block = (
+    const closest = (
       node instanceof Element ? node : node?.parentElement
     )?.closest('p,h1,h2,h3,h4,h5,h6,pre')
+    // A numbered block also holds the gutter, which is not part of its text.
+    const block = closest?.matches('pre')
+      ? (closest.querySelector(':scope > code') ?? closest)
+      : closest
     if (!block || !node) return null
     const range = document.createRange()
     range.selectNodeContents(block)
@@ -268,6 +285,13 @@ async function select(page: Page, how: 'double click' | 'range', text: string) {
     const walker = document.createTreeWalker(
       document.querySelector('#display-editor .ProseMirror')!,
       NodeFilter.SHOW_TEXT,
+      {
+        // The gutter's hidden copy of each code line is layout, not text to select.
+        acceptNode: (node) =>
+          node.parentElement?.closest('.inkkit-code-gutter')
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT,
+      },
     )
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const at = node.textContent!.indexOf(text)
@@ -338,10 +362,12 @@ for (const drawn of [false, true])
 
 const outline = '# One\n\nHidden\n\n# Two\n'
 
-// A key that deletes, as each engine acts on it. One a given engine does not bind changes nothing,
-// which is also a pass: what matters is that hidden text is never lost. A key that deletes forward
-// is tried at the end of the folded heading, and one that deletes backward at the start of the
-// heading that follows the section.
+// Keys that delete, by what each platform binds them to. The browser decides, so a key is only
+// asserted to act where its binding is documented: Shift+Delete is Cut off macOS, the emacs
+// Control keys and the Alt and Meta word and line deletions are macOS bindings, and Linux and
+// Windows put word deletion on Control. A key outside its platform's list is still pressed, and
+// the folded text must stay as it was, which is the property that matters.
+const mac = process.platform === 'darwin'
 const forward = [
   'Delete',
   'Shift+Delete',
@@ -360,6 +386,23 @@ const backward = [
   'Meta+Backspace',
   'Control+h',
 ]
+/** Keys that delete on every platform, so Linux CI runs at least these two. */
+const everywhere = new Set(['Delete', 'Backspace'])
+const bound = new Set(
+  mac
+    ? [
+        ...everywhere,
+        'Shift+Delete',
+        'Alt+Delete',
+        'Control+d',
+        'Control+k',
+        'Shift+Backspace',
+        'Alt+Backspace',
+        'Meta+Backspace',
+        'Control+h',
+      ]
+    : everywhere,
+)
 
 for (const [keys, place] of [
   [forward, 'after the heading'],
@@ -378,15 +421,47 @@ for (const [keys, place] of [
         expect(await find(page, 'Two')).toBe(true)
         await page.keyboard.press('ArrowLeft')
       }
+      const before = await caret(page)
       await page.keyboard.press(key)
       // Whatever the key did, the folded paragraph is exactly as it was.
-      expect(await saved(page)).toContain('\nHidden\n')
       expect(await saved(page)).toBe(outline)
+      if (!bound.has(key)) return
+      // A key the platform binds to a deletion that reaches the hidden text opens the section
+      // instead, or at least moves the caret: it is never inert.
+      const opened =
+        (await toggle(page, 'Fold section One').count()) === 1 &&
+        (await toggle(page, 'Fold section One').getAttribute(
+          'aria-expanded',
+        )) === 'true'
+      expect(
+        opened || JSON.stringify(await caret(page)) !== JSON.stringify(before),
+        `${key} did nothing`,
+      ).toBe(true)
     })
+
+test('Delete after a folded heading opens the section and keeps its text', async ({
+  page,
+}) => {
+  await mount(page, outline, { display: { foldHeadings: true } })
+  await toggle(page, 'Fold section One').click()
+  await page.locator('.ProseMirror h1').first().click()
+  await page.keyboard.press('End')
+  await page.keyboard.press('Delete')
+  expect(await saved(page)).toBe(outline)
+  await expect(page.getByText('Hidden')).toBeVisible()
+  await expect(toggle(page, 'Fold section One')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  )
+})
 
 test('Shift+Delete after a folded heading opens the section and keeps its text', async ({
   page,
 }) => {
+  test.skip(
+    !mac,
+    'Shift+Delete is Cut, not a forward deletion, on Linux and Windows, so a collapsed caret does nothing',
+  )
   await mount(page, outline, { display: { foldHeadings: true } })
   await toggle(page, 'Fold section One').click()
   await page.locator('.ProseMirror h1').first().click()
@@ -400,48 +475,170 @@ test('Shift+Delete after a folded heading opens the section and keeps its text',
   )
 })
 
-test('cut, paste and drop over a selection that ends in a folded heading keep the hidden text', async ({
-  page,
-}) => {
-  const source = 'Intro\n\n# One\n\nHidden\n\n# Two\n'
-  const select = async () => {
-    await mount(page, source, { display: { foldHeadings: true } })
-    await toggle(page, 'Fold section One').click()
-    await page.evaluate(() => {
-      const editor = window.displayEditor
-      const snapshot = editor.textSnapshot()
-      editor.selectTextRange({
-        snapshotId: snapshot.snapshotId,
-        from: 0,
-        to: snapshot.text.indexOf('One') + 3,
-      })
-    })
-  }
-  const hiddenKept = async () => {
-    const text = await saved(page)
-    expect(text.split('Hidden')).toHaveLength(2)
-    expect(text).toContain('# Two')
-  }
-  await select()
-  await page.keyboard.press('ControlOrMeta+x')
-  await hiddenKept()
+// A selection from partway into a folded heading to partway into the next one, with the hidden
+// paragraph between. Every input reaches it only after the section has opened, so each acts on
+// text the person can see.
+const reachSource = 'Intro\n\n# One\n\nHidden words\n\n# Two\n\ntail\n'
 
-  await select()
+async function reaching(page: Page, source = reachSource, deferred = false) {
+  await mount(page, source, { display: { foldHeadings: true } }, deferred)
+  await toggle(page, 'Fold section One').click()
+  await expect(page.getByText('Hidden words')).toBeHidden()
   await page.evaluate(() => {
-    const data = new DataTransfer()
-    data.setData('text/plain', 'Pasted\n\nParagraphs')
+    const editor = window.displayEditor
+    const snapshot = editor.textSnapshot()
+    editor.selectTextRange(
+      {
+        snapshotId: snapshot.snapshotId,
+        from: snapshot.text.indexOf('One') + 1,
+        to: snapshot.text.indexOf('Two') + 2,
+      },
+      { focus: true },
+    )
+  })
+  // The selection that reached the hidden text opened the section in the same update.
+  await expect(page.getByText('Hidden words')).toBeVisible()
+  await expect(toggle(page, 'Fold section One')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  )
+}
+
+const paste = (page: Page, data: Record<string, string>) =>
+  page.evaluate((data) => {
+    const transfer = new DataTransfer()
+    for (const [type, value] of Object.entries(data))
+      transfer.setData(type, value)
     document.querySelector('#display-editor .ProseMirror')!.dispatchEvent(
       new ClipboardEvent('paste', {
-        clipboardData: data,
+        clipboardData: transfer,
         bubbles: true,
         cancelable: true,
       }),
     )
-  })
-  await hiddenKept()
+  }, data)
 
-  await select()
-  const target = await page.locator('.ProseMirror h1').first().boundingBox()
+for (const [name, act, expected] of [
+  [
+    'a forwarded Backspace',
+    (page: Page) =>
+      page.evaluate(() =>
+        window.displayEditor.keyDown(
+          { key: 'Backspace' },
+          window.displayGeneration,
+        ),
+      ),
+    '# Oo',
+  ],
+  [
+    'a forwarded Delete',
+    (page: Page) =>
+      page.evaluate(() =>
+        window.displayEditor.keyDown(
+          { key: 'Delete' },
+          window.displayGeneration,
+        ),
+      ),
+    '# Oo',
+  ],
+  [
+    'buffered insertText',
+    (page: Page) =>
+      page.evaluate(() =>
+        window.displayEditor.insertText('x', window.displayGeneration),
+      ),
+    '# Oxo',
+  ],
+  [
+    'a real Backspace',
+    (page: Page) => page.keyboard.press('Backspace'),
+    '# Oo',
+  ],
+  ['real typing', (page: Page) => page.keyboard.type('x'), '# Oxo'],
+  [
+    'a plain text paste',
+    (page: Page) => paste(page, { 'text/plain': 'Pasted' }),
+    '# OPastedo',
+  ],
+  [
+    'an HTML paste',
+    (page: Page) =>
+      paste(page, {
+        'text/html': '<p>Pasted</p>',
+        'text/plain': 'Pasted',
+      }),
+    '# OPastedo',
+  ],
+] as const)
+  test(`${name} over a selection that reaches folded text acts on shown text`, async ({
+    page,
+  }) => {
+    await reaching(page)
+    await act(page)
+    await expect.poll(() => saved(page)).toBe(`Intro\n\n${expected}\n\ntail\n`)
+  })
+
+test('a paste on the plainText route over a selection that reaches folded text acts on shown text', async ({
+  page,
+}) => {
+  await reaching(page)
+  await page.evaluate(() =>
+    window.displayEditor.setTextInputPreferences({ paste: 'plainText' }),
+  )
+  await paste(page, { 'text/plain': 'Pasted', 'text/html': '<p>Pasted</p>' })
+  await expect.poll(() => saved(page)).toBe('Intro\n\n# OPastedo\n\ntail\n')
+})
+
+test('a cut over a selection that reaches folded text removes only what was shown', async ({
+  page,
+}) => {
+  await reaching(page)
+  await page.keyboard.press('ControlOrMeta+x')
+  await expect.poll(() => saved(page)).toBe('Intro\n\n# Oo\n\ntail\n')
+})
+
+const diagramSource =
+  'Intro\n\n# One\n\nHidden words\n\n```mermaid\ngraph TD\n  A --> B\n```\n\n# Two\n\ntail\n'
+
+test('a deferred cut deletes the range it captured, not whatever is selected when the host finishes', async ({
+  page,
+}) => {
+  await reaching(page, diagramSource, true)
+  await page.keyboard.press('ControlOrMeta+x')
+  await expect
+    .poll(() => page.evaluate(() => !!window.releaseClipboard))
+    .toBe(true)
+  // Select All while the host clipboard write is pending.
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.evaluate(() => window.releaseClipboard!())
+  // Only the captured range went, the text and diagram it held having been shown when it was
+  // captured; the Select All did not widen it.
+  await expect.poll(() => saved(page)).toBe('Intro\n\n# Oo\n\ntail\n')
+})
+
+test('a deferred cut does not delete folded text when the section folds again before the host finishes', async ({
+  page,
+}) => {
+  await reaching(page, diagramSource, true)
+  await page.keyboard.press('ControlOrMeta+x')
+  await expect
+    .poll(() => page.evaluate(() => !!window.releaseClipboard))
+    .toBe(true)
+  await page.keyboard.press('ControlOrMeta+a')
+  // The person folds the section again with everything selected, which leaves it folded.
+  await toggle(page, 'Fold section One').click()
+  await expect(page.getByText('Hidden words')).toBeHidden()
+  await page.evaluate(() => window.releaseClipboard!())
+  // The captured range covers the folded text without covering its section, so nothing goes.
+  await expect.poll(() => saved(page)).toBe(diagramSource)
+  await expect(page.getByText('Hidden words')).toBeVisible()
+})
+
+test('a drop over a selection that reaches folded text keeps the hidden text', async ({
+  page,
+}) => {
+  await reaching(page)
+  const target = await page.locator('.ProseMirror p').first().boundingBox()
   await page.evaluate(
     ({ x, y }) => {
       const data = new DataTransfer()
@@ -460,7 +657,33 @@ test('cut, paste and drop over a selection that ends in a folded heading keep th
     },
     { x: target!.x + target!.width - 2, y: target!.y + target!.height / 2 },
   )
-  await hiddenKept()
+  await expect.poll(() => saved(page)).toContain('Dropped')
+  expect(await saved(page)).toContain('Hidden words')
+})
+
+test('a composition over a selection that reaches folded text replaces the shown selection', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium',
+    'Only Chromium lets a test drive an input method, through the DevTools Protocol',
+  )
+  await reaching(page)
+  const session = await page.context().newCDPSession(page)
+  await session.send('Input.imeSetComposition', {
+    text: 'に',
+    selectionStart: 1,
+    selectionEnd: 1,
+  })
+  await session.send('Input.imeSetComposition', {
+    text: '日本',
+    selectionStart: 2,
+    selectionEnd: 2,
+  })
+  await session.send('Input.insertText', { text: '日本' })
+  // The section was open before the first deletion, so nothing opened or re-rendered mid-way.
+  expect(await saved(page)).toBe('Intro\n\n# O日本o\n\ntail\n')
 })
 
 test('a selection that covers a whole folded section deletes it', async ({
@@ -754,4 +977,17 @@ test('moving a folded heading keeps it folded', async ({ page }) => {
   await expect(page.getByText('Intro', { exact: true })).toBeHidden()
   await expect(page.getByText('Body', { exact: true })).toBeHidden()
   await expect(page.getByText('Two', { exact: true })).toBeVisible()
+  // Undo and redo of the move keep the fold on the heading.
+  for (const [step, text, body] of [
+    ['undo', 'Intro\n\n# One\n\nBody\n\n# Two\n', 'Body'],
+    ['redo', '# One\n\nIntro\n\nBody\n\n# Two\n', 'Body'],
+  ] as const) {
+    await page.evaluate((step) => window.displayEditor[step](), step)
+    expect(await saved(page)).toBe(text)
+    await expect(toggle(page, 'Unfold section One')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    await expect(page.getByText(body, { exact: true })).toBeHidden()
+  }
 })
