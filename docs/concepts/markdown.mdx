@@ -149,10 +149,10 @@ The `@aicayzer/inkkit/core` entry excludes Pele and DOMPurify: diagram fences st
 
 - **Inline links** keep their form and destination when you edit their text, even when the text matches the destination.
 - **Formatting around a whole link**, such as `**[docs](https://example.com)**`, stays outside the link when you edit the link text, for inline and reference links. Text typed directly against the opening delimiter moves the formatting inside the link, as in `X[**docs**](https://example.com)`, because Markdown doesn't start bold text between a letter and `[`.
-- **Bare addresses**, such as `https://example.com`, `www.example.com` and `ada@example.com`, link to their own text and stay bare while the text is still an address. Typing an address into text links it.
+- **Bare addresses**, such as `https://example.com`, `www.example.com` and `ada@example.com`, link to their own text and stay bare while the text is still an address. Typing an address into text links it. Formatting that covers a bare address and the text beside it is written once around both: typing `.` at the end of `_https://example.com_` saves `_<https://example.com>._`.
 - **Angle autolinks**, such as `<https://example.com>`, keep their brackets. Typing the closing `>` makes the link.
 - **Code:** an address inside inline code isn't linked.
-- **Spaces:** a space typed after a bare URL at the end of a block isn't saved, so the URL stays bare. See [Spaces at the end of a block](/concepts/preservation#when-a-block-is-written-afresh). A space or tab typed after a bare URL before a soft line break is saved with the URL in angle brackets, such as `<https://example.com>&#x20;`, because a bare URL would take in the encoded space. A `www.` address is saved as `[www.example.com](http://www.example.com)` instead, and an email address stays bare. The URL is saved bare again once that space is no longer the last character on its line.
+- **Spaces:** a space typed after a bare URL at the end of a block isn't saved, so the URL stays bare. See [Spaces at the end of a block](/concepts/preservation#when-a-block-is-written-afresh). When typing or deleting leaves a space or tab after a bare URL before a soft line break, the space is saved with the URL in angle brackets, such as `<https://example.com>&#x20;`, because a bare URL would take in the encoded space. A `www.` address is saved as `[www.example.com](http://www.example.com)` instead, and an email address stays bare. The URL is saved bare again once that space is no longer the last character on its line. Typing a space after an address that ends in a character reference, such as `https://example.com&amp;`, keeps the link's target.
 
 ### Typing at a link's edges
 
@@ -169,9 +169,9 @@ A primary click with Mod (Command on Apple platforms, Control elsewhere) calls `
 ## Line breaks
 
 - **Shift+Enter** inserts a hard line break, saved as a backslash and a line ending. Tables and ATX headings save it as `<br />` so the row or heading stays on one line, and so does a break directly before an inline HTML comment.
-- **Authored breaks** keep their spelling: a backslash, two trailing spaces, or `<br>` in any of its forms. A break written as trailing spaces is saved as a backslash once a space or tab comes before it, because Markdown would read that space as part of the break.
+- **Authored breaks** keep their spelling: a backslash, two trailing spaces, or `<br>` in any of its forms. A break written as trailing spaces is saved as a backslash once a space or tab comes before it, because Markdown would read that space as part of the break. An encoded space, such as `&#x20;`, isn't read that way, so the break keeps its spelling.
 - **A break at the end of a paragraph or setext heading** stays pending: snapshots leave it out until text follows it, because Markdown can't represent it. Reopening the snapshot drops the empty line. Spaces before or after a pending break are left out with it.
-- **Soft line breaks**, single line endings inside a paragraph, are kept as written.
+- **Soft line breaks**, single line endings inside a paragraph, are kept as written. Markdown drops spaces and tabs at the end of a line, so when an edit leaves a line ending in one, it's saved as `&#x20;` in place of any spaces or tabs written there.
 - **Deleting all the text of a line** inside a paragraph also deletes its line ending, soft or hard, in the same step, because Markdown can't represent most empty lines inside a paragraph. One Undo restores both.
 - **Empty paragraphs** are saved as a `<br />` line, so they survive reopening.
 
