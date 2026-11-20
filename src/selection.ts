@@ -9,6 +9,34 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { SelectionLayer } from './drawn-selection'
 
+/** A painted range and where it was, to tell whether the DOM under it has since been replaced. */
+interface Bounds {
+  range: Range
+  start: Node
+  startOffset: number
+  end: Node
+  endOffset: number
+}
+
+const bounds = (range: Range): Bounds => ({
+  range,
+  start: range.startContainer,
+  startOffset: range.startOffset,
+  end: range.endContainer,
+  endOffset: range.endOffset,
+})
+
+/**
+ * Whether a range still holds the place it was painted at. A DOM range follows its text as
+ * ProseMirror edits it, but when a decoration or a view replaces the nodes under it the range
+ * moves to their parent, and what it covers is no longer the selected text.
+ */
+const unmoved = (painted: Bounds): boolean =>
+  painted.range.startContainer === painted.start &&
+  painted.range.startOffset === painted.startOffset &&
+  painted.range.endContainer === painted.end &&
+  painted.range.endOffset === painted.endOffset
+
 /** The stylesheet paints the selection under this name. */
 const name = 'inkkit-selection'
 const activeClass = 'inkkit-selection-active'
@@ -222,7 +250,12 @@ class Painter {
   private owner: EditorView | null = null
   private windowFocused: boolean
   private readonly hostActivation = new WeakMap<EditorView, boolean>()
-  private painted?: { owner: EditorView; doc: ProseNode; selection: Selection }
+  private painted?: {
+    owner: EditorView
+    doc: ProseNode
+    selection: Selection
+    ranges: Bounds[]
+  }
   private readonly layers = new Map<EditorView, SelectionLayer>()
 
   hostActive(view: EditorView, active: boolean | null): void {
@@ -326,7 +359,8 @@ class Painter {
       owner &&
       this.painted?.owner === owner &&
       this.painted.doc === owner.state.doc &&
-      this.painted.selection.eq(owner.state.selection)
+      this.painted.selection.eq(owner.state.selection) &&
+      this.painted.ranges.every(unmoved)
     )
       return
     for (const [view, layer] of this.layers) if (view !== owner) layer.clear()
@@ -366,6 +400,7 @@ class Painter {
       owner,
       doc: owner.state.doc,
       selection: owner.state.selection,
+      ranges: ranges.map(bounds),
     }
   }
 }
