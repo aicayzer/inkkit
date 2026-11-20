@@ -1007,7 +1007,7 @@ A host whose native layer receives typing or keys before the web view does passe
 
 `insertText(text: string, generation: number): boolean`
 
-Inserts exactly `text` at the selection and returns `true`. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode.
+Inserts exactly `text` at the selection and returns `true`. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode. Text of more than one character, and every other call that changes the document, makes the brackets around it ordinary characters, as [tracked pairs](/reference/options#paired-brackets-and-quotes) describes.
 
 {/* @api InkKitEditor.keyDown */}
 

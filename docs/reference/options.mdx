@@ -489,10 +489,12 @@ With `textInput.pairBrackets` set to `true`, typing `(`, `[`, `{`, `"` or `'` al
 
 - **When it pairs:** only when the next character is the end of the line, white space or a closing bracket (`)`, `]` or `}`). A quote also needs the previous character not to be a letter or a digit, so an apostrophe in `don't` stays single.
 - **Smart punctuation:** in formatted mode with `smartPunctuation` on, a quote that opens pairs as a curly pair, `“` with `”`. A quote that smart punctuation closes doesn't pair.
-- **A selection:** a selection on one line is wrapped in the pair and stays selected, so typing another bracket nests it. A selection across lines or blocks is replaced, as it is without pairing.
+- **A selection:** a selection on one line is wrapped in the pair and stays selected, so typing another bracket nests it. A selection across lines or blocks, or across lines of a code block, is replaced, as it is without pairing. An input that replaces text and isn't typing, such as a replacement from a spelling menu, never pairs or wraps.
+- **Marks:** the closer takes the marks of its opener, and the marks stored at the caret stay stored, so a link, bold or code that you started continues across the pair, as it does when you type the same characters without pairing.
 - **Typing the closer:** a closer typed straight before the closer that pairing inserted steps over it, so you type `(a)` and get `(a)`. A closer that you typed or loaded earlier is never stepped over, and neither is one whose opener you deleted.
-- **Backspace:** Backspace between an empty pair that pairing inserted removes both characters.
-- **Saved bytes:** a sequence typed with pairing on saves the same bytes as the same characters typed with it off. Input rules, `[[` suggestions and the slash menu still work. Choosing a suggestion for `[[` also replaces the `]]` that pairing inserted.
+- **Tracked pairs:** Inkkit tracks the pairs it inserted, and a pair stays valid only through typing inside it. An edit anywhere else, a load, a paste, a drop, a cut, an undo, a redo, a replacement, any other change that a host call makes, a switch between formatted and source mode, and a change of `textInput` forget every pair. The brackets that remain are ordinary characters: Backspace deletes the opener alone, and a closer typed after them is a new one. This holds in every mode, so the saved bytes never depend on a closer that Inkkit did not insert.
+- **Backspace:** Backspace between an empty pair that pairing inserted removes both characters. A deletion that arrives as an input event with no key, as on iOS and with some input methods, does the same.
+- **Saved bytes:** a sequence typed with pairing on saves the same bytes as the same characters typed with it off. Input rules, `[[` suggestions and the slash menu still work. Choosing a suggestion for `[[` also replaces the `]]` that pairing inserted for it, and leaves the closer of an outer bracket.
 - **Undo:** an opener and its closer, and a wrapped selection, are one undo step.
 - **No pairing:** nothing pairs during composition or in a read-only editor. `insertText` rejects a stale generation, as for any edit.
 
@@ -500,9 +502,9 @@ With `textInput.pairBrackets` set to `true`, typing `(`, `[`, `{`, `"` or `'` al
 
 Return in a list item starts the next item unless `textInput.continueLists` is `false`.
 
-- **Formatted mode:** Return in a list item starts a new item, as it always has. With `continueLists` set to `false`, Return in the item's text splits the paragraph into a second paragraph inside the same item. Return in an empty paragraph still leaves the list.
+- **Formatted mode:** Return in a list item starts a new item, as it always has. With `continueLists` set to `false`, Return in the item's text splits the paragraph into a second paragraph inside the same item. An [RTF document](/concepts/rich-text) holds one paragraph in a list item, so Return there adds a line break inside the item instead. Return in an empty paragraph still leaves the list.
 - **Source mode:** Return in a Markdown list item line starts the next item with the same indentation, marker character and blockquote prefix. An ordered marker counts up and keeps its delimiter, so `9.` continues as `10.` and `1)` as `2)`. A task item continues as an unchecked task. Return in an item with no text removes its marker, and keeps the blockquote prefix. Return in the middle of an item moves the rest of the line into the new item. Return before the start of an item's text adds a plain line. A selection is replaced first.
-- **Code:** source mode never continues a line inside a fenced or indented code block, front matter, or an HTML or `%%` comment.
+- **Code:** source mode continues only a line that Inkkit's Markdown parser reads as a list item whose text starts on that line, so it never continues inside a fenced or indented code block, an HTML block, front matter (YAML or TOML, with or without a byte order mark) or a comment. A bare marker such as `-` or `1.` on its own line is an empty item, so Return removes it, except where the parser reads it as text, as after a paragraph line. Inkkit parses only the blocks around the caret, so one Return in a long note costs the list it is in rather than the whole note, and a note with a `%%` comment above the caret is parsed whole.
 - **TXT mode:** never continues a list.
 - **Line endings:** inserted line breaks follow the document's own, so a CRLF document stays CRLF.
 - **Browsers:** in a browser's source surface, Return continues a list item and leaves every other Return to the browser. With `continueLists` set to `false`, the browser inserts its plain line.
@@ -514,8 +516,8 @@ In source and TXT modes, `textInput.indent` and `textInput.indentWidth` set what
 - **Tab:** inserts one indent at the caret, which is a tab character, or `indentWidth` spaces when `indent` is `'spaces'`. A selection within one line is replaced by the indent. A selection across lines indents each line that has text, and leaves a last line alone when the selection only reaches its start. On a Markdown list item line, Tab indents the whole line, after any blockquote prefix, so the item nests.
 - **Shift-Tab:** removes one indent from the line at the caret, or from each selected line: a tab character, or up to `indentWidth` spaces. A line with no indent is left alone, and nothing is reported.
 - **Undo:** one Tab or Shift-Tab is one undo step.
-- **Browsers:** a browser's source surface keeps Tab for moving focus, so that keyboard users aren't trapped, until the host sets `indent` or `indentWidth`. With either set, Tab and Shift-Tab indent and outdent there. [`keyDown`](/reference/editor#keydown) always handles Tab in source and TXT modes, because the host has chosen to pass it.
-- **Line endings:** inserted line breaks follow the document's own.
+- **Browsers:** a browser's source surface keeps Tab for moving focus, so that keyboard users aren't trapped, until the host sets `indent` or `indentWidth`. With either set, Tab and Shift-Tab indent and outdent there, and Escape is the way out: after Escape, the next Tab or Shift-Tab moves focus instead of indenting, and the key after that indents again. [`keyDown`](/reference/editor#keydown) always handles Tab in source and TXT modes, because the host has chosen to pass it.
+- **Line endings:** each indent or outdent is a change of its own at the start of its line, so every line ending in the document stays as it was, including the mixed endings of one file. A line break that Inkkit inserts follows the document's first.
 
 ## Slash menu
 

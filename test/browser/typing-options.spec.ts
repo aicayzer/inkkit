@@ -72,6 +72,22 @@ for (const mode of ['formatted', 'source'] as const) {
       await saved(page).toBe('a (bcd) e')
     })
 
+    test('after undo and redo the brackets are ordinary: Backspace deletes the opener and a closer is typed', async ({
+      page,
+    }) => {
+      await open(page, 'a', 'a', mode, paired)
+      await page.keyboard.type('(')
+      await saved(page).toBe('a()')
+      await page.keyboard.press('ControlOrMeta+z')
+      await saved(page).toBe('a')
+      await page.keyboard.press('ControlOrMeta+Shift+z')
+      await saved(page).toBe('a()')
+      await page.keyboard.press('Backspace')
+      await saved(page).toBe('a)')
+      await page.keyboard.type(')')
+      await saved(page).toBe('a))')
+    })
+
     test('an apostrophe after a letter stays single', async ({ page }) => {
       await open(page, 'don', 'don', mode, paired)
       await page.keyboard.type("'t")
@@ -121,6 +137,42 @@ test.describe('source mode', () => {
     })
     await page.keyboard.press('Shift+Tab')
     await saved(page).toBe('ab\n')
+  })
+
+  test('Escape lets the next Tab and Shift-Tab move focus out of the source', async ({
+    page,
+  }) => {
+    await open(page, 'ab\n', 'ab', 'source', { indentWidth: 2 })
+    const focused = () =>
+      page.evaluate(() => document.activeElement?.tagName === 'TEXTAREA')
+    await page.keyboard.press('Tab')
+    await saved(page).toBe('ab  \n')
+    expect(await focused()).toBe(true)
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Tab')
+    await saved(page).toBe('ab  \n')
+    expect(await focused()).toBe(false)
+    await open(page, 'ab\n', 'ab', 'source', { indentWidth: 2 })
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Shift+Tab')
+    await saved(page).toBe('ab\n')
+    expect(await focused()).toBe(false)
+    // Back in the source, Tab indents again.
+    await open(page, 'ab\n', 'ab', 'source', { indentWidth: 2 })
+    await page.keyboard.press('Tab')
+    await saved(page).toBe('ab  \n')
+  })
+
+  test('Return reads the Markdown around the caret', async ({ page }) => {
+    await open(page, '<pre>\n- x\n</pre>\n', '- x', 'source')
+    await page.keyboard.press('Enter')
+    await saved(page).toBe('<pre>\n- x\n\n</pre>\n')
+    await open(page, '+++\n- x\n+++\n', '- x', 'source')
+    await page.keyboard.press('Enter')
+    await saved(page).toBe('+++\n- x\n\n+++\n')
+    await open(page, '-', '-', 'source')
+    await page.keyboard.press('Enter')
+    await saved(page).toBe('')
   })
 
   test('Tab indents a list item line and each line of a selection', async ({
