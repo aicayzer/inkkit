@@ -964,6 +964,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private call?: FacadeCall
   /** Changes when tracked bracket pairs are to be forgotten, as on a mode switch. */
   private pairEpoch = 0
+  /** Greater than zero while a host operation that names its own targets runs. */
+  private namingTargets = 0
   private writable = true
   private inputPreferences: TextInputPreferences = {}
   private displayState: DisplayPreferences = {}
@@ -1306,6 +1308,17 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.events.error?.(failure)
   }
 
+  /** Runs a host operation that names the text it changes, such as a replacement, which may
+   *  therefore change text a fold hides. */
+  private naming<T>(operation: () => T): T {
+    this.namingTargets++
+    try {
+      return operation()
+    } finally {
+      this.namingTargets--
+    }
+  }
+
   /** Runs a facade method for something the person did, such as a shortcut. Its failure goes to
    *  `events.error`, unless a host call such as `keyDown` is waiting for it. */
   private forPerson<T>(operation: () => T, otherwise: T): T {
@@ -1569,16 +1582,25 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
 
   /** Replaces the display preferences. A field left out takes its default. They change only what
    *  the formatted surface shows: the document, revision, history, dirty state, snapshot, copy
-   *  and print output stay as they are. Throws `composition` during text composition. */
+   *  and print output stay as they are. Preferences that equal the current ones change and
+   *  announce nothing. Throws `composition` during text composition. */
   setDisplayPreferences(preferences: DisplayPreferences): void {
     this.assertAlive()
     const checked = displayPreferences(preferences, 'preferences')
     if (this.composing)
       throw new InkKitError('composition', 'Text composition is in progress')
+    const previous = this.currentDisplay()
+    this.displayState = checked
+    const next = this.currentDisplay()
+    // The same preferences change nothing, so they announce nothing.
+    if (
+      previous.foldHeadings === next.foldHeadings &&
+      previous.codeLineNumbers === next.codeLineNumbers
+    )
+      return
     const suppressed = this.reportingSuppressed
     this.reportingSuppressed = true
     try {
-      this.displayState = checked
       applyDisplay(this.editor.ctx.get(editorViewCtx), this.currentDisplay())
     } finally {
       this.reportingSuppressed = suppressed
@@ -2058,13 +2080,16 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private dispatchTransaction(view: EditorView, tr: Transaction): void {
     // A call whose edit was refused changes nothing more; it throws when it returns.
     if (this.call?.refusal && tr.docChanged) return
-    // A person's edit that would change text a fold hides opens the fold instead, so nothing
-    // changes unseen. A host call, a history step and a source replacement name what they change.
+    // An input that would change text a fold hides opens the fold instead, so nothing changes
+    // unseen. Paste, typing, keys, cut, drop and composition get no exemption, inside a facade
+    // call or out of it. A host operation that names its own targets, a history step, a source
+    // replacement and a block move, which carries its nodes unchanged, do.
     if (
-      !this.call &&
+      !this.namingTargets &&
       !this.loading &&
       tr.docChanged &&
       tr.getMeta('addToHistory') !== false &&
+      !tr.getMeta(carriedBlocks) &&
       isWrittenEdit(tr)
     ) {
       const unfold = refuseFoldedEdit(view.state, tr)
@@ -2465,7 +2490,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     expectString(text, 'text')
     const projection = this.validateTextRange(range)
     this.assertMutation()
-    return this.search.replaceRange(range, text, projection)
+    return this.naming(() => this.search.replaceRange(range, text, projection))
   }
 
   /** Measures ranges in client coordinates, with one array of rectangles for each. It measures only
@@ -2569,7 +2594,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     expectString(replacement, 'replacement')
     this.assertMutation(expectedGeneration)
     const doc = this.editor.ctx.get(editorViewCtx).state.doc
-    const replaced = this.search.replace(search, replacement, false) > 0
+    const replaced = this.naming(
+      () => this.search.replace(search, replacement, false) > 0,
+    )
     return replaced && (replacement === search || !this.refusedRichEdit(doc))
   }
 
@@ -2584,7 +2611,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     expectString(replacement, 'replacement')
     this.assertMutation(expectedGeneration)
     const doc = this.editor.ctx.get(editorViewCtx).state.doc
-    const count = this.search.replace(search, replacement, true)
+    const count = this.naming(() =>
+      this.search.replace(search, replacement, true),
+    )
     // A replacement an RTF document can't hold is refused, so nothing was replaced.
     return count && replacement !== search && this.refusedRichEdit(doc)
       ? 0

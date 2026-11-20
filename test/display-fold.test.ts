@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { InkKitError, type EditorOptions } from '../src/core'
 import { foldedHeadings } from '../src/heading-fold'
@@ -574,7 +574,7 @@ test('a selection that covers a whole folded section may replace or delete it', 
     expect(one).toBeGreaterThan(0)
   }))
 
-test('a selection that covers only the hidden text is refused', () =>
+test('a selection that reaches the hidden text opens the section before anything acts on it', () =>
   withEditor(fold, (mounted) => {
     load(mounted, outline)
     toggleOf(mounted, 'One').click()
@@ -587,9 +587,166 @@ test('a selection that covers only the hidden text is refused', () =>
         TextSelection.create(v.state.doc, one + 4, two + 1),
       ),
     )
-    const before = mounted.editor.snapshot()
+    expect(foldedHeadings(v.state)).toEqual([])
+    expect(hidden(mounted)).toEqual([])
+    // What the person deletes is what they see selected.
     v.dispatch(v.state.tr.deleteSelection())
-    expect(mounted.editor.snapshot()).toEqual(before)
+    expect(mounted.editor.snapshot().text).toBe('# OneTwo\n')
+  }))
+
+test('every edit over a selection that reaches the hidden text acts on text that is shown', () =>
+  withEditor(fold, (mounted) => {
+    const source = 'Intro\n\n# One\n\nHidden words\n\n# Two\n'
+    const reach = () => {
+      load(mounted, source)
+      toggleOf(mounted, 'One').click()
+      const v = view(mounted)
+      const one = headingPos(v, 'One')
+      const two = headingPos(v, 'Two')
+      expect(foldedHeadings(v.state)).toHaveLength(1)
+      // Partway into the heading to partway into the next one.
+      v.dispatch(
+        v.state.tr.setSelection(
+          TextSelection.create(v.state.doc, one + 2, two + 3),
+        ),
+      )
+      expect(foldedHeadings(v.state)).toEqual([])
+      expect(hidden(mounted)).toEqual([])
+      return v
+    }
+    for (const [act, text] of [
+      [(v: EditorView) => v.dispatch(v.state.tr.deleteSelection()), '# Oo'],
+      [(v: EditorView) => v.dispatch(v.state.tr.insertText('x')), '# Oxo'],
+      [
+        () =>
+          mounted.editor.insertText('x', mounted.editor.snapshot().generation),
+        '# Oxo',
+      ],
+      [
+        () =>
+          mounted.editor.keyDown(
+            { key: 'Backspace' },
+            mounted.editor.snapshot().generation,
+          ),
+        '# Oo',
+      ],
+      [
+        () =>
+          mounted.editor.keyDown(
+            { key: 'Delete' },
+            mounted.editor.snapshot().generation,
+          ),
+        '# Oo',
+      ],
+    ] as const) {
+      act(reach())
+      // The text the edit changed was the text that was selected and shown.
+      expect(mounted.editor.snapshot().text).toBe(`Intro\n\n${text}\n`)
+    }
+  }))
+
+test('a selection that starts in the hidden text or ends in it opens the section', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, 'Intro\n\n# One\n\nHidden words\n\n# Two\n')
+    const v = view(mounted)
+    const one = headingPos(v, 'One')
+    const two = headingPos(v, 'Two')
+    for (const [from, to] of [
+      [1, one + 4 + 4],
+      [one + 4 + 4, two + 1],
+    ] as const) {
+      toggleOf(mounted, 'One').click()
+      expect(foldedHeadings(v.state)).toHaveLength(1)
+      v.dispatch(
+        v.state.tr.setSelection(TextSelection.create(v.state.doc, from, to)),
+      )
+      expect(foldedHeadings(v.state)).toEqual([])
+    }
+  }))
+
+test('select-all covers every section and leaves them folded', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, nested)
+    for (const button of buttons(mounted)) button.click()
+    const v = view(mounted)
+    const folded = foldedHeadings(v.state)
+    expect(folded.length).toBeGreaterThan(0)
+    v.dispatch(v.state.tr.setSelection(new AllSelection(v.state.doc)))
+    expect(foldedHeadings(v.state)).toEqual(folded)
+    v.dispatch(v.state.tr.deleteSelection())
+    expect(mounted.editor.snapshot().text).toBe('')
+  }))
+
+test('a deletion from a caret across the fold boundary opens the section and changes nothing', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, outline)
+    toggleOf(mounted, 'One').click()
+    const v = view(mounted)
+    const one = headingPos(v, 'One')
+    v.dispatch(
+      v.state.tr.setSelection(TextSelection.create(v.state.doc, one + 4)),
+    )
+    // The caret is at the heading's end; a deletion that joins the hidden paragraph is refused.
+    v.dispatch(v.state.tr.delete(one + 4, one + 6))
+    expect(mounted.editor.snapshot().text).toBe(outline)
+    expect(foldedHeadings(v.state)).toEqual([])
+  }))
+
+test('only a host operation that names its target may change folded text', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, 'Hidden words\n\n# One\n\nHidden words\n\n# Two\n')
+    toggleOf(mounted, 'One').click()
+    const snapshot = mounted.editor.textSnapshot()
+    const at = snapshot.text.lastIndexOf('Hidden')
+    expect(
+      mounted.editor.replaceTextRange(
+        { snapshotId: snapshot.snapshotId, from: at, to: at + 6 },
+        'Shown',
+      ),
+    ).toBe(true)
+    expect(mounted.editor.snapshot().text).toBe(
+      'Hidden words\n\n# One\n\nShown words\n\n# Two\n',
+    )
+  }))
+
+test('moving a folded heading keeps its fold through undo and redo', () =>
+  withEditor(fold, (mounted) => {
+    load(mounted, 'Intro\n\n# One\n\nBody\n\n# Two\n')
+    expect(mounted.editor.find('One')).toBe(true)
+    toggleOf(mounted, 'One').click()
+    const moved = '# One\n\nIntro\n\nBody\n\n# Two\n'
+    const original = 'Intro\n\n# One\n\nBody\n\n# Two\n'
+    expect(mounted.editor.moveBlock('up')).toBe(true)
+    expect(mounted.editor.snapshot().text).toBe(moved)
+    for (const [step, text, body] of [
+      [() => mounted.editor.undo(), original, ['Body']],
+      [() => mounted.editor.redo(), moved, ['Intro', 'Body']],
+      [() => mounted.editor.undo(), original, ['Body']],
+    ] as const) {
+      expect(step()).toBe(true)
+      expect(mounted.editor.snapshot().text).toBe(text)
+      expect(foldedHeadings(view(mounted).state)).toHaveLength(1)
+      expect(hidden(mounted)).toEqual(body)
+      expect(toggleOf(mounted, 'One').getAttribute('aria-expanded')).toBe(
+        'false',
+      )
+    }
+  }))
+
+test('the same display preferences announce nothing and a change announces once', () =>
+  withEditor({ display: { foldHeadings: true } }, (mounted) => {
+    load(mounted, outline)
+    mounted.states.length = 0
+    mounted.editor.setDisplayPreferences({ foldHeadings: true })
+    mounted.editor.setDisplayPreferences({
+      foldHeadings: true,
+      codeLineNumbers: false,
+    })
+    expect(mounted.states).toHaveLength(0)
+    mounted.editor.setDisplayPreferences({ foldHeadings: false })
+    expect(mounted.states).toHaveLength(1)
+    mounted.editor.setDisplayPreferences({ foldHeadings: false })
+    expect(mounted.states).toHaveLength(1)
   }))
 
 test('a host call names what it changes, even in folded text', () =>
