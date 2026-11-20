@@ -37,6 +37,19 @@ for (const ending of ['\n', '\r\n']) {
       ['https://example.com/p -> https://example.com/p'],
       'p',
     )
+    // GFM reads a backslash before a line ending into a bare address, so no
+    // break follows it. Its reading took the escape the probe adds, and the
+    // address kept its old target.
+    for (const address of ['https://example.com/path', 'www.example.com/path'])
+      await deleted(
+        around(`See ${address}\\\nmore`),
+        'h',
+        around(`See ${address.slice(0, -1)}\\\nmore`),
+        [
+          `${address.slice(0, -1)}\\ -> ${address.startsWith('www') ? 'http://' : ''}${address.slice(0, -1)}\\`,
+        ],
+        'pat',
+      )
     await deleted(
       around('See www.example.com/path\nmore'),
       'h',
@@ -50,6 +63,40 @@ for (const ending of ['\n', '\r\n']) {
       lines('- See https://example.com/pat\n  more\n'),
       pat,
       'pat',
+    )
+  })
+
+  test(`a backslash typed in a bare address joins it (${label})`, async () => {
+    await typed(around('See https://example.com more'), 'example.com', [
+      ['\\', around('See https://example.com\\ more')],
+      ['x', around('See https://example.com\\x more')],
+    ])
+    await typed(
+      around('See www.example.com more'),
+      'example.com',
+      [['\\', around('See www.example.com\\ more')]],
+      { targets: ['www.example.com\\ -> http://www.example.com\\'] },
+    )
+    // Typing an address with a backslash in it was refused.
+    await typed(
+      around('See  more'),
+      'See ',
+      [
+        [
+          'https://example.com/a\\b',
+          around('See https://example.com/a\\b more'),
+        ],
+      ],
+      {
+        targets: ['https://example.com/a\\b -> https://example.com/a\\b'],
+      },
+    )
+    await deleted(
+      around('See https://example.com/pa\\th more'),
+      'h',
+      around('See https://example.com/pa\\t more'),
+      ['https://example.com/pa\\t -> https://example.com/pa\\t'],
+      '\\t',
     )
   })
 

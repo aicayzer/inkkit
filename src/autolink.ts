@@ -112,8 +112,9 @@ function read(
 // GFM's own address grammar, without interpreting inline Markdown syntax.
 function literalFormattingLinks(text: string): Found | undefined {
   // Angle delimiters have their own completion and literal-paste rules. This
-  // fallback only resolves ambiguity from literal formatting delimiters.
-  if (!/[*_~`]/.test(text) || /[<>]/.test(text)) return undefined
+  // fallback only resolves ambiguity from literal formatting delimiters and
+  // backslashes, which the probe escapes and an address reads as written.
+  if (!/[*_~`\\]/.test(text) || /[<>]/.test(text)) return undefined
   const tree = fromMarkdown(`x ${text}`, {
     extensions: [
       gfmAutolinkLiteral(),
