@@ -6,11 +6,25 @@ import { modeSelectionMap } from './mode-selection'
 import type { EditingMode } from './editor'
 import type { ClipboardInput } from './types'
 import {
+  changedSource,
   editedPlainSource,
   rawOffset,
   normalizedOffset,
   type SourceProvenance,
 } from './source'
+import { ListItemIndex } from './source-items'
+import { leadingBOMLength } from './bom'
+import {
+  closerOf,
+  continueListEdit,
+  indentEdit,
+  outdentEdit,
+  pairEdit,
+  type IndentStyle,
+  type ItemsReader,
+  type SourceChange,
+  type SourceEdit,
+} from './source-typing'
 
 function hasImageFile(files: FileList): boolean {
   return [...files].some((file) => file.type.startsWith('image/'))
@@ -18,10 +32,31 @@ function hasImageFile(files: FileList): boolean {
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
+const modifierKeys: ReadonlySet<string> = new Set([
+  'Shift',
+  'Control',
+  'Alt',
+  'Meta',
+])
+
+/** The typing preferences that the source and TXT surfaces follow. */
+export interface SourceTyping {
+  pairBrackets: boolean
+  continueLists: boolean
+  indent: IndentStyle
+  /** Whether the host chose an indent, so that a browser's Tab key indents rather than moving focus. */
+  tabIndents: boolean
+  /** Whether the text is Markdown, which has list items to continue and nest. */
+  markdown: boolean
+}
+
 interface SourceRuntime {
   ready(): boolean
   literal(): boolean
   writable(): boolean
+  typing(): SourceTyping
+  /** The tree that the editor's parser reads Markdown text into. */
+  parseMarkdown(text: string): unknown
   currentText(): string
   applySource(
     text: string,
@@ -50,11 +85,55 @@ interface ModeTransition {
   reveal(): void
 }
 
+/** The input types of a composition, whose text replaces a range from its start to its commit. */
+const compositionInputs: ReadonlySet<string> = new Set([
+  'insertCompositionText',
+  'deleteCompositionText',
+  'insertFromComposition',
+])
+
+/** The deletions that a person makes with a key, apart from a cut or a drag. */
+const ownDeletions: ReadonlySet<string> = new Set([
+  'deleteContent',
+  'deleteContentBackward',
+  'deleteContentForward',
+  'deleteWordBackward',
+  'deleteWordForward',
+  'deleteSoftLineBackward',
+  'deleteSoftLineForward',
+  'deleteHardLineBackward',
+  'deleteHardLineForward',
+  'deleteEntireSoftLine',
+  'deleteEntireHardLine',
+])
+
 /** Owns the source/TXT textarea and the DOM state of its current input. */
 export class SourceSurface {
   readonly element: HTMLTextAreaElement
   private composingValue = false
   private beforeSelection?: { from: number; to: number }
+  /** The text the surface last showed, and the pairs that bracket pairing inserted into it. A
+   *  pair stays valid only through typing inside it, so each is dropped by any other edit. */
+  private known = ''
+  private pairs: Array<{ open: number; close: number }> = []
+  /** The edit that is typing, as the changes it makes to `known`, while it is being applied. A
+   *  change to the text that no such edit announced forgets every pair. */
+  private typed?: SourceChange[]
+  /** The text a composition replaces, in the text the surface last showed: where it started, and
+   *  where it ends now. A composition that stays inside a pair keeps it, from start to commit. */
+  private composition?: { from: number; to: number }
+  /** The input event that is about to change the textarea, and where its selection was. */
+  private pending?: {
+    type: string
+    data: string
+    from: number
+    to: number
+  }
+  private readonly items = new ListItemIndex((text) =>
+    this.runtime.parseMarkdown(text),
+  )
+  /** Escape was pressed, so the next Tab or Shift-Tab moves focus instead of indenting. */
+  private tabEscaped = false
 
   reconcileFormattedChange(
     markdown: string,
@@ -86,18 +165,59 @@ export class SourceSurface {
         event.preventDefault()
         return
       }
-      if (this.runtime.ready() && this.runtime.literal())
+      if (
+        event instanceof InputEvent &&
+        event.inputType === 'deleteContentBackward' &&
+        this.runtime.ready() &&
+        this.runtime.literal() &&
+        !event.isComposing &&
+        !this.composing &&
+        this.removePair()
+      ) {
+        // Input that arrives without a key, as on iOS and with some input methods.
+        event.preventDefault()
+        return
+      }
+      if (
+        this.runtime.ready() &&
+        this.runtime.literal() &&
+        event instanceof InputEvent &&
+        event.inputType === 'insertText' &&
+        event.data &&
+        !event.isComposing &&
+        !this.composing &&
+        this.pairTyped(event.data)
+      ) {
+        event.preventDefault()
+        return
+      }
+      if (this.runtime.ready() && this.runtime.literal()) {
         this.beforeSelection = {
           from: this.element.selectionStart,
           to: this.element.selectionEnd,
         }
+        this.pending = {
+          type: event instanceof InputEvent ? event.inputType : '',
+          data: event instanceof InputEvent ? (event.data ?? '') : '',
+          ...this.beforeSelection,
+        }
+      }
     })
-    this.element.addEventListener('input', () => {
+    this.element.addEventListener('input', (event) => {
       if (!this.runtime.ready() || !this.runtime.literal()) return
       if (!this.runtime.writable()) {
         this.setSourceValue(this.runtime.currentText())
         return
       }
+      // The person's own typing, deletion, Return and composition keep the pairs that they lie
+      // inside, and where each went is known from the input event that announced it. A paste, a
+      // drop, a cut, a replacement, an undo or redo that the browser made on its own, and input
+      // that nothing announced, do not.
+      const announced = this.pending
+      this.pending = undefined
+      const changes = this.ownChanges(announced, event as InputEvent)
+      if (changes) this.follow(changes, this.element.value)
+      else this.forgetPairs(this.element.value)
       try {
         this.runtime.applySource(
           editedPlainSource(this.runtime.currentText(), this.element.value),
@@ -114,8 +234,10 @@ export class SourceSurface {
     })
     this.element.addEventListener('keydown', (event) => {
       if (this.composing) return
-      if (this.runtime.keyDown(event)) event.preventDefault()
+      if (this.runtime.keyDown(event) || this.browserKey(event))
+        event.preventDefault()
     })
+    this.element.addEventListener('blur', () => (this.tabEscaped = false))
     for (const event of ['select', 'keyup', 'click'])
       this.element.addEventListener(event, () => this.runtime.publish())
     this.element.addEventListener('paste', (event) => {
@@ -158,6 +280,10 @@ export class SourceSurface {
     })
     this.element.addEventListener('compositionstart', () => {
       this.composingValue = true
+      this.composition = {
+        from: this.element.selectionStart,
+        to: this.element.selectionEnd,
+      }
       this.runtime.publish()
     })
     this.element.addEventListener('compositionend', () => {
@@ -177,9 +303,14 @@ export class SourceSurface {
   reset(): void {
     this.composingValue = false
     this.beforeSelection = undefined
+    this.pending = undefined
+    this.composition = undefined
+    // The previous note's blocks are not kept for the next one.
+    this.items.reset()
   }
 
   destroy(): void {
+    this.items.reset()
     this.element.remove()
   }
 
@@ -197,6 +328,11 @@ export class SourceSurface {
   // loses that state after undo or paste, so every replacement uses this path.
   setSourceValue(text: string): void {
     const plain = this.element
+    const shown = text.replace(/\r\n?/g, '\n')
+    if (shown !== this.known) {
+      if (this.typed) this.follow(this.typed, shown)
+      else this.forgetPairs(shown)
+    }
     if (text.length < 65_536 || !plain.isConnected || this.composing) {
       plain.value = text
       return
@@ -239,12 +375,263 @@ export class SourceSurface {
     this.runtime.applySource(source, isolated, caret, caret)
   }
 
-  keyDown({ key, metaKey, ctrlKey, altKey }: KeyboardEvent): boolean {
-    if (metaKey || ctrlKey || altKey) return false
-    if (key === 'Enter' || key === 'Tab') {
-      this.replaceLiteralSelection(key === 'Enter' ? '\n' : '\t', false)
+  /** Text that was typed, which brackets and quotes may pair or step over. One character is
+   *  typing, and keeps the pairs that are tracked. More is not, and forgets them. */
+  typeText(text: string): void {
+    const { selectionStart: start, selectionEnd: end } = this.element
+    const character = Array.from(text).length === 1 && !/[\r\n]/.test(text)
+    if (character && this.pairTyped(text)) return
+    this.asTyping(
+      character ? [{ from: start, to: end, text }] : undefined,
+      () => this.replaceLiteralSelection(text, false),
+    )
+  }
+
+  /** Runs `operation`, an edit that makes `changes` to the text and is typing inside the pairs
+   *  that it leaves alone. Without `changes` it is not typing. */
+  private asTyping(
+    changes: SourceChange[] | undefined,
+    operation: () => boolean | void,
+  ): void {
+    const before = this.typed
+    this.typed = changes
+    try {
+      operation()
+    } finally {
+      this.typed = before
+    }
+  }
+
+  /**
+   * The change that a person's own input made to the text the surface last showed, as the input
+   * event announced it, or undefined when the input is not their own typing, deletion, Return or
+   * composition. A deletion that has no selection reaches back or forward from the caret by what
+   * the text lost. The range is checked against the text, so one that does not account for it is
+   * not trusted.
+   */
+  private ownChanges(
+    announced: SourceSurface['pending'],
+    event: InputEvent,
+  ): SourceChange[] | undefined {
+    const next = this.element.value
+    const type = event.inputType
+    const delta = next.length - this.known.length
+    let from: number
+    let to: number
+    if (
+      compositionInputs.has(type) ||
+      event.isComposing ||
+      this.composingValue
+    ) {
+      const composition = this.composition
+      if (!composition) return undefined
+      ;({ from, to } = composition)
+    } else {
+      this.composition = undefined
+      if (!announced || announced.type !== type) return undefined
+      ;({ from, to } = announced)
+      if (type === 'insertText') {
+        if (Array.from(announced.data).length !== 1) return undefined
+      } else if (type === 'insertLineBreak' || type === 'insertParagraph') {
+        // Return
+      } else if (ownDeletions.has(type)) {
+        if (from === to) {
+          if (delta >= 0 || /^deleteEntire|^deleteContent$/.test(type))
+            return undefined
+          if (type.endsWith('Forward')) to = from - delta
+          else from = from + delta
+        }
+      } else return undefined
+    }
+    const length = delta + to - from
+    if (
+      from < 0 ||
+      to > this.known.length ||
+      length < 0 ||
+      next.slice(0, from) !== this.known.slice(0, from) ||
+      next.slice(from + length) !== this.known.slice(to)
+    )
+      return undefined
+    if (this.composition) this.composition.to = from + length
+    return [{ from, to, text: next.slice(from, from + length) }]
+  }
+
+  /** Forgets the pairs that bracket pairing tracks, so their brackets are ordinary characters. */
+  forgetPairs(shown = this.known): void {
+    this.pairs = []
+    this.known = shown
+  }
+
+  /** Applies `edit` to the document's own source, where each change falls. Returns whether the text changed. */
+  private applyEdit(edit: SourceEdit, isolated: boolean): boolean {
+    return this.runtime.applySource(
+      changedSource(this.runtime.currentText(), edit.changes),
+      isolated,
+      edit.selection.from,
+      edit.selection.to,
+    )
+  }
+
+  /**
+   * Follows the pairs through an edit that is typing, as the changes it made to the text that was
+   * shown. A pair stays valid while every change is inside it, between its opener and its closer;
+   * an edit anywhere else, including before the opener, forgets it. Text whose length does not
+   * match the changes was not made by them, and forgets every pair.
+   */
+  private follow(changes: SourceChange[], next: string): void {
+    const delta = changes.reduce(
+      (sum, { from, to, text }) => sum + text.length - (to - from),
+      0,
+    )
+    const matches = next.length === this.known.length + delta
+    this.known = next
+    this.pairs = matches
+      ? this.pairs.flatMap(({ open, close }) =>
+          changes.every(({ from, to }) => from >= open + 1 && to <= close)
+            ? [{ open, close: close + delta }]
+            : [],
+        )
+      : []
+  }
+
+  private pairAt(close: number): { open: number; close: number } | undefined {
+    const value = this.element.value
+    return this.pairs.find(
+      (pair) =>
+        pair.close === close &&
+        closerOf(value[pair.open] ?? '') === value[pair.close],
+    )
+  }
+
+  /**
+   * Bracket pairing for a typed character. A closer typed before the closer that pairing inserted
+   * steps over it, an opener inserts its closer, and a selection on one line is wrapped.
+   * Returns whether it took the character.
+   */
+  private pairTyped(text: string): boolean {
+    if (
+      !this.runtime.typing().pairBrackets ||
+      !this.runtime.writable() ||
+      this.composing
+    )
+      return false
+    const { value, selectionStart: start, selectionEnd: end } = this.element
+    if (start === end && value[start] === text && this.pairAt(start)) {
+      this.pairs = this.pairs.filter((pair) => pair.close !== start)
+      this.element.setSelectionRange(start + 1, start + 1)
+      this.runtime.publish()
       return true
     }
+    const edit = pairEdit(value, start, end, text)
+    if (!edit) return false
+    this.asTyping(edit.changes, () => {
+      if (
+        this.applyEdit(edit, false) &&
+        start === end &&
+        this.element.value !== value
+      )
+        this.pairs.push({ open: start, close: start + 1 })
+    })
+    return true
+  }
+
+  /** Backspace between an empty pair that pairing inserted removes both characters. */
+  private removePair(): boolean {
+    const { selectionStart: start, selectionEnd: end } = this.element
+    if (
+      !this.runtime.typing().pairBrackets ||
+      !this.runtime.writable() ||
+      start !== end ||
+      !this.pairAt(start) ||
+      this.pairAt(start)!.open !== start - 1
+    )
+      return false
+    const edit: SourceEdit = {
+      changes: [{ from: start - 1, to: start + 1, text: '' }],
+      selection: { from: start - 1, to: start - 1 },
+    }
+    this.asTyping(edit.changes, () => this.applyEdit(edit, false))
+    return true
+  }
+
+  private continueList(): boolean {
+    const typing = this.runtime.typing()
+    if (!typing.markdown || !typing.continueLists) return false
+    const value = this.element.value
+    const edit = continueListEdit(
+      value,
+      this.element.selectionStart,
+      this.element.selectionEnd,
+      this.itemsOf(value, this.element.selectionStart),
+    )
+    if (!edit) return false
+    this.asTyping(edit.changes, () => this.applyEdit(edit, false))
+    return true
+  }
+
+  /** Reads the list items of `value` up to the line at `offset` from the parser, when asked. */
+  private itemsOf(value: string, offset: number): ItemsReader | undefined {
+    if (!this.runtime.typing().markdown) return undefined
+    const next = value.indexOf('\n', offset)
+    const lineEnd = next < 0 ? value.length : next
+    return () => this.items.through(value, lineEnd, leadingBOMLength(value))
+  }
+
+  private indent(outdent: boolean): void {
+    const typing = this.runtime.typing()
+    const { value, selectionStart: start, selectionEnd: end } = this.element
+    const edit = outdent
+      ? outdentEdit(value, start, end, typing.indent, typing.markdown)
+      : indentEdit(value, start, end, typing.indent, this.itemsOf(value, start))
+    if (edit) this.applyEdit(edit, true)
+  }
+
+  /**
+   * The keys that a browser's textarea would handle differently from InkKit: Return in a list item,
+   * Backspace in an empty pair, and Tab when the host chose how to indent. The others are left to
+   * the browser, so Tab keeps moving focus unless the host set an indent, and then only until Escape.
+   */
+  private browserKey(event: KeyboardEvent): boolean {
+    const { key, metaKey, ctrlKey, altKey, shiftKey } = event
+    // Escape is the way out of a Tab that indents: the next Tab moves focus on.
+    if (key === 'Escape' && !(metaKey || ctrlKey || altKey || shiftKey)) {
+      this.tabEscaped = true
+      return false
+    }
+    if (key === 'Tab' && this.tabEscaped) {
+      this.tabEscaped = false
+      return false
+    }
+    if (!modifierKeys.has(key)) this.tabEscaped = false
+    if (
+      metaKey ||
+      ctrlKey ||
+      altKey ||
+      !this.runtime.ready() ||
+      !this.runtime.literal() ||
+      !this.runtime.writable()
+    )
+      return false
+    if (key === 'Enter') return this.continueList()
+    if (key === 'Backspace') return this.removePair()
+    if (key === 'Tab' && this.runtime.typing().tabIndents) {
+      this.indent(shiftKey)
+      return true
+    }
+    return false
+  }
+
+  keyDown({ key, metaKey, ctrlKey, altKey, shiftKey }: KeyboardEvent): boolean {
+    if (metaKey || ctrlKey || altKey) return false
+    if (key === 'Enter') {
+      if (!this.continueList()) this.typedReplacement('\n')
+      return true
+    }
+    if (key === 'Tab') {
+      this.indent(shiftKey)
+      return true
+    }
+    if (key === 'Backspace' && this.removePair()) return true
     if (key === 'Backspace' || key === 'Delete') {
       const start = this.element.selectionStart,
         end = this.element.selectionEnd
@@ -260,10 +647,18 @@ export class SourceSurface {
           segment.index + segment.segment.length,
         )
       }
-      this.replaceLiteralSelection('', false)
+      this.typedReplacement('')
       return true
     }
     return false
+  }
+
+  /** Replaces the selection with `text` as the person's own key, so pairs that it lies inside stay. */
+  private typedReplacement(text: string): void {
+    const { selectionStart: from, selectionEnd: to } = this.element
+    this.asTyping([{ from, to, text }], () =>
+      this.replaceLiteralSelection(text, false),
+    )
   }
 
   setMode(mode: EditingMode, transition: ModeTransition): boolean {

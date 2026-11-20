@@ -44,7 +44,8 @@ import { EditorClipboard } from './editor-clipboard'
 import { EditorText } from './editor-text'
 import { EditorViewport } from './editor-viewport'
 import { EditorSearch } from './editor-search'
-import { SourceSurface } from './editor-source'
+import { SourceSurface, type SourceTyping } from './editor-source'
+import { defaultIndent } from './source-typing'
 import { EditorDocument } from './editor-document'
 import { SourceHistory, discardFormattedRedo } from './editor-history'
 import { $prose } from '@milkdown/kit/utils'
@@ -70,7 +71,7 @@ import { caretState } from './editor-selection'
 import type { SlashMenuOptions, SlashCommandName, SlashCommand } from './types'
 import type { Suggestions, SuggestionSession } from './suggestions'
 import { slashMenuOptions } from './slash-menu'
-import { type Editor, editorViewCtx } from '@milkdown/kit/core'
+import { type Editor, editorViewCtx, remarkCtx } from '@milkdown/kit/core'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import {
   Mark as ProseMark,
@@ -377,13 +378,22 @@ function footnoteLabel(label: string): boolean {
   return !!label && !/[\s\[\]\\]/.test(label) && label.length <= 999
 }
 
-/** Hints for the browser's input features, and smart punctuation. A field left out takes its default. */
+/** Hints for the browser's input features, smart punctuation and typing aids. A field left out
+ *  takes its default. */
 export interface TextInputPreferences {
   spellcheck?: boolean
   autocorrect?: boolean
   autocapitalize?: 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters'
   /** Typing a quote or `--` gives a curly quote or a dash, in formatted mode. Off unless true. */
   smartPunctuation?: boolean
+  /** Typing `(`, `[`, `{`, `"` or `'` also inserts its closer. Off unless true. */
+  pairBrackets?: boolean
+  /** Return in a list item starts the next item. Defaults to true. */
+  continueLists?: boolean
+  /** What Tab inserts in source and TXT modes. Defaults to `'tab'`. */
+  indent?: 'tab' | 'spaces'
+  /** The width of one indent made of spaces: an integer from 1 to 8. Defaults to 4. */
+  indentWidth?: number
   /** How a paste reads the clipboard. `'plainText'` inserts its plain text literally, as
    *  `pasteAsPlainText` does, in every mode and format. Defaults to `'formatted'`. */
   paste?: PasteRoute
@@ -393,6 +403,8 @@ export interface TextInputPreferences {
 export type PasteRoute = 'formatted' | 'plainText'
 
 const pasteRoutes = ['formatted', 'plainText'] as const
+
+const indentValues = ['tab', 'spaces'] as const
 
 const autocapitalizeValues = [
   'off',
@@ -412,6 +424,10 @@ function textInputPreferences(
     'autocorrect',
     'autocapitalize',
     'smartPunctuation',
+    'pairBrackets',
+    'continueLists',
+    'indent',
+    'indentWidth',
     'paste',
   ])
   return {
@@ -421,6 +437,20 @@ function textInputPreferences(
       record.smartPunctuation,
       `${name}.smartPunctuation`,
     ),
+    pairBrackets: optionalBoolean(record.pairBrackets, `${name}.pairBrackets`),
+    continueLists: optionalBoolean(
+      record.continueLists,
+      `${name}.continueLists`,
+    ),
+    indent: isOmitted(record.indent)
+      ? undefined
+      : expectOneOf(record.indent, indentValues, `${name}.indent`),
+    indentWidth: isOmitted(record.indentWidth)
+      ? undefined
+      : expectInteger(record.indentWidth, `${name}.indentWidth`, {
+          min: 1,
+          max: 8,
+        }),
     autocapitalize: isOmitted(record.autocapitalize)
       ? undefined
       : expectOneOf(
@@ -902,6 +932,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private readonly findSessions = new Set<EditorFindSession>()
   private loading = false
   private call?: FacadeCall
+  /** Changes when tracked bracket pairs are to be forgotten, as on a mode switch. */
+  private pairEpoch = 0
   private writable = true
   private inputPreferences: TextInputPreferences = {}
   private literalKeys: (view: EditorView, event: KeyboardEvent) => boolean =
@@ -1475,11 +1507,29 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.reportingSuppressed = true
     try {
       this.inputPreferences = checked
+      this.forgetPairs()
       this.applyInputPolicy()
     } finally {
       this.reportingSuppressed = suppressed
     }
     this.publishCommandState()
+  }
+
+  /** What the source and TXT surfaces follow when text is typed. */
+  private sourceTyping(): SourceTyping {
+    const preferences = this.inputPreferences
+    return {
+      pairBrackets: preferences.pairBrackets === true,
+      continueLists: preferences.continueLists !== false,
+      indent: {
+        indent: preferences.indent ?? defaultIndent.indent,
+        width: preferences.indentWidth ?? defaultIndent.width,
+      },
+      tabIndents:
+        preferences.indent !== undefined ||
+        preferences.indentWidth !== undefined,
+      markdown: this.document.handler.markdownInput,
+    }
   }
 
   private applyInputPolicy(): void {
@@ -1633,6 +1683,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       text: () => this.savedText().text,
       changed: () => {
         this.mode = mode
+        this.forgetPairs()
         this.session.modeChanged()
         this.output.cancel()
         this.search.reset()
@@ -2074,6 +2125,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
           instance.document.authoredSources(doc, positions),
         smartPunctuation: () =>
           instance.inputPreferences.smartPunctuation === true,
+        pairBrackets: () => instance.inputPreferences.pairBrackets === true,
+        pairEpoch: () => instance.pairEpoch,
+        continueLists: () => instance.inputPreferences.continueLists !== false,
         linkSchemes: instance.linkSchemes,
         mutate: (operation) =>
           instance.forPerson(
@@ -2118,6 +2172,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       ready: () => instance.ready,
       literal: () => instance.literalSurface,
       writable: () => instance.writable,
+      typing: () => instance.sourceTyping(),
+      parseMarkdown: (text) => instance.editor.ctx.get(remarkCtx).parse(text),
       currentText: () => instance.document.currentText(),
       applySource: (text, isolated, from, to, native) =>
         instance.history.applySource(text, isolated, from, to, native),
@@ -2545,15 +2601,20 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       return false
     this.assertMutation(generation)
     if (this.literalSurface) {
-      this.source.replaceLiteralSelection(text, false)
+      this.source.typeText(text)
       return true
     }
-    const doc = this.editor.ctx.get(editorViewCtx).state.doc
+    const view = this.editor.ctx.get(editorViewCtx)
+    const { doc, selection } = view.state
     if (/[\r\n]/.test(text)) this.insertPlainText(text)
-    else if (!insertNativeText(this.editor.ctx.get(editorViewCtx), text))
-      return false
-    // Text an RTF document can't hold, such as U+0000, is refused.
-    return !(text && this.refusedRichEdit(doc))
+    else if (!insertNativeText(view, text)) return false
+    // Text an RTF document can't hold, such as U+0000, is refused. A closer typed over the one that
+    // pairing inserted moves the caret and changes nothing else.
+    return !(
+      text &&
+      this.refusedRichEdit(doc) &&
+      view.state.selection.eq(selection)
+    )
   }
 
   /**
@@ -2589,6 +2650,12 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       footnote: (target) => this.navigateFootnote(target),
       refuseMutation: () => this.assertMutation(generation),
     })
+  }
+
+  /** Forgets the bracket pairs that pairing tracks, in every mode. */
+  private forgetPairs(): void {
+    this.pairEpoch++
+    this.source?.forgetPairs()
   }
 
   focus(expectedGeneration?: number): void {

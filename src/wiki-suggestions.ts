@@ -10,6 +10,7 @@ import {
 import { invalidArgument } from './errors'
 import { parseLinkedSyntax, wikiMarkdown } from './linked-syntax'
 import type { SuggestionSession } from './suggestions'
+import { pairedClosers } from './pairing'
 
 interface WikiHost {
   adapter?: WikiLinkAdapter
@@ -62,10 +63,16 @@ export function wikiSuggestionTransaction(
   name: string,
 ): Transaction {
   const { state } = view
+  // The two closing brackets that pairing inserted with the `[[` are part of what is replaced; a
+  // closer of an outer bracket is not.
+  const closers = pairedClosers(state, state.selection.from, [
+    session.from + 1,
+    session.from,
+  ])
   return closeHistory(
     state.tr.replaceWith(
       session.from,
-      state.selection.from,
+      state.selection.from + closers,
       wikiSuggestionNode(state, name),
     ),
   ).scrollIntoView()
@@ -100,7 +107,12 @@ export function wikiSession(
     start,
   )
   if (preceding === '!' || preceding === '\\' || preceding === '[') return
-  const baseline = view.state.tr.delete(start, to).doc
+  // The closer that pairing inserted with the first `[` goes with the `[[`, so it is not part of
+  // the document the session must find again.
+  const baseline = view.state.tr.delete(
+    start,
+    to + pairedClosers(view.state, to, [start]),
+  ).doc
   let controller: AbortController | undefined
   let disposed = false
   const session: SuggestionSession = {
@@ -112,8 +124,16 @@ export function wikiSession(
       !current.state.doc
         .textBetween(start, current.state.selection.from, '\n', '\ufffc')
         .includes(']]') &&
+      // The closers that pairing inserted for the `[[` come after the query and are not an edit.
       current.state.tr
-        .delete(start, current.state.selection.from)
+        .delete(
+          start,
+          current.state.selection.from +
+            pairedClosers(current.state, current.state.selection.from, [
+              start + 1,
+              start,
+            ]),
+        )
         .doc.eq(baseline),
     cancel: () => {
       disposed = true

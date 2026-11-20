@@ -46,7 +46,7 @@ RTF has no heading that its readers report: a heading written to RTF comes back 
 An RTF document holds paragraphs, lists, tables, line breaks and the eight marks, and nothing else. Inkkit keeps everything else out in three ways:
 
 - **Commands.** [`commandState`](/reference/options#command-state) reports the commands for headings, code blocks, quotes, callouts, tasks, highlight, images, footnotes and reference definitions as unavailable, and [`format`](/reference/editor#format) returns `false` for them. Table column alignment is unavailable, because an RTF cell has none.
-- **Typing.** Markdown that a person types stays text: `# `, `> `, `- `, three backticks, `---`, `==`, `[ ]`, `**bold**` and the rest make no headings, quotes, lists, code, rules, highlights or tasks. A bare web address stays text too. Smart punctuation, when on, still applies.
+- **Typing.** Markdown that a person types stays text: `# `, `> `, `- `, three backticks, `---`, `==`, `[ ]`, `**bold**` and the rest make no headings, quotes, lists, code, rules, highlights or tasks. A bare web address stays text too. Smart punctuation and [bracket pairing](/reference/options#paired-brackets-and-quotes), when on, still apply.
 - **Every edit.** Any edit that would bring in something RTF can't hold is refused, and the document, revision and history stay as they were.
 
 There is no source mode: `setEditingMode('source')` returns `false`, and `replaceSource` throws `invalid-argument`.

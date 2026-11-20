@@ -12,6 +12,7 @@ import { goToNextCell } from '@milkdown/kit/prose/tables'
 import { blockMove } from './block-move'
 import { liftItem } from './editor-input'
 import { tableCommands } from './tables'
+import { markKey } from './pairing'
 import {
   InkKitError,
   type BlockMoveDirection,
@@ -256,6 +257,7 @@ export function routeNativeKey(
     return runtime.source(event)
   }
   const view = runtime.view()
+  markKey(view, event)
   return Boolean(
     view.someProp('handleKeyDown', (handler) => handler(view, event)),
   )

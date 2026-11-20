@@ -2,6 +2,7 @@ import { matchingTextEdges } from './text-edges'
 import { Fragment, type Node as ProseNode } from '@milkdown/kit/prose/model'
 import { literalCommentSpans } from './comments'
 import type { DocumentFormat } from './types'
+import type { SourceChange } from './source-typing'
 
 export const sourceAttribute = 'inkkitSource'
 export interface SourceProvenance {
@@ -167,6 +168,42 @@ export function editedPlainSource(previous: string, value: string): string {
       .replaceAll('\n', ending) +
     previous.slice(rawOffset(previous, normalized.length - suffix))
   )
+}
+
+/**
+ * `previous`, the document's own source, with `changes` applied. They are in the offsets of its
+ * `\n` form, as the surface shows it, apart and in order. Each lands where it falls, so every line
+ * ending that a change does not replace stays as it was, including the mixed endings of a document.
+ * New line endings take the document's first.
+ */
+export function changedSource(
+  previous: string,
+  changes: readonly SourceChange[],
+): string {
+  if (!changes.length) return previous
+  const ending = /\r\n|\r|\n/.exec(previous)?.[0] ?? '\n'
+  let result = ''
+  let cursor = 0
+  let raw = 0
+  let count = 0
+  // The raw offset of a normalized one, walking on from the last: offsets only increase.
+  const rawAt = (normalized: number) => {
+    while (raw < previous.length && count < normalized) {
+      if (previous[raw] === '\r' && previous[raw + 1] === '\n') raw++
+      raw++
+      count++
+    }
+    return raw
+  }
+  for (const { from, to, text } of changes) {
+    const start = rawAt(from)
+    const stop = rawAt(to)
+    result +=
+      previous.slice(cursor, start) +
+      text.replace(/\r\n?/g, '\n').replaceAll('\n', ending)
+    cursor = stop
+  }
+  return result + previous.slice(cursor)
 }
 
 export function sourceSelection(

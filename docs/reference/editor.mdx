@@ -1007,7 +1007,7 @@ A host whose native layer receives typing or keys before the web view does passe
 
 `insertText(text: string, generation: number): boolean`
 
-Inserts exactly `text` at the selection and returns `true`. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally.
+Inserts exactly `text` at the selection and returns `true`. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode. Text of more than one character, and every other call that changes the document, makes the brackets around it ordinary characters, as [tracked pairs](/reference/options#paired-brackets-and-quotes) describes.
 
 {/* @api InkKitEditor.keyDown */}
 
@@ -1031,7 +1031,7 @@ A `KeyInput` describes a native key press using DOM keyboard names and modifier 
 | `altKey`   | `boolean` (optional) | Whether the Alt or Option key is held; omitted means false.   |
 | `shiftKey` | `boolean` (optional) | Whether the Shift key is held; omitted means false.           |
 
-It handles the keymap bindings and, in formatted mode, Alt+Enter and Alt+Shift+Enter for footnotes and the editor's own keys such as Enter, Tab and Backspace in lists and tables. Tab and Shift+Tab indent and outdent a list item through the default `indent` and `outdent` bindings. In source and TXT modes it handles Enter, Tab, Backspace and Delete with no Command, Control or Alt held, and returns `false` for other keys. It returns `false` during composition.
+It handles the keymap bindings and, in formatted mode, Alt+Enter and Alt+Shift+Enter for footnotes and the editor's own keys such as Enter, Tab and Backspace in lists and tables. Tab and Shift+Tab indent and outdent a list item through the default `indent` and `outdent` bindings. In source and TXT modes it handles Enter, Tab, Backspace and Delete with no Command, Control or Alt held, and returns `false` for other keys. Enter [continues a list item](/reference/options#list-continuation) in Markdown source, Tab and Shift+Tab [indent and outdent](/reference/options#indentation), and Backspace between an empty pair that [pairing](/reference/options#paired-brackets-and-quotes) inserted removes both characters. It returns `false` during composition.
 
 In source and TXT modes, Backspace and Delete remove a whole grapheme when the selection is collapsed. Backspace removes the preceding grapheme and Delete removes the following one. If the caret is inside a grapheme, either key removes that whole grapheme. An explicit selection is deleted exactly as selected, even when it contains only part of a grapheme. These deletions use the existing typing history group.
 
