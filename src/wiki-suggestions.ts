@@ -63,8 +63,12 @@ export function wikiSuggestionTransaction(
   name: string,
 ): Transaction {
   const { state } = view
-  // Closing brackets that pairing inserted with the opening ones are part of what is replaced.
-  const closers = pairedClosers(state, state.selection.from, ']')
+  // The two closing brackets that pairing inserted with the `[[` are part of what is replaced; a
+  // closer of an outer bracket is not.
+  const closers = pairedClosers(state, state.selection.from, [
+    session.from + 1,
+    session.from,
+  ])
   return closeHistory(
     state.tr.replaceWith(
       session.from,
@@ -72,17 +76,6 @@ export function wikiSuggestionTransaction(
       wikiSuggestionNode(state, name),
     ),
   ).scrollIntoView()
-}
-
-/**
- * The document after `tr` without the closing brackets at `at`, which pairing may have inserted
- * since the session started, so that they are not an edit outside the query.
- */
-function withoutClosers(tr: Transaction, at: number): ProseNode {
-  const end = tr.doc.resolve(at).end()
-  let stop = at
-  while (stop < end && tr.doc.textBetween(stop, stop + 1) === ']') stop++
-  return stop > at ? tr.delete(at, stop).doc : tr.doc
 }
 
 export function wikiSession(
@@ -114,7 +107,12 @@ export function wikiSession(
     start,
   )
   if (preceding === '!' || preceding === '\\' || preceding === '[') return
-  const baseline = withoutClosers(view.state.tr.delete(start, to), start)
+  // The closer that pairing inserted with the first `[` goes with the `[[`, so it is not part of
+  // the document the session must find again.
+  const baseline = view.state.tr.delete(
+    start,
+    to + pairedClosers(view.state, to, [start]),
+  ).doc
   let controller: AbortController | undefined
   let disposed = false
   const session: SuggestionSession = {
@@ -126,10 +124,17 @@ export function wikiSession(
       !current.state.doc
         .textBetween(start, current.state.selection.from, '\n', '\ufffc')
         .includes(']]') &&
-      withoutClosers(
-        current.state.tr.delete(start, current.state.selection.from),
-        start,
-      ).eq(baseline),
+      // The closers that pairing inserted for the `[[` come after the query and are not an edit.
+      current.state.tr
+        .delete(
+          start,
+          current.state.selection.from +
+            pairedClosers(current.state, current.state.selection.from, [
+              start + 1,
+              start,
+            ]),
+        )
+        .doc.eq(baseline),
     cancel: () => {
       disposed = true
       controller?.abort()

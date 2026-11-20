@@ -5,11 +5,18 @@
  * endings are restored there.
  */
 
-export interface SourceEdit {
+/** One replacement in the surface's text. */
+export interface SourceChange {
   /** The range of the current text that `text` replaces. */
   from: number
   to: number
   text: string
+}
+
+export interface SourceEdit {
+  /** The replacements, in order and apart, in offsets of the current text. Each is applied to the
+   *  document's own source where it falls, so every line ending it does not touch stays as it was. */
+  changes: SourceChange[]
   /** The selection after the edit, in the new text. */
   selection: { from: number; to: number }
 }
@@ -76,9 +83,7 @@ export function pairEdit(
     const selected = value.slice(start, end)
     if (/[\r\n]/.test(selected)) return undefined
     return {
-      from: start,
-      to: end,
-      text: typed + selected + closer,
+      changes: [{ from: start, to: end, text: typed + selected + closer }],
       selection: { from: start + typed.length, to: end + typed.length },
     }
   }
@@ -91,172 +96,66 @@ export function pairEdit(
     return undefined
   const caret = start + typed.length
   return {
-    from: start,
-    to: start,
-    text: typed + closer,
+    changes: [{ from: start, to: start, text: typed + closer }],
     selection: { from: caret, to: caret },
   }
 }
 
 const quotePrefix = /^(?: {0,3}>[ ]?)*/
 const itemPattern =
-  /^(?<indent>[ \t]*)(?<marker>[-*+]|\d{1,9}[.)])(?<gap>[ \t]+)(?<task>\[[ xX]\](?:[ \t]+|$))?/
-const thematicBreak = /^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/
-const fenceOpening = /^(?<fence>`{3,}|~{3,})(?<info>.*)$/
-const atxHeading = /^ {0,3}#{1,6}(?:[ \t]|$)/
-
-type LineKind = 'blank' | 'text' | 'item' | 'literal'
-
-function columns(indent: string): number {
-  let width = 0
-  for (const character of indent) width += character === '\t' ? 4 : 1
-  return width
-}
-
-interface Fence {
-  character: string
-  length: number
-  depth: number
-  floor: number
-}
-
-interface ListItem {
-  indent: number
-  depth: number
-}
+  /^(?<indent>[ \t]*)(?<marker>[-*+]|\d{1,9}[.)])(?:(?<gap>[ \t]+)(?<task>\[[ xX]\](?:[ \t]+|$))?|$)/
 
 /**
- * What the line at `target` is: a list item, text, a blank line, or literal, which is code in a
- * fence or indented, front matter or a comment. The scan runs from the start of the text, so it
- * knows the fences, quotes and list items that enclose the line.
+ * Where the Markdown parser puts the text's list items: the offset of the marker of each item that
+ * is empty, or whose text starts on the marker's line as a paragraph, a heading or a table. An
+ * item that opens with code, a quote, HTML or a rule, or whose content starts on a later line, is
+ * not in the set, and neither is a line the parser reads as code, HTML, a comment or a thematic
+ * break. The text is in `\n` line endings, as the surface shows it.
  */
-export function lineKind(lines: readonly string[], target: number): LineKind {
-  let frontMatterEnd = -1
-  if (lines[0] !== undefined && /^---[ \t]*$/.test(lines[0])) {
-    for (let index = 1; index < lines.length; index++) {
-      if (/^(?:---|\.\.\.)[ \t]*$/.test(lines[index]!)) {
-        frontMatterEnd = index
-        break
-      }
-    }
-  }
-  if (target <= frontMatterEnd) return 'literal'
-  let fence: Fence | undefined
-  let comment: '-->' | '%%' | undefined
-  let items: ListItem[] = []
-  let previousText = false
-  for (let index = Math.max(frontMatterEnd + 1, 0); index <= target; index++) {
-    const line = lines[index] ?? ''
-    const prefix = quotePrefix.exec(line)![0]
-    const depth = prefix.split('>').length - 1
-    const rest = line.slice(prefix.length)
-    const blank = rest.trim() === ''
-    let kind: LineKind | undefined
-    if (fence) {
-      const floor = fence.floor
-      const ended =
-        !blank &&
-        (depth < fence.depth || columns(/^[ \t]*/.exec(rest)![0]) < floor)
-      if (!ended) {
-        const closing = new RegExp(
-          `^[ \\t]*${fence.character === '`' ? '`' : '~'}{${fence.length},}[ \\t]*$`,
-        )
-        if (closing.test(rest)) fence = undefined
-        previousText = false
-        if (index === target) return 'literal'
-        continue
-      }
-      fence = undefined
-    }
-    if (comment) {
-      const closed =
-        comment === '-->'
-          ? line.includes('-->')
-          : (line.match(/%%/g)?.length ?? 0) % 2 === 1
-      if (closed) comment = undefined
-      previousText = false
-      if (index === target) return 'literal'
-      continue
-    }
-    if (blank) {
-      previousText = false
-      if (index === target) return 'blank'
-      continue
-    }
-    const indent = columns(/^[ \t]*/.exec(rest)![0])
-    items = items.filter((item) => item.depth <= depth && item.indent <= indent)
-    const base = items.at(-1)?.indent ?? 0
-    const relative = indent - base
-    const unindented = rest.trimStart()
-    const opening = relative <= 3 ? fenceOpening.exec(unindented) : null
-    if (
-      opening &&
-      !(
-        opening.groups!.fence![0] === '`' && opening.groups!.info!.includes('`')
+export type ListItems = ReadonlySet<number>
+
+/** Reads the list items when it is needed, so that text without an item line is never parsed. */
+export type ItemsReader = () => ListItems
+
+const noItems: ItemsReader = () => new Set()
+
+interface Tree {
+  type: string
+  children?: Tree[]
+  position?: { start: { offset?: number; line?: number } }
+}
+
+const containers = new Set(['root', 'blockquote', 'list', 'listItem'])
+const itemStarts = new Set(['paragraph', 'heading', 'table'])
+
+/** The list items of a parsed tree. `shift` is the length of a byte order mark the parser skipped. */
+export function listItemsOf(tree: unknown, shift: number): ListItems {
+  const items = new Set<number>()
+  const visit = (node: Tree) => {
+    if (node.type === 'listItem') {
+      const first = node.children?.[0]
+      const offset = node.position?.start.offset
+      if (
+        offset !== undefined &&
+        (!first ||
+          (itemStarts.has(first.type) &&
+            first.position?.start.line === node.position?.start.line))
       )
-    ) {
-      fence = {
-        character: opening.groups!.fence![0]!,
-        length: opening.groups!.fence!.length,
-        depth,
-        floor: base,
-      }
-      previousText = false
-      if (index === target) return 'literal'
-      continue
+        items.add(offset + shift)
     }
-    if (relative >= 4 && !previousText) {
-      kind = 'literal'
-    } else {
-      const item = itemPattern.exec(rest)
-      if (relative <= 3 && item && !thematicBreak.test(rest)) {
-        kind = 'item'
-        const content = rest.slice(
-          item.groups!.indent!.length + item.groups!.marker!.length,
-        )
-        const gap = item.groups!.gap!
-        const width = gap.length > 4 || gap === '' ? 1 : gap.length
-        items.push({
-          indent:
-            columns(item.groups!.indent!) + item.groups!.marker!.length + width,
-          depth,
-        })
-        const inside = content.slice(gap.length)
-        const nested = fenceOpening.exec(
-          (item.groups!.task
-            ? inside.slice(item.groups!.task.length)
-            : inside
-          ).trimStart(),
-        )
-        if (
-          nested &&
-          !(
-            nested.groups!.fence![0] === '`' &&
-            nested.groups!.info!.includes('`')
-          )
-        ) {
-          fence = {
-            character: nested.groups!.fence![0]!,
-            length: nested.groups!.fence!.length,
-            depth,
-            floor: items.at(-1)!.indent,
-          }
-          previousText = false
-          if (index === target) return 'literal'
-          continue
-        }
-      } else kind = 'text'
-    }
-    if (kind === 'text' || kind === 'item') {
-      const open = line.lastIndexOf('<!--')
-      if (open >= 0 && !line.slice(open).includes('-->')) comment = '-->'
-      else if ((line.match(/%%/g)?.length ?? 0) % 2 === 1) comment = '%%'
-      previousText =
-        kind === 'item' || !(atxHeading.test(rest) || thematicBreak.test(rest))
-    } else previousText = false
-    if (index === target) return kind!
+    if (containers.has(node.type)) node.children?.forEach(visit)
   }
-  return 'text'
+  visit(tree as Tree)
+  return items
+}
+
+/** Where the YAML or TOML front matter at the start of the text ends, or 0. */
+export function frontMatterEnd(value: string): number {
+  const shift = value.startsWith('\uFEFF') ? 1 : 0
+  const match = /^(---|\+\+\+)\r?\n[\s\S]*?\r?\n\1(?:\r?\n|$)/.exec(
+    value.slice(shift),
+  )
+  return match ? shift + match[0].length : 0
 }
 
 interface ItemLine {
@@ -269,22 +168,36 @@ interface ItemLine {
   task: string
   /** Where the item's own text starts in the line. */
   contentStart: number
+  /** Where the marker starts in the line. */
+  markerAt: number
 }
 
 function itemLine(line: string): ItemLine | undefined {
   const quote = quotePrefix.exec(line)![0]
   const rest = line.slice(quote.length)
-  if (thematicBreak.test(rest)) return undefined
   const match = itemPattern.exec(rest)
   if (!match) return undefined
   return {
     quote,
     indent: match.groups!.indent!,
     marker: match.groups!.marker!,
-    gap: match.groups!.gap!,
+    gap: match.groups!.gap ?? '',
     task: match.groups!.task ?? '',
     contentStart: quote.length + match[0].length,
+    markerAt: quote.length + match.groups!.indent!.length,
   }
+}
+
+/** The item on the line that starts at `from`, when the parser reads one there. */
+function itemAt(
+  value: string,
+  from: number,
+  to: number,
+  items: ItemsReader,
+): ItemLine | undefined {
+  const item = itemLine(value.slice(from, to))
+  if (!item || from + item.markerAt < frontMatterEnd(value)) return undefined
+  return items().has(from + item.markerAt) ? item : undefined
 }
 
 function nextMarker(marker: string): string | undefined {
@@ -297,53 +210,39 @@ function nextMarker(marker: string): string | undefined {
 }
 
 function lineBounds(value: string, offset: number) {
-  const from = value.lastIndexOf('\n', offset - 1) + 1
+  const from = offset === 0 ? 0 : value.lastIndexOf('\n', offset - 1) + 1
   const next = value.indexOf('\n', offset)
   return { from, to: next < 0 ? value.length : next }
 }
 
-/** The line number of `offset`, with lines split on `\n`. */
-function lineNumber(value: string, offset: number): number {
-  let count = 0
-  for (
-    let at = value.indexOf('\n');
-    at >= 0 && at < offset;
-    at = value.indexOf('\n', at + 1)
-  )
-    count++
-  return count
-}
-
 /**
  * Return in a list item line: the next item with the same indentation, marker and quote prefix,
- * or nothing but the quote prefix when the item has no text. Returns undefined when the line is
- * not a list item, is code, or the caret is before the item's text, so Return adds a plain line.
+ * or nothing but the quote prefix when the item has no text. Returns undefined when the parser
+ * does not read the line as a list item paragraph, or the caret is before the item's text, so
+ * Return adds a plain line.
  */
 export function continueListEdit(
   value: string,
   start: number,
   end: number,
+  items: ItemsReader = noItems,
 ): SourceEdit | undefined {
   const bounds = lineBounds(value, start)
   const line = value.slice(bounds.from, bounds.to)
-  const item = itemLine(line)
+  const item = itemAt(value, bounds.from, bounds.to, items)
   if (!item) return undefined
   const column = start - bounds.from
   const empty = line.slice(item.contentStart).trim() === ''
   // Before the item's text, or at its start, Return adds a plain line.
   if (
     empty
-      ? column < item.contentStart || start !== end
+      ? column < item.markerAt + item.marker.length || start !== end
       : column <= item.contentStart
   )
     return undefined
-  if (lineKind(value.split('\n'), lineNumber(value, start)) !== 'item')
-    return undefined
   if (empty) {
     return {
-      from: bounds.from,
-      to: bounds.to,
-      text: item.quote,
+      changes: [{ from: bounds.from, to: bounds.to, text: item.quote }],
       selection: {
         from: bounds.from + item.quote.length,
         to: bounds.from + item.quote.length,
@@ -356,7 +255,10 @@ export function continueListEdit(
   const prefix = item.quote + item.indent + marker + item.gap + task
   const text = '\n' + prefix
   const caret = start + text.length
-  return { from: start, to: end, text, selection: { from: caret, to: caret } }
+  return {
+    changes: [{ from: start, to: end, text }],
+    selection: { from: caret, to: caret },
+  }
 }
 
 export function indentUnit(style: IndentStyle): string {
@@ -387,73 +289,65 @@ function selectedLines(
   return lines
 }
 
+/** Where `offset` ends up after `changes`, which are apart and in order. */
+function shifted(changes: readonly SourceChange[], offset: number): number {
+  let moved = offset
+  for (const { from, to, text } of changes) {
+    // A caret at an insertion point stays before the inserted text.
+    if (to > from ? offset >= to : offset > to)
+      moved += text.length - (to - from)
+    else if (offset > from) moved += from + text.length - offset
+  }
+  return moved
+}
+
 /**
  * Tab. A caret or a selection within one line takes one indent there; on a Markdown list item
  * line the indent goes at the start of the line, so the item nests. A selection across lines
- * indents each line that has text.
+ * indents each line that has text. Each indent is its own change, so the line endings between
+ * lines are not touched.
  */
 export function indentEdit(
   value: string,
   start: number,
   end: number,
   style: IndentStyle,
-  markdown: boolean,
+  items: ItemsReader | undefined,
 ): SourceEdit {
   const unit = indentUnit(style)
   const lines = selectedLines(value, start, end)
-  const kinds = markdown ? value.split('\n') : []
-  const first = lines[0]!
+  // Markdown has a quote prefix that an indent goes after.
   const at = (line: { from: number; to: number }) =>
-    markdown
+    items
       ? line.from + quotePrefix.exec(value.slice(line.from, line.to))![0].length
       : line.from
+  const first = lines[0]!
   if (lines.length === 1 && !value.slice(start, end).includes('\n')) {
-    const item =
-      markdown &&
-      itemLine(value.slice(first.from, first.to)) !== undefined &&
-      lineKind(kinds, lineNumber(value, first.from)) === 'item'
-    if (!item) {
+    if (!items || !itemAt(value, first.from, first.to, items)) {
       const caret = start + unit.length
       return {
-        from: start,
-        to: end,
-        text: unit,
+        changes: [{ from: start, to: end, text: unit }],
         selection: { from: caret, to: caret },
       }
     }
     const position = at(first)
+    const changes = [{ from: position, to: position, text: unit }]
     const shift = (offset: number) =>
       offset > position ? offset + unit.length : offset
-    return {
-      from: position,
-      to: position,
-      text: unit,
-      selection: { from: shift(start), to: shift(end) },
-    }
+    return { changes, selection: { from: shift(start), to: shift(end) } }
   }
-  let text = ''
-  let from = first.from
-  let cursor = first.from
-  const inserts: number[] = []
+  const changes: SourceChange[] = []
   for (const line of lines) {
-    const content = value.slice(line.from, line.to)
+    if (value.slice(line.from, line.to).trim() === '') continue
     const position = at(line)
-    text += value.slice(cursor, position)
-    if (content.trim() !== '') {
-      text += unit
-      inserts.push(position)
-    }
-    cursor = position
+    changes.push({ from: position, to: position, text: unit })
   }
-  text += value.slice(cursor, lines.at(-1)!.to)
-  const shift = (offset: number) =>
-    offset +
-    inserts.filter((position) => position < offset).length * unit.length
   return {
-    from,
-    to: lines.at(-1)!.to,
-    text,
-    selection: { from: shift(start), to: shift(end) },
+    changes,
+    selection: {
+      from: shifted(changes, start),
+      to: shifted(changes, end),
+    },
   }
 }
 
@@ -465,9 +359,8 @@ export function outdentEdit(
   style: IndentStyle,
   markdown: boolean,
 ): SourceEdit | undefined {
-  const lines = selectedLines(value, start, end)
-  const removals: Array<{ from: number; to: number }> = []
-  for (const line of lines) {
+  const changes: SourceChange[] = []
+  for (const line of selectedLines(value, start, end)) {
     const content = value.slice(line.from, line.to)
     const prefix = markdown ? quotePrefix.exec(content)![0].length : 0
     const leading = content.slice(prefix)
@@ -475,31 +368,18 @@ export function outdentEdit(
       ? 1
       : /^ */.exec(leading)![0].slice(0, style.width).length
     if (removed)
-      removals.push({
+      changes.push({
         from: line.from + prefix,
         to: line.from + prefix + removed,
+        text: '',
       })
   }
-  if (!removals.length) return undefined
-  let text = ''
-  let cursor = lines[0]!.from
-  for (const removal of removals) {
-    text += value.slice(cursor, removal.from)
-    cursor = removal.to
-  }
-  text += value.slice(cursor, lines.at(-1)!.to)
-  const shift = (offset: number) => {
-    let moved = offset
-    for (const removal of removals) {
-      if (offset >= removal.to) moved -= removal.to - removal.from
-      else if (offset > removal.from) moved -= offset - removal.from
-    }
-    return moved
-  }
+  if (!changes.length) return undefined
   return {
-    from: lines[0]!.from,
-    to: lines.at(-1)!.to,
-    text,
-    selection: { from: shift(start), to: shift(end) },
+    changes,
+    selection: {
+      from: shifted(changes, start),
+      to: shifted(changes, end),
+    },
   }
 }

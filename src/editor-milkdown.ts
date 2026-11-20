@@ -41,7 +41,7 @@ import { history, historyKeymap } from '@milkdown/kit/plugin/history'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
 import { authoredSourcesCtx, type AuthoredSources } from './block-conversion'
 import { smartPunctuationCtx } from './smart-punctuation'
-import { pairBracketsCtx, pairing } from './pairing'
+import { pairBracketsCtx, pairEpochCtx, pairing } from './pairing'
 import { linkSchemesCtx } from './link-safety'
 import { labelsCtx, defaultLabels } from './labels'
 import { codeControlCtx, codeControlsPlugin } from './code-controls'
@@ -90,6 +90,7 @@ interface MilkdownRuntime {
   format: FormatInput
   smartPunctuation(): boolean
   pairBrackets(): boolean
+  pairEpoch(): number
   continueLists(): boolean
   linkSchemes: ReadonlySet<string>
   mutate(operation: () => boolean): boolean
@@ -120,6 +121,7 @@ export async function createMilkdownEditor(
       )
       ctx.set(smartPunctuationCtx.key, () => runtime.smartPunctuation())
       ctx.set(pairBracketsCtx.key, () => runtime.pairBrackets())
+      ctx.set(pairEpochCtx.key, () => runtime.pairEpoch())
       ctx.set(formatInputCtx.key, runtime.format)
       ctx.set(linkSchemesCtx.key, runtime.linkSchemes)
       ctx.update(labelsCtx.key, () => ({

@@ -6,12 +6,15 @@ import { modeSelectionMap } from './mode-selection'
 import type { EditingMode } from './editor'
 import type { ClipboardInput } from './types'
 import {
+  changedSource,
   editedPlainSource,
   rawOffset,
   normalizedOffset,
   type SourceProvenance,
 } from './source'
 import { matchingTextEdges } from './text-edges'
+import { ListItemIndex } from './source-items'
+import { leadingBOMLength } from './bom'
 import {
   closerOf,
   continueListEdit,
@@ -19,6 +22,7 @@ import {
   outdentEdit,
   pairEdit,
   type IndentStyle,
+  type ItemsReader,
   type SourceEdit,
 } from './source-typing'
 
@@ -27,6 +31,29 @@ function hasImageFile(files: FileList): boolean {
 }
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+const modifierKeys: ReadonlySet<string> = new Set([
+  'Shift',
+  'Control',
+  'Alt',
+  'Meta',
+])
+
+/** The kinds of input that are typing, so that a pair stays valid through them. */
+const typingInputs: ReadonlySet<string> = new Set([
+  'insertText',
+  'insertCompositionText',
+  'insertLineBreak',
+  'insertParagraph',
+  'deleteContentBackward',
+  'deleteContentForward',
+  'deleteWordBackward',
+  'deleteWordForward',
+  'deleteSoftLineBackward',
+  'deleteSoftLineForward',
+  'deleteHardLineBackward',
+  'deleteHardLineForward',
+])
 
 /** The typing preferences that the source and TXT surfaces follow. */
 export interface SourceTyping {
@@ -44,6 +71,8 @@ interface SourceRuntime {
   literal(): boolean
   writable(): boolean
   typing(): SourceTyping
+  /** The tree that the editor's parser reads Markdown text into. */
+  parseMarkdown(text: string): unknown
   currentText(): string
   applySource(
     text: string,
@@ -80,6 +109,13 @@ export class SourceSurface {
   /** The text the surface last showed, and the pairs that bracket pairing inserted into it. */
   private known = ''
   private pairs: Array<{ open: number; close: number }> = []
+  private readonly items = new ListItemIndex((text) =>
+    this.runtime.parseMarkdown(text),
+  )
+  /** Whether the change being made is typing, which keeps the pairs that are tracked. */
+  private typing = false
+  /** Escape was pressed, so the next Tab or Shift-Tab moves focus instead of indenting. */
+  private tabEscaped = false
 
   reconcileFormattedChange(
     markdown: string,
@@ -112,6 +148,19 @@ export class SourceSurface {
         return
       }
       if (
+        event instanceof InputEvent &&
+        event.inputType === 'deleteContentBackward' &&
+        this.runtime.ready() &&
+        this.runtime.literal() &&
+        !event.isComposing &&
+        !this.composing &&
+        this.removePair()
+      ) {
+        // Input that arrives without a key, as on iOS and with some input methods.
+        event.preventDefault()
+        return
+      }
+      if (
         this.runtime.ready() &&
         this.runtime.literal() &&
         event instanceof InputEvent &&
@@ -130,13 +179,17 @@ export class SourceSurface {
           to: this.element.selectionEnd,
         }
     })
-    this.element.addEventListener('input', () => {
+    this.element.addEventListener('input', (event) => {
       if (!this.runtime.ready() || !this.runtime.literal()) return
       if (!this.runtime.writable()) {
         this.setSourceValue(this.runtime.currentText())
         return
       }
-      this.remapPairs(this.element.value)
+      // Only typing keeps the pairs that were tracked. A paste, a drop, a replacement and an undo
+      // or redo that the browser made on its own do not.
+      this.typing = typingInputs.has((event as InputEvent).inputType ?? '')
+      if (this.typing) this.remapPairs(this.element.value)
+      else this.forgetPairs(this.element.value)
       try {
         this.runtime.applySource(
           editedPlainSource(this.runtime.currentText(), this.element.value),
@@ -149,6 +202,7 @@ export class SourceSurface {
         this.runtime.report(error)
       } finally {
         this.beforeSelection = undefined
+        this.typing = false
       }
     })
     this.element.addEventListener('keydown', (event) => {
@@ -156,6 +210,7 @@ export class SourceSurface {
       if (this.runtime.keyDown(event) || this.browserKey(event))
         event.preventDefault()
     })
+    this.element.addEventListener('blur', () => (this.tabEscaped = false))
     for (const event of ['select', 'keyup', 'click'])
       this.element.addEventListener(event, () => this.runtime.publish())
     this.element.addEventListener('paste', (event) => {
@@ -237,7 +292,9 @@ export class SourceSurface {
   // loses that state after undo or paste, so every replacement uses this path.
   setSourceValue(text: string): void {
     const plain = this.element
-    this.remapPairs(text.replace(/\r\n?/g, '\n'))
+    const shown = text.replace(/\r\n?/g, '\n')
+    if (this.typing) this.remapPairs(shown)
+    else this.forgetPairs(shown)
     if (text.length < 65_536 || !plain.isConnected || this.composing) {
       plain.value = text
       return
@@ -282,39 +339,53 @@ export class SourceSurface {
 
   /** Text that was typed, which brackets and quotes may pair or step over. */
   typeText(text: string): void {
-    if (!this.pairTyped(text)) this.replaceLiteralSelection(text, false)
+    this.asTyping(() => {
+      if (!this.pairTyped(text)) this.replaceLiteralSelection(text, false)
+    })
   }
 
-  /** Applies `edit` to the text, with the document's own line endings. Returns whether the text changed. */
+  private asTyping(operation: () => void): void {
+    const before = this.typing
+    this.typing = true
+    try {
+      operation()
+    } finally {
+      this.typing = before
+    }
+  }
+
+  /** Forgets the pairs that bracket pairing tracks, so their brackets are ordinary characters. */
+  forgetPairs(shown = this.known): void {
+    this.pairs = []
+    this.known = shown
+  }
+
+  /** Applies `edit` to the document's own source, where each change falls. Returns whether the text changed. */
   private applyEdit(edit: SourceEdit, isolated: boolean): boolean {
-    const value = this.element.value
-    const next = value.slice(0, edit.from) + edit.text + value.slice(edit.to)
-    const previous = this.runtime.currentText()
     return this.runtime.applySource(
-      editedPlainSource(previous, next),
+      changedSource(this.runtime.currentText(), edit.changes),
       isolated,
       edit.selection.from,
       edit.selection.to,
     )
   }
 
-  /** Keeps the pairs that bracket pairing inserted at the characters they were inserted at. */
+  /**
+   * Follows the pairs through typing. A pair stays valid only while the edit is inside it, between
+   * its opener and its closer; an edit anywhere else, or one that removes a bracket, forgets it.
+   */
   private remapPairs(next: string): void {
     const before = this.known
     this.known = next
     if (!this.pairs.length || before === next) return
     const { prefix, suffix } = matchingTextEdges(before, next)
+    const stop = before.length - suffix
     const delta = next.length - before.length
-    const map = (position: number) =>
-      position < prefix
-        ? position
-        : position >= before.length - suffix
-          ? position + delta
-          : -1
-    this.pairs = this.pairs.flatMap(({ open, close }) => {
-      const mapped = { open: map(open), close: map(close) }
-      return mapped.open < 0 || mapped.close < 0 ? [] : [mapped]
-    })
+    this.pairs = this.pairs.flatMap(({ open, close }) =>
+      prefix >= open + 1 && stop <= close
+        ? [{ open, close: close + delta }]
+        : [],
+    )
   }
 
   private pairAt(close: number): { open: number; close: number } | undefined {
@@ -347,12 +418,17 @@ export class SourceSurface {
     }
     const edit = pairEdit(value, start, end, text)
     if (!edit) return false
-    if (
-      this.applyEdit(edit, false) &&
-      start === end &&
-      this.element.value !== value
-    )
-      this.pairs.push({ open: start, close: start + 1 })
+    this.typing = true
+    try {
+      if (
+        this.applyEdit(edit, false) &&
+        start === end &&
+        this.element.value !== value
+      )
+        this.pairs.push({ open: start, close: start + 1 })
+    } finally {
+      this.typing = false
+    }
     return true
   }
 
@@ -360,6 +436,8 @@ export class SourceSurface {
   private removePair(): boolean {
     const { selectionStart: start, selectionEnd: end } = this.element
     if (
+      !this.runtime.typing().pairBrackets ||
+      !this.runtime.writable() ||
       start !== end ||
       !this.pairAt(start) ||
       this.pairAt(start)!.open !== start - 1
@@ -367,9 +445,7 @@ export class SourceSurface {
       return false
     this.applyEdit(
       {
-        from: start - 1,
-        to: start + 1,
-        text: '',
+        changes: [{ from: start - 1, to: start + 1, text: '' }],
         selection: { from: start - 1, to: start - 1 },
       },
       false,
@@ -380,14 +456,24 @@ export class SourceSurface {
   private continueList(): boolean {
     const typing = this.runtime.typing()
     if (!typing.markdown || !typing.continueLists) return false
+    const value = this.element.value
     const edit = continueListEdit(
-      this.element.value,
+      value,
       this.element.selectionStart,
       this.element.selectionEnd,
+      this.itemsOf(value, this.element.selectionStart),
     )
     if (!edit) return false
-    this.applyEdit(edit, false)
+    this.asTyping(() => this.applyEdit(edit, false))
     return true
+  }
+
+  /** Reads the list items of `value` up to the line at `offset` from the parser, when asked. */
+  private itemsOf(value: string, offset: number): ItemsReader | undefined {
+    if (!this.runtime.typing().markdown) return undefined
+    const next = value.indexOf('\n', offset)
+    const lineEnd = next < 0 ? value.length : next
+    return () => this.items.through(value, lineEnd, leadingBOMLength(value))
   }
 
   private indent(outdent: boolean): void {
@@ -395,17 +481,27 @@ export class SourceSurface {
     const { value, selectionStart: start, selectionEnd: end } = this.element
     const edit = outdent
       ? outdentEdit(value, start, end, typing.indent, typing.markdown)
-      : indentEdit(value, start, end, typing.indent, typing.markdown)
+      : indentEdit(value, start, end, typing.indent, this.itemsOf(value, start))
     if (edit) this.applyEdit(edit, true)
   }
 
   /**
    * The keys that a browser's textarea would handle differently from InkKit: Return in a list item,
    * Backspace in an empty pair, and Tab when the host chose how to indent. The others are left to
-   * the browser, so Tab keeps moving focus unless the host set an indent.
+   * the browser, so Tab keeps moving focus unless the host set an indent, and then only until Escape.
    */
   private browserKey(event: KeyboardEvent): boolean {
     const { key, metaKey, ctrlKey, altKey, shiftKey } = event
+    // Escape is the way out of a Tab that indents: the next Tab moves focus on.
+    if (key === 'Escape' && !(metaKey || ctrlKey || altKey || shiftKey)) {
+      this.tabEscaped = true
+      return false
+    }
+    if (key === 'Tab' && this.tabEscaped) {
+      this.tabEscaped = false
+      return false
+    }
+    if (!modifierKeys.has(key)) this.tabEscaped = false
     if (
       metaKey ||
       ctrlKey ||
@@ -427,7 +523,8 @@ export class SourceSurface {
   keyDown({ key, metaKey, ctrlKey, altKey, shiftKey }: KeyboardEvent): boolean {
     if (metaKey || ctrlKey || altKey) return false
     if (key === 'Enter') {
-      if (!this.continueList()) this.replaceLiteralSelection('\n', false)
+      if (!this.continueList())
+        this.asTyping(() => this.replaceLiteralSelection('\n', false))
       return true
     }
     if (key === 'Tab') {
@@ -450,7 +547,7 @@ export class SourceSurface {
           segment.index + segment.segment.length,
         )
       }
-      this.replaceLiteralSelection('', false)
+      this.asTyping(() => this.replaceLiteralSelection('', false))
       return true
     }
     return false

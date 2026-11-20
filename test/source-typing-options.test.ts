@@ -48,6 +48,8 @@ async function withSource(
     editable?: boolean
     /** Loads the text with CRLF line endings. */
     crlf?: boolean
+    /** Loads the text as this function changes it, such as with mixed line endings. */
+    loaded?: (text: string) => string
   },
   run: (session: Session) => void | Promise<void>,
 ) {
@@ -71,7 +73,9 @@ async function withSource(
       documentId: 'typing-options',
       generation,
       format: options.format ?? 'md',
-      text: options.crlf ? placed.text.replaceAll('\n', '\r\n') : placed.text,
+      text: options.crlf
+        ? placed.text.replaceAll('\n', '\r\n')
+        : (options.loaded ?? ((text) => text))(placed.text),
     })
     if ((options.format ?? 'md') === 'md')
       editor.setEditingMode('source', generation)
@@ -131,6 +135,25 @@ async function withSource(
       },
     })
     expect(errors).toEqual([])
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+}
+
+/** The bytes a fresh editor saves after loading `text`, which show that the text reopens as it is. */
+async function reopened(text: string): Promise<string> {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const editor = await InkKitEditor.mount(root, { changed() {} }, {})
+  try {
+    editor.loadDocument({
+      documentId: 'reopened',
+      generation: 1,
+      format: 'md',
+      text,
+    })
+    return editor.snapshot().text
   } finally {
     await editor.destroy()
     root.remove()
@@ -577,9 +600,9 @@ describe('continuing lists in source mode', () => {
       expect(key('Enter')).toBe(true)
       expect(editor.snapshot().text).toBe('1. a\r\n2. \r\nz')
     })
-    await withSource('z\n- |', { crlf: true }, ({ key, editor }) => {
+    await withSource('z\n\n- |', { crlf: true }, ({ key, editor }) => {
       expect(key('Enter')).toBe(true)
-      expect(editor.snapshot().text).toBe('z\r\n')
+      expect(editor.snapshot().text).toBe('z\r\n\r\n')
     })
     await withSource('text|\nz', { crlf: true }, ({ key, editor }) => {
       expect(key('Enter')).toBe(true)
@@ -629,14 +652,17 @@ describe('continuing lists in source mode', () => {
       expect(plain.value).toBe('- a')
     }))
 
-  test('a continued item undoes in one step and saves reopened bytes', () =>
-    withSource('- a|', {}, ({ key, editor, shown }) => {
+  test('a continued item undoes in one step, and the saved bytes reopen as they are', () =>
+    withSource('- a|', {}, async ({ key, editor, shown }) => {
       expect(key('Enter')).toBe(true)
-      expect(editor.snapshot().text).toBe('- a\n- ')
+      const saved = editor.snapshot().text
+      expect(saved).toBe('- a\n- ')
+      // A fresh editor that loads the saved text saves the same bytes.
+      expect(await reopened(saved)).toBe(saved)
       expect(editor.undo()).toBe(true)
       expect(shown()).toBe('- a|')
       expect(editor.redo()).toBe(true)
-      expect(editor.snapshot().text).toBe('- a\n- ')
+      expect(editor.snapshot().text).toBe(saved)
     }))
 
   test('Return does not continue while composing', () =>
@@ -754,6 +780,57 @@ describe('indenting in source and TXT modes', () => {
     })
   })
 
+  test('Shift-Tab at the start of an empty first line does not edit the next line', async () => {
+    await withSource('|\n    next', {}, ({ key, editor }) => {
+      expect(key('Tab', true)).toBe(true)
+      expect(editor.snapshot().text).toBe('\n    next')
+    })
+    await withSource('|\n    next', spaces(4), ({ press, editor }) => {
+      press('Tab', { shiftKey: true })
+      expect(editor.snapshot().text).toBe('\n    next')
+    })
+  })
+
+  test('Tab keeps every line ending as it was, in a document with mixed endings', async () => {
+    const mixed = (text: string) => text.replace('a\nb', 'a\r\nb')
+    await withSource('|a\nb\nc|', { loaded: mixed }, ({ key, editor }) => {
+      expect(key('Tab')).toBe(true)
+      expect(editor.snapshot().text).toBe('\ta\r\n\tb\n\tc')
+      expect(key('Tab', true)).toBe(true)
+      expect(editor.snapshot().text).toBe('a\r\nb\nc')
+    })
+    await withSource(
+      '|a\nb\nc|',
+      {
+        loaded: (text) =>
+          text.replace('b\nc', 'b\r\nc').replace('a\nb', 'a\nb'),
+      },
+      ({ key, editor }) => {
+        expect(key('Tab')).toBe(true)
+        expect(editor.snapshot().text).toBe('\ta\n\tb\r\n\tc')
+      },
+    )
+    await withSource(
+      '- a\n- b|\n- c',
+      { loaded: (text) => text.replace('- a\n', '- a\r\n') },
+      ({ key, editor }) => {
+        expect(key('Tab')).toBe(true)
+        expect(editor.snapshot().text).toBe('- a\r\n\t- b\n- c')
+      },
+    )
+  })
+
+  test('Shift-Tab keeps every line ending, including after a blank line', async () => {
+    await withSource(
+      '|\ta\n\n\tb\r\n\tc|',
+      { loaded: (text) => text },
+      ({ key, editor }) => {
+        expect(key('Tab', true)).toBe(true)
+        expect(editor.snapshot().text).toBe('a\n\nb\r\nc')
+      },
+    )
+  })
+
   test('one Tab undoes in one step, apart from the typing before it', () =>
     withSource('|', {}, ({ type, key, editor, shown }) => {
       type('x')
@@ -796,6 +873,34 @@ describe('indenting in source and TXT modes', () => {
         expect(shown()).toBe('\t- a|')
       },
     )
+  })
+
+  test('Escape lets the next Tab or Shift-Tab move focus instead of indenting', async () => {
+    await withSource('ab|', spaces(2), ({ press, shown }) => {
+      expect(press('Tab').defaultPrevented).toBe(true)
+      expect(press('Escape').defaultPrevented).toBe(false)
+      expect(press('Tab').defaultPrevented).toBe(false)
+      expect(shown()).toBe('ab  |')
+      // Only the one Tab leaves: the next indents again.
+      expect(press('Tab').defaultPrevented).toBe(true)
+      expect(shown()).toBe('ab    |')
+    })
+    await withSource('  ab|', spaces(2), ({ press, shown }) => {
+      expect(press('Escape').defaultPrevented).toBe(false)
+      // Pressing Shift alone before Tab does not end the escape.
+      press('Shift', { shiftKey: true })
+      expect(press('Tab', { shiftKey: true }).defaultPrevented).toBe(false)
+      expect(shown()).toBe('  ab|')
+      expect(press('Tab', { shiftKey: true }).defaultPrevented).toBe(true)
+      expect(shown()).toBe('ab|')
+    })
+    await withSource('ab|', spaces(2), ({ press, type, shown }) => {
+      press('Escape')
+      type('x')
+      press('a')
+      expect(press('Tab').defaultPrevented).toBe(true)
+      expect(shown()).toBe('abx  |')
+    })
   })
 
   test('a browser Tab does nothing in a read-only editor', () =>
@@ -881,4 +986,246 @@ describe('typing preferences', () => {
         expect(shown()).toBe('- a\n\t- |\n\nz')
       },
     ))
+})
+
+describe('pairs are tracked only through typing inside them', () => {
+  const load = (
+    editor: InkKitEditor,
+    plain: HTMLTextAreaElement,
+    text: string,
+  ) => {
+    editor.loadDocument({
+      documentId: 'typing-options',
+      generation: generation + 1,
+      format: 'md',
+      text,
+    })
+    editor.setEditingMode('source', generation + 1)
+    plain.setSelectionRange(1, 1)
+  }
+
+  test('a closer that arrived with a load is not stepped over', () =>
+    withPairing('|', ({ editor, plain, type }) => {
+      type('(')
+      load(editor, plain, '()')
+      expect(editor.insertText(')', generation + 1)).toBe(true)
+      expect(editor.snapshot().text).toBe('())')
+    }))
+
+  test('a closer pasted before the tracked one is ordinary, and so is the tracked one', () =>
+    withPairing('|', ({ plain, browserType, shown }) => {
+      browserType('(')
+      expect(shown()).toBe('(|)')
+      plain.setRangeText(')', 1, 1, 'end')
+      plain.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertFromPaste',
+        }),
+      )
+      expect(shown()).toBe('()|)')
+      browserType(')')
+      expect(shown()).toBe('())|)')
+    }))
+
+  test('a drop, a replacement and a cut forget the pair', async () => {
+    for (const inputType of [
+      'insertFromDrop',
+      'insertReplacementText',
+      'deleteByCut',
+    ]) {
+      await withPairing('|', ({ plain, browserType, shown }) => {
+        browserType('(')
+        browserType('x')
+        plain.setRangeText('y', 1, 2, 'end')
+        plain.dispatchEvent(
+          new InputEvent('input', { bubbles: true, inputType }),
+        )
+        plain.setSelectionRange(2, 2)
+        browserType(')')
+        expect(shown(), inputType).toBe('(y)|)')
+      })
+    }
+  })
+
+  test('undo and redo leave ordinary brackets', () =>
+    withPairing('|', ({ editor, plain, press, type, shown }) => {
+      type('(')
+      expect(editor.undo()).toBe(true)
+      expect(editor.redo()).toBe(true)
+      expect(shown()).toBe('(|)')
+      // Backspace is left to the browser, which deletes the opener alone.
+      expect(press('Backspace').defaultPrevented).toBe(false)
+      type(')')
+      expect(shown()).toBe('()|)')
+    }))
+
+  test('replacing the source and switching mode forget the pair', async () => {
+    await withPairing('|', ({ editor, plain, type }) => {
+      type('(')
+      editor.replaceSource('(a)', generation)
+      plain.setSelectionRange(2, 2)
+      type(')')
+      expect(editor.snapshot().text).toBe('(a))')
+    })
+    await withPairing('|', ({ editor, plain, type }) => {
+      type('(')
+      editor.setEditingMode('formatted', generation)
+      editor.setEditingMode('source', generation)
+      plain.setSelectionRange(1, 1)
+      type(')')
+      expect(editor.snapshot().text).toBe('())')
+    })
+  })
+
+  test('turning pairing off or changing a preference forgets the pair', async () => {
+    await withPairing('|', ({ editor, plain, press, type }) => {
+      type('(')
+      editor.setTextInputPreferences({ pairBrackets: false })
+      // Backspace between the brackets deletes the opener only, so it is the browser's.
+      expect(press('Backspace').defaultPrevented).toBe(false)
+      editor.setTextInputPreferences({ pairBrackets: true })
+      plain.setSelectionRange(1, 1)
+      type(')')
+      expect(editor.snapshot().text).toBe('())')
+    })
+  })
+
+  test('an edit outside the pair forgets it, and typing inside keeps it', async () => {
+    await withPairing('|', ({ plain, browserType, shown }) => {
+      browserType('(')
+      browserType('a')
+      plain.setSelectionRange(0, 0)
+      browserType('z')
+      plain.setSelectionRange(3, 3)
+      browserType(')')
+      expect(shown()).toBe('z(a)|)')
+    })
+    await withPairing('|', ({ browserType, shown }) => {
+      browserType('(')
+      browserType('a')
+      browserType(')')
+      expect(shown()).toBe('(a)|')
+    })
+  })
+})
+
+describe('input that is not typing', () => {
+  test('a replacement never pairs or wraps', () =>
+    withPairing('|ab| c', ({ plain, shown }) => {
+      const event = new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertReplacementText',
+        data: '(',
+      })
+      plain.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+      plain.setRangeText('(', 0, 2, 'end')
+      plain.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertReplacementText',
+        }),
+      )
+      expect(shown()).toBe('(| c')
+    }))
+
+  test('a deletion that arrives as input alone removes an empty pair, as Backspace does', async () => {
+    await withPairing('a |', ({ plain, browserType, shown }) => {
+      browserType('(')
+      const event = new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'deleteContentBackward',
+      })
+      plain.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+      expect(shown()).toBe('a |')
+    })
+    // After text between the brackets, or with pairing off, it is the browser's.
+    await withPairing('a |', ({ plain, browserType }) => {
+      browserType('(')
+      browserType('x')
+      const event = new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'deleteContentBackward',
+      })
+      plain.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+    })
+    await withSource('a (|)', {}, ({ plain }) => {
+      const event = new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'deleteContentBackward',
+      })
+      plain.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+    })
+  })
+})
+
+describe('Return reads the Markdown that the parser reads', () => {
+  const unchangedByReturn = (text: string) =>
+    withSource(text, {}, ({ key, editor, shown }) => {
+      expect(key('Enter')).toBe(true)
+      // The line break is plain: no marker is added and none is removed.
+      const before = text.replace('|', '')
+      const after = editor.snapshot().text
+      expect(after.replace(/\r\n/g, '\n')).not.toContain('- \n- ')
+      expect(after.length).toBe(before.length + 1)
+      expect(shown()).toContain('|')
+    })
+
+  test('inside an HTML block it adds a plain line', async () => {
+    await unchangedByReturn('<pre>\n- x|\n</pre>')
+  })
+
+  test('inside TOML or YAML front matter it adds a plain line, with or without a byte order mark', async () => {
+    await unchangedByReturn('+++\n- x|\n+++\n')
+    await unchangedByReturn('---\n- x|\n---\n')
+    await unchangedByReturn('﻿---\n- x|\n---\n')
+  })
+
+  test('after an indented line that is fence content it adds a plain line', async () => {
+    await unchangedByReturn('~~~\n    ~~~\n- x|')
+  })
+
+  test('an inline code span with a comment opener does not stop a list below it', () =>
+    withSource('`<!--`\n\n- a|', {}, ({ key, shown }) => {
+      expect(key('Enter')).toBe(true)
+      expect(shown()).toBe('`<!--`\n\n- a\n- |')
+    }))
+
+  test('a code span with a comment opener on the item line does not stop continuation', () =>
+    withSource('- `<!--` x|\n- y', {}, ({ key, shown }) => {
+      expect(key('Enter')).toBe(true)
+      expect(shown()).toBe('- `<!--` x\n- |\n- y')
+    }))
+
+  test('a bare marker at the start of a document is an empty item, so Return removes it', async () => {
+    await withSource('-|', {}, ({ key, editor }) => {
+      expect(key('Enter')).toBe(true)
+      expect(editor.snapshot().text).toBe('')
+    })
+    await withSource('1.|', {}, ({ key, editor }) => {
+      expect(key('Enter')).toBe(true)
+      expect(editor.snapshot().text).toBe('')
+    })
+  })
+
+  test('a marker after a paragraph is a heading underline or text, so Return is plain', () =>
+    withSource('z\n- |', {}, ({ key, editor }) => {
+      expect(key('Enter')).toBe(true)
+      expect(editor.snapshot().text).toBe('z\n- \n')
+    }))
+
+  test('a list item inside a comment, a fence or an indented block is not continued', async () => {
+    await unchangedByReturn('<!--\n- x|\n-->')
+    await unchangedByReturn('%%\n- x|\n%%')
+    await unchangedByReturn('```\n- x|\n```')
+    await unchangedByReturn('para\n\n    - x|')
+  })
 })

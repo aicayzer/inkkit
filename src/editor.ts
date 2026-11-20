@@ -46,6 +46,7 @@ import { EditorViewport } from './editor-viewport'
 import { EditorSearch } from './editor-search'
 import { SourceSurface, type SourceTyping } from './editor-source'
 import { defaultIndent } from './source-typing'
+import { forgetPairs } from './pairing'
 import { EditorDocument } from './editor-document'
 import { SourceHistory, discardFormattedRedo } from './editor-history'
 import { $prose } from '@milkdown/kit/utils'
@@ -71,7 +72,7 @@ import { caretState } from './editor-selection'
 import type { SlashMenuOptions, SlashCommandName, SlashCommand } from './types'
 import type { Suggestions, SuggestionSession } from './suggestions'
 import { slashMenuOptions } from './slash-menu'
-import { type Editor, editorViewCtx } from '@milkdown/kit/core'
+import { type Editor, editorViewCtx, remarkCtx } from '@milkdown/kit/core'
 import { closeHistory } from '@milkdown/kit/prose/history'
 import {
   Mark as ProseMark,
@@ -932,6 +933,10 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private readonly findSessions = new Set<EditorFindSession>()
   private loading = false
   private call?: FacadeCall
+  /** Whether the call in progress is typing, which keeps the pairs that bracket pairing tracks. */
+  private typingCall = false
+  /** Changes when tracked bracket pairs are to be forgotten, as on a mode switch. */
+  private pairEpoch = 0
   private writable = true
   private inputPreferences: TextInputPreferences = {}
   private literalKeys: (view: EditorView, event: KeyboardEvent) => boolean =
@@ -1505,6 +1510,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.reportingSuppressed = true
     try {
       this.inputPreferences = checked
+      this.forgetPairs()
       this.applyInputPolicy()
     } finally {
       this.reportingSuppressed = suppressed
@@ -1680,6 +1686,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       text: () => this.savedText().text,
       changed: () => {
         this.mode = mode
+        this.forgetPairs()
         this.session.modeChanged()
         this.output.cancel()
         this.search.reset()
@@ -1991,6 +1998,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private dispatchTransaction(view: EditorView, tr: Transaction): void {
     // A call whose edit was refused changes nothing more; it throws when it returns.
     if (this.call?.refusal && tr.docChanged) return
+    // A host call other than typing makes the brackets around it ordinary characters.
+    if (this.call && !this.typingCall && tr.docChanged) forgetPairs(tr)
     this.document.carry(tr.getMeta(carriedBlocks) ?? [])
     this.suggestions?.beforeTransaction(tr)
     const base = this.suggestionBase ?? view.state
@@ -2122,6 +2131,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         smartPunctuation: () =>
           instance.inputPreferences.smartPunctuation === true,
         pairBrackets: () => instance.inputPreferences.pairBrackets === true,
+        pairEpoch: () => instance.pairEpoch,
         continueLists: () => instance.inputPreferences.continueLists !== false,
         linkSchemes: instance.linkSchemes,
         mutate: (operation) =>
@@ -2168,6 +2178,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       literal: () => instance.literalSurface,
       writable: () => instance.writable,
       typing: () => instance.sourceTyping(),
+      parseMarkdown: (text) => instance.editor.ctx.get(remarkCtx).parse(text),
       currentText: () => instance.document.currentText(),
       applySource: (text, isolated, from, to, native) =>
         instance.history.applySource(text, isolated, from, to, native),
@@ -2601,7 +2612,12 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     const view = this.editor.ctx.get(editorViewCtx)
     const { doc, selection } = view.state
     if (/[\r\n]/.test(text)) this.insertPlainText(text)
-    else if (!insertNativeText(view, text)) return false
+    else if (
+      !(Array.from(text).length === 1
+        ? this.asTyping(() => insertNativeText(view, text))
+        : insertNativeText(view, text))
+    )
+      return false
     // Text an RTF document can't hold, such as U+0000, is refused. A closer typed over the one that
     // pairing inserted moves the caret and changes nothing else.
     return !(
@@ -2634,16 +2650,35 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       bubbles: true,
       cancelable: true,
     })
-    return routeNativeKey(event, {
-      literal: () => this.literalSurface,
-      writable: () => this.writable,
-      view: () => this.editor.ctx.get(editorViewCtx),
-      readOnly: (view, event) => this.readOnlyKeys(view, event),
-      literalKeys: (view, event) => this.literalKeys(view, event),
-      source: (event) => this.source.keyDown(event),
-      footnote: (target) => this.navigateFootnote(target),
-      refuseMutation: () => this.assertMutation(generation),
-    })
+    return this.asTyping(() =>
+      routeNativeKey(event, {
+        literal: () => this.literalSurface,
+        writable: () => this.writable,
+        view: () => this.editor.ctx.get(editorViewCtx),
+        readOnly: (view, event) => this.readOnlyKeys(view, event),
+        literalKeys: (view, event) => this.literalKeys(view, event),
+        source: (event) => this.source.keyDown(event),
+        footnote: (target) => this.navigateFootnote(target),
+        refuseMutation: () => this.assertMutation(generation),
+      }),
+    )
+  }
+
+  /** Runs `operation`, whose edits are typing and so keep the bracket pairs that are tracked. */
+  private asTyping<T>(operation: () => T): T {
+    const before = this.typingCall
+    this.typingCall = true
+    try {
+      return operation()
+    } finally {
+      this.typingCall = before
+    }
+  }
+
+  /** Forgets the bracket pairs that pairing tracks, in every mode. */
+  private forgetPairs(): void {
+    this.pairEpoch++
+    this.source?.forgetPairs()
   }
 
   focus(expectedGeneration?: number): void {

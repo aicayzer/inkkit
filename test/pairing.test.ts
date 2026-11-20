@@ -22,6 +22,8 @@ interface Session {
   type(text: string): void
   /** Puts the caret after the first `text`, or at a document position. */
   caret(at: string | number): void
+  /** The document position after the first `text`. */
+  find(text: string): number
   /** Puts the caret at the end of the document. */
   end(): void
   /** Selects between two document positions. */
@@ -89,6 +91,7 @@ async function withNote(
         for (const character of text)
           expect(editor.insertText(character, generation)).toBe(true)
       },
+      find,
       caret(at) {
         const position = typeof at === 'string' ? find(at) : at
         view.dispatch(
@@ -304,7 +307,7 @@ describe('pairing in formatted mode', () => {
       expect(shown()).toBe('(a))|')
     }))
 
-  test('a closer that moved with edits before it is still stepped over', () =>
+  test('a closer is stepped over only after typing inside its pair, not after an edit before it', () =>
     pairing('', ({ type, caret, shown }) => {
       type('(x')
       caret(1)
@@ -312,7 +315,7 @@ describe('pairing in formatted mode', () => {
       expect(shown()).toBe('ab|(x)')
       caret(5)
       type(')')
-      expect(shown()).toBe('ab(x)|')
+      expect(shown()).toBe('ab(x)|)')
     }))
 
   test('deleting the opener drops the pair, so its closer is not stepped over', () =>
@@ -755,5 +758,232 @@ describe('Return in a list item with continueLists off', () => {
       expect(key('Enter')).toBe(true)
       type('c')
       expect(save()).toBe('- a\n\n  b\n- c')
+    }))
+})
+
+describe('pairing keeps the bytes that typing by hand saves', () => {
+  const sequence = '(x)q'
+  const marked: Array<[string, (editor: InkKitEditor) => void]> = [
+    ['bold', (editor) => editor.format('bold', undefined, generation)],
+    ['italic', (editor) => editor.format('italic', undefined, generation)],
+    ['code', (editor) => editor.format('code', undefined, generation)],
+    [
+      'a link',
+      (editor) =>
+        editor.format(
+          'link',
+          { destination: 'https://example.com' },
+          generation,
+        ),
+    ],
+  ]
+  for (const [name, store] of marked) {
+    test(`with ${name} stored at the caret`, async () => {
+      const saved: string[] = []
+      for (const textInput of [{}, { pairBrackets: true }]) {
+        await withNote('a ', { textInput }, ({ editor, type }) => {
+          store(editor)
+          type(sequence)
+          saved.push(editor.snapshot().text)
+        })
+      }
+      expect(saved[1]).toBe(saved[0])
+      if (name === 'a link')
+        expect(saved[1]).toBe('a [(x)q](https://example.com)')
+    })
+  }
+
+  test('with a stored mark and a smart quote pair', async () => {
+    const saved: string[] = []
+    for (const textInput of [
+      { smartPunctuation: true },
+      { smartPunctuation: true, pairBrackets: true },
+    ]) {
+      await withNote('a ', { textInput }, ({ editor, type }) => {
+        editor.format('bold', undefined, generation)
+        type('"x"q')
+        saved.push(editor.snapshot().text)
+      })
+    }
+    expect(saved[1]).toBe(saved[0])
+  })
+})
+
+describe('choosing a [[ suggestion', () => {
+  test('replaces only the closers that pairing inserted for the [[, not an outer one', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const editor = await InkKitEditor.mount(
+      root,
+      { changed() {} },
+      {
+        wikiLinks: { open() {}, suggest: async () => ['Café'] },
+        textInput: { pairBrackets: true },
+      },
+    )
+    try {
+      editor.loadDocument({
+        documentId: 'wiki',
+        generation: 1,
+        format: 'md',
+        text: '',
+      })
+      for (const character of '[ see [[caf') editor.insertText(character, 1)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(root.querySelector('[role=option]')?.textContent).toBe('Café')
+      expect(editor.keyDown({ key: 'Enter' }, 1)).toBe(true)
+      expect(editor.snapshot().text).toBe('\\[ see [[Café]]]\n')
+    } finally {
+      await editor.destroy()
+      root.remove()
+    }
+  })
+})
+
+describe('pairing and a selection in a code block', () => {
+  test('a selection that spans lines is replaced, as with pairing off', async () => {
+    for (const textInput of [{}, { pairBrackets: true }]) {
+      await withNote(
+        '```\nalpha\nbeta\n```',
+        { textInput },
+        ({ editor, range, type, find }) => {
+          range(find('alpha') - 5, find('beta'))
+          type('(')
+          expect(editor.snapshot().text).toBe('```\n(\n```')
+        },
+      )
+    }
+  })
+
+  test('a selection on one line of a code block is wrapped', () =>
+    pairing('```\nalpha\nbeta\n```', ({ editor, range, type, find }) => {
+      range(find('alpha') - 5, find('alpha'))
+      type('(')
+      expect(editor.snapshot().text).toBe('```\n(alpha)\nbeta\n```')
+    }))
+})
+
+describe('pairing tracks a pair only through typing inside it', () => {
+  test('undo and redo leave ordinary brackets', async () => {
+    await pairing('', ({ editor, type, key, shown }) => {
+      type('(')
+      expect(editor.undo()).toBe(true)
+      expect(editor.redo()).toBe(true)
+      expect(shown()).toBe('(|)')
+      // The restored brackets are ordinary: pairing leaves Backspace to the browser, which
+      // deletes the opener alone.
+      expect(key('Backspace')).toBe(false)
+      expect(shown()).toBe('(|)')
+    })
+    await pairing('', ({ editor, type, shown }) => {
+      type('(')
+      editor.undo()
+      editor.redo()
+      type(')')
+      expect(shown()).toBe('()|)')
+    })
+  })
+
+  test('a paste before the closer makes it an ordinary character', () =>
+    pairing('', ({ view, type, shown }) => {
+      type('(')
+      view.dispatch(
+        view.state.tr
+          .insertText(')', view.state.selection.from)
+          .setMeta('uiEvent', 'paste'),
+      )
+      expect(shown()).toBe('()|)')
+      type(')')
+      expect(shown()).toBe('())|)')
+    }))
+
+  test('a host call that is not typing makes the closer an ordinary character', () =>
+    pairing('', ({ editor, type, shown }) => {
+      type('(')
+      expect(editor.insertText('ab', generation)).toBe(true)
+      type(')')
+      expect(shown()).toBe('(ab)|)')
+    }))
+
+  test('a mode switch and a change of preference forget the pair', async () => {
+    await pairing('', ({ editor, type, shown }) => {
+      type('(')
+      editor.setEditingMode('source', generation)
+      editor.setEditingMode('formatted', generation)
+      type(')')
+      expect(editor.snapshot().text).toBe('())\n')
+    })
+    await pairing('', ({ editor, type }) => {
+      type('(')
+      editor.setTextInputPreferences({ pairBrackets: false })
+      editor.setTextInputPreferences({ pairBrackets: true })
+      type(')')
+      expect(editor.snapshot().text).toBe('())\n')
+    })
+  })
+
+  test('with pairing turned off, Backspace between the brackets deletes the opener only', () =>
+    pairing('', ({ editor, type, key, shown }) => {
+      type('(')
+      editor.setTextInputPreferences({ pairBrackets: false })
+      expect(key('Backspace')).toBe(false)
+      expect(shown()).toBe('(|)')
+    }))
+
+  test('an edit outside the pair forgets it, and typing inside keeps it', () =>
+    pairing('', ({ type, caret, shown }) => {
+      type('(a')
+      caret(1)
+      type('z')
+      caret(4)
+      type(')')
+      expect(shown()).toBe('z(a)|)')
+    }))
+})
+
+describe('input that is not typing', () => {
+  const input = (view: EditorView, inputType: string) => {
+    const event = new InputEvent('beforeinput', {
+      inputType,
+      bubbles: true,
+      cancelable: true,
+    })
+    view.dom.dispatchEvent(event)
+    return event
+  }
+  /** What ProseMirror does with one character of text it read from the page. */
+  const read = (view: EditorView, from: number, to: number, text: string) => {
+    const deflt = () => view.state.tr.insertText(text, from, to)
+    if (
+      !view.someProp('handleTextInput', (f) => f(view, from, to, text, deflt))
+    )
+      view.dispatch(deflt())
+  }
+
+  test('a replacement from a spelling menu never pairs or wraps', () =>
+    pairing('ab c', ({ view, find, editor }) => {
+      input(view, 'insertReplacementText')
+      read(view, find('ab') - 2, find('ab'), '(')
+      expect(editor.snapshot().text).toBe('( c')
+    }))
+
+  test('inserted text that arrives as input still pairs', () =>
+    pairing('ab ', ({ view, editor }) => {
+      input(view, 'insertText')
+      read(view, 4, 4, '(')
+      expect(editor.snapshot().text).toBe('ab ()')
+    }))
+
+  test('a deletion that arrives as input alone removes an empty pair, as Backspace does', () =>
+    pairing('', ({ view, type, shown }) => {
+      type('(')
+      expect(input(view, 'deleteContentBackward').defaultPrevented).toBe(true)
+      expect(shown()).toBe('|')
+    }))
+
+  test('a deletion input after text leaves the browser to delete', () =>
+    pairing('', ({ view, type }) => {
+      type('(a')
+      expect(input(view, 'deleteContentBackward').defaultPrevented).toBe(false)
     }))
 })
