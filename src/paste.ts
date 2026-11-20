@@ -78,6 +78,9 @@ interface PasteControllerOptions {
   onPendingChanged?: () => void
   editable?: () => boolean
   literalText?: () => boolean
+  /** Whether a paste with plain text inserts that text literally, through `pastePlainText`. */
+  plainText?: () => boolean
+  pastePlainText?: (text: string) => void
   /** Set while the document is in a format that imports pastes its own way, such as RTF. */
   richText?: () => RichTextBehaviour | undefined
   linkSchemes?: ReadonlySet<string>
@@ -183,6 +186,27 @@ export class PasteController {
                 : importableSlice(this.options.ctx(), slice),
             handlePaste: (view, event) => {
               this.claimed = false
+              const clipboard = event.clipboardData
+              if (
+                clipboard &&
+                view.editable &&
+                this.options.plainText?.() &&
+                this.options.pastePlainText
+              ) {
+                const plain = clipboard.getData('text/plain')
+                // Without plain text only images are left; HTML and Markdown stay unread.
+                const images = plain ? [] : imageFiles(clipboard.files)
+                try {
+                  if (plain) this.options.pastePlainText(plain)
+                  else if (images.length)
+                    void this.run({ text: '' }, images).catch((error) =>
+                      options.onError?.(error),
+                    )
+                } catch (error) {
+                  options.onError?.(error)
+                }
+                return true
+              }
               // RTF imports every paste itself, so nothing it cannot hold arrives unconverted.
               if (
                 this.options.richText?.() &&

@@ -384,7 +384,15 @@ export interface TextInputPreferences {
   autocapitalize?: 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters'
   /** Typing a quote or `--` gives a curly quote or a dash, in formatted mode. Off unless true. */
   smartPunctuation?: boolean
+  /** How a paste reads the clipboard. `'plainText'` inserts its plain text literally, as
+   *  `pasteAsPlainText` does, in every mode and format. Defaults to `'formatted'`. */
+  paste?: PasteRoute
 }
+
+/** How a paste reads the clipboard: as formatting, or as literal plain text. */
+export type PasteRoute = 'formatted' | 'plainText'
+
+const pasteRoutes = ['formatted', 'plainText'] as const
 
 const autocapitalizeValues = [
   'off',
@@ -404,6 +412,7 @@ function textInputPreferences(
     'autocorrect',
     'autocapitalize',
     'smartPunctuation',
+    'paste',
   ])
   return {
     spellcheck: optionalBoolean(record.spellcheck, `${name}.spellcheck`),
@@ -419,6 +428,9 @@ function textInputPreferences(
           autocapitalizeValues,
           `${name}.autocapitalize`,
         ),
+    paste: isOmitted(record.paste)
+      ? undefined
+      : expectOneOf(record.paste, pasteRoutes, `${name}.paste`),
   }
 }
 
@@ -1780,6 +1792,15 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.assertAlive()
     input = this.clipboard.restore(clipboardInput(input))
     this.assertMutation(expectedGeneration)
+    if (this.pastesPlainText) {
+      if (input.text) {
+        this.unrecorded(() => this.pasteAsPlainText(input.text))
+        return
+      }
+      // Without plain text only images are left; HTML and Markdown stay unread.
+      if (!input.images?.length) return
+      input = { text: '', images: input.images }
+    }
     if (this.literalSurface) {
       const text = this.document.handler.literalPaste(input)
       // Text-only surfaces have nowhere to store an image, so an image alone is refused.
@@ -1789,6 +1810,10 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       return
     }
     await this.pasteController.paste(input)
+  }
+
+  private get pastesPlainText(): boolean {
+    return this.inputPreferences.paste === 'plainText'
   }
 
   /** Shows or hides author comments. Presentation only: the revision, history and dirty state don't
@@ -1997,6 +2022,10 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       onError: (error) => instance.report(error),
       commit: (apply) => instance.facadeCall(apply),
       literalText: () => instance.literalSurface,
+      plainText: () => instance.pastesPlainText,
+      pastePlainText: (text) => {
+        instance.unrecorded(() => instance.pasteAsPlainText(text))
+      },
       editable: () => instance.writable && !instance.literalSurface,
       onPendingChanged: () => instance.publishCommandState(),
       richText: () => instance.document.handler.richText,

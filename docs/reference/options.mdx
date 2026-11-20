@@ -99,6 +99,16 @@ Turns typed quotes and dashes into curly quotes and dashes in formatted mode. Se
 
 </ResponseField>
 
+<ResponseField name="paste" type="PasteRoute" default="'formatted'">
+
+{/* @api PasteRoute */}
+A `PasteRoute`: how a paste the person makes, or a call to [`paste`](/reference/editor#paste), reads the clipboard.
+
+- `'formatted'` imports HTML, Markdown and spreadsheets into formatting, as described in [Clipboard](/concepts/clipboard). In source mode, it inserts the Markdown representation when there is one and the plain text otherwise.
+- `'plainText'` inserts the clipboard's plain text literally, as [`pasteAsPlainText`](/reference/editor#pasteasplaintext) does, in every mode and format. A paste with no plain text imports only its images, and does nothing when it has none. Drops are unchanged.
+
+</ResponseField>
+
 </Expandable>
 
 The three attributes are hints: the browser and the operating system decide whether they take effect.

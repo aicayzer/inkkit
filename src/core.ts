@@ -3,6 +3,7 @@ export type {
   EditorEvents,
   EditorOptions,
   TextInputPreferences,
+  PasteRoute,
   CommandState,
   EditingMode,
   CaretState,
