@@ -10,6 +10,7 @@ import {
 import { invalidArgument } from './errors'
 import { parseLinkedSyntax, wikiMarkdown } from './linked-syntax'
 import type { SuggestionSession } from './suggestions'
+import { pairedClosers } from './pairing'
 
 interface WikiHost {
   adapter?: WikiLinkAdapter
@@ -62,13 +63,26 @@ export function wikiSuggestionTransaction(
   name: string,
 ): Transaction {
   const { state } = view
+  // Closing brackets that pairing inserted with the opening ones are part of what is replaced.
+  const closers = pairedClosers(state, state.selection.from, ']')
   return closeHistory(
     state.tr.replaceWith(
       session.from,
-      state.selection.from,
+      state.selection.from + closers,
       wikiSuggestionNode(state, name),
     ),
   ).scrollIntoView()
+}
+
+/**
+ * The document after `tr` without the closing brackets at `at`, which pairing may have inserted
+ * since the session started, so that they are not an edit outside the query.
+ */
+function withoutClosers(tr: Transaction, at: number): ProseNode {
+  const end = tr.doc.resolve(at).end()
+  let stop = at
+  while (stop < end && tr.doc.textBetween(stop, stop + 1) === ']') stop++
+  return stop > at ? tr.delete(at, stop).doc : tr.doc
 }
 
 export function wikiSession(
@@ -100,7 +114,7 @@ export function wikiSession(
     start,
   )
   if (preceding === '!' || preceding === '\\' || preceding === '[') return
-  const baseline = view.state.tr.delete(start, to).doc
+  const baseline = withoutClosers(view.state.tr.delete(start, to), start)
   let controller: AbortController | undefined
   let disposed = false
   const session: SuggestionSession = {
@@ -112,9 +126,10 @@ export function wikiSession(
       !current.state.doc
         .textBetween(start, current.state.selection.from, '\n', '\ufffc')
         .includes(']]') &&
-      current.state.tr
-        .delete(start, current.state.selection.from)
-        .doc.eq(baseline),
+      withoutClosers(
+        current.state.tr.delete(start, current.state.selection.from),
+        start,
+      ).eq(baseline),
     cancel: () => {
       disposed = true
       controller?.abort()

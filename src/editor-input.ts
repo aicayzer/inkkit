@@ -109,6 +109,27 @@ export const calloutEnter = $prose(() =>
   }),
 )
 
+// With `continueLists` off, Return in a list item's text splits the paragraph inside the same item
+// instead of starting the next item. Return in an empty paragraph still leaves the list, so a list
+// can be ended from the keyboard.
+export const listItemEnter = (continueLists: () => boolean) =>
+  $prose(() =>
+    keymap({
+      Enter: (state, dispatch) => {
+        const { $from } = state.selection
+        if (
+          continueLists() ||
+          $from.depth < 3 ||
+          $from.node(-1).type.name !== 'list_item' ||
+          $from.parent.type.name !== 'paragraph' ||
+          $from.parent.content.size === 0
+        )
+          return false
+        return splitBlock(state, dispatch)
+      },
+    }),
+  )
+
 // The preset copies the completed state when it splits a task.
 export const taskItemEnter = $prose(() =>
   keymap({

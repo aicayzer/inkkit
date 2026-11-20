@@ -204,6 +204,11 @@ function applies(
     input.getState(state)?.composedQuote === state.selection.from &&
     pos === state.selection.from - 1
   if (!typed && !composed) return false
+  return ordinaryText(state, pos)
+}
+
+/** Whether the text at `pos` is ordinary: not code, and with no Markdown being typed. */
+function ordinaryText(state: EditorState, pos: number): boolean {
   const $pos = state.doc.resolve(pos)
   if ($pos.parent.type.spec.code || !$pos.parent.inlineContent) return false
   // The marks the typed character takes: stored ones, such as code switched on at a caret, or
@@ -242,6 +247,30 @@ function lastRule(
 const quotes: Record<string, [opening: string, closing: string]> = {
   '"': ['\u201C', '\u201D'],
   "'": ['\u2018', '\u2019'],
+}
+
+/**
+ * The curly quotes that typing `quote` wraps a selection with, which starts at `from`, or
+ * undefined when smart punctuation is off or does not apply at that place.
+ */
+export function smartQuotePair(
+  on: () => boolean,
+  state: EditorState,
+  from: number,
+  quote: string,
+): [opening: string, closing: string] | undefined {
+  const pair = quotes[quote]
+  return pair && on() && ordinaryText(state, from) ? pair : undefined
+}
+
+/** The closing quote that goes with an opening curly quote, when `opening` is one. */
+export function curlyCloser(opening: string): string | undefined {
+  return Object.values(quotes).find(([open]) => open === opening)?.[1]
+}
+
+/** Whether `typed` is the straight quote for the curly `closing` quote. */
+export function curlyCloses(typed: string, closing: string): boolean {
+  return quotes[typed]?.[1] === closing
 }
 
 /** Input rules that are not Markdown syntax, which apply in every formatted document. */
