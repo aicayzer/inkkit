@@ -1,5 +1,9 @@
+import { prosePluginsCtx } from '@milkdown/kit/core'
+import { isHistoryTransaction } from '@milkdown/kit/prose/history'
+import { Plugin } from '@milkdown/kit/prose/state'
 import { expect, test } from 'vitest'
-import { caretAt, deleted, load, mounted, typed } from './saved-edits'
+import { ctxOf } from './editor-access'
+import { caretAt, deleted, links, load, mounted, typed } from './saved-edits'
 
 for (const ending of ['\n', '\r\n']) {
   const lines = (text: string) => text.replaceAll('\n', ending)
@@ -150,6 +154,35 @@ for (const ending of ['\n', '\r\n']) {
     await typed(around('See https://example.com&quot;\nmore'), '"', [
       ['x', around('See https://example.com"x\nmore')],
     ])
+  })
+
+  // A plugin ordered before the autolink plugin can append a change to an
+  // Undo, so the autolink plugin sees both in one batch. The change here
+  // rewrites the first character of the document as itself.
+  test(`undo followed by a change from another plugin restores the document (${label})`, async () => {
+    const appendsToUndo = new Plugin({
+      appendTransaction(transactions, _, state) {
+        if (!transactions.some(isHistoryTransaction)) return null
+        return state.tr.replace(1, 2, state.doc.slice(1, 2))
+      },
+    })
+    const source = around('See https://example.com&amp;\nmore')
+    await mounted(async (editor) => {
+      ctxOf(editor).update(prosePluginsCtx, (plugins) => [
+        appendsToUndo,
+        ...plugins,
+      ])
+      load(editor, source)
+      const loaded = links(editor)
+      caretAt(editor, '&')
+      expect(editor.insertText('x', 1)).toBe(true)
+      expect(editor.snapshot().text).toBe(
+        around('See https://example.com&x\nmore'),
+      )
+      expect(editor.undo()).toBe(true)
+      expect(editor.snapshot()).toMatchObject({ text: source, dirty: false })
+      expect(links(editor)).toEqual(loaded)
+    })
   })
 
   // Formatting that runs on past a link after a space was closed at the
