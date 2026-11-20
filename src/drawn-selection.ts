@@ -27,15 +27,23 @@ interface Piece extends Bar {
 }
 
 /** Every text node a range covers, clipped to the range. */
-function* textPieces(range: Range): Generator<Range> {
+export function* textPieces(range: Range): Generator<Range> {
   const root = range.commonAncestorContainer
   const doc = root.ownerDocument ?? (root as Document)
   if (root.nodeType === Node.TEXT_NODE) {
     yield range
     return
   }
+  // Start where the range starts. A walk from the root would pass every earlier text node for
+  // each range, so a selection split into many ranges, as one is by each block that holds a
+  // control, would cost the document's size for each of them.
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-  let node = walker.nextNode() as Text | null
+  const start = range.startContainer
+  walker.currentNode = start
+  let node =
+    start.nodeType === Node.TEXT_NODE
+      ? (start as Text)
+      : (walker.nextNode() as Text | null)
   while (node) {
     if (range.intersectsNode(node)) {
       const piece = doc.createRange()
