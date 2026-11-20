@@ -11,6 +11,7 @@ import {
   TextSelection,
   type Transaction,
 } from '@milkdown/kit/prose/state'
+import { isHistoryTransaction } from '@milkdown/kit/prose/history'
 import { $prose } from '@milkdown/kit/utils'
 import { serialize } from './dialect'
 import { semanticSignature } from './preserve-shape'
@@ -48,6 +49,18 @@ function characters(
         form,
         marks,
       })
+  })
+  return result
+}
+
+// Where each entry of `characters` starts in the document.
+function entryStarts(block: ProseNode, start: number): number[] {
+  const result: number[] = []
+  block.forEach((child, offset) => {
+    if (!child.isText) result.push(start + offset)
+    else
+      for (let index = 0; index < child.text!.length; index++)
+        result.push(start + offset + index)
   })
   return result
 }
@@ -99,8 +112,9 @@ function read(
 // GFM's own address grammar, without interpreting inline Markdown syntax.
 function literalFormattingLinks(text: string): Found | undefined {
   // Angle delimiters have their own completion and literal-paste rules. This
-  // fallback only resolves ambiguity from literal formatting delimiters.
-  if (!/[*_~`]/.test(text) || /[<>]/.test(text)) return undefined
+  // fallback only resolves ambiguity from literal formatting delimiters and
+  // backslashes, which the probe escapes and an address reads as written.
+  if (!/[*_~`\\]/.test(text) || /[<>]/.test(text)) return undefined
   const tree = fromMarkdown(`x ${text}`, {
     extensions: [
       gfmAutolinkLiteral(),
@@ -656,18 +670,28 @@ export const autolinkLiterals = $prose(
       appendTransaction(transactions, oldState, newState) {
         // A bare address is a link only in Markdown.
         if (!formatInput(ctx).markdownInput()) return null
-        if (!transactions.some((tr) => tr.docChanged)) return null
+        // Undo and Redo restore a document the editor held, with its links.
+        // Its text may come from character references the editor does not
+        // hold, so reading it again could link it differently. Only changes
+        // made after the last of them, such as one another plugin appends,
+        // are read.
+        let restored = transactions.length - 1
+        while (restored >= 0 && !isHistoryTransaction(transactions[restored]!))
+          restored--
+        if (!transactions.slice(restored + 1).some((tr) => tr.docChanged))
+          return null
+        const before = restored < 0 ? oldState.doc : transactions[restored]!.doc
         const base = newState.tr
         const written = transactions.every(isWrittenEdit)
-        if (written) codeAngles(base, editedBlocks(oldState.doc, base.doc))
-        let edited = editedBlocks(oldState.doc, base.doc)
+        if (written) codeAngles(base, editedBlocks(before, base.doc))
+        let edited = editedBlocks(before, base.doc)
         let completed = false
         if (written && edited.length === 1) {
           const { pos, block, from, to } = edited[0]!
           const start = base.steps.length
           if (completedAngle(base, characters(block, pos + 1), from, to)) {
             completed = true
-            edited = editedBlocks(oldState.doc, base.doc)
+            edited = editedBlocks(before, base.doc)
             // Consuming `>` can make the diff look like only `<` was deleted.
             // The suffix at the completion caret still needs recomputing.
             const mapping = base.mapping.slice(start)
@@ -679,10 +703,11 @@ export const autolinkLiterals = $prose(
         for (const block of edited) {
           const { pos, from, to } = block
           const chars = characters(block.block, pos + 1)
+          // An inline node such as a line break holds an entry of its own, so
+          // an edit that ends directly before one reaches the text it ends.
+          const starts = entryStarts(block.block, pos + 1)
           const index = (at: number) => {
-            const found = chars.findIndex(
-              (char) => char !== undefined && char.pos >= at,
-            )
+            const found = starts.findIndex((start) => start >= at)
             return found < 0 ? chars.length : found
           }
           const wanted = wantedLinks(

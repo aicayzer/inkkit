@@ -19,6 +19,7 @@ import {
   remarkLineBreak,
   syncHeadingIdPlugin,
   createCodeBlockInputRule,
+  textSchema,
 } from '@milkdown/kit/preset/commonmark'
 import {
   extendListItemSchemaForTask,
@@ -246,50 +247,30 @@ const outsideLiteral: ReadonlySet<string> = new Set([
   ...htmlMarkTypes,
 ])
 
-// The formatting a link wraps as its only child. A collapsed or shortcut
-// reference is left alone, since its label names its definition.
-function linkFormatting(node: PhrasingContent): Wrapper | undefined {
-  const linked =
-    node.type === 'link' ||
-    (node.type === 'linkReference' && node.referenceType === 'full')
-  const [inner] = linked ? (node as Wrapper).children : []
-  return linked &&
-    (node as Wrapper).children.length === 1 &&
-    inner &&
-    wrappers.has(inner.type) &&
-    (node.type !== 'link' ||
-      formOf(node) !== 'literal' ||
-      outsideLiteral.has(inner.type))
-    ? (inner as Wrapper)
-    : undefined
-}
-
-// The writer moves spaces at the edges of formatting out of it, leaving
-// empty text where a child was only spaces. Beside a link that shares the
-// formatting, such a space is put back, so that the formatting is written
-// once around both rather than closed and reopened around the space.
-function restoreMovedSpaces(children: PhrasingContent[]): void {
-  children.forEach((child, index) => {
-    if (child.type !== 'text' || !/^ +$/.test(child.value)) return
-    for (const [wrapper, link, edge] of [
-      [children[index + 1], children[index - 1], 0],
-      [children[index - 1], children[index + 1], -1],
-    ] as const) {
-      if (!wrapper || !wrappers.has(wrapper.type) || !link) continue
-      const empty = (wrapper as Wrapper).children.at(edge)
-      const formatting = linkFormatting(link)
-      if (
-        empty?.type === 'text' &&
-        empty.value === '' &&
-        formatting &&
-        sameFormatting(formatting, wrapper)
-      ) {
-        empty.value = child.value
-        child.value = ''
-        return
-      }
-    }
-  })
+// The formatting a link wraps as its only child, from the outside in. A
+// collapsed or shortcut reference is left alone, since its label names its
+// definition.
+function linkFormatting(node: PhrasingContent): Wrapper[] {
+  const chain: Wrapper[] = []
+  if (
+    node.type !== 'link' &&
+    !(node.type === 'linkReference' && node.referenceType === 'full')
+  )
+    return chain
+  let current = node as Wrapper
+  while (current.children.length === 1) {
+    const inner = current.children[0]!
+    if (
+      !wrappers.has(inner.type) ||
+      (node.type === 'link' &&
+        formOf(node) === 'literal' &&
+        !outsideLiteral.has(inner.type))
+    )
+      break
+    chain.push(inner as Wrapper)
+    current = inner as Wrapper
+  }
+  return chain
 }
 
 function sameFormatting(left: PhrasingContent, right: PhrasingContent) {
@@ -301,22 +282,38 @@ function sameFormatting(left: PhrasingContent, right: PhrasingContent) {
 // The writer opens a link outside the formatting in it, so formatting that
 // runs on past a link would close and reopen at the link's end, as in
 // `[**a**](u)**b**`. Formatting that a link shares with the text beside it is
-// written once around both instead, as `**[a](u)b**`.
+// written once around both instead, as `**[a](u)b**`, and the link keeps the
+// rest of its formatting.
 function shareFormatting(children: PhrasingContent[]): void {
   for (let index = 0; index < children.length; index++) {
     const child = children[index]!
-    const formatting = linkFormatting(child)
-    if (!formatting) continue
-    const link = { ...child, children: formatting.children } as PhrasingContent
     const previous = children[index - 1]
     const next = children[index + 1]
     // Booleans, since the count of nodes replaced below is computed from them: with no node on
     // one side, `undefined` would make it NaN, remove nothing and write the content twice.
-    const before = Boolean(previous && sameFormatting(previous, formatting))
-    const after = Boolean(next && sameFormatting(next, formatting))
-    if (!before && !after) continue
+    let before = false
+    let after = false
+    const shared = linkFormatting(child).find((formatting) => {
+      before = Boolean(previous && sameFormatting(previous, formatting))
+      after = Boolean(next && sameFormatting(next, formatting))
+      return before || after
+    })
+    if (!shared) continue
+    const without = (node: Wrapper): PhrasingContent[] =>
+      node.children[0] === shared
+        ? shared.children
+        : [
+            {
+              ...node.children[0]!,
+              children: without(node.children[0] as Wrapper),
+            } as PhrasingContent,
+          ]
+    const link = {
+      ...child,
+      children: without(child as Wrapper),
+    } as PhrasingContent
     const merged = {
-      ...formatting,
+      ...shared,
       children: [
         ...(before ? (previous as Wrapper).children : []),
         link,
@@ -330,8 +327,54 @@ function shareFormatting(children: PhrasingContent[]): void {
   }
 }
 
+// Spaces at the edges of formatting or a link are written outside it, since
+// the writer would turn them into character references. Milkdown's serializer
+// moves them out as it builds the tree, before formatting a link shares with
+// the text beside it is written once around both, so formatting that runs on
+// past a link after a space would close and reopen there. `edgeSpacesKept`
+// keeps them in place until then, and this moves them out afterwards, from
+// the innermost formatting outwards, as Milkdown does.
+function settleFormatting(current: Parents): void {
+  for (const child of current.children)
+    if ('children' in child) settleFormatting(child)
+  const children = current.children as PhrasingContent[]
+  shareFormatting(children)
+  current.children = children.flatMap((child) => {
+    if (!(child as { isMark?: boolean }).isMark || !('children' in child))
+      return [child]
+    const inner = child.children as PhrasingContent[]
+    // Empty text keeps Milkdown from moving the spaces beside it.
+    const edge = (at: number, step: 1 | -1) => {
+      let found = inner[at]
+      while (found?.type === 'text' && found.value === '')
+        found = inner[(at += step)]
+      return found
+    }
+    let before = ''
+    let after = ''
+    const last = edge(inner.length - 1, -1)
+    if (last?.type === 'text' && last.value.endsWith(' ')) {
+      const trimmed = last.value.trimEnd()
+      after = last.value.slice(trimmed.length)
+      last.value = trimmed
+    }
+    const first = edge(0, 1)
+    if (first?.type === 'text' && first.value.startsWith(' ')) {
+      const trimmed = first.value.trimStart()
+      before = first.value.slice(0, first.value.length - trimmed.length)
+      first.value = trimmed
+    }
+    return [
+      ...(before ? [{ type: 'text', value: before } as PhrasingContent] : []),
+      child,
+      ...(after ? [{ type: 'text', value: after } as PhrasingContent] : []),
+    ]
+  }) as typeof current.children
+}
+
 const root: (typeof defaultHandlers)['root'] = (node, parent, state, info) => {
   bareLinks = new WeakSet()
+  settleFormatting(node)
   // Moving spaces out of formatting can leave empty text, and formatting
   // with nothing in it, written as bare delimiters that would join their
   // neighbours.
@@ -341,7 +384,6 @@ const root: (typeof defaultHandlers)['root'] = (node, parent, state, info) => {
       'children' in child &&
       child.children.every(empty))
   const visit = (current: Parents, ancestors: Parents[]) => {
-    restoreMovedSpaces(current.children as PhrasingContent[])
     if (current.children.some((child) => empty(child as PhrasingContent)))
       current.children = current.children.filter(
         (child) => !empty(child as PhrasingContent),
@@ -896,6 +938,26 @@ const headingsWithBreaks = headingSchema.extendSchema((base) => (ctx) => {
   }
 })
 
+// Milkdown moves spaces out of formatting only from text at its edge, so empty
+// text beside formatted text that starts or ends with a space keeps them in
+// place for `settleFormatting`.
+const edgeSpacesKept = $node('text', () => ({
+  ...textSchema.schema,
+  toMarkdown: {
+    match: (node) => node.type.name === 'text',
+    runner(state, node) {
+      const text = node.text ?? ''
+      const kept = node.marks.length > 0
+      // Milkdown leaves out a node's value when it is empty.
+      const empty = () =>
+        state.addNode('text', undefined, undefined, { value: '' })
+      if (kept && text.startsWith(' ')) empty()
+      state.addNode('text', undefined, text)
+      if (kept && text.endsWith(' ')) empty()
+    },
+  },
+}))
+
 // Soft Markdown breaks still serialize as a single newline. Display the actual
 // line boundary rather than a space, so changing editor mode never joins lines.
 const visibleSoftbreaks = hardbreakSchema.extendSchema((base) => (ctx) => {
@@ -1188,6 +1250,7 @@ export function createDialect(
     codeBlockInputRule,
     joinKeepingSourceKeymap,
     preserveSpacerParagraphs,
+    edgeSpacesKept,
     visibleSoftbreaks,
     headingsWithBreaks,
     normalizedImages,
