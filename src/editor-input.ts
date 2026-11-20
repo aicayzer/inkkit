@@ -20,6 +20,7 @@ import { keymap } from '@milkdown/kit/prose/keymap'
 import { liftListItem, splitListItem } from '@milkdown/kit/prose/schema-list'
 import { $prose } from '@milkdown/kit/utils'
 import { textInputPlugin } from './text-input'
+import { formatInput } from './format-input'
 
 const quotes = new Set(['blockquote', 'inkkit_callout'])
 
@@ -110,10 +111,11 @@ export const calloutEnter = $prose(() =>
 )
 
 // With `continueLists` off, Return in a list item's text splits the paragraph inside the same item
-// instead of starting the next item. Return in an empty paragraph still leaves the list, so a list
+// instead of starting the next item. A document that holds one paragraph in an item, such as RTF,
+// takes a line break there instead. Return in an empty paragraph still leaves the list, so a list
 // can be ended from the keyboard.
 export const listItemEnter = (continueLists: () => boolean) =>
-  $prose(() =>
+  $prose((ctx) =>
     keymap({
       Enter: (state, dispatch) => {
         const { $from } = state.selection
@@ -125,6 +127,19 @@ export const listItemEnter = (continueLists: () => boolean) =>
           $from.parent.content.size === 0
         )
           return false
+        if (formatInput(ctx).richText()) {
+          dispatch?.(
+            state.tr
+              .replaceSelectionWith(
+                state.schema.nodes.hardbreak!.create({
+                  isInline: false,
+                  isHTML: false,
+                }),
+              )
+              .scrollIntoView(),
+          )
+          return true
+        }
         return splitBlock(state, dispatch)
       },
     }),

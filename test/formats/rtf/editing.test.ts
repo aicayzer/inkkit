@@ -17,15 +17,31 @@ const t = (value: string, ...marks: RichTextMark[]) =>
     : { type: 'text' as const, text: value }
 
 describe('typing in an RTF document', () => {
-  test('brackets pair when the host turns pairing on', () =>
-    withRichEditor({ textInput: { pairBrackets: true } }, ({ editor }) => {
+  test('brackets pair when the host turns pairing on, and not when it is off', async () => {
+    await withRichEditor(
+      { textInput: { pairBrackets: true } },
+      ({ editor }) => {
+        editor.loadDocument(rich(doc(para('Hello'))))
+        select(editor, 'Hello', { caret: 'end' })
+        type(editor, ' (')
+        expect(richSnapshot(editor).document).toEqual(doc(para('Hello ()')))
+        type(editor, 'a [b')
+        expect(richSnapshot(editor).document).toEqual(
+          doc(para('Hello (a [b])')),
+        )
+        type(editor, ']) "c"')
+        expect(richSnapshot(editor).document).toEqual(
+          doc(para('Hello (a [b]) "c"')),
+        )
+      },
+    )
+    await withRichEditor({}, ({ editor }) => {
       editor.loadDocument(rich(doc(para('Hello'))))
       select(editor, 'Hello', { caret: 'end' })
-      type(editor, ' (a [b]) "c"')
-      expect(richSnapshot(editor).document).toEqual(
-        doc(para('Hello (a [b]) "c"')),
-      )
-    }))
+      type(editor, ' (')
+      expect(richSnapshot(editor).document).toEqual(doc(para('Hello (')))
+    })
+  })
 
   test('typed text saves, marks the document dirty and counts revisions', () =>
     withRichEditor({}, ({ editor, changes }) => {
@@ -293,6 +309,40 @@ describe('alignment', () => {
 })
 
 describe('lists and tables', () => {
+  test('Return in an item with continueLists off adds a line break, not a swallowed key', () =>
+    withRichEditor({ textInput: { continueLists: false } }, ({ editor }) => {
+      editor.loadDocument(rich(doc(para('ab'))))
+      select(editor, 'ab')
+      expect(editor.format('bulletList')).toBe(true)
+      select(editor, 'a', { caret: 'end' })
+      const { generation } = editor.commandState()
+      expect(editor.keyDown({ key: 'Enter' }, generation)).toBe(true)
+      expect(richSnapshot(editor).document).toEqual(
+        doc({
+          type: 'list',
+          ordered: false,
+          items: [{ blocks: [para('a', { type: 'break' }, 'b')] }],
+        }),
+      )
+    }))
+
+  test('Return in an item with continueLists on starts the next item', () =>
+    withRichEditor({}, ({ editor }) => {
+      editor.loadDocument(rich(doc(para('ab'))))
+      select(editor, 'ab')
+      editor.format('bulletList')
+      select(editor, 'a', { caret: 'end' })
+      const { generation } = editor.commandState()
+      expect(editor.keyDown({ key: 'Enter' }, generation)).toBe(true)
+      expect(richSnapshot(editor).document).toEqual(
+        doc({
+          type: 'list',
+          ordered: false,
+          items: [{ blocks: [para('a')] }, { blocks: [para('b')] }],
+        }),
+      )
+    }))
+
   test('a bullet list wraps a paragraph, and indent and outdent nest an item', () =>
     withRichEditor({}, ({ editor }) => {
       editor.loadDocument(rich(doc(para('one'), para('two'))))
