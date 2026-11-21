@@ -38,6 +38,8 @@ export const defaultLabels: Readonly<EditorLabels> = {
   codePlainText: 'Plain text',
   expandCallout: 'Expand',
   collapseCallout: 'Collapse',
+  foldHeading: 'Fold section',
+  unfoldHeading: 'Unfold section',
   diagramRendering: 'Rendering diagram…',
   diagramUnavailable: 'Diagram unavailable:',
   footnote: 'Footnote',

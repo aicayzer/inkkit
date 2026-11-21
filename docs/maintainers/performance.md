@@ -1,5 +1,46 @@
 # Performance evidence
 
+## Code line numbers, 21 November 2026
+
+Display option `codeLineNumbers` on one code block of 30,000 unhighlighted lines (`const valueN = N // line`) in a 620 px wide page. Chromium (Playwright 1.64.0, development fixture) on an Apple silicon Mac with 10 cores. The time runs from `loadDocument` until two frames have painted, for the median of three fresh pages. Wrapping is the block's own Wrap code toggle, and its time includes the toggle.
+
+**The heap column is `usedSize`** from the DevTools protocol's `Runtime.getHeapUsage`, read after two forced garbage collections (`HeapProfiler.collectGarbage`). It is the JavaScript heap only. The same call's `embedderHeapUsedSize` counts the browser's own memory for DOM and layout objects, which a line-number mirror grows far more, so the two fields give different figures for the same page. Quote the field with every figure.
+
+Reproduce with `INKKIT_MEASURE_RUNS=5 pnpm exec playwright test --config playwright.measure.config.ts line-numbers --project=chromium`, which runs `scripts/measure-browser/line-numbers.spec.ts` and writes `_local/measure/line-numbers-chromium.json` with both heap fields. A run on 21 November 2026 (Apple M4, five runs, medians) at the head of the display options branch:
+
+| State                    | Time   | `usedSize` | `embedderHeapUsedSize` |
+| ------------------------ | ------ | ---------- | ---------------------- |
+| Numbers off              | 223 ms | 23.5 MiB   | 29.2 MiB               |
+| Numbers on, wrapping off | 274 ms | 23.5 MiB   | 46.2 MiB               |
+| Numbers on, wrapping on  | 843 ms | 45.5 MiB   | 312.9 MiB              |
+
+A review measured the wrapped case with the same direction of speed-up but other heap figures: `usedSize` of 24.6 to 28.3 MiB and `embedderHeapUsedSize` of 270 to 294 MiB. Heap figures depend on which field is read and on the machine and run, so only compare figures of the same field. Only the times and the `usedSize` before and after below were taken on one machine and one day:
+
+| State                    | Before, time | Before, `usedSize` | After, time | After, `usedSize` |
+| ------------------------ | ------------ | ------------------ | ----------- | ----------------- |
+| Numbers off              | 231 ms       | 23.5 MiB           | 229 ms      | 22.6 MiB          |
+| Numbers on, wrapping off | 686 ms       | 42.2 MiB           | 276 ms      | 23.5 MiB          |
+| Numbers on, wrapping on  | 1,130 ms     | 42.2 MiB           | 892 ms      | 45.5 MiB          |
+
+Without wrapping every line is one line tall, so one gutter element draws all the numbers from a single attribute and no node exists for each line. A wrapped block still builds one entry and one mirror for each line, which is why its cost stays close to the earlier one: a wrapped line can be any number of lines tall, so only the browser's own layout of a mirror knows where the next number goes.
+
+## Many folded sections, 20 November 2026
+
+Display option `foldHeadings` with every section folded but the one edited, in a 1,000-block and a 4,000-block note with a heading every five blocks. Apple M4 (10 cores), macOS 27.0, Playwright 1.64.0, development fixture, `test/browser/long-note-scaling.spec.ts` ("every section folded"). Medians of three fresh pages, in milliseconds, for `insertText` in the open section, typing with an active find query, and whole-text selection. The test machine was shared, so treat differences under about 20% as noise.
+
+| Engine and action | Before, 1,000 | Before, 4,000 | After, 1,000 | After, 4,000 |
+| ----------------- | ------------- | ------------- | ------------ | ------------ |
+| Chromium typing   | 12.1          | 126.7         | 6.5          | 47.9         |
+| Chromium find     | 12.4          | 142.3         | 7.4          | 54.0         |
+| Chromium select   | 12.7          | 137.4         | 10.4         | 81.5         |
+| WebKit typing     | 20            | 304           | 14           | 145          |
+| WebKit find       | 23            | 292           | 15           | 151          |
+| WebKit select     | 18            | 203           | 13           | 120          |
+
+The note with the same headings and no folds types in 4.3 and 16.2 ms in Chromium. The fold plugin used to read the document once for each folded section on every transaction, including every selection change, and rebuilt every decoration after every edit. It now finds all section ends in one pass, maps folded sections by position when an edit stays inside one block, and rebuilds only when blocks, headings or folds change.
+
+What remains is ProseMirror's own cost. It looks at every top-level decoration for every top-level block on each view update, and checks every decoration again when it maps a set through an edit. A hidden block needs a decoration, so with every block hidden the cost grows with the square of the note. A profile of 30 typed characters in Chromium put 22 ms per character in ProseMirror's `forChild`, called from its child update, and 11 ms in `DecorationSet.map`. The scaling test therefore allows the square of the size ratio for this case, and `test/display-fold.test.ts` bounds the fold plugin's own reads of the document. Removing the rest means hiding blocks without one decoration each, for example from a generated style rule, which depends on the order of the editor's top-level children. Issue #516 tracks that work. Until it lands, the all-folded case in the scaling test measures 500 and 2,000 blocks, the same 4x ratio at a quarter of the size, so that a slow hosted WebKit runner finishes it well inside the test's timeout. The tables above are from the 1,000 and 4,000 block runs made before that change.
+
 ## List and source input, 29 October 2026
 
 Compared released 0.3.5 (`b4f5822`) with the 0.3.6 runtime candidate (`8ddeb8c`) on Apple M4 (10 cores, 16 GB), macOS 27.0, Node.js 26.11.0, pnpm 11.0.9, Playwright 1.64.0, Chromium 156.0.8078.4 and WebKit 27.2. System WKWebView uses the same machine and its 60 Hz display. The candidate includes the independently merged format-list option and inline marks in #429 and #431. These are interaction measurements, separate from package or test-suite elapsed times.
@@ -162,7 +203,7 @@ Both engines now meet the 100 ms target on this fixture, and doubling the docume
 
 ## Checks and limits
 
-`test/browser/long-note-scaling.spec.ts` compares median costs at 1,000 and 4,000 blocks for typing, trusted Enter, leaving source mode after an edit, whole-text selection, active-query typing and outline reads. It permits eight times the smaller measurement plus a small timer allowance. It runs with the existing browser checks; there is no extra CI job. Focused command:
+`test/browser/long-note-scaling.spec.ts` runs three times: once as described here; once with `display.foldHeadings` and `display.codeLineNumbers` on and a code block every 500 paragraphs; and once with a heading every five blocks and every section but the edited one folded, which measures 500 and 2,000 blocks (see [many folded sections](#many-folded-sections-20-november-2026)). It compares median costs at 1,000 and 4,000 blocks for typing, trusted Enter, leaving source mode after an edit, whole-text selection, active-query typing and outline reads. It permits eight times the smaller measurement plus a small timer allowance. It runs with the existing browser checks; there is no extra CI job. Focused command:
 
 ```sh
 pnpm exec playwright test --project=chromium test/browser/long-note-scaling.spec.ts

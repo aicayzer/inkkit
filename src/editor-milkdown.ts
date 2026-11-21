@@ -45,6 +45,9 @@ import { pairBracketsCtx, pairEpochCtx, pairing } from './pairing'
 import { linkSchemesCtx } from './link-safety'
 import { labelsCtx, defaultLabels } from './labels'
 import { codeControlCtx, codeControlsPlugin } from './code-controls'
+import { codeLineNumbers, setLineNumbers } from './code-line-numbers'
+import { displayCtx, type DisplayState } from './display'
+import { headingFold, setHeadingFolding } from './heading-fold'
 import { tableControlCtx, tableBlock } from './table-block'
 import { createDialect, stringifyOptions } from './dialect'
 import { tablePlugins } from './tables'
@@ -92,6 +95,7 @@ interface MilkdownRuntime {
   pairBrackets(): boolean
   pairEpoch(): number
   continueLists(): boolean
+  display(): DisplayState
   linkSchemes: ReadonlySet<string>
   mutate(operation: () => boolean): boolean
   dispatchTransaction(view: EditorView, transaction: Transaction): void
@@ -122,6 +126,7 @@ export async function createMilkdownEditor(
       ctx.set(smartPunctuationCtx.key, () => runtime.smartPunctuation())
       ctx.set(pairBracketsCtx.key, () => runtime.pairBrackets())
       ctx.set(pairEpochCtx.key, () => runtime.pairEpoch())
+      ctx.set(displayCtx.key, () => runtime.display())
       ctx.set(formatInputCtx.key, runtime.format)
       ctx.set(linkSchemesCtx.key, runtime.linkSchemes)
       ctx.update(labelsCtx.key, () => ({
@@ -183,6 +188,7 @@ export async function createMilkdownEditor(
       }))
     })
     .use(labelsCtx)
+    .use(displayCtx)
     .use(linkSchemesCtx)
     .use(formatInputCtx)
     .use(richTextGuard)
@@ -222,6 +228,8 @@ export async function createMilkdownEditor(
     .use(textInputPolicy)
     .use(runtime.copy ? codeCopyPlugin((text) => runtime.copy?.(text)) : [])
     .use(placeholderPlugin)
+    .use(headingFold)
+    .use(codeLineNumbers)
     .use(
       options.rendering?.codeHighlighting === false
         ? []
@@ -334,4 +342,12 @@ export function initialDocumentSelection(state: EditorState): Transaction {
     state.tr.setSelection(end),
     new SearchQuery({ search: '' }),
   )
+}
+
+/** Applies the display preferences to the loaded document in one transaction outside the history. */
+export function applyDisplay(view: EditorView, display: DisplayState): void {
+  const tr = view.state.tr.setMeta('addToHistory', false)
+  setHeadingFolding(tr, display.foldHeadings)
+  setLineNumbers(tr, display.codeLineNumbers)
+  view.dispatch(tr)
 }

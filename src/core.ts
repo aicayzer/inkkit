@@ -4,6 +4,7 @@ export type {
   EditorOptions,
   TextInputPreferences,
   PasteRoute,
+  DisplayPreferences,
   CommandState,
   EditingMode,
   CaretState,

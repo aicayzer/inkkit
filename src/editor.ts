@@ -64,6 +64,7 @@ import {
 import {
   createMilkdownEditor,
   createDocumentState,
+  applyDisplay,
   initialDocumentSelection,
 } from './editor-milkdown'
 import { drawnCaretBar } from './drawn-caret'
@@ -147,6 +148,13 @@ import {
 import type { TextProjection } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
 import { isWrittenEdit, setCommentVisibility } from './comments'
+import type { DisplayState } from './display'
+import {
+  clearHeadingFolds,
+  holdFoldOpening,
+  openHeadingFolds,
+  refuseFoldedEdit,
+} from './heading-fold'
 import { assertHiddenCommentsKept } from './hidden-comments'
 import { PasteController, imagesRefused } from './paste'
 import { EditorFindSession } from './find-session'
@@ -464,6 +472,28 @@ function textInputPreferences(
   }
 }
 
+/** Presentation settings that never touch the document, its revision, history, dirty state,
+ *  snapshot, copy or print output. A field left out takes its default. */
+export interface DisplayPreferences {
+  /** In formatted mode, a control beside each top-level heading hides what follows it, up to the
+   *  next heading of the same or a higher level. Off unless true. */
+  foldHeadings?: boolean
+  /** In formatted mode, each code block shows a number for each line of its text. Off unless
+   *  true. */
+  codeLineNumbers?: boolean
+}
+
+function displayPreferences(value: unknown, name: string): DisplayPreferences {
+  const record = expectRecord(value, name, ['foldHeadings', 'codeLineNumbers'])
+  return {
+    foldHeadings: optionalBoolean(record.foldHeadings, `${name}.foldHeadings`),
+    codeLineNumbers: optionalBoolean(
+      record.codeLineNumbers,
+      `${name}.codeLineNumbers`,
+    ),
+  }
+}
+
 /** Mount options. Adapters, `formats`, `labels`, `linkSchemes` and `rendering` are fixed at mount;
  *  the rest can change. `F` is the formats offered. */
 export interface EditorOptions<F extends DocumentFormat = TextDocumentFormat> {
@@ -480,6 +510,8 @@ export interface EditorOptions<F extends DocumentFormat = TextDocumentFormat> {
   /** Defaults to true. See `setEditable`. */
   editable?: boolean
   textInput?: TextInputPreferences
+  /** See `setDisplayPreferences`. */
+  display?: DisplayPreferences
   /** Replaces built-in text and accessible names. */
   labels?: Partial<EditorLabels>
   /** See `setKeymap`. */
@@ -522,6 +554,7 @@ function editorOptions(value: unknown): EditorOptions {
       ...adapterNames,
       'editable',
       'textInput',
+      'display',
       'labels',
       'keymap',
       'linkSchemes',
@@ -537,6 +570,8 @@ function editorOptions(value: unknown): EditorOptions {
   optionalBoolean(options.editable, 'options.editable')
   if (!isOmitted(options.textInput))
     textInputPreferences(options.textInput, 'options.textInput')
+  if (!isOmitted(options.display))
+    displayPreferences(options.display, 'options.display')
   if (!isOmitted(options.keymap))
     keymapBindings(options.keymap, 'options.keymap')
   const linkSchemes = isOmitted(options.linkSchemes)
@@ -792,7 +827,12 @@ function capturedImage(value: unknown, name: string): CapturedImage {
 }
 
 interface FacadeCall {
+  /** The public method the host called, when the call is one. Calls the editor makes for the
+   *  person's own input, such as a paste, have none. */
+  host?: string
   refusal?: InkKitError
+  /** The folded sections that a refused edit opened, which stay open when the call is undone. */
+  opened?: number[]
   /** Host events raised during the call, sent when it succeeds and dropped when it fails. */
   events: { name: string | symbol; send: () => void }[]
 }
@@ -912,6 +952,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     capture: () => this.session.capture(),
     assertCut: (captured) => this.assertCut(captured),
     canWrite: () => Boolean(this.events.clipboard),
+    refusesHiddenText: (tr) =>
+      this.refusesHiddenText(this.editor.ctx.get(editorViewCtx), tr),
     write: (content) => this.events.clipboard!(content),
     linkSchemes: () => this.linkSchemes,
     report: (error) => this.report(error),
@@ -934,8 +976,11 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private call?: FacadeCall
   /** Changes when tracked bracket pairs are to be forgotten, as on a mode switch. */
   private pairEpoch = 0
+  /** Greater than zero while a host operation that names its own targets runs. */
+  private namingTargets = 0
   private writable = true
   private inputPreferences: TextInputPreferences = {}
+  private displayState: DisplayPreferences = {}
   private literalKeys: (view: EditorView, event: KeyboardEvent) => boolean =
     () => false
   private indentKeys: (view: EditorView, event: KeyboardEvent) => boolean =
@@ -1029,6 +1074,10 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.inputPreferences = textInputPreferences(
       options.textInput ?? {},
       'options.textInput',
+    )
+    this.displayState = displayPreferences(
+      options.display ?? {},
+      'options.display',
     )
   }
 
@@ -1151,9 +1200,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
    * Anything else thrown arrives as an `InkKitError`. A call made inside another runs as part of
    * it. Promises reject instead of throwing.
    */
-  private facadeCall<T>(operation: () => T): T {
+  private facadeCall<T>(operation: () => T, host?: string): T {
     if (this.call) return operation()
-    const call: FacadeCall = { events: [] }
+    const call: FacadeCall = { events: [], host }
     const before = this.destroyed ? undefined : this.restorePoint()
     this.call = call
     let result: T
@@ -1226,6 +1275,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         this.loading = loading
       }
     }
+    // A fold that the refused edit opened stays open, so the person sees what it would have changed.
+    if (call.opened?.length) openHeadingFolds(view, call.opened)
     this.session.restore(before.revision)
     this.lastMarkdown = before.lastMarkdown
     this.search.restore(before.search)
@@ -1269,6 +1320,17 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         : {}),
     })
     this.events.error?.(failure)
+  }
+
+  /** Runs a host operation that names the text it changes, such as a replacement, which may
+   *  therefore change text a fold hides. */
+  private naming<T>(operation: () => T): T {
+    this.namingTargets++
+    try {
+      return operation()
+    } finally {
+      this.namingTargets--
+    }
   }
 
   /** Runs a facade method for something the person did, such as a shortcut. Its failure goes to
@@ -1532,6 +1594,41 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     }
   }
 
+  /** Replaces the display preferences. A field left out takes its default. They change only what
+   *  the formatted surface shows: the document, revision, history, dirty state, snapshot, copy
+   *  and print output stay as they are. Preferences that equal the current ones change and
+   *  announce nothing. Throws `composition` during text composition. */
+  setDisplayPreferences(preferences: DisplayPreferences): void {
+    this.assertAlive()
+    const checked = displayPreferences(preferences, 'preferences')
+    if (this.composing)
+      throw new InkKitError('composition', 'Text composition is in progress')
+    const previous = this.currentDisplay()
+    this.displayState = checked
+    const next = this.currentDisplay()
+    // The same preferences change nothing, so they announce nothing.
+    if (
+      previous.foldHeadings === next.foldHeadings &&
+      previous.codeLineNumbers === next.codeLineNumbers
+    )
+      return
+    const suppressed = this.reportingSuppressed
+    this.reportingSuppressed = true
+    try {
+      applyDisplay(this.editor.ctx.get(editorViewCtx), this.currentDisplay())
+    } finally {
+      this.reportingSuppressed = suppressed
+    }
+    this.publishCommandState()
+  }
+
+  private currentDisplay(): DisplayState {
+    return {
+      foldHeadings: this.displayState.foldHeadings === true,
+      codeLineNumbers: this.displayState.codeLineNumbers === true,
+    }
+  }
+
   private applyInputPolicy(): void {
     applyInputPolicy(
       this.editor.ctx.get(editorViewCtx),
@@ -1682,6 +1779,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       },
       text: () => this.savedText().text,
       changed: () => {
+        // Folds belong to one stretch in the formatted surface, so a switch clears them.
+        clearHeadingFolds(this.editor.ctx.get(editorViewCtx))
         this.mode = mode
         this.forgetPairs()
         this.session.modeChanged()
@@ -1992,9 +2091,45 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.indentKeys(view, event),
   )
 
+  /**
+   * Whether an input would change text the person has not been shown, because a fold hides it or
+   * because the section opened since the last paint. Then nothing changes, the section is open and
+   * `hidden-text` is reported: a facade call throws or rejects with it, and any other input,
+   * which the editor consumes, goes to `events.error`. Paste, typing, keys, cut, drop and
+   * composition get no exemption, inside a facade call or out of it. A host operation that names
+   * its own targets, a history step, a source replacement and a block move, which carries its
+   * nodes unchanged, do.
+   */
+  private refusesHiddenText(view: EditorView, tr: Transaction): boolean {
+    if (
+      this.namingTargets ||
+      this.loading ||
+      !tr.docChanged ||
+      tr.getMeta('addToHistory') === false ||
+      tr.getMeta(carriedBlocks) ||
+      !isWrittenEdit(tr)
+    )
+      return false
+    const refusal = refuseFoldedEdit(view.state, tr)
+    if (!refusal) return false
+    if (refusal.open) view.updateState(view.state.apply(refusal.open))
+    else view.updateState(view.state)
+    const error = new InkKitError(
+      'hidden-text',
+      'The edit was not applied because it would change text that a fold hides or that has not been shown yet. The section is open now, so the same edit works after the next paint.',
+    )
+    // A forwarded key is consumed, so `keyDown` reports `true` and the failure goes to the event.
+    if (this.call && this.call.host !== 'keyDown') {
+      this.call.opened = [...(this.call.opened ?? []), ...refusal.sections]
+      this.refuse(error)
+    } else this.report(error)
+    return true
+  }
+
   private dispatchTransaction(view: EditorView, tr: Transaction): void {
     // A call whose edit was refused changes nothing more; it throws when it returns.
     if (this.call?.refusal && tr.docChanged) return
+    if (this.refusesHiddenText(view, tr)) return
     this.document.carry(tr.getMeta(carriedBlocks) ?? [])
     this.suggestions?.beforeTransaction(tr)
     const base = this.suggestionBase ?? view.state
@@ -2128,6 +2263,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         pairBrackets: () => instance.inputPreferences.pairBrackets === true,
         pairEpoch: () => instance.pairEpoch,
         continueLists: () => instance.inputPreferences.continueLists !== false,
+        display: () => instance.currentDisplay(),
         linkSchemes: instance.linkSchemes,
         mutate: (operation) =>
           instance.forPerson(
@@ -2386,7 +2522,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     expectString(text, 'text')
     const projection = this.validateTextRange(range)
     this.assertMutation()
-    return this.search.replaceRange(range, text, projection)
+    return this.naming(() => this.search.replaceRange(range, text, projection))
   }
 
   /** Measures ranges in client coordinates, with one array of rectangles for each. It measures only
@@ -2490,7 +2626,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     expectString(replacement, 'replacement')
     this.assertMutation(expectedGeneration)
     const doc = this.editor.ctx.get(editorViewCtx).state.doc
-    const replaced = this.search.replace(search, replacement, false) > 0
+    const replaced = this.naming(
+      () => this.search.replace(search, replacement, false) > 0,
+    )
     return replaced && (replacement === search || !this.refusedRichEdit(doc))
   }
 
@@ -2505,7 +2643,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     expectString(replacement, 'replacement')
     this.assertMutation(expectedGeneration)
     const doc = this.editor.ctx.get(editorViewCtx).state.doc
-    const count = this.search.replace(search, replacement, true)
+    const count = this.naming(() =>
+      this.search.replace(search, replacement, true),
+    )
     // A replacement an RTF document can't hold is refused, so nothing was replaced.
     return count && replacement !== search && this.refusedRichEdit(doc)
       ? 0
@@ -2532,6 +2672,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         }
       },
       (closed) => this.findSessions.delete(closed),
+      (run) => holdFoldOpening(this.editor.ctx.get(editorViewCtx), run),
     )
     this.findSessions.add(session)
     return session
@@ -2956,11 +3097,14 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     optionalString(title, 'title')
     this.assertMutation(expectedGeneration)
     if (this.literalSurface || this.document.handler.richText) return false
-    return editReferenceDefinition(
-      this.editor.ctx.get(editorViewCtx),
-      label,
-      destination,
-      title,
+    // The call names its definition, so it may change one that a fold hides.
+    return this.naming(() =>
+      editReferenceDefinition(
+        this.editor.ctx.get(editorViewCtx),
+        label,
+        destination,
+        title,
+      ),
     )
   }
 
@@ -3017,6 +3161,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       'setEditable',
       'setHostActive',
       'setTextInputPreferences',
+      'setDisplayPreferences',
       'setSlashMenuEnabled',
       'setEditingMode',
       'replaceSource',
@@ -3074,7 +3219,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
           if (name === 'setDiagnosticsEnabled' || name === 'diagnosticReport')
             return method.apply(this, args)
           if (!this.diagnostics.enabled || this.unrecordedDepth)
-            return this.facadeCall(() => method.apply(this, args))
+            return this.facadeCall(() => method.apply(this, args), name)
           const operation = diagnosticOperation(name)
           const begin = this.diagnostics.begin({
             kind: 'operation',
@@ -3104,7 +3249,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
             throw failure
           }
           try {
-            const result = this.facadeCall(() => method.apply(this, args))
+            const result = this.facadeCall(() => method.apply(this, args), name)
             // Only a pending result keeps its begin event, so a call that never settles shows.
             this.diagnostics.settle(begin, result instanceof Promise)
             return result instanceof Promise

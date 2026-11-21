@@ -75,11 +75,21 @@ const colour = (page: Page, editor = 0) =>
         getComputedStyle(node, '::highlight(inkkit-selection)').backgroundColor,
     )
 
-const word = (page: Page, editor: number, paragraph = 0) =>
-  page
-    .locator(`#editor-${editor} .ProseMirror p`)
-    .nth(paragraph)
-    .dblclick({ position: { x: 8, y: 8 } })
+/**
+ * Double-clicks the first word of a paragraph. On a busy machine WebKit sometimes takes the two
+ * clicks as separate clicks and leaves a caret, so the browser never selected a word and there is
+ * nothing for the editor to paint. The gesture is repeated, after a pause longer than the
+ * double-click interval so a retry is not counted as a triple click, until the browser holds a
+ * word. What the editor then paints is the assertion.
+ */
+async function word(page: Page, editor: number, paragraph = 0) {
+  const target = page.locator(`#editor-${editor} .ProseMirror p`).nth(paragraph)
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await target.dblclick({ position: { x: 8, y: 8 } })
+    if (await page.evaluate(() => getSelection()!.toString() !== '')) return
+    await page.waitForTimeout(700)
+  }
+}
 
 const sentence = [
   'First paragraph with several words',

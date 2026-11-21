@@ -978,6 +978,73 @@
   overflow-wrap: anywhere;
 }
 
+/* Line numbers sit in a gutter beside the code's text, inside the block but outside the text the
+   browser edits, so editing the text is the same with and without them. The numbers are drawn
+   from data attributes, so no text enters the selection, a DOM range or the clipboard. The gutter
+   is not scrolled with the code, so a long line leaves the numbers in place.
+
+   The gutter spans the block's content box, and leaves the code's own start margin for the
+   numbers. Without wrapping every line is one line tall, so one element draws every number, one
+   to a line. While lines wrap, an entry holds a hidden mirror of its line, built from the same
+   highlight classes as the code and drawing its text from data attributes, with the code's font,
+   width and wrapping, so the entry is as tall as the line and the next number falls where the
+   next line begins, whatever the font, style or width. */
+.inkkit-root .ProseMirror pre[data-inkkit-line-numbers] > code {
+  margin-inline-start: calc(var(--_inkkit-line-digits, 1) * 1ch + 1.25em);
+}
+
+.inkkit-root .ProseMirror pre > .inkkit-code-gutter {
+  position: absolute;
+  inset-inline: calc(var(--_inkkit-font-size) * 0.933);
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  color: var(--inkkit-code-line-number, var(--_inkkit-muted));
+  font-variant-numeric: tabular-nums;
+}
+
+.inkkit-root .ProseMirror .inkkit-code-gutter[data-inkkit-numbers]::before {
+  content: attr(data-inkkit-numbers);
+  display: block;
+  width: calc(var(--_inkkit-line-digits, 1) * 1ch);
+  white-space: pre;
+  text-align: end;
+}
+
+.inkkit-root .ProseMirror .inkkit-line-number {
+  position: relative;
+  display: block;
+  min-height: 1.5em;
+  min-height: 1lh;
+  padding-inline-start: calc(var(--_inkkit-line-digits, 1) * 1ch + 1.25em);
+}
+
+.inkkit-root .ProseMirror .inkkit-line-number::before {
+  content: attr(data-inkkit-line);
+  position: absolute;
+  inset-inline-start: 0;
+  width: calc(var(--_inkkit-line-digits, 1) * 1ch);
+  text-align: end;
+}
+
+.inkkit-root .ProseMirror .inkkit-line-copy {
+  display: block;
+  visibility: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-variant-numeric: normal;
+}
+
+.inkkit-root .ProseMirror .inkkit-line-copy > span::before {
+  content: attr(data-text);
+}
+
+@media (forced-colors: active) {
+  .inkkit-root .ProseMirror .inkkit-code-gutter {
+    color: GrayText;
+  }
+}
+
 .inkkit-root .ProseMirror blockquote {
   position: relative;
   margin: 0 0 calc(var(--_inkkit-font-size) * 0.8);
@@ -1309,6 +1376,128 @@
   display: none;
 }
 
+/* Heading folds are presentation. A top-level heading sits in a wrapper beside its control, so the
+   control is not part of the heading's text or its accessible name. The control hangs in the left
+   margin, inside the smallest inset, and shows when the pointer or focus is on the heading or the
+   section is folded. The wrapper adds no box of its own: the heading's margins collapse through
+   it, and the first heading drops its top margin as it would without the wrapper. */
+.inkkit-root .ProseMirror > .inkkit-heading-block {
+  position: relative;
+}
+
+.inkkit-root
+  .ProseMirror
+  > .inkkit-heading-block:first-child
+  > :not(.inkkit-heading-fold) {
+  margin-top: 0;
+}
+
+.inkkit-root .inkkit-heading-fold {
+  position: absolute;
+  inset-inline-start: -16px;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  /* The control is as tall as the heading's first line, so it centres on it. */
+  height: 1.25em;
+  height: 1lh;
+  font-size: calc(var(--_inkkit-font-size) * 1);
+  line-height: inherit;
+  font-weight: 400;
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.inkkit-root
+  .inkkit-heading-block[data-inkkit-heading-level='1']
+  .inkkit-heading-fold {
+  font-size: calc(var(--_inkkit-font-size) * 1.733);
+  line-height: 1.25;
+}
+
+.inkkit-root
+  .inkkit-heading-block[data-inkkit-heading-level='2']
+  .inkkit-heading-fold {
+  font-size: calc(var(--_inkkit-font-size) * 1.4);
+  line-height: 1.25;
+}
+
+.inkkit-root
+  .inkkit-heading-block[data-inkkit-heading-level='3']
+  .inkkit-heading-fold {
+  font-size: calc(var(--_inkkit-font-size) * 1.133);
+  line-height: 1.25;
+}
+
+.inkkit-root .inkkit-heading-fold button {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 16px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--_inkkit-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.inkkit-root .inkkit-heading-fold button::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.inkkit-root .inkkit-heading-fold button[aria-expanded='false']::before {
+  transform: translateX(-1px) rotate(-45deg);
+}
+
+.inkkit-root .inkkit-heading-block:hover .inkkit-heading-fold button,
+.inkkit-root .inkkit-heading-fold button:focus-visible,
+.inkkit-root .inkkit-heading-fold button[aria-expanded='false'] {
+  opacity: 1;
+}
+
+.inkkit-root .inkkit-heading-fold button:hover {
+  background: color-mix(in srgb, CanvasText 10%, transparent);
+  color: var(--_inkkit-text);
+}
+
+.inkkit-root .inkkit-heading-fold button:focus-visible {
+  outline: 2px solid var(--_inkkit-accent);
+  outline-offset: 1px;
+}
+
+@media (hover: none) {
+  .inkkit-root .inkkit-heading-fold button {
+    opacity: 1;
+  }
+}
+
+/* Folding hides with its own rule and !important, so a section stays hidden whatever else shows
+   its blocks, such as comment visibility. It does not apply in print, where the rules that hide
+   comments and controls then apply unchanged. A diagram preview follows its block. */
+@media not print {
+  .inkkit-root .ProseMirror .inkkit-folded-content,
+  .inkkit-root .ProseMirror .inkkit-folded-content + .inkkit-mermaid-preview {
+    display: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .inkkit-root .inkkit-heading-fold button {
+    color: ButtonText;
+  }
+}
+
 .inkkit-root .inkkit-comment {
   display: none;
 }
@@ -1352,6 +1541,15 @@
     .inkkit-callout[data-inkkit-folded='true']
     > .inkkit-callout-body {
     display: block !important;
+  }
+
+  .inkkit-root .inkkit-heading-fold,
+  .inkkit-root .ProseMirror pre > .inkkit-code-gutter {
+    display: none !important;
+  }
+
+  .inkkit-root .ProseMirror pre[data-inkkit-line-numbers] > code {
+    margin-inline-start: 0;
   }
 }
 /* Diagram previews are presentation; the authored code remains editable. */

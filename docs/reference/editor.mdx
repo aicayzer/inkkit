@@ -37,7 +37,7 @@ Each member first throws `destroyed` if the editor was destroyed, then `invalid-
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `formats`, `editable`, `editingMode`, `findSession`, `setKeymap`, `setViewport`, `viewport`, `setCommentsVisible`, `setHostActive`, `setSlashMenuEnabled`, `setDiagnosticsEnabled`, `diagnosticReport`                             | None.                                                  | Nothing. These work before the first load.                                                                                                                                                |
 | `loadDocument`                                                                                                                                                                                                                     | None.                                                  | `invalid-argument` when the generation isn't greater than the loaded one, then `preservation` when the Markdown can't be loaded. A format you didn't offer is a bad argument.             |
-| `setEditable`, `setTextInputPreferences`                                                                                                                                                                                           | None.                                                  | `composition`.                                                                                                                                                                            |
+| `setEditable`, `setTextInputPreferences`, `setDisplayPreferences`                                                                                                                                                                  | None.                                                  | `composition`.                                                                                                                                                                            |
 | `reloadDocument`                                                                                                                                                                                                                   | Optional, the last parameter. Checked only when given. | `not-ready` and `stale-document`, only when the generation is given. Then the same errors as `loadDocument`.                                                                              |
 | `commandState`, `focus`, `blur`, `cancelPendingImports`, `refreshReferences`                                                                                                                                                       | Optional, the last parameter.                          | `not-ready`, `stale-document`.                                                                                                                                                            |
 | `snapshot`, `convertDocument`, `printableSnapshot`, `clipboardSnapshot`, `setEditingMode`, `find`, `searchMatches`, `navigateFootnote`, `textSnapshot`, `headings`                                                                 | Optional, the last parameter.                          | `not-ready`, `stale-document`, `composition`, `operation-pending`.                                                                                                                        |
@@ -407,6 +407,14 @@ The method changes only the active or inactive selection color. It does not focu
 
 Replaces the input preferences on both surfaces. A field you leave out goes back to its default. It throws `composition` during text composition and is a presentation change, not an edit. See [`TextInputPreferences`](/reference/options#editor-options).
 
+{/* @api InkKitEditor.setDisplayPreferences */}
+
+### setDisplayPreferences
+
+`setDisplayPreferences(preferences: DisplayPreferences): void`
+
+Replaces the display preferences. A field you leave out goes back to its default. It throws `composition` during text composition and works before the first load. It's a presentation change, not an edit: the document, revision, history, dirty state, snapshot, change events, copy and print output stay as they are. Preferences equal to the current ones change nothing and send no `commandStateChanged`. Turning `foldHeadings` off unfolds every section, and a switch of editing mode or a new load starts unfolded. See [`DisplayPreferences`](/reference/options#editor-options).
+
 {/* @api InkKitEditor.setSlashMenuEnabled */}
 
 ### setSlashMenuEnabled
@@ -441,7 +449,7 @@ Returns what the editor can do now, for enabling toolbar buttons and menu items,
 
 Applies one formatting command to the selection in formatted mode, focuses the editor, and returns whether the document, or the marks the next typed text takes, changed. It returns `false` in source and TXT modes and when the command has nothing to change.
 
-[Format commands](/reference/options#format-commands) lists what each `FormatCommand` does and the `FormatOptions` it takes. With `link`, a destination that Inkkit wouldn't open or can't save throws `invalid-argument`, and in a reference link the shared definition changes, as [`editReferenceDefinition`](#editreferencedefinition) does. Giving a link the destination it already has returns `false`.
+[Format commands](/reference/options#format-commands) lists what each `FormatCommand` does and the `FormatOptions` it takes. With `link`, a destination that Inkkit wouldn't open or can't save throws `invalid-argument`, and in a reference link the shared definition changes, as [`editReferenceDefinition`](#editreferencedefinition) does. Giving a link the destination it already has returns `false`. Formatting has no exemption from a [fold](/concepts/markdown#folding-headings): a selection over text that a fold hides, or that a section that just opened hasn't yet shown, throws [`hidden-text`](/reference/errors#error-codes) and changes nothing.
 
 {/* @api InkKitEditor.moveBlock */}
 
@@ -540,7 +548,7 @@ This call works in read-only mode and changes neither selection, focus, highligh
 
 `replaceAll(search: string, replacement: string, expectedGeneration?: number): number`
 
-`replace` replaces the selected match, or the next one, selects the inserted text and returns whether text changed. `replaceAll` replaces every non-overlapping match once and returns how many. Each call is one undo step. The replacement is literal: `$&`, `$1` and backslashes stay as typed. In formatted mode a replacement keeps the surrounding formatting, and a newline becomes a line break; in code, source and TXT it stays literal.
+`replace` replaces the selected match, or the next one, selects the inserted text and returns whether text changed. `replaceAll` replaces every non-overlapping match once and returns how many. Each call is one undo step. The replacement is literal: `$&`, `$1` and backslashes stay as typed. In formatted mode a replacement keeps the surrounding formatting, and a newline becomes a line break; in code, source and TXT it stays literal. The calls name the text they change, so they may change text that [a fold hides](/concepts/markdown#folding-headings).
 
 {/* @api InkKitEditor.findSession */}
 
@@ -668,7 +676,7 @@ Moves the caret to the definition, or the first reference, of the footnote at th
 
 `editReferenceDefinition(label: string, destination: string, title?: string, expectedGeneration?: number): boolean`
 
-Changes the destination of the shared link definition for `label`, which matches regardless of case and runs of whitespace, so every link that uses it changes. `destination` follows the same rule as a `format('link')` destination. An omitted `title` keeps the current title; a non-empty one replaces it. An empty `title` throws `preservation`. It returns `false` when no definition has the label, and in source and TXT modes.
+Changes the destination of the shared link definition for `label`, which matches regardless of case and runs of whitespace, so every link that uses it changes. `destination` follows the same rule as a `format('link')` destination. An omitted `title` keeps the current title; a non-empty one replaces it. An empty `title` throws `preservation`. It returns `false` when no definition has the label, and in source and TXT modes. The call names its definition, so it may change one that [a fold hides](/concepts/markdown#folding-headings), and it succeeds in one call.
 
 {/* @api InkKitEditor.setCommentsVisible */}
 
@@ -800,7 +808,7 @@ A `ClipboardDiagram` retains a complete Mermaid diagram and its optional rendere
 
 `paste(input: ClipboardInput, expectedGeneration?: number): Promise<void>`
 
-Pastes content that the host read from the native clipboard, through the same import as a paste the person makes, including the [`textInput.paste`](/reference/options#editor-options) route. Read the clipboard once; don't read it again while this runs. An unknown field throws `invalid-argument`.
+Pastes content that the host read from the native clipboard, through the same import as a paste the person makes, including the [`textInput.paste`](/reference/options#editor-options) route. Read the clipboard once; don't read it again while this runs. An unknown field throws `invalid-argument`. A paste that would change text a [fold](/concepts/markdown#folding-headings) hides, or that has not been shown yet, rejects with [`hidden-text`](/reference/errors#error-codes). The person's own paste, by any route, goes to `events.error` with the same code.
 
 {/* @api ClipboardInput */}
 A `ClipboardInput` supplies representations from one clipboard read. Inkkit chooses the applicable representation using the current mode and import rules.
@@ -822,7 +830,7 @@ An image item whose `source` equals an image's `src` belongs to that image; item
 
 `pasteAsPlainText(text: string, expectedGeneration?: number): boolean`
 
-Inserts `text` literally at the selection and returns whether the document changed. It never makes links or formatting. Use it for a **Paste as Plain Text** command; to make every paste literal, set [`textInput.paste`](/reference/options#editor-options) to `'plainText'`.
+Inserts `text` literally at the selection and returns whether the document changed. It never makes links or formatting. Use it for a **Paste as Plain Text** command; to make every paste literal, set [`textInput.paste`](/reference/options#editor-options) to `'plainText'`. It throws [`hidden-text`](/reference/errors#error-codes) for text a [fold](/concepts/markdown#folding-headings) hides or that has not been shown yet.
 
 {/* @api InkKitEditor.printableSnapshot */}
 
@@ -901,7 +909,7 @@ A load, a reload, a new revision or a mode change makes earlier snapshot IDs sta
 
 `selectTextRange(range: TextRange, options?: { focus?: boolean; reveal?: boolean }): void`
 
-Selects the range. `focus` puts focus in the editor and `reveal` scrolls the range into view; both default to `false`, so focus stays in a host search field. A complete image alt text or footnote label selects that node, and a callout title selects the callout. Part of one throws `invalid-range`. It works in a read-only editor.
+Selects the range. A selection that includes text a [fold hides](/concepts/markdown#folding-headings), without covering the whole section, opens the section. `focus` puts focus in the editor and `reveal` scrolls the range into view; both default to `false`, so focus stays in a host search field. A complete image alt text or footnote label selects that node, and a callout title selects the callout. Part of one throws `invalid-range`. It works in a read-only editor.
 
 {/* @api InkKitEditor.revealTextRange */}
 
@@ -917,7 +925,7 @@ Scrolls the range into the viewport that [`setViewport`](#setviewport) describes
 
 `replaceTextRange(range: TextRange, text: string): boolean`
 
-Replaces the range with literal text as one undo step, keeping the surrounding structure and formatting, and returns whether the text changed. In formatted mode the range must sit in one text block. A range that crosses an image, a line break, a hidden comment or a block boundary throws `invalid-range`; use source mode to change syntax.
+Replaces the range with literal text as one undo step, keeping the surrounding structure and formatting, and returns whether the text changed. In formatted mode the range must sit in one text block. A range that crosses an image, a line break, a hidden comment or a block boundary throws `invalid-range`; use source mode to change syntax. The call names the text it changes, so it may change text that [a fold hides](/concepts/markdown#folding-headings).
 
 {/* @api InkKitEditor.textRangesRects */}
 
@@ -1007,7 +1015,7 @@ A host whose native layer receives typing or keys before the web view does passe
 
 `insertText(text: string, generation: number): boolean`
 
-Inserts exactly `text` at the selection and returns `true`. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode. Text of more than one character, and every other call that changes the document, makes the brackets around it ordinary characters, as [tracked pairs](/reference/options#paired-brackets-and-quotes) describes.
+Inserts exactly `text` at the selection and returns `true`. It has no exemption from a [fold](/concepts/markdown#folding-headings): a selection that reaches hidden text has already opened the section, so it replaces text that is shown, but only once a paint has shown it: a call in the same task as the selection that opened the section throws [`hidden-text`](/reference/errors#error-codes) and changes nothing, and the same call works after the next paint. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode. Text of more than one character, and every other call that changes the document, makes the brackets around it ordinary characters, as [tracked pairs](/reference/options#paired-brackets-and-quotes) describes.
 
 {/* @api InkKitEditor.keyDown */}
 
@@ -1015,7 +1023,7 @@ Inserts exactly `text` at the selection and returns `true`. It returns `false`, 
 
 `keyDown(input: KeyInput, expectedGeneration: number): boolean`
 
-Runs a key press through Inkkit's key handling and returns whether Inkkit handled it. When it returns `true`, the host must not also handle the key natively.
+Runs a key press through Inkkit's key handling and returns whether Inkkit handled it. When it returns `true`, the host must not also handle the key natively. A deletion key has no exemption from a [fold](/concepts/markdown#folding-headings): it acts on shown text, and from a caret that would reach hidden text, or text a section that has just opened hasn't yet shown, it opens the section and changes nothing, reports `hidden-text` to `events.error`, and `keyDown` still returns `true`.
 
 {/* @api KeyInput */}
 A `KeyInput` describes a native key press using DOM keyboard names and modifier state.

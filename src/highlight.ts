@@ -4,6 +4,10 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import {
+  highlightClass,
+  updateCodeBlockDecorations,
+} from './code-block-decorations'
 
 const lowlight = createLowlight(common)
 
@@ -46,7 +50,13 @@ function blockDecorations(
         const end = offset + child.value.length
         if (classes.length > 0)
           found.push(
-            Decoration.inline(offset, end, { class: classes.join(' ') }),
+            Decoration.inline(
+              offset,
+              end,
+              { class: classes.join(' ') },
+              // The line-number mirror of a wrapped block draws the same classes.
+              { [highlightClass]: classes.join(' ') },
+            ),
           )
         offset = end
       } else if (child.type === 'element') {
@@ -79,81 +89,11 @@ function decorations(doc: ProseNode): DecorationSet {
   return DecorationSet.create(doc, found)
 }
 
-// Every range of the new document an update may have touched: each step's own
-// range, plus the whole span where the two documents differ, which also covers
-// steps that change a node without changing its size.
-function touched(tr: Transaction): [number, number][] {
-  const ranges: [number, number][] = []
-  tr.mapping.maps.forEach((map, index) => {
-    const rest = tr.mapping.slice(index + 1)
-    map.forEach((_, __, from, to) =>
-      ranges.push([rest.map(from, -1), rest.map(to, 1)]),
-    )
-  })
-  const start = tr.before.content.findDiffStart(tr.doc.content)
-  if (start != null) {
-    const end = tr.before.content.findDiffEnd(tr.doc.content)
-    // The scans overlap when inserted or deleted text repeats its neighbours.
-    if (end)
-      ranges.push([start, end.b + Math.max(0, start - Math.min(end.a, end.b))])
-  }
-  return ranges
-}
-
-// Mapping carries colors of unchanged blocks to their new positions without
-// reading them, but leaves stale colors inside any block that was edited. Those
-// blocks are highlighted again; no other block is. Stale colors are dropped by
-// rebuilding the set: DecorationSet.remove compares every removed decoration
-// with every other in its block, which is quadratic in a large block.
 function update(mapped: DecorationSet, tr: Transaction): DecorationSet {
   const deadline = performance.now() + highlightBudget
-  const stale: [number, number][] = []
-  const fresh: Decoration[] = []
-  const seen = new Set<number>()
-  for (const [from, to] of touched(tr)) {
-    let start = from
-    let end = to
-    const blocks: [ProseNode, number][] = []
-    tr.doc.nodesBetween(from, to, (node, pos) => {
-      if (!node.isTextblock) return true
-      start = Math.min(start, pos)
-      end = Math.max(end, pos + node.nodeSize)
-      if (node.type.name === 'code_block' && !seen.has(pos)) {
-        seen.add(pos)
-        blocks.push([node, pos])
-      }
-      return false
-    })
-    stale.push([start, end])
-    for (const [node, pos] of blocks)
-      for (const decoration of blockDecorations(node, pos, deadline))
-        fresh.push(decoration)
-  }
-  const found: Decoration[] = []
-  for (const [start, end] of stale)
-    for (const decoration of mapped.find(start, end)) found.push(decoration)
-  if (found.length === 0) return mapped.add(tr.doc, fresh)
-  // remove is quadratic in the decorations it removes, so only a large block takes the rebuild below.
-  if (found.length <= 256) return mapped.remove(found).add(tr.doc, fresh)
-  stale.sort((a, b) => a[0] - b[0])
-  const merged: [number, number][] = []
-  for (const range of stale) {
-    const last = merged.at(-1)
-    if (last && range[0] <= last[1]) last[1] = Math.max(last[1], range[1])
-    else merged.push([range[0], range[1]])
-  }
-  const kept = mapped.find().filter((decoration) => {
-    let low = 0
-    let high = merged.length
-    while (low < high) {
-      const middle = (low + high) >> 1
-      if (merged[middle]![0] < decoration.to) low = middle + 1
-      else high = middle
-    }
-    const range = merged[low - 1]
-    return !range || range[1] <= decoration.from
-  })
-  return DecorationSet.create(tr.doc, kept.concat(fresh))
+  return updateCodeBlockDecorations(mapped, tr, (node, pos) =>
+    blockDecorations(node, pos, deadline),
+  )
 }
 
 export const highlightPlugin = $prose(

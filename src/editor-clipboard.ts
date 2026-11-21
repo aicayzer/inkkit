@@ -1,6 +1,7 @@
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { Fragment } from '@milkdown/kit/prose/model'
+import type { Transaction } from '@milkdown/kit/prose/state'
 import { clipboardContent, clipboardText } from './clipboard'
 import {
   commentSelectionContent,
@@ -34,6 +35,9 @@ interface ClipboardRuntime {
   capture(): SessionCapture
   assertCut(captured: SessionCapture): void
   canWrite(): boolean
+  /** Whether the editor refuses this edit because it would change text no one has seen. It has
+   *  then opened the section and reported the failure. */
+  refusesHiddenText(tr: Transaction): boolean
   write(content: ClipboardOutput): void | Promise<void>
   linkSchemes(): ReadonlySet<string>
   report(error: unknown): void
@@ -254,6 +258,16 @@ export class EditorClipboard {
       return
     }
     const view = this.runtime.ctx().get(editorViewCtx)
+    // A cut that the editor will refuse writes nothing, so the clipboard keeps what it held.
+    if (
+      event.type === 'cut' &&
+      this.runtime.writable() &&
+      this.runtime.refusesHiddenText(view.state.tr.deleteSelection())
+    ) {
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     const rich = this.runtime.handler().richText
     if (rich) {
       // An RTF document holds no images, comments or Markdown source: the copy is its text and

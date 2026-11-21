@@ -162,6 +162,7 @@ export const editorErrorCodes = [
   'read-only',
   'invalid-argument',
   'invalid-range',
+  'hidden-text',
   'preservation',
   'image-unavailable',
   'image-unsupported',
@@ -534,6 +535,10 @@ export interface EditorLabels {
   codePlainText: string
   expandCallout: string
   collapseCallout: string
+  /** The fold button of an expanded heading, followed by the heading's text in its accessible name. */
+  foldHeading: string
+  /** The fold button of a folded heading, followed by the heading's text in its accessible name. */
+  unfoldHeading: string
   diagramRendering: string
   /** Prefix shown before the renderer's diagnostic message. */
   diagramUnavailable: string
