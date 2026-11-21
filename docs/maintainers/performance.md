@@ -2,13 +2,25 @@
 
 ## Code line numbers, 21 November 2026
 
-Display option `codeLineNumbers` on one code block of 30,000 unhighlighted lines (`const valueN = N // line`) in a 620 px wide page. Chromium (Playwright 1.64.0, development fixture) on an Apple silicon Mac with 10 cores. The time runs from `loadDocument` until two frames have painted, for the median of three fresh pages. The heap is `Runtime.getHeapUsage` after two forced garbage collections. Wrapping is the block's own Wrap code toggle, and its time includes the toggle.
+Display option `codeLineNumbers` on one code block of 30,000 unhighlighted lines (`const valueN = N // line`) in a 620 px wide page. Chromium (Playwright 1.64.0, development fixture) on an Apple silicon Mac with 10 cores. The time runs from `loadDocument` until two frames have painted, for the median of three fresh pages. Wrapping is the block's own Wrap code toggle, and its time includes the toggle.
 
-| State                    | Before, time | Before, heap | After, time | After, heap |
-| ------------------------ | ------------ | ------------ | ----------- | ----------- |
-| Numbers off              | 231 ms       | 23.5 MiB     | 229 ms      | 22.6 MiB    |
-| Numbers on, wrapping off | 686 ms       | 42.2 MiB     | 276 ms      | 23.5 MiB    |
-| Numbers on, wrapping on  | 1,130 ms     | 42.2 MiB     | 892 ms      | 45.5 MiB    |
+**The heap column is `usedSize`** from the DevTools protocol's `Runtime.getHeapUsage`, read after two forced garbage collections (`HeapProfiler.collectGarbage`). It is the JavaScript heap only. The same call's `embedderHeapUsedSize` counts the browser's own memory for DOM and layout objects, which a line-number mirror grows far more, so the two fields give different figures for the same page. Quote the field with every figure.
+
+Reproduce with `INKKIT_MEASURE_RUNS=5 pnpm exec playwright test --config playwright.measure.config.ts line-numbers --project=chromium`, which runs `scripts/measure-browser/line-numbers.spec.ts` and writes `_local/measure/line-numbers-chromium.json` with both heap fields. A run on 21 November 2026 (Apple M4, five runs, medians) at the head of the display options branch:
+
+| State                    | Time   | `usedSize` | `embedderHeapUsedSize` |
+| ------------------------ | ------ | ---------- | ---------------------- |
+| Numbers off              | 223 ms | 23.5 MiB   | 29.2 MiB               |
+| Numbers on, wrapping off | 274 ms | 23.5 MiB   | 46.2 MiB               |
+| Numbers on, wrapping on  | 843 ms | 45.5 MiB   | 312.9 MiB              |
+
+A review measured the wrapped case with the same direction of speed-up but other heap figures: `usedSize` of 24.6 to 28.3 MiB and `embedderHeapUsedSize` of 270 to 294 MiB. Heap figures depend on which field is read and on the machine and run, so only compare figures of the same field. Only the times and the `usedSize` before and after below were taken on one machine and one day:
+
+| State                    | Before, time | Before, `usedSize` | After, time | After, `usedSize` |
+| ------------------------ | ------------ | ------------------ | ----------- | ----------------- |
+| Numbers off              | 231 ms       | 23.5 MiB           | 229 ms      | 22.6 MiB          |
+| Numbers on, wrapping off | 686 ms       | 42.2 MiB           | 276 ms      | 23.5 MiB          |
+| Numbers on, wrapping on  | 1,130 ms     | 42.2 MiB           | 892 ms      | 45.5 MiB          |
 
 Without wrapping every line is one line tall, so one gutter element draws all the numbers from a single attribute and no node exists for each line. A wrapped block still builds one entry and one mirror for each line, which is why its cost stays close to the earlier one: a wrapped line can be any number of lines tall, so only the browser's own layout of a mirror knows where the next number goes.
 
