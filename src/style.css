@@ -979,14 +979,16 @@
 }
 
 /* Line numbers sit in a gutter beside the code's text, inside the block but outside the text the
-   browser edits, so editing the text is the same with and without them. Each entry draws its
-   number from a data attribute, so no text enters the selection or the clipboard. The gutter is
-   not scrolled with the code, so a long line leaves the numbers in place.
+   browser edits, so editing the text is the same with and without them. The numbers are drawn
+   from data attributes, so no text enters the selection, a DOM range or the clipboard. The gutter
+   is not scrolled with the code, so a long line leaves the numbers in place.
 
-   The gutter spans the block's content box, and each entry leaves the code's own start margin for
-   its number. While lines wrap, an entry holds a hidden copy of its line with the code's font,
+   The gutter spans the block's content box, and leaves the code's own start margin for the
+   numbers. Without wrapping every line is one line tall, so one element draws every number, one
+   to a line. While lines wrap, an entry holds a hidden mirror of its line, built from the same
+   highlight classes as the code and drawing its text from data attributes, with the code's font,
    width and wrapping, so the entry is as tall as the line and the next number falls where the
-   next line begins, whatever the font or width. */
+   next line begins, whatever the font, style or width. */
 .inkkit-root .ProseMirror pre[data-inkkit-line-numbers] > code {
   margin-inline-start: calc(var(--_inkkit-line-digits, 1) * 1ch + 1.25em);
 }
@@ -997,6 +999,16 @@
   display: block;
   pointer-events: none;
   user-select: none;
+  color: var(--inkkit-code-line-number, var(--_inkkit-muted));
+  font-variant-numeric: tabular-nums;
+}
+
+.inkkit-root .ProseMirror .inkkit-code-gutter[data-inkkit-numbers]::before {
+  content: attr(data-inkkit-numbers);
+  display: block;
+  width: calc(var(--_inkkit-line-digits, 1) * 1ch);
+  white-space: pre;
+  text-align: end;
 }
 
 .inkkit-root .ProseMirror .inkkit-line-number {
@@ -1005,8 +1017,6 @@
   min-height: 1.5em;
   min-height: 1lh;
   padding-inline-start: calc(var(--_inkkit-line-digits, 1) * 1ch + 1.25em);
-  color: var(--inkkit-code-line-number, var(--_inkkit-muted));
-  font-variant-numeric: tabular-nums;
 }
 
 .inkkit-root .ProseMirror .inkkit-line-number::before {
@@ -1018,19 +1028,19 @@
 }
 
 .inkkit-root .ProseMirror .inkkit-line-copy {
-  display: none;
+  display: block;
   visibility: hidden;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-variant-numeric: normal;
 }
 
-.inkkit-root .ProseMirror pre.inkkit-code-wrapped .inkkit-line-copy {
-  display: block;
+.inkkit-root .ProseMirror .inkkit-line-copy > span::before {
+  content: attr(data-text);
 }
 
 @media (forced-colors: active) {
-  .inkkit-root .ProseMirror .inkkit-line-number {
+  .inkkit-root .ProseMirror .inkkit-code-gutter {
     color: GrayText;
   }
 }

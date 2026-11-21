@@ -4,7 +4,10 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { updateCodeBlockDecorations } from './code-block-decorations'
+import {
+  highlightClass,
+  updateCodeBlockDecorations,
+} from './code-block-decorations'
 
 const lowlight = createLowlight(common)
 
@@ -47,7 +50,13 @@ function blockDecorations(
         const end = offset + child.value.length
         if (classes.length > 0)
           found.push(
-            Decoration.inline(offset, end, { class: classes.join(' ') }),
+            Decoration.inline(
+              offset,
+              end,
+              { class: classes.join(' ') },
+              // The line-number mirror of a wrapped block draws the same classes.
+              { [highlightClass]: classes.join(' ') },
+            ),
           )
         offset = end
       } else if (child.type === 'element') {

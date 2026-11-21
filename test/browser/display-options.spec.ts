@@ -212,22 +212,43 @@ test('line numbers sit beside the first line of each text line, with and without
             })
         }
       }
-      const numbers = [
-        ...document.querySelectorAll<HTMLElement>('.inkkit-line-number'),
-      ].map((element) => {
-        const rect = element.getBoundingClientRect()
-        const style = getComputedStyle(element)
-        // The number is drawn on the entry's first line, and a wrapped line makes the entry taller.
-        const lineHeight =
-          Number.parseFloat(style.lineHeight) ||
-          Number.parseFloat(style.fontSize) * 1.5
-        return {
-          line: element.getAttribute('data-inkkit-line'),
-          top: rect.top,
-          bottom: rect.top + lineHeight,
-          right: rect.left + Number.parseFloat(style.paddingInlineStart),
-        }
-      })
+      const gutter = document.querySelector<HTMLElement>('.inkkit-code-gutter')!
+      const numbers = gutter.hasAttribute('data-inkkit-numbers')
+        ? // Without wrapping, one element draws every number, a line height apart.
+          (() => {
+            const style = getComputedStyle(gutter, '::before')
+            const lineHeight =
+              Number.parseFloat(style.lineHeight) ||
+              Number.parseFloat(style.fontSize) * 1.5
+            const top = gutter.getBoundingClientRect().top
+            return gutter
+              .getAttribute('data-inkkit-numbers')!
+              .split('\n')
+              .map((line, index) => ({
+                line,
+                top: top + index * lineHeight,
+                bottom: top + (index + 1) * lineHeight,
+                right:
+                  gutter.getBoundingClientRect().left +
+                  Number.parseFloat(getComputedStyle(code).marginInlineStart),
+              }))
+          })()
+        : [
+            ...document.querySelectorAll<HTMLElement>('.inkkit-line-number'),
+          ].map((element) => {
+            const rect = element.getBoundingClientRect()
+            const style = getComputedStyle(element)
+            // The number is drawn on the entry's first line, and a wrapped line makes the entry taller.
+            const lineHeight =
+              Number.parseFloat(style.lineHeight) ||
+              Number.parseFloat(style.fontSize) * 1.5
+            return {
+              line: element.getAttribute('data-inkkit-line'),
+              top: rect.top,
+              bottom: rect.top + lineHeight,
+              right: rect.left + Number.parseFloat(style.paddingInlineStart),
+            }
+          })
       // The first character of each text line, found after each newline.
       const flat = chars.map((char) => char.text).join('')
       const starts = [0, ...[...flat.matchAll(/\n/g)].map((m) => m.index + 1)]
@@ -367,7 +388,10 @@ test('line numbers are not copied, selected or printed', async ({
 }) => {
   const text = 'Before\n\n```\na\nb\n```\n'
   await open(page, openFixture, text, { codeLineNumbers: true })
-  await expect(page.locator('.inkkit-line-number')).toHaveCount(2)
+  await expect(page.locator('.inkkit-code-gutter')).toHaveAttribute(
+    'data-inkkit-numbers',
+    '1\n2',
+  )
   await page.locator('.ProseMirror pre code').click()
   await page.keyboard.press('ControlOrMeta+A')
   const copied = await page.evaluate(() => {
@@ -389,7 +413,7 @@ test('line numbers are not copied, selected or printed', async ({
   expect(copied.html).not.toContain('inkkit-line-number')
   expect((await observe(page)).snapshot!.text).toBe(text)
   await page.emulateMedia({ media: 'print' })
-  await expect(page.locator('.inkkit-line-number').first()).toBeHidden()
+  await expect(page.locator('.inkkit-code-gutter').first()).toBeHidden()
   await expect(page.locator('.ProseMirror pre > code')).toHaveCSS(
     'margin-inline-start',
     '0px',
@@ -405,8 +429,123 @@ test('the line number color follows its token', async ({
     root.style.setProperty('--inkkit-code-line-number', 'rgb(10, 120, 30)')
   })
   const color = await page
-    .locator('.inkkit-line-number')
+    .locator('.inkkit-code-gutter')
     .first()
     .evaluate((element) => getComputedStyle(element, '::before').color)
   expect(color).toBe('rgb(10, 120, 30)')
 })
+
+async function wrapCode(page: Page) {
+  await page.locator('.ProseMirror pre').hover()
+  await page.getByRole('button', { name: 'Code language' }).click()
+  await page.getByRole('button', { name: 'Wrap code' }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.ProseMirror pre')).toHaveClass(
+    /inkkit-code-wrapped/,
+  )
+}
+
+test('numbers stay level with highlighted code that wraps in a proportional font', async ({
+  page,
+  openFixture,
+}) => {
+  // A comment is italic, and Times is narrower than the monospace font the numbers might assume.
+  const comment = `// ${'comment words '.repeat(30).trim()}`
+  const text = `\`\`\`js\nconst a = 1\n${comment}\nconst b = 2\n${comment}\n\`\`\`\n`
+  await open(page, openFixture, text, { codeLineNumbers: true })
+  await wrapCode(page)
+  await page.locator('.inkkit-root').evaluate((root) => {
+    root.style.setProperty('--inkkit-monospace-font', 'Times New Roman')
+    root.style.width = '420px'
+    root.style.maxWidth = '420px'
+  })
+  await expect(page.locator('.ProseMirror pre > code')).toHaveCSS(
+    'font-family',
+    /Times New Roman/,
+  )
+  const gaps = () =>
+    page.evaluate(() => {
+      const code = document.querySelector('.ProseMirror pre > code')!
+      const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) =>
+          node.parentElement?.closest('.inkkit-code-controls')
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT,
+      })
+      const tops: number[] = []
+      let starting = true
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const data = node.textContent ?? ''
+        for (let at = 0; at < data.length; at++) {
+          if (starting) {
+            const range = document.createRange()
+            range.setStart(node, at)
+            range.setEnd(node, at + 1)
+            tops.push(range.getClientRects()[0]!.top)
+            starting = false
+          }
+          if (data[at] === '\n') starting = true
+        }
+      }
+      const entries = [
+        ...document.querySelectorAll<HTMLElement>('.inkkit-line-number'),
+      ]
+      return {
+        // How far each number sits below the first line of its text, which is the same for every
+        // line when the numbers follow the text.
+        gaps: entries.map(
+          (entry, index) => entry.getBoundingClientRect().top - tops[index]!,
+        ),
+        heights: entries.map((entry) => entry.getBoundingClientRect().height),
+        mirror: entries.map((entry) => entry.textContent),
+        classes: [...document.querySelectorAll('.inkkit-line-copy > span')].map(
+          (part) => part.className,
+        ),
+      }
+    })
+  const measured = await gaps()
+  expect(measured.gaps).toHaveLength(4)
+  // The comment wrapped, so its entry is several lines tall.
+  expect(Math.max(...measured.heights)).toBeGreaterThan(
+    Math.min(...measured.heights) * 1.8,
+  )
+  expect(Math.max(...measured.gaps) - Math.min(...measured.gaps)).toBeLessThan(
+    1.5,
+  )
+  // The mirror was built from the highlight classes, and holds no text of its own.
+  expect(measured.mirror.every((text) => text === '')).toBe(true)
+  expect(measured.classes).toContain('inkkit-hljs-comment')
+  expect(measured.classes).toContain('inkkit-hljs-keyword')
+})
+
+for (const wrapped of [false, true])
+  test(`a range over a numbered code block holds each line once (${wrapped ? 'wrapped' : 'not wrapped'})`, async ({
+    page,
+    openFixture,
+  }) => {
+    await open(page, openFixture, '```js\nalpha()\n// beta\ngamma()\n```\n', {
+      codeLineNumbers: true,
+    })
+    if (wrapped) await wrapCode(page)
+    await page.locator('.ProseMirror pre code').click()
+    await page.keyboard.press('ControlOrMeta+A')
+    const parts = await page.evaluate(() => {
+      const range = getSelection()!.getRangeAt(0)
+      const text = range.toString()
+      const fragment = range.cloneContents().textContent ?? ''
+      return {
+        alpha: text.split('alpha').length - 1,
+        beta: text.split('beta').length - 1,
+        gamma: text.split('gamma').length - 1,
+        fragment: fragment.split('beta').length - 1,
+        digits: /[0-9]/.test(text.replace(/alpha|beta|gamma/g, '')),
+      }
+    })
+    expect(parts).toEqual({
+      alpha: 1,
+      beta: 1,
+      gamma: 1,
+      fragment: 1,
+      digits: false,
+    })
+  })

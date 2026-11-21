@@ -7,10 +7,25 @@ import { input, withEditor, type Mounted } from './formats/harness'
 
 const numbered: EditorOptions = { display: { codeLineNumbers: true } }
 
+/** The numbers of every block in order: one attribute without wrapping, one entry per line with it. */
 const numbers = (mounted: Mounted) =>
-  [...mounted.root.querySelectorAll<HTMLElement>('.inkkit-line-number')].map(
-    (element) => element.getAttribute('data-inkkit-line'),
+  [
+    ...mounted.root.querySelectorAll<HTMLElement>('.inkkit-code-gutter'),
+  ].flatMap((gutter) =>
+    gutter.hasAttribute('data-inkkit-numbers')
+      ? gutter.getAttribute('data-inkkit-numbers')!.split('\n')
+      : [...gutter.querySelectorAll('.inkkit-line-number')].map((element) =>
+          element.getAttribute('data-inkkit-line'),
+        ),
   )
+/** Switches line wrapping on or off for the block's popup, which the language button opens. */
+const wrap = (mounted: Mounted) => {
+  if (!mounted.root.querySelector('.inkkit-code-wrap'))
+    mounted.root
+      .querySelector<HTMLButtonElement>('.inkkit-code-language')!
+      .click()
+  mounted.root.querySelector<HTMLButtonElement>('.inkkit-code-wrap')!.click()
+}
 const load = (mounted: Mounted, text: string) =>
   mounted.editor.loadDocument(input('md', text))
 const view = (mounted: Mounted) => ctxOf(mounted.editor).get(editorViewCtx)
@@ -57,17 +72,35 @@ test('code in a list, a quote and a callout is numbered, and inline code is not'
 
 test('the numbers carry no text, no selectable content and no accessible name', () =>
   withEditor(numbered, (mounted) => {
-    load(mounted, '```\na\nb\n```\n')
+    load(mounted, '```js\n// a\nb\n```\n')
     const gutter = mounted.root.querySelector('.inkkit-code-gutter')!
     expect(gutter.getAttribute('aria-hidden')).toBe('true')
     expect(gutter.getAttribute('contenteditable')).toBe('false')
-    // The entries hold a hidden copy of each line for layout, and the digits come from attributes.
-    expect(
-      [...gutter.querySelectorAll('.inkkit-line-number')].map(
-        (element) => element.textContent,
-      ),
-    ).toEqual(['a', 'b'])
+    // Without wrapping, one attribute draws every number and the gutter holds nothing else.
+    expect(gutter.getAttribute('data-inkkit-numbers')).toBe('1\n2')
+    expect(gutter.childNodes.length).toBe(0)
     expect(mounted.root.querySelector('pre')!.textContent).not.toMatch(/[12]/)
+    // With wrapping, each line has a mirror of runs drawn from attributes, with no text node.
+    wrap(mounted)
+    const mirrored = mounted.root.querySelector('.inkkit-code-gutter')!
+    expect(mirrored.hasAttribute('data-inkkit-numbers')).toBe(false)
+    expect(mirrored.textContent).toBe('')
+    const walker = document.createTreeWalker(mirrored, NodeFilter.SHOW_TEXT)
+    expect(walker.nextNode()).toBeNull()
+    const runs = [...mirrored.querySelectorAll('.inkkit-line-copy')].map(
+      (copy) =>
+        [...copy.children].map((run) => [
+          run.getAttribute('class') ?? '',
+          run.getAttribute('data-text'),
+        ]),
+    )
+    expect(runs).toEqual([[['inkkit-hljs-comment', '// a']], [['', 'b']]])
+    // Turning wrapping off again swaps the mirror back for the one attribute.
+    wrap(mounted)
+    expect(numbers(mounted)).toEqual(['1', '2'])
+    expect(
+      mounted.root.querySelector('.inkkit-code-gutter')!.childNodes.length,
+    ).toBe(0)
   }))
 
 test('numbers leave the snapshot, copy and print output unchanged', () =>

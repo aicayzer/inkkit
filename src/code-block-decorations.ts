@@ -2,6 +2,9 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Transaction } from '@milkdown/kit/prose/state'
 import { type Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 
+/** The key under which a highlight decoration's spec keeps the classes it puts on its text. */
+export const highlightClass = 'inkkitHighlightClass'
+
 // Every range of the new document an update may have touched, from each step's own map. A step
 // whose map is empty, such as one that sets an attribute or a mark, changes a node without
 // changing its size, so the two documents on either side of it are compared. The comparison is

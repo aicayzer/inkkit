@@ -52,6 +52,7 @@ export function codeControlsPlugin(
                             inside - 1,
                             inside - 1 + node.nodeSize,
                             { class: 'inkkit-code-wrapped' },
+                            { wrapped: true },
                           ),
                         ]
                       : []
@@ -76,6 +77,7 @@ export function codeControlsPlugin(
                       toggle.position,
                       toggle.position + node.nodeSize,
                       { class: 'inkkit-code-wrapped' },
+                      { wrapped: true },
                     ),
                   ])
               }
