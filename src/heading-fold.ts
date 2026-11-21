@@ -19,6 +19,15 @@ import {
   type NodeView,
   type ViewMutationRecord,
 } from '@milkdown/kit/prose/view'
+import {
+  AddMarkStep,
+  AddNodeMarkStep,
+  AttrStep,
+  RemoveMarkStep,
+  RemoveNodeMarkStep,
+  type Step,
+  type StepMap,
+} from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
 import { commentsVisible, isComment } from './comments'
 import { displayCtx } from './display'
@@ -416,6 +425,31 @@ export interface FoldRefusal {
 }
 
 /**
+ * What a step changes, as ranges in the document before it, and whether the change is formatting.
+ * A mark step and an attribute step leave their step map empty, so their own positions say what
+ * they reach.
+ */
+function stepRanges(
+  step: Step,
+  before: ProseNode,
+  map: StepMap,
+): [number, number, boolean][] {
+  if (step instanceof AddMarkStep || step instanceof RemoveMarkStep)
+    return [[step.from, step.to, true]]
+  if (
+    step instanceof AddNodeMarkStep ||
+    step instanceof RemoveNodeMarkStep ||
+    step instanceof AttrStep
+  ) {
+    const node = before.nodeAt(step.pos)
+    return [[step.pos, step.pos + (node?.nodeSize ?? 1), true]]
+  }
+  const ranges: [number, number, boolean][] = []
+  map.forEach((start, end) => ranges.push([start, end, false]))
+  return ranges
+}
+
+/**
  * The sections whose hidden range a transaction's steps change. An edit that covers a section,
  * heading included, deletes it on purpose when it is folded, so it only counts with `coverIsReach`,
  * as for a section the person has not seen.
@@ -426,6 +460,9 @@ function reachedSections(
   coverIsReach: boolean,
 ): number[] {
   const reached: number[] = []
+  const ranges = tr.steps.map((step, index) =>
+    stepRanges(step, tr.docs[index]!, tr.mapping.maps[index]!),
+  )
   for (const section of sections) {
     if (section.end <= section.from) continue
     let { pos: head, from, end: to } = section
@@ -435,11 +472,13 @@ function reachedSections(
       const map = tr.mapping.maps[index]!
       let touches = false
       let covers = false
-      map.forEach((start, end) => {
-        if (start >= to || end <= from) return
-        if (start <= head && end >= to && !coverIsReach) covers = true
+      for (const [start, end, formatting] of ranges[index]!) {
+        if (start >= to || end <= from) continue
+        // A deletion that covers a folded section is on purpose. Formatting hidden text never is.
+        if (!formatting && start <= head && end >= to && !coverIsReach)
+          covers = true
         else touches = true
-      })
+      }
       if (touches) {
         reached.push(section.pos)
         break
@@ -466,7 +505,8 @@ function reachedSections(
  * every input path, such as a key the browser acts on itself, a cut, a paste, a drop or a
  * composition. A folded section that an edit's own steps cover, heading included, is deleted or
  * replaced on purpose and goes through, as the range the edit names decides, not the selection
- * at the time it applies. Undefined when the edit may be applied.
+ * at the time it applies. Formatting, which a mark or attribute step does without changing the
+ * text, is never on purpose, so it is refused whether the section covers it or not. Undefined when the edit may be applied.
  */
 export function refuseFoldedEdit(
   state: EditorState,
@@ -582,7 +622,12 @@ export const headingFold = $prose((ctx) => {
           sections = []
           rebuild = true
         }
-        if (meta?.clear || meta?.enabled != null) unseen = []
+        // A display update that leaves folding as it is keeps what a paint has yet to show.
+        if (
+          meta?.clear ||
+          (meta?.enabled != null && enabled !== previous.enabled)
+        )
+          unseen = []
         // An ordinary edit inside one block moves positions and nothing else. Any other change
         // reads the document once for every section.
         const mapped = tr.docChanged && keepsSections(tr)
@@ -601,13 +646,21 @@ export const headingFold = $prose((ctx) => {
             )
           }
         }
+        // The unseen text is a range of the document, not a heading's section, so it follows the
+        // steps and outlives a change to the heading that opened it.
         if (tr.docChanged && unseen.length)
           unseen = unseen.flatMap((section) => {
-            const pos = tr.mapping.map(section.pos, 1)
             const from = tr.mapping.map(section.from, 1)
             const end = tr.mapping.map(section.end, -1)
-            return headingAt(tr.doc, pos) && end > from
-              ? [{ ...section, pos, from, end }]
+            return end > from
+              ? [
+                  {
+                    ...section,
+                    pos: tr.mapping.map(section.pos, 1),
+                    from,
+                    end,
+                  },
+                ]
               : []
           })
         if (tr.docChanged && !mapped) rebuild = true
@@ -734,19 +787,50 @@ export const headingFold = $prose((ctx) => {
       },
     },
     view(view) {
-      let pending: (() => void) | undefined
-      // Clears what a paint has shown. The frame callback runs just before the browser paints, so
-      // the text is seen by the time the next input arrives. A hidden page never paints, so a
-      // timer also clears it.
+      let cancel: (() => void) | undefined
+      // The text a section opened is shown once a frame has been painted with it. A frame callback
+      // runs before its own paint, so it only starts the wait: a task queued from it runs after
+      // that paint. A hidden page, or an editor that is not rendered, paints nothing, so the
+      // text stays protected and the wait starts again when the page or the editor is shown.
+      const visible = () =>
+        document.visibilityState !== 'hidden' &&
+        view.dom.isConnected &&
+        (typeof view.dom.checkVisibility !== 'function' ||
+          view.dom.checkVisibility())
       const schedule = () => {
-        if (pending) return
+        if (cancel) return
         const stamp = foldKey.getState(view.state)!.epoch
         let frame = 0
         let timer = 0
-        const done = () => {
+        const stop = () => {
           if (frame) cancelAnimationFrame(frame)
           clearTimeout(timer)
-          pending = undefined
+          frame = timer = 0
+        }
+        const start = () => {
+          stop()
+          if (!visible()) {
+            // A hidden page tells us when it shows. An editor that is not rendered is asked again.
+            if (document.visibilityState !== 'hidden')
+              timer = window.setTimeout(start, 250)
+            return
+          }
+          const afterPaint = () => {
+            timer = window.setTimeout(() => {
+              timer = 0
+              if (visible()) shown()
+              else start()
+            }, 0)
+          }
+          if (typeof requestAnimationFrame === 'function')
+            frame = requestAnimationFrame(() => {
+              frame = 0
+              afterPaint()
+            })
+          else timer = window.setTimeout(afterPaint, 16)
+        }
+        const shown = () => {
+          cancel!()
           if (view.isDestroyed) return
           view.dispatch(
             view.state.tr
@@ -754,14 +838,13 @@ export const headingFold = $prose((ctx) => {
               .setMeta('addToHistory', false),
           )
         }
-        if (typeof requestAnimationFrame === 'function')
-          frame = requestAnimationFrame(done)
-        timer = window.setTimeout(done, 100)
-        pending = () => {
-          if (frame) cancelAnimationFrame(frame)
-          clearTimeout(timer)
-          pending = undefined
+        document.addEventListener('visibilitychange', start)
+        cancel = () => {
+          stop()
+          document.removeEventListener('visibilitychange', start)
+          cancel = undefined
         }
+        start()
       }
       return {
         update(updated, previous) {
@@ -771,7 +854,7 @@ export const headingFold = $prose((ctx) => {
           if (foldKey.getState(updated.state)?.unseen.length) schedule()
         },
         destroy() {
-          pending?.()
+          cancel?.()
         },
       }
     },

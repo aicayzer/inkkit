@@ -952,6 +952,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     capture: () => this.session.capture(),
     assertCut: (captured) => this.assertCut(captured),
     canWrite: () => Boolean(this.events.clipboard),
+    refusesHiddenText: (tr) =>
+      this.refusesHiddenText(this.editor.ctx.get(editorViewCtx), tr),
     write: (content) => this.events.clipboard!(content),
     linkSchemes: () => this.linkSchemes,
     report: (error) => this.report(error),
@@ -2089,40 +2091,45 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     this.indentKeys(view, event),
   )
 
+  /**
+   * Whether an input would change text the person has not been shown, because a fold hides it or
+   * because the section opened since the last paint. Then nothing changes, the section is open and
+   * `hidden-text` is reported: a facade call throws or rejects with it, and any other input,
+   * which the editor consumes, goes to `events.error`. Paste, typing, keys, cut, drop and
+   * composition get no exemption, inside a facade call or out of it. A host operation that names
+   * its own targets, a history step, a source replacement and a block move, which carries its
+   * nodes unchanged, do.
+   */
+  private refusesHiddenText(view: EditorView, tr: Transaction): boolean {
+    if (
+      this.namingTargets ||
+      this.loading ||
+      !tr.docChanged ||
+      tr.getMeta('addToHistory') === false ||
+      tr.getMeta(carriedBlocks) ||
+      !isWrittenEdit(tr)
+    )
+      return false
+    const refusal = refuseFoldedEdit(view.state, tr)
+    if (!refusal) return false
+    if (refusal.open) view.updateState(view.state.apply(refusal.open))
+    else view.updateState(view.state)
+    const error = new InkKitError(
+      'hidden-text',
+      'The edit was not applied because it would change text that a fold hides or that has not been shown yet. The section is open now, so the same edit works after the next paint.',
+    )
+    // A forwarded key is consumed, so `keyDown` reports `true` and the failure goes to the event.
+    if (this.call && this.call.host !== 'keyDown') {
+      this.call.opened = [...(this.call.opened ?? []), ...refusal.sections]
+      this.refuse(error)
+    } else this.report(error)
+    return true
+  }
+
   private dispatchTransaction(view: EditorView, tr: Transaction): void {
     // A call whose edit was refused changes nothing more; it throws when it returns.
     if (this.call?.refusal && tr.docChanged) return
-    // An input that would change text the person has not been shown, because a fold hides it or
-    // because the section opened since the last paint, is refused: nothing changes and the
-    // section is open. Paste, typing, keys, cut, drop and composition get no exemption, inside a
-    // facade call or out of it. A host operation that names its own targets, a history step, a
-    // source replacement and a block move, which carries its nodes unchanged, do.
-    if (
-      !this.namingTargets &&
-      !this.loading &&
-      tr.docChanged &&
-      tr.getMeta('addToHistory') !== false &&
-      !tr.getMeta(carriedBlocks) &&
-      isWrittenEdit(tr)
-    ) {
-      const refusal = refuseFoldedEdit(view.state, tr)
-      if (refusal) {
-        if (refusal.open) view.updateState(view.state.apply(refusal.open))
-        else view.updateState(view.state)
-        // A key the host forwards is consumed, which `keyDown` reports as handled. Any other
-        // host call must not return as if it had changed the document.
-        if (this.call?.host && this.call.host !== 'keyDown') {
-          this.call.opened = [...(this.call.opened ?? []), ...refusal.sections]
-          this.refuse(
-            new InkKitError(
-              'invalid-range',
-              'The edit was not applied because it would change text that a fold hides or that has not been shown yet.',
-            ),
-          )
-        }
-        return
-      }
-    }
+    if (this.refusesHiddenText(view, tr)) return
     this.document.carry(tr.getMeta(carriedBlocks) ?? [])
     this.suggestions?.beforeTransaction(tr)
     const base = this.suggestionBase ?? view.state

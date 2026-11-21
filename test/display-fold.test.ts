@@ -3,7 +3,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { AllSelection, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { InkKitError, type EditorOptions } from '../src/core'
+import { InkKitEditor, InkKitError, type EditorOptions } from '../src/core'
 import { foldedHeadings } from '../src/heading-fold'
 import { ctxOf } from './editor-access'
 import { input, withEditor, type Mounted } from './formats/harness'
@@ -53,7 +53,7 @@ const hidden = (mounted: Mounted) =>
   )
 const load = (mounted: Mounted, text: string) =>
   mounted.editor.loadDocument(input('md', text))
-/** Waits until a section that opened has been shown: the fallback timer clears it without a frame. */
+/** Waits until a section that opened has been shown: a frame, then a task after its paint. */
 const shown = () => new Promise((resolve) => setTimeout(resolve, 150))
 
 test('folding hides what follows up to the next heading of the same or a higher level', () =>
@@ -664,7 +664,7 @@ test('every edit over a selection that reaches the hidden text acts on text that
       try {
         act(await reach())
       } catch (error) {
-        expect((error as InkKitError).code).toBe('invalid-range')
+        expect((error as InkKitError).code).toBe('hidden-text')
       }
       expect(mounted.editor.snapshot().text).toBe(source)
       act(await settled())
@@ -855,7 +855,7 @@ test('a section that a selection opened is not changed until it has been shown',
     const generation = mounted.editor.snapshot().generation
     // The same task cannot also change what the selection has just revealed. The call reports it.
     expect(code(() => mounted.editor.insertText('x', generation))).toBe(
-      'invalid-range',
+      'hidden-text',
     )
     expect(mounted.editor.snapshot().text).toBe(outline)
     expect(mounted.changes).toEqual([])
@@ -904,3 +904,148 @@ test('a backward find between two folded matches opens neither on the way', () =
     expect(foldedHeadings(v.state)).toEqual([headingPos(v, 'Two')])
     session.close()
   }))
+
+/** Selects `text` in the document, which opens the section that hides it. */
+const select = (mounted: Mounted, text: string) => {
+  const snapshot = mounted.editor.textSnapshot()
+  const from = snapshot.text.indexOf(text)
+  mounted.editor.selectTextRange({
+    snapshotId: snapshot.snapshotId,
+    from,
+    to: from + text.length,
+  })
+}
+
+const edit = (mounted: Mounted) =>
+  code(() =>
+    mounted.editor.insertText('x', mounted.editor.snapshot().generation),
+  )
+
+test('an edit queued in the host`s next animation frame is refused until a paint has passed', () =>
+  withEditor(fold, async (mounted) => {
+    load(mounted, outline)
+    toggleOf(mounted, 'One').click()
+    // The editor's frame callback runs first, then the host's, before the frame paints.
+    select(mounted, 'Hidden')
+    const queued = await new Promise<string | undefined>((resolve) =>
+      requestAnimationFrame(() => resolve(edit(mounted))),
+    )
+    expect(queued).toBe('hidden-text')
+    expect(mounted.editor.snapshot().text).toBe(outline)
+    await shown()
+    expect(edit(mounted)).toBeUndefined()
+  }))
+
+test('a hidden page keeps the section protected until it shows', () =>
+  withEditor(fold, async (mounted) => {
+    let hidden = true
+    const state = vi
+      .spyOn(document, 'visibilityState', 'get')
+      .mockImplementation(() => (hidden ? 'hidden' : 'visible'))
+    try {
+      load(mounted, outline)
+      toggleOf(mounted, 'One').click()
+      select(mounted, 'Hidden')
+      // Far longer than the old fallback timer, with frames suppressed.
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      expect(edit(mounted)).toBe('hidden-text')
+      hidden = false
+      document.dispatchEvent(new Event('visibilitychange'))
+      await shown()
+      expect(edit(mounted)).toBeUndefined()
+    } finally {
+      state.mockRestore()
+    }
+  }))
+
+test('a display update that leaves folding on keeps the section protected', () =>
+  withEditor(fold, async (mounted) => {
+    load(mounted, outline)
+    toggleOf(mounted, 'One').click()
+    select(mounted, 'Hidden')
+    mounted.editor.setDisplayPreferences({
+      foldHeadings: true,
+      codeLineNumbers: true,
+    })
+    expect(edit(mounted)).toBe('hidden-text')
+    expect(mounted.editor.snapshot().text).toBe(outline)
+    await shown()
+    expect(edit(mounted)).toBeUndefined()
+  }))
+
+test('a heading that becomes a paragraph keeps its former body protected', () =>
+  withEditor(fold, async (mounted) => {
+    load(mounted, outline)
+    toggleOf(mounted, 'One').click()
+    const v = view(mounted)
+    v.dispatch(
+      v.state.tr.setSelection(
+        TextSelection.create(v.state.doc, 2, headingPos(v, 'Two') - 4),
+      ),
+    )
+    v.dispatch(v.state.tr.setBlockType(1, 1, v.state.schema.nodes.paragraph!))
+    expect(mounted.editor.snapshot().text).toBe('One\n\nHidden\n\n# Two\n')
+    expect(edit(mounted)).toBe('hidden-text')
+    await shown()
+    expect(edit(mounted)).toBeUndefined()
+  }))
+
+test('formatting is refused on text a section has not shown and on folded text, and reports hidden-text', () =>
+  withEditor(fold, async (mounted) => {
+    load(mounted, outline)
+    toggleOf(mounted, 'One').click()
+    const generation = () => mounted.editor.snapshot().generation
+    select(mounted, 'Hidden')
+    expect(
+      code(() => mounted.editor.format('bold', undefined, generation())),
+    ).toBe('hidden-text')
+    expect(mounted.editor.snapshot().text).toBe(outline)
+    await shown()
+    // A select-all covers the folded section, and formatting is not a deletion.
+    toggleOf(mounted, 'One').click()
+    const v = view(mounted)
+    expect(foldedHeadings(v.state)).toHaveLength(1)
+    v.dispatch(v.state.tr.setSelection(new AllSelection(v.state.doc)))
+    expect(foldedHeadings(v.state)).toHaveLength(1)
+    expect(
+      code(() => mounted.editor.format('bold', undefined, generation())),
+    ).toBe('hidden-text')
+    expect(mounted.editor.snapshot().text).toBe(outline)
+    expect(foldedHeadings(v.state)).toEqual([])
+  }))
+
+test('a shortcut on text a section has not shown is consumed and reported to events.error', async () => {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const failures: string[] = []
+  const editor = await InkKitEditor.mount(
+    root,
+    { changed() {}, error: (error) => failures.push(error.code) },
+    fold,
+  )
+  try {
+    editor.setKeymap({ bold: ['Ctrl-b'] })
+    editor.loadDocument(input('md', outline))
+    root
+      .querySelector<HTMLButtonElement>('[data-inkkit-heading-toggle]')!
+      .click()
+    const snapshot = editor.textSnapshot()
+    const from = snapshot.text.indexOf('Hidden')
+    editor.selectTextRange({
+      snapshotId: snapshot.snapshotId,
+      from,
+      to: from + 6,
+    })
+    expect(
+      editor.keyDown(
+        { key: 'b', code: 'KeyB', ctrlKey: true },
+        editor.snapshot().generation,
+      ),
+    ).toBe(true)
+    expect(editor.snapshot().text).toBe(outline)
+    expect(failures).toEqual(['hidden-text'])
+  } finally {
+    await editor.destroy()
+    root.remove()
+  }
+})

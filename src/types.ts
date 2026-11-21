@@ -162,6 +162,7 @@ export const editorErrorCodes = [
   'read-only',
   'invalid-argument',
   'invalid-range',
+  'hidden-text',
   'preservation',
   'image-unavailable',
   'image-unsupported',

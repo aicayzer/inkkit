@@ -449,7 +449,7 @@ Returns what the editor can do now, for enabling toolbar buttons and menu items,
 
 Applies one formatting command to the selection in formatted mode, focuses the editor, and returns whether the document, or the marks the next typed text takes, changed. It returns `false` in source and TXT modes and when the command has nothing to change.
 
-[Format commands](/reference/options#format-commands) lists what each `FormatCommand` does and the `FormatOptions` it takes. With `link`, a destination that Inkkit wouldn't open or can't save throws `invalid-argument`, and in a reference link the shared definition changes, as [`editReferenceDefinition`](#editreferencedefinition) does. Giving a link the destination it already has returns `false`.
+[Format commands](/reference/options#format-commands) lists what each `FormatCommand` does and the `FormatOptions` it takes. With `link`, a destination that Inkkit wouldn't open or can't save throws `invalid-argument`, and in a reference link the shared definition changes, as [`editReferenceDefinition`](#editreferencedefinition) does. Giving a link the destination it already has returns `false`. Formatting has no exemption from a [fold](/concepts/markdown#folding-headings): a selection over text that a fold hides, or that a section that just opened hasn't yet shown, throws [`hidden-text`](/reference/errors#error-codes) and changes nothing.
 
 {/* @api InkKitEditor.moveBlock */}
 
@@ -808,7 +808,7 @@ A `ClipboardDiagram` retains a complete Mermaid diagram and its optional rendere
 
 `paste(input: ClipboardInput, expectedGeneration?: number): Promise<void>`
 
-Pastes content that the host read from the native clipboard, through the same import as a paste the person makes, including the [`textInput.paste`](/reference/options#editor-options) route. Read the clipboard once; don't read it again while this runs. An unknown field throws `invalid-argument`.
+Pastes content that the host read from the native clipboard, through the same import as a paste the person makes, including the [`textInput.paste`](/reference/options#editor-options) route. Read the clipboard once; don't read it again while this runs. An unknown field throws `invalid-argument`. A paste that would change text a [fold](/concepts/markdown#folding-headings) hides, or that has not been shown yet, rejects with [`hidden-text`](/reference/errors#error-codes). The person's own paste, by any route, goes to `events.error` with the same code.
 
 {/* @api ClipboardInput */}
 A `ClipboardInput` supplies representations from one clipboard read. Inkkit chooses the applicable representation using the current mode and import rules.
@@ -830,7 +830,7 @@ An image item whose `source` equals an image's `src` belongs to that image; item
 
 `pasteAsPlainText(text: string, expectedGeneration?: number): boolean`
 
-Inserts `text` literally at the selection and returns whether the document changed. It never makes links or formatting. Use it for a **Paste as Plain Text** command; to make every paste literal, set [`textInput.paste`](/reference/options#editor-options) to `'plainText'`.
+Inserts `text` literally at the selection and returns whether the document changed. It never makes links or formatting. Use it for a **Paste as Plain Text** command; to make every paste literal, set [`textInput.paste`](/reference/options#editor-options) to `'plainText'`. It throws [`hidden-text`](/reference/errors#error-codes) for text a [fold](/concepts/markdown#folding-headings) hides or that has not been shown yet.
 
 {/* @api InkKitEditor.printableSnapshot */}
 
@@ -1015,7 +1015,7 @@ A host whose native layer receives typing or keys before the web view does passe
 
 `insertText(text: string, generation: number): boolean`
 
-Inserts exactly `text` at the selection and returns `true`. It has no exemption from a [fold](/concepts/markdown#folding-headings): a selection that reaches hidden text has already opened the section, so it replaces text that is shown, but only once a paint has shown it: a call in the same task as the selection that opened the section throws `invalid-range` and changes nothing. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode. Text of more than one character, and every other call that changes the document, makes the brackets around it ordinary characters, as [tracked pairs](/reference/options#paired-brackets-and-quotes) describes.
+Inserts exactly `text` at the selection and returns `true`. It has no exemption from a [fold](/concepts/markdown#folding-headings): a selection that reaches hidden text has already opened the section, so it replaces text that is shown, but only once a paint has shown it: a call in the same task as the selection that opened the section throws [`hidden-text`](/reference/errors#error-codes) and changes nothing, and the same call works after the next paint. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode. Text of more than one character, and every other call that changes the document, makes the brackets around it ordinary characters, as [tracked pairs](/reference/options#paired-brackets-and-quotes) describes.
 
 {/* @api InkKitEditor.keyDown */}
 
@@ -1023,7 +1023,7 @@ Inserts exactly `text` at the selection and returns `true`. It has no exemption 
 
 `keyDown(input: KeyInput, expectedGeneration: number): boolean`
 
-Runs a key press through Inkkit's key handling and returns whether Inkkit handled it. When it returns `true`, the host must not also handle the key natively. A deletion key has no exemption from a [fold](/concepts/markdown#folding-headings): it acts on shown text, and from a caret that would reach hidden text, or text a section that has just opened hasn't yet shown, it opens the section and changes nothing, and `keyDown` still returns `true`.
+Runs a key press through Inkkit's key handling and returns whether Inkkit handled it. When it returns `true`, the host must not also handle the key natively. A deletion key has no exemption from a [fold](/concepts/markdown#folding-headings): it acts on shown text, and from a caret that would reach hidden text, or text a section that has just opened hasn't yet shown, it opens the section and changes nothing, reports `hidden-text` to `events.error`, and `keyDown` still returns `true`.
 
 {/* @api KeyInput */}
 A `KeyInput` describes a native key press using DOM keyboard names and modifier state.

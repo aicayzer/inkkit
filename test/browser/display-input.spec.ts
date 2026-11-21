@@ -1038,9 +1038,6 @@ const isOpen = (page: Page) =>
 const freezeFrames = (page: Page) =>
   page.evaluate(() => {
     window.requestAnimationFrame = () => 0
-    const original = window.setTimeout.bind(window)
-    window.setTimeout = ((handler: TimerHandler, delay?: number) =>
-      delay === 100 ? 0 : original(handler, delay)) as typeof setTimeout
   })
 
 const heldKeys: [string, (page: Page) => Promise<void>][] = [
@@ -1137,7 +1134,7 @@ test('a host selection of hidden text and an insert in the same task is refused,
       return (error as { code: string }).code
     }
   })
-  expect(result).toBe('invalid-range')
+  expect(result).toBe('hidden-text')
   expect(await saved(page)).toBe(secret)
   await expect(page.getByText('secret phrase')).toBeVisible()
   await frame(page)
