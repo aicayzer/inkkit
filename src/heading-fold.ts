@@ -44,10 +44,25 @@ interface Section {
   end: number
 }
 
+/** A section that opened and that the browser has not painted since. */
+interface Unseen extends Section {
+  /** The `Folds.epoch` at which it opened. */
+  stamp: number
+}
+
 interface Folds {
   enabled: boolean
   /** Folded sections, in ascending order of heading position. */
   sections: readonly Section[]
+  /**
+   * Sections that opened and have not been shown yet. The person has not seen their text, so no
+   * edit may change it until a paint has passed.
+   */
+  unseen: readonly Unseen[]
+  /** Counts the sections that opened, so a paint clears only the ones that preceded it. */
+  epoch: number
+  /** While its depth is above zero, a selection does not open sections. Shared by every state. */
+  hold: { depth: number }
   decorations: DecorationSet
 }
 
@@ -56,6 +71,10 @@ interface FoldMeta {
   toggle?: number
   unfold?: readonly number[]
   clear?: boolean
+  /** Sections that opened up to this epoch have been painted. */
+  shown?: number
+  /** Opens the sections the selection reaches, which a hold had postponed. */
+  settle?: boolean
 }
 
 const foldKey = new PluginKey<Folds>('inkkitHeadingFold')
@@ -388,23 +407,24 @@ export function clearHeadingFolds(view: EditorView): void {
   )
 }
 
+/** What the fold guard decided about an edit: the sections to open, and whether it was refused. */
+export interface FoldRefusal {
+  /** Opens the folded sections the edit reached. Undefined when none was folded. */
+  open?: Transaction
+  /** The positions of the sections the edit reached, folded or not yet shown. */
+  sections: readonly number[]
+}
+
 /**
- * Whether an edit would change text that a fold hides from a collapsed caret, such as a deletion
- * across the section's boundary, and what then happens: the edit is refused and the transaction
- * returned unfolds the sections it reached, so what changes is seen. A selection that reaches
- * hidden text has already opened the section (see `Section`), so this is the check that remains
- * for the caret. It reads the transaction, so it holds for every input path, such as a key the
- * browser acts on itself, a cut, a paste or a drop. An edit whose own steps cover a whole folded
- * section, heading included, deletes or replaces that section on purpose, and goes through, as
- * the range the edit names decides, not the selection at the time it applies. Undefined when the
- * edit may be applied.
+ * The sections whose hidden range a transaction's steps change. An edit that covers a section,
+ * heading included, deletes it on purpose when it is folded, so it only counts with `coverIsReach`,
+ * as for a section the person has not seen.
  */
-export function refuseFoldedEdit(
-  state: EditorState,
+function reachedSections(
+  sections: readonly Section[],
   tr: Transaction,
-): Transaction | undefined {
-  const sections = foldKey.getState(state)?.sections
-  if (!sections?.length || !tr.docChanged) return undefined
+  coverIsReach: boolean,
+): number[] {
   const reached: number[] = []
   for (const section of sections) {
     if (section.end <= section.from) continue
@@ -417,7 +437,7 @@ export function refuseFoldedEdit(
       let covers = false
       map.forEach((start, end) => {
         if (start >= to || end <= from) return
-        if (start <= head && end >= to) covers = true
+        if (start <= head && end >= to && !coverIsReach) covers = true
         else touches = true
       })
       if (touches) {
@@ -431,10 +451,88 @@ export function refuseFoldedEdit(
       if (to <= from) break
     }
   }
-  if (!reached.length) return undefined
-  return state.tr
-    .setMeta(foldKey, { unfold: reached } satisfies FoldMeta)
-    .setMeta('addToHistory', false)
+  return reached
+}
+
+/**
+ * Whether an edit would change text the person has not been shown, and what then happens: the
+ * edit is refused. Two kinds of text qualify. A fold hides text from a collapsed caret, such as
+ * a deletion across the section's boundary; the returned transaction opens the sections it
+ * reached. And a section that a selection or key opened has not been seen until the browser has
+ * painted it, so the same input that opened it cannot also change it, such as a double click on
+ * a heading's end followed by Backspace in the same task. That section stays open and the input
+ * is consumed. A selection that reaches hidden text has already opened the section (see
+ * `Section`), so these are the checks that remain. They read the transaction, so they hold for
+ * every input path, such as a key the browser acts on itself, a cut, a paste, a drop or a
+ * composition. A folded section that an edit's own steps cover, heading included, is deleted or
+ * replaced on purpose and goes through, as the range the edit names decides, not the selection
+ * at the time it applies. Undefined when the edit may be applied.
+ */
+export function refuseFoldedEdit(
+  state: EditorState,
+  tr: Transaction,
+): FoldRefusal | undefined {
+  const folds = foldKey.getState(state)
+  if (
+    !folds ||
+    !tr.docChanged ||
+    (!folds.sections.length && !folds.unseen.length)
+  )
+    return undefined
+  const folded = reachedSections(folds.sections, tr, false)
+  const unseen = reachedSections(folds.unseen, tr, true)
+  if (!folded.length && !unseen.length) return undefined
+  return {
+    sections: [...new Set([...folded, ...unseen])],
+    ...(folded.length
+      ? {
+          open: state.tr
+            .setMeta(foldKey, { unfold: folded } satisfies FoldMeta)
+            .setMeta('addToHistory', false),
+        }
+      : {}),
+  }
+}
+
+/** Opens the folded sections at these heading positions, as an edit that reached them does. */
+export function openHeadingFolds(
+  view: EditorView,
+  positions: readonly number[],
+): void {
+  const folds = foldKey.getState(view.state)
+  if (!folds?.sections.some((section) => positions.includes(section.pos)))
+    return
+  view.dispatch(
+    view.state.tr
+      .setMeta(foldKey, { unfold: positions } satisfies FoldMeta)
+      .setMeta('addToHistory', false),
+  )
+}
+
+/**
+ * Runs a facade call that moves the selection through places on its way to the place it ends on,
+ * such as a search that selects a match and then another. Only the selection it ends with opens a
+ * fold.
+ */
+export function holdFoldOpening<T>(view: EditorView, run: () => T): T {
+  const folds = foldKey.getState(view.state)
+  if (!folds?.enabled) return run()
+  const { hold } = folds
+  hold.depth++
+  try {
+    return run()
+  } finally {
+    hold.depth--
+    if (!hold.depth && !view.isDestroyed) {
+      const now = foldKey.getState(view.state)
+      if (now?.sections.some((section) => opens(view.state.selection, section)))
+        view.dispatch(
+          view.state.tr
+            .setMeta(foldKey, { settle: true } satisfies FoldMeta)
+            .setMeta('addToHistory', false),
+        )
+    }
+  }
 }
 
 /** The folded headings' positions, for tests. */
@@ -453,6 +551,9 @@ export const headingFold = $prose((ctx) => {
         return {
           enabled,
           sections: [],
+          unseen: [],
+          epoch: 0,
+          hold: { depth: 0 },
           decorations: enabled
             ? buildDecorations(state.doc, [])
             : DecorationSet.empty,
@@ -462,15 +563,26 @@ export const headingFold = $prose((ctx) => {
         const meta = tr.getMeta(foldKey) as FoldMeta | undefined
         const enabled = meta?.enabled ?? previous.enabled
         if (!enabled)
-          return enabled === previous.enabled && !previous.sections.length
+          return enabled === previous.enabled &&
+            !previous.sections.length &&
+            !previous.unseen.length
             ? previous
-            : { enabled, sections: [], decorations: DecorationSet.empty }
+            : {
+                ...previous,
+                enabled,
+                sections: [],
+                unseen: [],
+                decorations: DecorationSet.empty,
+              }
         let sections = previous.sections
+        let unseen = previous.unseen
+        let epoch = previous.epoch
         let rebuild = enabled !== previous.enabled
         if (meta?.clear && sections.length) {
           sections = []
           rebuild = true
         }
+        if (meta?.clear || meta?.enabled != null) unseen = []
         // An ordinary edit inside one block moves positions and nothing else. Any other change
         // reads the document once for every section.
         const mapped = tr.docChanged && keepsSections(tr)
@@ -489,42 +601,87 @@ export const headingFold = $prose((ctx) => {
             )
           }
         }
+        if (tr.docChanged && unseen.length)
+          unseen = unseen.flatMap((section) => {
+            const pos = tr.mapping.map(section.pos, 1)
+            const from = tr.mapping.map(section.from, 1)
+            const end = tr.mapping.map(section.end, -1)
+            return headingAt(tr.doc, pos) && end > from
+              ? [{ ...section, pos, from, end }]
+              : []
+          })
         if (tr.docChanged && !mapped) rebuild = true
+        // A section that opens has not been seen until the browser paints it.
+        const opened: Section[] = []
         if (meta?.unfold) {
           const kept = sections.filter(
             (section) => !meta.unfold!.includes(section.pos),
           )
-          if (kept.length !== sections.length) rebuild = true
+          if (kept.length !== sections.length) {
+            rebuild = true
+            opened.push(
+              ...sections.filter((section) =>
+                meta.unfold!.includes(section.pos),
+              ),
+            )
+          }
           sections = kept
         }
         if (meta?.toggle != null && headingAt(tr.doc, meta.toggle)) {
           rebuild = true
-          if (sections.some((section) => section.pos === meta.toggle))
+          const open = sections.find((section) => section.pos === meta.toggle)
+          if (open) {
+            opened.push(open)
             sections = sections.filter((section) => section.pos !== meta.toggle)
-          else
+          } else
             sections = [
               ...sections,
               sectionAt(tr.doc, meta.toggle, (ends ??= sectionEnds(tr.doc)))!,
             ].sort((a, b) => a.pos - b.pos)
         }
         // The selection reaching into a folded section opens it, so every input acts on text
-        // the person can see.
-        if (sections.length) {
+        // the person can see. A facade call that is still moving the selection waits.
+        if (sections.length && (!previous.hold.depth || meta?.settle)) {
           const kept = sections.filter(
             (section) => !opens(state.selection, section),
           )
           if (kept.length !== sections.length) {
             rebuild = true
+            opened.push(
+              ...sections.filter((section) => !kept.includes(section)),
+            )
             sections = kept
           }
         }
-        if (!rebuild && !tr.docChanged) return previous
+        if (opened.length) {
+          epoch++
+          unseen = [
+            ...unseen.filter(
+              (section) => !opened.some(({ pos }) => pos === section.pos),
+            ),
+            ...opened.map((section) => ({ ...section, stamp: epoch })),
+          ]
+        }
+        if (meta?.shown != null && unseen.length)
+          unseen = unseen.filter((section) => section.stamp > meta.shown!)
+        if (
+          !rebuild &&
+          !tr.docChanged &&
+          sections === previous.sections &&
+          unseen === previous.unseen
+        )
+          return previous
         return {
+          ...previous,
           enabled,
           sections,
+          unseen,
+          epoch,
           decorations: rebuild
             ? buildDecorations(tr.doc, sections)
-            : previous.decorations.map(tr.mapping, tr.doc),
+            : tr.docChanged
+              ? previous.decorations.map(tr.mapping, tr.doc)
+              : previous.decorations,
         }
       },
     },
@@ -576,12 +733,45 @@ export const headingFold = $prose((ctx) => {
           new HeadingView(node, view, getPos, labels, live),
       },
     },
-    view() {
+    view(view) {
+      let pending: (() => void) | undefined
+      // Clears what a paint has shown. The frame callback runs just before the browser paints, so
+      // the text is seen by the time the next input arrives. A hidden page never paints, so a
+      // timer also clears it.
+      const schedule = () => {
+        if (pending) return
+        const stamp = foldKey.getState(view.state)!.epoch
+        let frame = 0
+        let timer = 0
+        const done = () => {
+          if (frame) cancelAnimationFrame(frame)
+          clearTimeout(timer)
+          pending = undefined
+          if (view.isDestroyed) return
+          view.dispatch(
+            view.state.tr
+              .setMeta(foldKey, { shown: stamp } satisfies FoldMeta)
+              .setMeta('addToHistory', false),
+          )
+        }
+        if (typeof requestAnimationFrame === 'function')
+          frame = requestAnimationFrame(done)
+        timer = window.setTimeout(done, 100)
+        pending = () => {
+          if (frame) cancelAnimationFrame(frame)
+          clearTimeout(timer)
+          pending = undefined
+        }
+      }
       return {
         update(updated, previous) {
           // A comment that shows is part of the heading's text, and a hidden one is not.
           if (commentsVisible(updated.state) !== commentsVisible(previous))
             for (const heading of live) heading.sync()
+          if (foldKey.getState(updated.state)?.unseen.length) schedule()
+        },
+        destroy() {
+          pending?.()
         },
       }
     },

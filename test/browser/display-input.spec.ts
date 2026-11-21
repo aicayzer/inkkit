@@ -204,9 +204,9 @@ test('an inserted line takes its number, and a deleted one gives it up', async (
   await mount(page, fence, { display: { codeLineNumbers: true } })
   const numbers = () =>
     page
-      .locator('.inkkit-line-number')
-      .evaluateAll((entries) =>
-        entries.map((entry) => entry.getAttribute('data-inkkit-line')),
+      .locator('.inkkit-code-gutter')
+      .evaluate((gutter) =>
+        gutter.getAttribute('data-inkkit-numbers')!.split('\n'),
       )
   expect(await numbers()).toEqual(['1', '2', '3'])
   await placeCaret(page, 'two')
@@ -478,6 +478,15 @@ test('Shift+Delete after a folded heading opens the section and keeps its text',
 // A selection from partway into a folded heading to partway into the next one, with the hidden
 // paragraph between. Every input reaches it only after the section has opened, so each acts on
 // text the person can see.
+/** Waits for the browser to paint twice, which is long enough for a section that opened to be shown. */
+const frame = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  )
+
 const reachSource = 'Intro\n\n# One\n\nHidden words\n\n# Two\n\ntail\n'
 
 async function reaching(page: Page, source = reachSource, deferred = false) {
@@ -502,6 +511,8 @@ async function reaching(page: Page, source = reachSource, deferred = false) {
     'aria-expanded',
     'true',
   )
+  // A section that opened has not been seen until a paint, and no edit changes it before then.
+  await frame(page)
 }
 
 const paste = (page: Page, data: Record<string, string>) =>
@@ -990,4 +1001,272 @@ test('moving a folded heading keeps it folded', async ({ page }) => {
     )
     await expect(page.getByText(body, { exact: true })).toBeHidden()
   }
+})
+
+// A section that a selection opened has not been seen until the browser has painted it, so the
+// input that opened it cannot also change it.
+const secret = '# One\n\nsecret phrase\n\n# Two\n'
+
+async function folded(page: Page) {
+  await mount(page, secret, { display: { foldHeadings: true } })
+  await toggle(page, 'Fold section One').click()
+  await expect(page.getByText('secret phrase')).toBeHidden()
+}
+
+/** Double clicks the last letter of the heading, where Chromium also selects the line break. */
+async function doubleClickHeadingEnd(page: Page) {
+  const point = await page.evaluate(() => {
+    const heading = document.querySelector('.ProseMirror h1')!
+    const text = heading.lastChild as Text
+    const range = document.createRange()
+    range.setStart(text, text.length - 1)
+    range.setEnd(text, text.length)
+    const rect = range.getBoundingClientRect()
+    return { x: rect.right - 1, y: rect.top + rect.height / 2 }
+  })
+  await page.evaluate(() => window.displayEditor.focus())
+  await page.mouse.dblclick(point.x, point.y)
+}
+
+const isOpen = (page: Page) =>
+  page
+    .locator('[data-inkkit-heading-toggle]')
+    .first()
+    .getAttribute('aria-expanded')
+
+/** Stops the browser's frames reaching the page, so a section that opened stays unpainted. */
+const freezeFrames = (page: Page) =>
+  page.evaluate(() => {
+    window.requestAnimationFrame = () => 0
+    const original = window.setTimeout.bind(window)
+    window.setTimeout = ((handler: TimerHandler, delay?: number) =>
+      delay === 100 ? 0 : original(handler, delay)) as typeof setTimeout
+  })
+
+const heldKeys: [string, (page: Page) => Promise<void>][] = [
+  ['Backspace', (page) => page.keyboard.press('Backspace')],
+  ['Return', (page) => page.keyboard.press('Enter')],
+  ['Cut', (page) => page.keyboard.press('ControlOrMeta+x')],
+]
+
+for (const [name, press] of heldKeys) {
+  test(`${name} straight after a double click on a heading's end leaves the hidden text (no paint between)`, async ({
+    page,
+  }) => {
+    await folded(page)
+    await freezeFrames(page)
+    await doubleClickHeadingEnd(page)
+    await press(page)
+    // Whatever the engine selected, the hidden paragraph is whole and still between its headings.
+    expect(await saved(page)).toContain('\n\nsecret phrase\n\n# Two')
+  })
+
+  test(`${name} straight after a double click on a heading's end, with whatever frames the browser ran`, async ({
+    page,
+  }) => {
+    await folded(page)
+    // Count the frames between the end of the click and the key.
+    await page.evaluate(() => {
+      const state = { frames: 0, atClick: -1, atKey: -1 }
+      ;(window as unknown as { gate: typeof state }).gate = state
+      const tick = () => {
+        state.frames++
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+      document.addEventListener(
+        'mouseup',
+        () => (state.atClick = state.frames),
+        true,
+      )
+      document.addEventListener(
+        'keydown',
+        () => (state.atKey = state.frames),
+        true,
+      )
+    })
+    await doubleClickHeadingEnd(page)
+    await press(page)
+    const gate = await page.evaluate(
+      () =>
+        (window as unknown as { gate: { atClick: number; atKey: number } })
+          .gate,
+    )
+    // If no frame ran between the click and the key, nothing has been shown yet.
+    if (gate.atClick === gate.atKey)
+      expect(await saved(page)).toContain('\n\nsecret phrase\n\n# Two')
+    else expect(await saved(page)).toContain('secret')
+  })
+
+  test(`${name} after the section has been shown edits it normally`, async ({
+    page,
+  }) => {
+    await folded(page)
+    await doubleClickHeadingEnd(page)
+    if ((await isOpen(page)) !== 'true') {
+      // The engine selected only the word, so nothing opened and the key edits what is shown.
+      await press(page)
+      expect(await saved(page)).toContain('secret phrase')
+      return
+    }
+    await expect(page.getByText('secret phrase')).toBeVisible()
+    await frame(page)
+    await press(page)
+    // What the person saw selected is what the key changed.
+    expect(await saved(page)).not.toBe(secret)
+  })
+}
+
+test('a host selection of hidden text and an insert in the same task is refused, and the next task edits', async ({
+  page,
+}) => {
+  await folded(page)
+  const result = await page.evaluate(() => {
+    const editor = window.displayEditor
+    const snapshot = editor.textSnapshot()
+    const from = snapshot.text.indexOf('secret')
+    editor.selectTextRange({
+      snapshotId: snapshot.snapshotId,
+      from,
+      to: from + 6,
+    })
+    try {
+      editor.insertText('X', window.displayGeneration)
+      return 'inserted'
+    } catch (error) {
+      return (error as { code: string }).code
+    }
+  })
+  expect(result).toBe('invalid-range')
+  expect(await saved(page)).toBe(secret)
+  await expect(page.getByText('secret phrase')).toBeVisible()
+  await frame(page)
+  expect(
+    await page.evaluate(() =>
+      window.displayEditor.insertText('X', window.displayGeneration),
+    ),
+  ).toBe(true)
+  expect(await saved(page)).toBe('# One\n\nX phrase\n\n# Two\n')
+})
+
+test('a composition that starts at the heading end and reaches the hidden text leaves it, until it has been shown', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium',
+    'Only Chromium lets a test drive an input method, through the DevTools Protocol',
+  )
+  await folded(page)
+  await page.evaluate(() => {
+    const editor = window.displayEditor
+    const snapshot = editor.textSnapshot()
+    const at = snapshot.text.indexOf('One') + 3
+    editor.selectTextRange(
+      { snapshotId: snapshot.snapshotId, from: at, to: at },
+      { focus: true },
+    )
+  })
+  // The caret is at the end of the heading, so the section is still folded.
+  await expect(page.getByText('secret phrase')).toBeHidden()
+  await freezeFrames(page)
+  const session = await page.context().newCDPSession(page)
+  // The composition replaces the heading's tail and the paragraph after it, in the same input.
+  await session.send('Input.imeSetComposition', {
+    text: '日',
+    selectionStart: 1,
+    selectionEnd: 1,
+    replacementStart: 3,
+    replacementEnd: 8,
+  })
+  await session.send('Input.insertText', { text: '日' })
+  // A snapshot is refused during composition, so read the document the view holds.
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          document.querySelector('.ProseMirror') as unknown as {
+            pmViewDesc: { node: { textContent: string } }
+          }
+        ).pmViewDesc.node.textContent,
+    ),
+  ).toContain('secret phrase')
+  await expect(page.getByText('secret phrase')).toBeVisible()
+})
+
+test('a backward find between two folded matches opens only the match it lands on', async ({
+  page,
+}) => {
+  await mount(
+    page,
+    'Intro\n\n# One\n\nneedle one\n\n# Two\n\nneedle two\n\n# Three\n\ntail\n',
+    { display: { foldHeadings: true } },
+  )
+  await toggle(page, 'Fold section One').click()
+  await toggle(page, 'Fold section Two').click()
+  await page.evaluate(() => {
+    const editor = window.displayEditor
+    const snapshot = editor.textSnapshot()
+    const at = snapshot.text.indexOf('Two') + 3
+    editor.selectTextRange(
+      { snapshotId: snapshot.snapshotId, from: at, to: at },
+      { focus: true },
+    )
+    const opened: string[] = []
+    ;(window as unknown as { opened: string[] }).opened = opened
+    new MutationObserver((records) => {
+      for (const record of records)
+        if ((record.target as Element).getAttribute('aria-expanded') === 'true')
+          opened.push((record.target as Element).getAttribute('aria-label')!)
+    }).observe(document.querySelector('.ProseMirror')!, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ['aria-expanded'],
+    })
+  })
+  await page.evaluate(() => {
+    const session = window.displayEditor.findSession(() => {})
+    ;(window as unknown as { session: unknown }).session = session
+    session.find('needle', { direction: 'previous' })
+  })
+  await expect(toggle(page, 'Fold section One')).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  )
+  await expect(toggle(page, 'Unfold section Two')).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  )
+  // Section Two never opened on the way.
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { opened: string[] }).opened,
+    ),
+  ).not.toContain('Fold section Two')
+})
+
+test('clicking a visible footnote reference does not open an earlier folded one', async ({
+  page,
+}) => {
+  await mount(
+    page,
+    '# One\n\nfolded[^x] reference\n\n# Two\n\nVisible[^x] reference\n\n[^x]: the note\n',
+    { display: { foldHeadings: true } },
+  )
+  await toggle(page, 'Fold section One').click()
+  await expect(page.getByText('folded')).toBeHidden()
+  await page.locator('[data-inkkit-footnote-reference]').last().click()
+  await expect(toggle(page, 'Unfold section One')).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  )
+  // The caret went to the definition.
+  expect(
+    await page.evaluate(
+      () =>
+        getSelection()!.anchorNode?.parentElement?.closest(
+          '[data-type="footnote_definition"], .inkkit-footnote-definition, li, p',
+        )?.textContent ?? '',
+    ),
+  ).toContain('the note')
 })

@@ -676,7 +676,7 @@ Moves the caret to the definition, or the first reference, of the footnote at th
 
 `editReferenceDefinition(label: string, destination: string, title?: string, expectedGeneration?: number): boolean`
 
-Changes the destination of the shared link definition for `label`, which matches regardless of case and runs of whitespace, so every link that uses it changes. `destination` follows the same rule as a `format('link')` destination. An omitted `title` keeps the current title; a non-empty one replaces it. An empty `title` throws `preservation`. It returns `false` when no definition has the label, and in source and TXT modes.
+Changes the destination of the shared link definition for `label`, which matches regardless of case and runs of whitespace, so every link that uses it changes. `destination` follows the same rule as a `format('link')` destination. An omitted `title` keeps the current title; a non-empty one replaces it. An empty `title` throws `preservation`. It returns `false` when no definition has the label, and in source and TXT modes. The call names its definition, so it may change one that [a fold hides](/concepts/markdown#folding-headings), and it succeeds in one call.
 
 {/* @api InkKitEditor.setCommentsVisible */}
 
@@ -1015,7 +1015,7 @@ A host whose native layer receives typing or keys before the web view does passe
 
 `insertText(text: string, generation: number): boolean`
 
-Inserts exactly `text` at the selection and returns `true`. It has no exemption from a [fold](/concepts/markdown#folding-headings): a selection that reaches hidden text has already opened the section, so it replaces text that is shown. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode. Text of more than one character, and every other call that changes the document, makes the brackets around it ordinary characters, as [tracked pairs](/reference/options#paired-brackets-and-quotes) describes.
+Inserts exactly `text` at the selection and returns `true`. It has no exemption from a [fold](/concepts/markdown#folding-headings): a selection that reaches hidden text has already opened the section, so it replaces text that is shown, but only once a paint has shown it: a call in the same task as the selection that opened the section throws `invalid-range` and changes nothing. It returns `false`, and inserts nothing, during text composition. In formatted mode, Markdown input rules apply as if the last character were typed after the rest, so `**x**` becomes bold `x`, and the insertion is one undo step. Text with line breaks is inserted as ordinary text with line breaks, and CRLF and CR become LF. Source and TXT modes insert the text literally. With [`pairBrackets`](/reference/options#paired-brackets-and-quotes) on, one typed bracket or quote pairs, steps over a closer that pairing inserted, or wraps a selection on one line, in every mode. Text of more than one character, and every other call that changes the document, makes the brackets around it ordinary characters, as [tracked pairs](/reference/options#paired-brackets-and-quotes) describes.
 
 {/* @api InkKitEditor.keyDown */}
 
@@ -1023,7 +1023,7 @@ Inserts exactly `text` at the selection and returns `true`. It has no exemption 
 
 `keyDown(input: KeyInput, expectedGeneration: number): boolean`
 
-Runs a key press through Inkkit's key handling and returns whether Inkkit handled it. When it returns `true`, the host must not also handle the key natively. A deletion key has no exemption from a [fold](/concepts/markdown#folding-headings): it acts on shown text, and from a caret that would reach hidden text it opens the section and changes nothing.
+Runs a key press through Inkkit's key handling and returns whether Inkkit handled it. When it returns `true`, the host must not also handle the key natively. A deletion key has no exemption from a [fold](/concepts/markdown#folding-headings): it acts on shown text, and from a caret that would reach hidden text, or text a section that has just opened hasn't yet shown, it opens the section and changes nothing, and `keyDown` still returns `true`.
 
 {/* @api KeyInput */}
 A `KeyInput` describes a native key press using DOM keyboard names and modifier state.

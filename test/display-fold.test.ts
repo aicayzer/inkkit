@@ -53,6 +53,8 @@ const hidden = (mounted: Mounted) =>
   )
 const load = (mounted: Mounted, text: string) =>
   mounted.editor.loadDocument(input('md', text))
+/** Waits until a section that opened has been shown: the fallback timer clears it without a frame. */
+const shown = () => new Promise((resolve) => setTimeout(resolve, 150))
 
 test('folding hides what follows up to the next heading of the same or a higher level', () =>
   withEditor(fold, (mounted) => {
@@ -311,12 +313,20 @@ test('the setter replaces the whole set', () =>
       codeLineNumbers: true,
     })
     expect(buttons(mounted)).toHaveLength(1)
-    expect(mounted.root.querySelectorAll('.inkkit-line-number')).toHaveLength(2)
+    expect(
+      mounted.root
+        .querySelector('.inkkit-code-gutter')
+        ?.getAttribute('data-inkkit-numbers'),
+    ).toBe('1\n2')
     mounted.editor.setDisplayPreferences({ codeLineNumbers: true })
     expect(buttons(mounted)).toEqual([])
-    expect(mounted.root.querySelectorAll('.inkkit-line-number')).toHaveLength(2)
+    expect(
+      mounted.root
+        .querySelector('.inkkit-code-gutter')
+        ?.getAttribute('data-inkkit-numbers'),
+    ).toBe('1\n2')
     mounted.editor.setDisplayPreferences({ foldHeadings: undefined })
-    expect(mounted.root.querySelectorAll('.inkkit-line-number')).toHaveLength(0)
+    expect(mounted.root.querySelector('.inkkit-code-gutter')).toBeNull()
   }))
 
 test('the preference survives a load, and a new load starts unfolded', () =>
@@ -576,7 +586,7 @@ test('a selection that covers a whole folded section may replace or delete it', 
   }))
 
 test('a selection that reaches the hidden text opens the section before anything acts on it', () =>
-  withEditor(fold, (mounted) => {
+  withEditor(fold, async (mounted) => {
     load(mounted, outline)
     toggleOf(mounted, 'One').click()
     const v = view(mounted)
@@ -590,15 +600,20 @@ test('a selection that reaches the hidden text opens the section before anything
     )
     expect(foldedHeadings(v.state)).toEqual([])
     expect(hidden(mounted)).toEqual([])
-    // What the person deletes is what they see selected.
+    // The section has not been painted, so the same input cannot also change its text.
+    v.dispatch(v.state.tr.deleteSelection())
+    expect(mounted.editor.snapshot().text).toBe(outline)
+    expect(mounted.changes).toEqual([])
+    // Once it has been shown, what the person deletes is what they see selected.
+    await shown()
     v.dispatch(v.state.tr.deleteSelection())
     expect(mounted.editor.snapshot().text).toBe('# OneTwo\n')
   }))
 
 test('every edit over a selection that reaches the hidden text acts on text that is shown', () =>
-  withEditor(fold, (mounted) => {
+  withEditor(fold, async (mounted) => {
     const source = 'Intro\n\n# One\n\nHidden words\n\n# Two\n'
-    const reach = () => {
+    const reach = async () => {
       load(mounted, source)
       toggleOf(mounted, 'One').click()
       const v = view(mounted)
@@ -613,6 +628,11 @@ test('every edit over a selection that reaches the hidden text acts on text that
       )
       expect(foldedHeadings(v.state)).toEqual([])
       expect(hidden(mounted)).toEqual([])
+      return v
+    }
+    const settled = async () => {
+      const v = await reach()
+      await shown()
       return v
     }
     for (const [act, text] of [
@@ -640,7 +660,14 @@ test('every edit over a selection that reaches the hidden text acts on text that
         '# Oo',
       ],
     ] as const) {
-      act(reach())
+      // Straight after the selection opened the section, the edit is refused.
+      try {
+        act(await reach())
+      } catch (error) {
+        expect((error as InkKitError).code).toBe('invalid-range')
+      }
+      expect(mounted.editor.snapshot().text).toBe(source)
+      act(await settled())
       // The text the edit changed was the text that was selected and shown.
       expect(mounted.editor.snapshot().text).toBe(`Intro\n\n${text}\n`)
     }
@@ -802,4 +829,78 @@ test('moving a folded heading keeps its fold', () =>
     expect(hidden(mounted)).toEqual(['Intro', 'Body'])
     expect(toggleOf(mounted, 'One').getAttribute('aria-expanded')).toBe('false')
     expect(mounted.editor.snapshot().dirty).toBe(true)
+  }))
+
+const code = (run: () => unknown) => {
+  try {
+    run()
+  } catch (error) {
+    return (error as InkKitError).code
+  }
+  return undefined
+}
+
+test('a section that a selection opened is not changed until it has been shown', () =>
+  withEditor(fold, async (mounted) => {
+    load(mounted, outline)
+    toggleOf(mounted, 'One').click()
+    const snapshot = mounted.editor.textSnapshot()
+    const at = snapshot.text.indexOf('Hidden')
+    mounted.editor.selectTextRange({
+      snapshotId: snapshot.snapshotId,
+      from: at,
+      to: at + 6,
+    })
+    expect(hidden(mounted)).toEqual([])
+    const generation = mounted.editor.snapshot().generation
+    // The same task cannot also change what the selection has just revealed. The call reports it.
+    expect(code(() => mounted.editor.insertText('x', generation))).toBe(
+      'invalid-range',
+    )
+    expect(mounted.editor.snapshot().text).toBe(outline)
+    expect(mounted.changes).toEqual([])
+    // A forwarded key is consumed, which keyDown reports as handled.
+    expect(mounted.editor.keyDown({ key: 'Backspace' }, generation)).toBe(true)
+    expect(mounted.editor.snapshot().text).toBe(outline)
+    await shown()
+    expect(mounted.editor.insertText('x', generation)).toBe(true)
+    expect(mounted.editor.snapshot().text).toBe('# One\n\nx\n\n# Two\n')
+  }))
+
+test('editReferenceDefinition changes a definition under a fold in one call', () =>
+  withEditor(fold, (mounted) => {
+    load(
+      mounted,
+      'See [link][id].\n\n# One\n\n[id]: https://old.example\n\n# Two\n',
+    )
+    toggleOf(mounted, 'One').click()
+    const revision = mounted.editor.snapshot().revision
+    expect(
+      mounted.editor.editReferenceDefinition('id', 'https://new.example'),
+    ).toBe(true)
+    const after = mounted.editor.snapshot()
+    expect(after.text).toContain('[id]: https://new.example')
+    expect(after.revision).not.toBe(revision)
+  }))
+
+test('a backward find between two folded matches opens neither on the way', () =>
+  withEditor(fold, (mounted) => {
+    load(
+      mounted,
+      'Intro\n\n# One\n\nneedle one\n\n# Two\n\nneedle two\n\n# Three\n\nplain\n',
+    )
+    toggleOf(mounted, 'One').click()
+    toggleOf(mounted, 'Two').click()
+    const v = view(mounted)
+    const two = headingPos(v, 'Two')
+    // The caret sits between the matches, at the end of the second heading.
+    v.dispatch(
+      v.state.tr.setSelection(TextSelection.create(v.state.doc, two + 4)),
+    )
+    expect(foldedHeadings(v.state)).toHaveLength(2)
+    const session = mounted.editor.findSession(() => {})
+    expect(session.find('needle', { direction: 'previous' })).toBe(true)
+    // Only the section of the match that was asked for opens.
+    expect(foldedHeadings(v.state)).toEqual([headingPos(v, 'Two')])
+    session.close()
   }))

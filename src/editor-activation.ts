@@ -10,6 +10,23 @@ interface ActivationRuntime {
   report(error: unknown): void
 }
 
+function clickedReference(
+  view: EditorView,
+  element: Element,
+  identifier: string | null,
+): number | undefined {
+  try {
+    const position = view.posAtDOM(element, 0)
+    const node = view.state.doc.nodeAt(position)
+    return node?.type.name === 'footnote_reference' &&
+      String(node.attrs.identifier) === identifier
+      ? position
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Owns link and footnote activation listeners on the editor root. */
 export class EditorActivation {
   private untrackModifier?: () => void
@@ -40,7 +57,10 @@ export class EditorActivation {
     if (!element) return false
     const identifier = element.getAttribute('data-inkkit-footnote-reference')
     const view = this.runtime.view()
-    const position = footnoteReferencePosition(view.state.doc, identifier)
+    // The reference that was activated, not the first one with its label, which a fold may hide.
+    const position =
+      clickedReference(view, element, identifier) ??
+      footnoteReferencePosition(view.state.doc, identifier)
     if (position == null) return false
     event.preventDefault()
     try {

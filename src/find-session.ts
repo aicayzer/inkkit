@@ -51,6 +51,8 @@ export class EditorFindSession implements FindSession {
     private readonly host: FindHost,
     private readonly onChange: (state: FindState) => void,
     private readonly detach: (session: EditorFindSession) => void,
+    /** Runs a selection that passes through other places on its way, so only where it ends counts. */
+    private readonly settling: <T>(run: () => T) => T = (run) => run(),
   ) {}
 
   state(expectedGeneration?: number): FindState {
@@ -248,11 +250,14 @@ export class EditorFindSession implements FindSession {
       index =
         (index + (direction === 'next' ? 1 : -1) + matches.length) %
         matches.length
-    // The highlights change with the query. Stepping only moves the selection.
-    if (changedQuery || !query) this.host.find(query, expectedGeneration)
-    this.text = query
+    // The highlights change with the query, and set the selection to the next match on the way.
+    // Stepping only moves the selection.
     const match = matches[index]
-    if (match) this.host.selectTextRange(match, { reveal: true })
+    this.settling(() => {
+      if (changedQuery || !query) this.host.find(query, expectedGeneration)
+      this.text = query
+      if (match) this.host.selectTextRange(match, { reveal: true })
+    })
     return !!match
   }
 

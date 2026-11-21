@@ -149,7 +149,12 @@ import type { TextProjection } from './text-ranges'
 import { canMoveBlock, carriedBlocks, moveBlockTransaction } from './block-move'
 import { isWrittenEdit, setCommentVisibility } from './comments'
 import type { DisplayState } from './display'
-import { clearHeadingFolds, refuseFoldedEdit } from './heading-fold'
+import {
+  clearHeadingFolds,
+  holdFoldOpening,
+  openHeadingFolds,
+  refuseFoldedEdit,
+} from './heading-fold'
 import { assertHiddenCommentsKept } from './hidden-comments'
 import { PasteController, imagesRefused } from './paste'
 import { EditorFindSession } from './find-session'
@@ -822,7 +827,12 @@ function capturedImage(value: unknown, name: string): CapturedImage {
 }
 
 interface FacadeCall {
+  /** The public method the host called, when the call is one. Calls the editor makes for the
+   *  person's own input, such as a paste, have none. */
+  host?: string
   refusal?: InkKitError
+  /** The folded sections that a refused edit opened, which stay open when the call is undone. */
+  opened?: number[]
   /** Host events raised during the call, sent when it succeeds and dropped when it fails. */
   events: { name: string | symbol; send: () => void }[]
 }
@@ -1188,9 +1198,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
    * Anything else thrown arrives as an `InkKitError`. A call made inside another runs as part of
    * it. Promises reject instead of throwing.
    */
-  private facadeCall<T>(operation: () => T): T {
+  private facadeCall<T>(operation: () => T, host?: string): T {
     if (this.call) return operation()
-    const call: FacadeCall = { events: [] }
+    const call: FacadeCall = { events: [], host }
     const before = this.destroyed ? undefined : this.restorePoint()
     this.call = call
     let result: T
@@ -1263,6 +1273,8 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         this.loading = loading
       }
     }
+    // A fold that the refused edit opened stays open, so the person sees what it would have changed.
+    if (call.opened?.length) openHeadingFolds(view, call.opened)
     this.session.restore(before.revision)
     this.lastMarkdown = before.lastMarkdown
     this.search.restore(before.search)
@@ -2080,10 +2092,11 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
   private dispatchTransaction(view: EditorView, tr: Transaction): void {
     // A call whose edit was refused changes nothing more; it throws when it returns.
     if (this.call?.refusal && tr.docChanged) return
-    // An input that would change text a fold hides opens the fold instead, so nothing changes
-    // unseen. Paste, typing, keys, cut, drop and composition get no exemption, inside a facade
-    // call or out of it. A host operation that names its own targets, a history step, a source
-    // replacement and a block move, which carries its nodes unchanged, do.
+    // An input that would change text the person has not been shown, because a fold hides it or
+    // because the section opened since the last paint, is refused: nothing changes and the
+    // section is open. Paste, typing, keys, cut, drop and composition get no exemption, inside a
+    // facade call or out of it. A host operation that names its own targets, a history step, a
+    // source replacement and a block move, which carries its nodes unchanged, do.
     if (
       !this.namingTargets &&
       !this.loading &&
@@ -2092,9 +2105,21 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
       !tr.getMeta(carriedBlocks) &&
       isWrittenEdit(tr)
     ) {
-      const unfold = refuseFoldedEdit(view.state, tr)
-      if (unfold) {
-        view.updateState(view.state.apply(unfold))
+      const refusal = refuseFoldedEdit(view.state, tr)
+      if (refusal) {
+        if (refusal.open) view.updateState(view.state.apply(refusal.open))
+        else view.updateState(view.state)
+        // A key the host forwards is consumed, which `keyDown` reports as handled. Any other
+        // host call must not return as if it had changed the document.
+        if (this.call?.host && this.call.host !== 'keyDown') {
+          this.call.opened = [...(this.call.opened ?? []), ...refusal.sections]
+          this.refuse(
+            new InkKitError(
+              'invalid-range',
+              'The edit was not applied because it would change text that a fold hides or that has not been shown yet.',
+            ),
+          )
+        }
         return
       }
     }
@@ -2640,6 +2665,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         }
       },
       (closed) => this.findSessions.delete(closed),
+      (run) => holdFoldOpening(this.editor.ctx.get(editorViewCtx), run),
     )
     this.findSessions.add(session)
     return session
@@ -3064,11 +3090,14 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     optionalString(title, 'title')
     this.assertMutation(expectedGeneration)
     if (this.literalSurface || this.document.handler.richText) return false
-    return editReferenceDefinition(
-      this.editor.ctx.get(editorViewCtx),
-      label,
-      destination,
-      title,
+    // The call names its definition, so it may change one that a fold hides.
+    return this.naming(() =>
+      editReferenceDefinition(
+        this.editor.ctx.get(editorViewCtx),
+        label,
+        destination,
+        title,
+      ),
     )
   }
 
@@ -3183,7 +3212,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
           if (name === 'setDiagnosticsEnabled' || name === 'diagnosticReport')
             return method.apply(this, args)
           if (!this.diagnostics.enabled || this.unrecordedDepth)
-            return this.facadeCall(() => method.apply(this, args))
+            return this.facadeCall(() => method.apply(this, args), name)
           const operation = diagnosticOperation(name)
           const begin = this.diagnostics.begin({
             kind: 'operation',
@@ -3213,7 +3242,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
             throw failure
           }
           try {
-            const result = this.facadeCall(() => method.apply(this, args))
+            const result = this.facadeCall(() => method.apply(this, args), name)
             // Only a pending result keeps its begin event, so a call that never settles shows.
             this.diagnostics.settle(begin, result instanceof Promise)
             return result instanceof Promise
