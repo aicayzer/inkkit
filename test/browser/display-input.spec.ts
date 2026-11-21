@@ -305,7 +305,17 @@ async function select(page: Page, how: 'double click' | 'range', text: string) {
     return null
   }, text)
   await page.evaluate(() => window.displayEditor.focus())
-  await page.mouse.dblclick(point!.x, point!.y)
+  // On a busy machine WebKit sometimes takes the two clicks as separate clicks and leaves a caret.
+  // Repeat the gesture, after a pause longer than the double-click interval so a retry is not a
+  // triple click, until the browser holds the word.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await page.mouse.dblclick(point!.x, point!.y)
+    if (
+      await page.evaluate((text) => getSelection()!.toString() === text, text)
+    )
+      break
+    await page.waitForTimeout(700)
+  }
   // The browser selected the word before the editor is asked what it paints for it.
   await expect
     .poll(() => page.evaluate(() => getSelection()!.toString()))
