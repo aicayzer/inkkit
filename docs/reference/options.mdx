@@ -271,7 +271,15 @@ What the editor can do, or the caret, changed: the selection, the document, hist
 
 Called by a link's Mod-click or the configured `openLink` [shortcut](/reference/appearance#shortcuts). Keyboard opening works in formatted mode, including read-only documents. Wiki links use their adapter's `open` callback instead.
 
-The person clicked a rendered Markdown link with Mod held (Command on Apple platforms, Control elsewhere) in formatted mode, whether or not the editor is editable. It receives the destination as authored; a relative address or fragment isn't resolved against the page. It doesn't fire for an empty address or for a scheme that Inkkit doesn't open, which includes any scheme not in [`linkSchemes`](#editor-options); see [links](/concepts/clipboard). Without this handler, Markdown links don't open. Wiki links go to `WikiLinkAdapter.open` instead.
+The person clicked a rendered Markdown link with Mod held (Command on Apple platforms, Control elsewhere) in formatted mode, whether or not the editor is editable. A plain click opens it only when the editor [can't be edited](/reference/editor#editable-and-seteditable) and the click isn't a double click or the end of a text selection; in an editable editor, a plain click places the caret and opens nothing. It receives the destination as authored; a relative address or fragment isn't resolved against the page. It doesn't fire for an empty address or for a scheme that Inkkit doesn't open, which includes any scheme not in [`linkSchemes`](#editor-options); see [links](/concepts/clipboard). Without this handler, Markdown links don't open. Wiki links go to `WikiLinkAdapter.open` instead.
+
+</ResponseField>
+
+<ResponseField name="linkMenu" type="(link: LinkMenuTarget, point: ClientPoint) => void">
+
+The person asked for the context menu on a Markdown link or a wiki link, in formatted mode: a right-click, a Control-click on a Mac, or the menu key. Inkkit cancels the web view's menu, selects the link and calls this with the [`LinkMenuTarget`](#link-menu-target) and `point`, a [`ClientPoint`](/reference/adapters#clientpoint) where the pointer was, so your app can show its own menu with Open, Copy, Edit and Remove. It fires in read-only editors too, and the selection change doesn't touch the document, its history or `changed`.
+
+Without this handler, the web view's own menu shows and nothing is selected. It doesn't fire in source or TXT mode, or off a link. A handler that throws is reported as described in [Errors](/reference/errors). For the commands to use in the menu, see [Show a link menu](/guides/controls#show-a-link-menu).
 
 </ResponseField>
 
@@ -294,6 +302,21 @@ The person copied or cut a selection that holds an image or a diagram. It receiv
 If the handler throws or rejects, Inkkit reports `clipboard-unavailable` and a cut removes nothing. Without the handler, such a copy puts readable text and HTML on the clipboard and reports `clipboard-unavailable`. See [Copy, paste and print](/concepts/clipboard).
 
 </ResponseField>
+
+{/* @api LinkMenuTarget */}
+
+## Link menu target
+
+The link that `events.linkMenu` reports. It is a Markdown link or a wiki link, told apart by `kind`, and it was selected before the event fired.
+
+| Field       | Applies to | What it holds                                                                                                                                                                                        |
+| ----------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`      | Both       | `'web'` for a Markdown link, `'wiki'` for a wiki link.                                                                                                                                               |
+| `text`      | Both       | The link's visible text: for a wiki link, its label as it shows.                                                                                                                                     |
+| `range`     | Both       | The `TextRange` the link covers (see [Readable text](/reference/editor#readable-text-and-layout)), which is also the selection. It goes stale when the document changes, so use it in the same turn. |
+| `href`      | `'web'`    | The destination as the document holds it. For a reference link, the address its definition gives. It can be empty or use a scheme that Inkkit doesn't open.                                          |
+| `openable`  | `'web'`    | Whether a Mod-click would call `events.openLink`: the address isn't empty and is relative or on an allowed scheme. Hide or disable Open when it is `false`.                                          |
+| `reference` | `'wiki'`   | The link as authored, the same `WikiLinkReference` that `WikiLinkAdapter.open` receives.                                                                                                             |
 
 {/* @api CommandState */}
 

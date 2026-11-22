@@ -91,7 +91,7 @@ Both return `false`, and change nothing, when the command doesn't apply here. [F
 
 ## Open links into other apps
 
-A Mod-click on a link calls `events.openLink` with its address, but only for addresses with no scheme and `http`, `https`, `mailto` and `tel` addresses. To open links such as `things:` or `message:`, list their schemes in [`linkSchemes`](/reference/options#editor-options) at mount. The handler still decides what each one does:
+A Mod-click on a link, or a plain click in an editor that can't be edited, calls `events.openLink` with its address, but only for addresses with no scheme and `http`, `https`, `mailto` and `tel` addresses. To open links such as `things:` or `message:`, list their schemes in [`linkSchemes`](/reference/options#editor-options) at mount. The handler still decides what each one does:
 
 ```ts
 const editor = await InkKitEditor.mount(
@@ -105,6 +105,59 @@ const editor = await InkKitEditor.mount(
 ```
 
 `format('link')` then accepts those addresses, and a copy keeps them. `javascript`, `data`, `vbscript` and `file` can't be listed, and pasted HTML and print keep only the built-in schemes. [Links that Inkkit keeps](/concepts/clipboard#links-that-inkkit-keeps) lists the rules.
+
+## Show a link menu
+
+A plain click on a link in an editor that can be edited places the caret, and a Mod-click opens the link. Inkkit shows the link's hover look through [link tokens](/reference/appearance#link-tokens) and draws a hint after the pointer rests on it, worded by the `linkOpenHint` [label](/reference/appearance#labels). An editor that can't be edited opens a link on a plain click.
+
+For everything else a person does with a link, set `events.linkMenu`. Inkkit calls it for a Markdown link or a wiki link, with the link selected, and cancels the web view's menu:
+
+```ts
+const editor = await InkKitEditor.mount(element, {
+  changed(snapshot) {},
+  openLink: (href) => openExternally(href),
+  linkMenu(link, point) {
+    showMenu(point, [
+      // `openable` is false for an empty address or a scheme Inkkit doesn't open.
+      link.kind === 'web' &&
+        link.openable && {
+          label: 'Open',
+          run: () => openExternally(link.href),
+        },
+      link.kind === 'wiki' && {
+        label: 'Open',
+        run: () => openNote(link.reference),
+      },
+      {
+        label: 'Edit',
+        run: (destination) =>
+          link.kind === 'web'
+            ? editor.format('link', { destination })
+            : editor.paste({
+                text: '',
+                markdown: `[[${destination}|${link.text}]]`,
+              }),
+      },
+      {
+        label: 'Remove link',
+        run: () =>
+          link.kind === 'web'
+            ? editor.format('link')
+            : editor.pasteAsPlainText(link.text),
+      },
+    ])
+  },
+})
+```
+
+Because Inkkit selects the link first, the editing commands need no range:
+
+- **Edit a Markdown link:** `format('link', { destination })` replaces the address and keeps the text and marks.
+- **Remove a Markdown link:** `format('link')` removes the link and keeps its text.
+- **Edit a wiki link:** `paste({ text: '', markdown })` with the new `[[...]]`, which replaces the selected link.
+- **Remove a wiki link:** `pasteAsPlainText(text)` replaces it with its label as plain text.
+
+The selection changes only the caret, so the event leaves the document and history alone. Call the command in the same turn the person chooses it: `link.range` goes stale when the document changes, and a command takes an `expectedGeneration` if you need a guard. Without `linkMenu`, the web view's own menu shows.
 
 ## Bind shortcuts
 

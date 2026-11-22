@@ -1,12 +1,21 @@
 import { NodeSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { footnoteReferencePosition } from './editor-footnotes'
-import { modHeld, trackLinkModifier } from './modifier'
+import { LinkHint } from './link-hint'
+import { opensLink, trackLinkModifier } from './modifier'
+import type { ClientPoint } from './types'
 
 interface ActivationRuntime {
   view(): EditorView
   footnote(): void
   openLink(href: string): void
+  /** Whether the person can edit. When not, a plain click opens a link. */
+  editable(): boolean
+  /** What to draw under a link that the pointer rests on, or undefined for no hint. */
+  hint(link: Element): string | undefined
+  /** Hands a link's context-menu request to the host. False when the host takes none or `element`
+   *  is not a link, so the web view's own menu shows. */
+  linkMenu(element: Element, point: ClientPoint): boolean
   report(error: unknown): void
 }
 
@@ -30,6 +39,7 @@ function clickedReference(
 /** Owns link and footnote activation listeners on the editor root. */
 export class EditorActivation {
   private untrackModifier?: () => void
+  private readonly hint: LinkHint
   constructor(
     private readonly root: HTMLElement,
     private readonly runtime: ActivationRuntime,
@@ -37,6 +47,10 @@ export class EditorActivation {
     root.addEventListener('keydown', this.footnoteKey, true)
     root.addEventListener('click', this.click)
     root.addEventListener('auxclick', this.auxClick)
+    root.addEventListener('contextmenu', this.contextMenu)
+    this.hint = new LinkHint(root, {
+      text: (link) => runtime.hint(link),
+    })
   }
 
   trackModifier(): void {
@@ -46,6 +60,8 @@ export class EditorActivation {
   destroy(): void {
     this.root.removeEventListener('click', this.click)
     this.root.removeEventListener('auxclick', this.auxClick)
+    this.root.removeEventListener('contextmenu', this.contextMenu)
+    this.hint.destroy()
     this.untrackModifier?.()
     this.root.removeEventListener('keydown', this.footnoteKey, true)
   }
@@ -91,7 +107,7 @@ export class EditorActivation {
     // A read-only surface is not editable, so the browser would follow the link itself;
     // only the host opens links.
     event.preventDefault()
-    if (event.button !== 0 || !modHeld(event)) return
+    if (!opensLink(event, this.runtime.editable())) return
     // Rendering has already refused addresses outside the allowed schemes.
     const href = anchor.getAttribute('href')
     if (href) this.runtime.openLink(href)
@@ -99,5 +115,11 @@ export class EditorActivation {
 
   private auxClick = (event: MouseEvent): void => {
     if ((event.target as HTMLElement).closest('a[href]')) event.preventDefault()
+  }
+
+  private contextMenu = (event: MouseEvent): void => {
+    if (!(event.target instanceof Element)) return
+    const point = { clientX: event.clientX, clientY: event.clientY }
+    if (this.runtime.linkMenu(event.target, point)) event.preventDefault()
   }
 }

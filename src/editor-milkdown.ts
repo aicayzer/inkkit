@@ -103,6 +103,7 @@ interface MilkdownRuntime {
   visibleRect: Parameters<typeof codeControlsPlugin>[0]
   capture(): { context: DocumentContext; isCurrent(): boolean }
   active(): boolean
+  editable(): boolean
   canMutate(): boolean
   report(error: unknown): void
   copy?(text: string): void
@@ -249,6 +250,7 @@ export async function createMilkdownEditor(
         ? wikiLinkView(options.wikiLinks, {
             capture: () => runtime.capture(),
             active: () => runtime.active(),
+            editable: () => runtime.editable(),
             labels: { ...defaultLabels, ...options.labels },
             error: (error) => runtime.report(error),
           })

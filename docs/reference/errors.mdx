@@ -54,7 +54,7 @@ The `code` identifies the kind of failure. Branch on it instead of matching the 
 - **A failure goes to the caller and nowhere else.** When the preservation check refuses an edit that a call such as `insertText`, `format` or `paste` makes, that call throws or rejects with `preservation`, and `events.error` isn't called.
 - **`events.error` receives failures that no call is waiting for**, such as an edit the person makes or a file that fails to resolve. See [failures without a caller](#failures-without-a-caller).
 - **Results describe partial outcomes.** `false` means a call didn't apply. Degraded clipboard and print output describes itself in [warnings](#warnings) and isn't also reported as an error.
-- **Exceptions from your own handlers stay yours.** When `changed`, `commandStateChanged`, `openLink`, `copy` or `error` throws, Inkkit passes the exception to the platform's `reportError()` and carries on. It never becomes an `InkKitError` and never makes a call fail. A `clipboard` handler that throws or rejects is reported as `clipboard-unavailable`.
+- **Exceptions from your own handlers stay yours.** When `changed`, `commandStateChanged`, `openLink`, `linkMenu`, `copy` or `error` throws, Inkkit passes the exception to the platform's `reportError()` and carries on. It never becomes an `InkKitError` and never makes a call fail. A `clipboard` handler that throws or rejects is reported as `clipboard-unavailable`.
 
 Any error except `destroyed` and `internal` leaves the editor usable.
 

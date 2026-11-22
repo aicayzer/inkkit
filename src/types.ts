@@ -262,6 +262,31 @@ export interface WikiLinkAdapter {
   /** Called by Mod-click, and by Enter or Space on the focused link. */
   open(reference: WikiLinkReference, context: DocumentContext): void
 }
+/** A link a person asked a menu for, as `events.linkMenu` receives it. Inkkit selects the link
+ *  first, so `format('link', { destination })` changes a web link's address and `format('link')`
+ *  removes it, and `range` names the same text. */
+export type LinkMenuTarget = {
+  /** The link's text. */
+  text: string
+  /** The readable text the link covers, in the snapshot that is current when the event fires. It
+   *  goes stale when the document changes. */
+  range: TextRange
+} & (
+  | {
+      kind: 'web'
+      /** The destination as the document holds it. For a reference link, the address its definition
+       *  gives. It can be empty, or use a scheme that Inkkit does not open. */
+      href: string
+      /** Whether Mod-click would open it: not empty, relative, or on a scheme Inkkit opens. Only an
+       *  openable address goes to `events.openLink`. */
+      openable: boolean
+    }
+  | {
+      kind: 'wiki'
+      /** The link as authored, as `WikiLinkAdapter.open` receives it. */
+      reference: WikiLinkReference
+    }
+)
 /** A file the document refers to, as authored. */
 export interface FileReference {
   /** The whole reference, including any fragment. */
@@ -562,6 +587,9 @@ export interface EditorLabels {
   filePDFPreview: string
   imageResize: string
   wikiMissing: string
+  /** The hint under a link that Mod-click opens, shown after the pointer rests on it in an editor
+   *  that can be edited. An empty text draws no hint. */
+  linkOpenHint: string
   /** Name of an author comment, which stays out of the readable text. */
   comment: string
   /** Name of a block of Markdown InkKit keeps as authored and does not render. */
