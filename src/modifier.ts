@@ -9,6 +9,19 @@ export const modHeld = (event: MouseEvent | KeyboardEvent): boolean =>
   mac ? event.metaKey : event.ctrlKey
 
 /**
+ * Whether a primary click opens the link it landed on. With Mod held it always does. An editor
+ * with nothing to edit opens on a plain click too, unless the person was selecting text: a
+ * double click, or a drag that ended inside the link and left a range selected.
+ */
+export function opensLink(event: MouseEvent, editable: boolean): boolean {
+  if (event.button !== 0) return false
+  if (modHeld(event)) return true
+  if (editable || event.detail > 1) return false
+  const selection = (event.target as Node).ownerDocument?.getSelection()
+  return !selection || selection.isCollapsed
+}
+
+/**
  * Marks the root while Mod is held with the pointer over it, so the stylesheet
  * can show the link cursor. Keys are read on the window, because focus may be
  * in a host control while the pointer is over the editor. Returns a function

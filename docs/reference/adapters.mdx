@@ -14,20 +14,20 @@ An adapter is an object of functions that you pass to [`mount`](/reference/edito
 - **Failures become error codes.** An exception or rejection from your adapter reaches `events.error`, or the call that is waiting, as the `InkKitError` code shown for each member, with your error as `cause`. See [Errors](/reference/errors).
 - **Retention is yours.** Keep imported bytes available while an import is pending and after insertion, including before your app saves the document. A cleanup sweep based only on saved Markdown can miss an in-flight import or an unsaved edit.
 
-| Member                      | Timing       | Inkkit calls it                                                                     |
-| --------------------------- | ------------ | ----------------------------------------------------------------------------------- |
-| `ImageAdapter.presentation` | Synchronous  | When an image renders in formatted mode, and `files` isn't set.                     |
-| `ImageAdapter.importImage`  | Asynchronous | When a paste or drop brings image bytes.                                            |
-| `ImageAdapter.exportImage`  | Asynchronous | When clipboard or print output needs an image's bytes.                              |
-| `FileAdapter.resolve`       | Asynchronous | When a path image or `![[name]]` embed renders, and again for clipboard and print.  |
-| `FileAdapter.exportImage`   | Asynchronous | When clipboard or print output needs the bytes of a file that resolved as an image. |
-| `FileAdapter.open`          | Synchronous  | When the person activates a file card's Open button or a placeholder's button.      |
-| `FileCardAction.run`        | Synchronous  | When the person activates a button the host added to a file card.                   |
-| `ImageAdapter.contextMenu`  | Synchronous  | When the person opens the context menu on an image, and `files` isn't set.          |
-| `FileAdapter.contextMenu`   | Synchronous  | When the person opens the context menu on a picture or a file card.                 |
-| `WikiLinkAdapter.suggest`   | Asynchronous | When the text after a typed `[[` changes.                                           |
-| `WikiLinkAdapter.resolve`   | Synchronous  | When a wiki link renders in formatted mode.                                         |
-| `WikiLinkAdapter.open`      | Synchronous  | When the person Mod-clicks a wiki link, or presses Enter or Space on a focused one. |
+| Member                      | Timing       | Inkkit calls it                                                                                                       |
+| --------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `ImageAdapter.presentation` | Synchronous  | When an image renders in formatted mode, and `files` isn't set.                                                       |
+| `ImageAdapter.importImage`  | Asynchronous | When a paste or drop brings image bytes.                                                                              |
+| `ImageAdapter.exportImage`  | Asynchronous | When clipboard or print output needs an image's bytes.                                                                |
+| `FileAdapter.resolve`       | Asynchronous | When a path image or `![[name]]` embed renders, and again for clipboard and print.                                    |
+| `FileAdapter.exportImage`   | Asynchronous | When clipboard or print output needs the bytes of a file that resolved as an image.                                   |
+| `FileAdapter.open`          | Synchronous  | When the person activates a file card's Open button or a placeholder's button.                                        |
+| `FileCardAction.run`        | Synchronous  | When the person activates a button the host added to a file card.                                                     |
+| `ImageAdapter.contextMenu`  | Synchronous  | When the person opens the context menu on an image, and `files` isn't set.                                            |
+| `FileAdapter.contextMenu`   | Synchronous  | When the person opens the context menu on a picture or a file card.                                                   |
+| `WikiLinkAdapter.suggest`   | Asynchronous | When the text after a typed `[[` changes.                                                                             |
+| `WikiLinkAdapter.resolve`   | Synchronous  | When a wiki link renders in formatted mode.                                                                           |
+| `WikiLinkAdapter.open`      | Synchronous  | When the person Mod-clicks a wiki link, clicks one in a read-only editor, or presses Enter or Space on a focused one. |
 
 ## ImageAdapter
 
@@ -145,7 +145,7 @@ Tells Inkkit whether a link's target is missing, and how to draw a link that is 
 
 <ResponseField name="open" type="(reference: WikiLinkReference, context: DocumentContext) => void" required>
 
-Called when the person clicks a wiki link with Mod held, or presses Enter or Space with the link focused, in formatted mode, also in a read-only editor. A thrown exception reports `file-unavailable`. Inkkit doesn't await a returned value.
+Called when the person clicks a wiki link with Mod held, or presses Enter or Space with the link focused, in formatted mode, also in a read-only editor. In a read-only editor a plain click opens it too, unless the click ends a text selection. A thrown exception reports `file-unavailable`. Inkkit doesn't await a returned value.
 
 </ResponseField>
 

@@ -52,6 +52,7 @@ export type {
   WikiLinkPresentation,
   WikiLinkReference,
   WikiLinkAdapter,
+  LinkMenuTarget,
   FileReference,
   ClientPoint,
   FileContext,

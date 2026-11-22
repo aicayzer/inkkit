@@ -197,7 +197,10 @@ for (const editable of [true, false])
     expect(openedPages).toEqual([])
     expect(page.url()).toBe(url)
     expect(page.context().pages()).toHaveLength(1)
-    expect((await observe(page)).lastResult).toBeNull()
+    // An editor with nothing to edit opens on a plain click, never a blanked address.
+    expect((await observe(page)).lastResult).toBe(
+      editable ? null : 'https://example.com/a',
+    )
     if (!editable) expect((await observe(page)).snapshot!.text).toBe(source)
   })
 
@@ -222,3 +225,137 @@ for (const [name, expected] of [
       .poll(async () => (await observe(page)).snapshot!.text)
       .toBe(expected)
   })
+
+const style = (locator: Locator, property: string) =>
+  locator.evaluate(
+    (element, name) => getComputedStyle(element).getPropertyValue(name),
+    property,
+  )
+
+test('hover, and the ready-to-open look, come from tokens', async ({
+  page,
+  openFixture,
+}) => {
+  await open(page, openFixture)
+  await page.addStyleTag({
+    content: `#editor {
+      --inkkit-link-hover-background: rgb(10, 20, 30);
+      --inkkit-link-open-background: rgb(40, 50, 60);
+      --inkkit-link-open-underline: line-through;
+      --inkkit-link-open-cursor: crosshair;
+    }`,
+  })
+  for (const link of [
+    page.getByRole('link', { name: 'Site' }),
+    page.getByRole('link', { name: 'Travel plan', exact: true }),
+  ]) {
+    await page.mouse.move(1, 1)
+    await expect
+      .poll(() => style(link, 'background-image'))
+      .not.toContain('rgb(10, 20, 30)')
+    await link.hover()
+    await expect
+      .poll(() => style(link, 'background-image'))
+      .toContain('rgb(10, 20, 30)')
+    expect(await style(link, 'cursor')).not.toBe('crosshair')
+    await page.keyboard.down('ControlOrMeta')
+    await expect
+      .poll(() => style(link, 'background-image'))
+      .toContain('rgb(40, 50, 60)')
+    expect(await style(link, 'text-decoration-line')).toBe('line-through')
+    expect(await style(link, 'cursor')).toBe('crosshair')
+    await page.keyboard.up('ControlOrMeta')
+    await expect
+      .poll(() => style(link, 'background-image'))
+      .toContain('rgb(10, 20, 30)')
+  }
+  expect((await observe(page)).snapshot!.text).toBe(source)
+})
+
+test('a read-only editor shows the pointer and the ready look on hover alone', async ({
+  page,
+  openFixture,
+}) => {
+  await open(page, openFixture)
+  const site = page.getByRole('link', { name: 'Site' })
+  const wiki = page.getByRole('link', { name: 'Travel plan', exact: true })
+  await operation(page, 'editable', { editable: false })
+  await site.hover()
+  await expect.poll(() => style(site, 'cursor')).toBe('pointer')
+  await wiki.hover()
+  await expect.poll(() => style(wiki, 'cursor')).toBe('pointer')
+  await operation(page, 'editable', { editable: true })
+  await site.hover()
+  await expect.poll(() => style(site, 'cursor')).not.toBe('pointer')
+})
+
+const hint = (page: Page) => page.locator('#editor .inkkit-link-hint')
+
+test('a link the pointer rests on says how to open it, outside the document', async ({
+  page,
+  openFixture,
+}) => {
+  await open(page, openFixture)
+  const site = page.getByRole('link', { name: 'Site' })
+  const wiki = page.getByRole('link', { name: 'Travel plan', exact: true })
+  await site.hover()
+  await expect(hint(page)).toBeVisible()
+  await expect(hint(page)).toHaveText(/^(⌘|Ctrl)-click to open$/)
+  await expect(hint(page)).toHaveAttribute('role', 'tooltip')
+  // It is not part of the text, and it leaves the markup untouched.
+  expect(
+    await page.locator('#editor .ProseMirror .inkkit-link-hint').count(),
+  ).toBe(0)
+  await expect(site).not.toHaveAttribute('title', /.+/)
+  const link = await site.boundingBox()
+  const box = await hint(page).boundingBox()
+  expect(box!.y).toBeGreaterThanOrEqual(link!.y + link!.height - 1)
+  await page.mouse.move(1, 1)
+  await expect(hint(page)).toHaveCount(0)
+
+  await wiki.hover()
+  await expect(hint(page)).toBeVisible()
+  await page.keyboard.down('ControlOrMeta')
+  await expect(hint(page)).toHaveCount(0)
+  await page.keyboard.up('ControlOrMeta')
+  expect((await observe(page)).snapshot!.text).toBe(source)
+
+  await operation(page, 'editable', { editable: false })
+  await site.hover()
+  await page.waitForTimeout(900)
+  await expect(hint(page)).toHaveCount(0)
+})
+
+test('a context menu on a link selects it and tells the host', async ({
+  page,
+  openFixture,
+}) => {
+  await open(page, openFixture)
+  const site = page.getByRole('link', { name: 'Site' })
+  await site.click({ button: 'right' })
+  let { lastLinkMenu, textSnapshot } = (await observe(page)) as {
+    lastLinkMenu: {
+      link: { kind: string; href?: string; text: string; range: unknown }
+      point: { clientX: number; clientY: number }
+    } | null
+    textSnapshot: { selection: unknown } | null
+  }
+  expect(lastLinkMenu?.link).toMatchObject({
+    kind: 'web',
+    href: 'https://example.com/a',
+    text: 'Site',
+    openable: true,
+  })
+  expect(lastLinkMenu!.point.clientX).toBeGreaterThan(0)
+  expect(textSnapshot!.selection).toEqual(lastLinkMenu!.link.range)
+
+  await page
+    .getByRole('link', { name: 'Travel plan', exact: true })
+    .click({ button: 'right' })
+  lastLinkMenu = (await observe(page)).lastLinkMenu as typeof lastLinkMenu
+  expect(lastLinkMenu?.link).toMatchObject({
+    kind: 'wiki',
+    text: 'Travel plan',
+  })
+  expect((await observe(page)).snapshot!.text).toBe(source)
+})

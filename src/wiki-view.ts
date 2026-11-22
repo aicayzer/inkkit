@@ -3,7 +3,7 @@ import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 import { $view } from '@milkdown/kit/utils'
 import { wikiLinkSchema, wikiReference } from './linked-syntax'
 import { mediaPolicyEvent, refreshOf, refreshes } from './files'
-import { modHeld } from './modifier'
+import { opensLink } from './modifier'
 import { cssUrl, iconUrl } from './icon-url'
 import type {
   DocumentContext,
@@ -18,6 +18,8 @@ import type { EditorLabels } from './types'
 interface WikiRuntime {
   capture(): { context: DocumentContext; isCurrent(): boolean }
   active(): boolean
+  /** Whether the person can edit, so that a plain click places the caret instead of opening. */
+  editable(): boolean
   labels: Readonly<EditorLabels>
   error?(error: InkKitError): void
 }
@@ -146,7 +148,7 @@ export function wikiLinkView(adapter: WikiLinkAdapter, runtime: WikiRuntime) {
       }
     }
     dom.addEventListener('click', (event) => {
-      if (event.button === 0 && modHeld(event)) open(event)
+      if (opensLink(event, runtime.editable())) open(event)
     })
     dom.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') open(event)

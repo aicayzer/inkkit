@@ -14,7 +14,7 @@
 - `editor-insert.ts` applies formatted plain-text, native-text, path and image insertions. It receives checked arguments and reads authored text only when an operation needs it. The facade keeps source/TXT routing, mutation guards and focus decisions.
 - `editor-links.ts` validates Markdown link destinations, applies link and shared-reference edits, and activates the selected link. Shared-reference edits return through the public method so nested calls retain the same atomic boundary.
 - `editor-footnotes.ts` inserts and locates footnotes. Automatic numbering reads both authored text and parsed references; an explicit label does not need that source read.
-- `editor-activation.ts` owns root link and footnote listeners and modifier tracking. The facade retains their installation and teardown order relative to clipboard, source and Milkdown.
+- `editor-activation.ts` owns root link, link menu and footnote listeners and modifier tracking. `link-hint.ts` draws the hover hint outside the document, and `link-target.ts` finds the link a DOM element belongs to. The facade retains their installation and teardown order relative to clipboard, source and Milkdown.
 - `editor-suggestions.ts` assembles slash/wiki providers, applies their transactions and handles host action results. The facade captures the current session and chosen state, validates the eventual commit and temporarily supplies the slash transaction's base state. Host action failures and editor insertion failures retain separate reporting paths.
 - `editor-focus.ts` releases text-surface focus and captures/restores selection, focus and scroll around reload. The facade owns load/mode transitions and suppresses intermediate command-state events.
 

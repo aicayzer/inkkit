@@ -789,13 +789,21 @@
 }
 
 .inkkit-root .ProseMirror a {
-  color: var(--_inkkit-accent);
+  color: var(--inkkit-link-color, var(--_inkkit-accent));
   text-decoration: none;
   text-underline-offset: 2px;
+  border-radius: var(--inkkit-link-radius, 0);
+  /* A link that wraps keeps its corners on every line. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .inkkit-root .ProseMirror a:hover {
-  text-decoration: underline;
+  color: var(
+    --inkkit-link-hover-color,
+    var(--inkkit-link-color, var(--_inkkit-accent))
+  );
+  text-decoration: var(--inkkit-link-hover-underline, underline);
 }
 
 /* A wiki link reads each part of its look from a variable whose default is the plain look. */
@@ -888,10 +896,93 @@
   }
 }
 
-/* Held Mod opens a link on click; an empty address opens nothing. */
+/* A link under the pointer takes a fill of its own. It is a layer over the background, so a wiki
+   link's tint stays under it. */
+.inkkit-root .ProseMirror a:hover,
+.inkkit-root .inkkit-wiki-link:hover {
+  background-image: linear-gradient(
+    var(--inkkit-link-hover-background, transparent),
+    var(--inkkit-link-hover-background, transparent)
+  );
+}
+
+/* A link opens on a click with Mod held, or on any click in an editor that cannot be edited. The
+   pointer shows it, and the link looks ready; an empty address opens nothing. */
 .inkkit-root.inkkit-link-modifier .ProseMirror a[href]:not([href='']),
-.inkkit-root.inkkit-link-modifier .inkkit-wiki-link {
-  cursor: pointer;
+.inkkit-root.inkkit-link-modifier .inkkit-wiki-link,
+.inkkit-root .ProseMirror[contenteditable='false'] a[href]:not([href='']),
+.inkkit-root .ProseMirror[contenteditable='false'] .inkkit-wiki-link {
+  cursor: var(--inkkit-link-open-cursor, pointer);
+}
+
+.inkkit-root.inkkit-link-modifier .ProseMirror a[href]:not([href='']):hover,
+.inkkit-root.inkkit-link-modifier .inkkit-wiki-link:hover,
+.inkkit-root .ProseMirror[contenteditable='false'] a[href]:not([href='']):hover,
+.inkkit-root .ProseMirror[contenteditable='false'] .inkkit-wiki-link:hover {
+  text-decoration-line: var(--inkkit-link-open-underline, underline);
+  background-image: linear-gradient(
+    var(
+      --inkkit-link-open-background,
+      var(--inkkit-link-hover-background, transparent)
+    ),
+    var(
+      --inkkit-link-open-background,
+      var(--inkkit-link-hover-background, transparent)
+    )
+  );
+}
+
+.inkkit-root.inkkit-link-modifier .ProseMirror a[href]:not([href='']):hover,
+.inkkit-root
+  .ProseMirror[contenteditable='false']
+  a[href]:not([href='']):hover {
+  color: var(
+    --inkkit-link-open-color,
+    var(
+      --inkkit-link-hover-color,
+      var(--inkkit-link-color, var(--_inkkit-accent))
+    )
+  );
+}
+
+.inkkit-root.inkkit-link-modifier .inkkit-wiki-link:hover,
+.inkkit-root .ProseMirror[contenteditable='false'] .inkkit-wiki-link:hover {
+  color: var(
+    --inkkit-link-open-color,
+    var(
+      --inkkit-wiki-link-hover-color,
+      var(--inkkit-wiki-link-color, var(--_inkkit-accent))
+    )
+  );
+}
+
+/* The hint under a link that Mod-click opens. It sits in the root, so a host's tokens reach it. */
+.inkkit-root .inkkit-link-hint {
+  position: fixed;
+  z-index: 100;
+  box-sizing: border-box;
+  max-width: calc(100vw - 8px);
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--inkkit-link-hint-radius, 6px);
+  background: var(
+    --inkkit-link-hint-background,
+    var(--inkkit-menu-background, light-dark(#fff, #252529))
+  );
+  color: var(--inkkit-link-hint-color, var(--inkkit-menu-text, CanvasText));
+  box-shadow: var(--inkkit-menu-shadow, 0 4px 18px #0003);
+  font: calc(var(--_inkkit-font-size) * 13 / 15) /
+    calc(var(--_inkkit-font-size) * 1.5)
+    var(--inkkit-font-family, system-ui, sans-serif);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (forced-colors: active) {
+  .inkkit-root .inkkit-link-hint {
+    border-color: CanvasText;
+  }
 }
 
 .inkkit-root .ProseMirror code {

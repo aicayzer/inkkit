@@ -180,7 +180,7 @@ What the editor shows while you type is what reopens. The same rules apply to ke
 - **A link started at the caret** with `format('link', { destination })` takes the text typed next until the first space or other whitespace, or until the caret moves.
 - **Bare addresses** grow while the typed text is still part of the address, so typing `/path` after `https://example.com` links `https://example.com/path`.
 
-A primary click with Mod (Command on Apple platforms, Control elsewhere) calls `events.openLink` with the destination. Links with a scheme other than `http`, `https`, `mailto`, `tel` or one the host lists in `linkSchemes` don't open; see [Links that Inkkit keeps](/concepts/clipboard#links-that-inkkit-keeps).
+A primary click with Mod (Command on Apple platforms, Control elsewhere) calls `events.openLink` with the destination. A plain click only places the caret in an editor that can be edited, and opens the link in one that can't be. [Link tokens](/reference/appearance#link-tokens) style the cue. Links with a scheme other than `http`, `https`, `mailto`, `tel` or one the host lists in `linkSchemes` don't open; see [Links that Inkkit keeps](/concepts/clipboard#links-that-inkkit-keeps).
 
 ## Line breaks
 

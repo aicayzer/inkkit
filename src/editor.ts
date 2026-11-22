@@ -79,10 +79,16 @@ import {
   type Node as ProseNode,
 } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
+import {
+  NodeSelection,
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from '@milkdown/kit/prose/state'
 import { literalRereadKey } from './literal-edits'
 import { defaultLabels } from './labels'
-import { extraLinkSchemes } from './link-safety'
+import { extraLinkSchemes, isSafeLinkTarget } from './link-safety'
+import { linkTargetAt } from './link-target'
 import {
   defaultFormats,
   documentFormats,
@@ -115,6 +121,7 @@ import {
 import {
   InkKitError,
   type ClientPoint,
+  type LinkMenuTarget,
   type DocumentFormat,
   type DocumentInput,
   type DocumentSnapshot,
@@ -650,8 +657,13 @@ export interface EditorEvents<F extends DocumentFormat = TextDocumentFormat> {
   changed(snapshot: DocumentSnapshot<F>): void
   /** Availability or the caret changed, and once after each load. */
   commandStateChanged?(state: CommandState): void
-  /** A primary click with Mod on a link. Without it, links don't open. */
+  /** A primary click with Mod on a link. Without it, links don't open. In an editor that can't be
+   *  edited, a plain click opens it too. */
   openLink?(href: string): void
+  /** The person asked for the context menu on a link, web or wiki. Inkkit selects the link, then
+   *  calls this with the link and the pointer position, so the host can show Open, Copy, Edit and
+   *  Remove. Without it, the web view's own menu shows. */
+  linkMenu?(link: LinkMenuTarget, point: ClientPoint): void
   /** The Copy button on a code block was clicked. Without this handler, no button is drawn. */
   copy?(text: string): void
   /** A failure that no call is waiting for, such as one in an edit the person made. */
@@ -665,6 +677,7 @@ const requiredEvents = ['changed'] as const
 const optionalEvents = [
   'commandStateChanged',
   'openLink',
+  'linkMenu',
   'copy',
   'error',
   'clipboard',
@@ -2284,6 +2297,7 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         capture: () => instance.adapterCapture(),
         active: () =>
           instance.ready && !instance.destroyed && !instance.literalSurface,
+        editable: () => instance.writable,
         canMutate: () => {
           try {
             instance.assertMutation()
@@ -2327,6 +2341,9 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
         instance.navigateFootnote('definition')
       },
       openLink: (href) => events.openLink?.(href),
+      editable: () => instance.writable,
+      hint: (link) => instance.linkHint(link),
+      linkMenu: (element, point) => instance.linkMenu(element, point),
       report: (error) => instance.report(error),
     })
     instance.clipboard.install(root)
@@ -2839,6 +2856,56 @@ export class InkKitEditor<F extends DocumentFormat = TextDocumentFormat> {
     requestRefresh(this.editor.ctx.get(editorViewCtx).dom, {
       ...(names && { targets: names }),
     })
+  }
+
+  /** The hint under a link: only where a Mod-click opens it and a plain click does not, and not
+   *  under a link that already has a tooltip of its own. */
+  private linkHint(link: Element): string | undefined {
+    if (!this.ready || !this.writable || link.hasAttribute('title'))
+      return undefined
+    if (
+      !link.classList.contains('inkkit-wiki-link') &&
+      (!this.events.openLink || !link.getAttribute('href'))
+    )
+      return undefined
+    return this.options.labels?.linkOpenHint ?? defaultLabels.linkOpenHint
+  }
+
+  /** Selects the link a context-menu request landed on, then gives the host the link and where the
+   *  pointer was. False when there is nothing to hand over, so the web view shows its own menu. */
+  private linkMenu(element: Element, point: ClientPoint): boolean {
+    const handler = this.events.linkMenu
+    if (!handler || !this.ready || this.loading || this.literalSurface)
+      return false
+    const view = this.editor.ctx.get(editorViewCtx)
+    const link = linkTargetAt(view, element)
+    if (!link) return false
+    const { doc, selection } = view.state
+    const linked =
+      link.kind === 'wiki'
+        ? NodeSelection.create(doc, link.from)
+        : TextSelection.create(doc, link.from, link.to)
+    if (!selection.eq(linked)) view.dispatch(view.state.tr.setSelection(linked))
+    const range = Object.freeze(this.text.selection().range)
+    const text =
+      link.kind === 'wiki'
+        ? link.reference.label
+        : doc.textBetween(link.from, link.to)
+    handler(
+      link.kind === 'wiki'
+        ? { kind: 'wiki', text, range, reference: link.reference }
+        : {
+            kind: 'web',
+            text,
+            range,
+            href: link.href,
+            openable:
+              link.href.trim() !== '' &&
+              isSafeLinkTarget(link.href, this.linkSchemes),
+          },
+      point,
+    )
+    return true
   }
 
   private openSelectedLink(state: EditorState): boolean {

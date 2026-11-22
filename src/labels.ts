@@ -1,5 +1,6 @@
 import type { Ctx } from '@milkdown/kit/ctx'
 import { $ctx } from '@milkdown/kit/utils'
+import { mac } from './modifier'
 import type { EditorLabels } from './types'
 
 export const defaultLabels: Readonly<EditorLabels> = {
@@ -61,6 +62,7 @@ export const defaultLabels: Readonly<EditorLabels> = {
   filePDFPreview: 'Open to view this PDF',
   imageResize: 'Resize image',
   wikiMissing: 'Link unavailable',
+  linkOpenHint: mac ? '⌘-click to open' : 'Ctrl-click to open',
   comment: 'Author comment',
   preservedMarkdown: 'Preserved Markdown',
 }

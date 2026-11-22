@@ -158,6 +158,7 @@ let headings: readonly Heading[] = []
 let pendingImage: Promise<void> | undefined
 let diagnostics: { code: string | null; message: string }[] = []
 let lastResult: unknown = null
+let lastLinkMenu: unknown = null
 let searchSnapshot: ReturnType<InkKitEditor['textSnapshot']> | undefined
 let searchRange: Parameters<InkKitEditor['selectTextRange']>[0] | undefined
 // The status line shows the last error until the next edit or document load;
@@ -302,6 +303,7 @@ function observe() {
     diagnostics: [...diagnostics],
     timings: timings(),
     lastResult,
+    lastLinkMenu,
   }
 }
 // Edits only schedule this, so typing does not wait for it. The full
@@ -449,6 +451,7 @@ async function reset(
   statusError = false
   resetTimings()
   lastResult = null
+  lastLinkMenu = null
   searchSnapshot = undefined
   searchRange = undefined
   fixtureId = nextFixture
@@ -472,6 +475,10 @@ async function reset(
       commandStateChanged: update,
       openLink: (href) => {
         lastResult = href
+        update()
+      },
+      linkMenu: (link, point) => {
+        lastLinkMenu = { link, point }
         update()
       },
       copy: (text) => {
